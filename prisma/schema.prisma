@@ -1,0 +1,861 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════
+
+enum Gender {
+  MASCULINO
+  FEMENINO
+}
+
+enum UserStatus {
+  NO_VERIFICADO
+  ACTIVO
+  INACTIVO
+  SUSPENDIDO
+}
+
+enum TournamentStatus {
+  BORRADOR
+  PENDIENTE_APROBACION
+  PUBLICADO
+  EN_CURSO
+  FINALIZADO
+  RECHAZADO
+  CANCELADO
+}
+
+enum Modalidad {
+  TRADICIONAL
+  MIXTO
+  SUMA
+}
+
+enum InscripcionEstado {
+  PENDIENTE_PAGO
+  PENDIENTE_CONFIRMACION
+  PENDIENTE_PAGO_PRESENCIAL
+  CONFIRMADA
+  RECHAZADA
+  CANCELADA
+}
+
+enum MetodoPago {
+  BANCARD
+  TRANSFERENCIA
+  EFECTIVO
+}
+
+enum PagoEstado {
+  PENDIENTE
+  CONFIRMADO
+  RECHAZADO
+  REEMBOLSADO
+}
+
+enum MatchStatus {
+  PROGRAMADO
+  EN_JUEGO
+  FINALIZADO
+  SUSPENDIDO
+  WO
+  CANCELADO
+}
+
+enum TipoRanking {
+  GLOBAL
+  PAIS
+  REGION
+  CIUDAD
+  CATEGORIA
+  LIGA
+}
+
+enum TipoNotificacion {
+  SISTEMA
+  TORNEO
+  INSCRIPCION
+  PARTIDO
+  RANKING
+  SOCIAL
+  PAGO
+  MENSAJE
+}
+
+enum SolicitudEstado {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
+enum ModerationStatus {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
+enum PlanTipo {
+  JUGADOR
+  ORGANIZADOR
+}
+
+enum PeriodoSuscripcion {
+  MENSUAL
+  ANUAL
+}
+
+enum SuscripcionEstado {
+  ACTIVA
+  VENCIDA
+  CANCELADA
+  PENDIENTE_PAGO
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 1: AUTENTICACIÓN Y USUARIOS
+// ═══════════════════════════════════════════════════════
+
+model User {
+  id                String      @id @default(uuid())
+  documento         String      @unique
+  nombre            String
+  apellido          String
+  genero            Gender
+  email             String      @unique
+  telefono          String      @unique
+  passwordHash      String      @map("password_hash")
+  fechaNacimiento   DateTime?   @map("fecha_nacimiento") @db.Date
+  ciudad            String?
+  bio               String?     @db.VarChar(500)
+  fotoUrl           String?     @map("foto_url")
+  estado            UserStatus  @default(NO_VERIFICADO)
+  emailVerificado   Boolean     @default(false) @map("email_verificado")
+  esPremium         Boolean     @default(false) @map("es_premium")
+  ultimaSesion      DateTime?   @map("ultima_sesion")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  // Relaciones
+  roles                     UserRole[]
+  solicitudesOrganizador    SolicitudOrganizador[]
+  verificacionesEmail       EmailVerification[]
+  passwordResets            PasswordReset[]
+  notificaciones            Notificacion[]
+  mensajesEnviados          MensajePrivado[]        @relation("MensajesEnviados")
+  mensajesRecibidos         MensajePrivado[]        @relation("MensajesRecibidos")
+  seguimientos              Seguimiento[]           @relation("Seguidor")
+  seguidores                Seguimiento[]           @relation("Seguido")
+  fotosPerfilModeracion     FotoPerfilModeracion[]
+  torneosOrganizados        Tournament[]            @relation("OrganizadorTorneos")
+  parejasComoJugador1       Pareja[]                @relation("Jugador1Parejas")
+  parejasComoJugador2       Pareja[]                @relation("Jugador2Parejas")
+  rankings                  Ranking[]
+  historialPuntos           HistorialPuntos[]
+  logrosDesbloqueados       UsuarioLogro[]
+  fotos                     Foto[]
+  likes                     Like[]
+  comentarios               Comentario[]
+  albumesCreados            Album[]
+  reportesFotos             ReporteFoto[]
+  bloqueos                  Bloqueo[]               @relation("Bloqueador")
+  bloqueadoPor              Bloqueo[]               @relation("Bloqueado")
+  reportes                  Reporte[]               @relation("Reportador")
+  reportado                 Reporte[]               @relation("Reportado")
+  suscripciones             Suscripcion[]
+  solicitudesJugar          SolicitudJugar[]        @relation("EmisorSolicitud")
+  solicitudesRecibidas      SolicitudJugar[]        @relation("ReceptorSolicitud")
+
+  @@map("users")
+}
+
+model Role {
+  id          String     @id @default(uuid())
+  nombre      String     @unique
+  descripcion String?
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  usuarios UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model SolicitudOrganizador {
+  id           String           @id @default(uuid())
+  userId       String           @map("user_id")
+  organizacion String?
+  telefono     String
+  ciudad       String
+  experiencia  String           @db.Text
+  motivacion   String           @db.Text
+  estado       SolicitudEstado  @default(PENDIENTE)
+  motivo       String?          @db.Text
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("solicitudes_organizador")
+}
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verifications")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_resets")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 2: TORNEOS
+// ═══════════════════════════════════════════════════════
+
+model Category {
+  id        String   @id @default(uuid())
+  nombre    String   @unique
+  tipo      Gender
+  orden     Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  torneos           TournamentCategory[]
+  inscripciones     Inscripcion[]
+  partidos          Match[]
+  historialPuntos   HistorialPuntos[]
+
+  @@map("categories")
+}
+
+model Tournament {
+  id                  String            @id @default(uuid())
+  nombre              String
+  descripcion         String?           @db.Text
+  pais                String
+  region              String
+  ciudad              String
+  fechaInicio         DateTime          @map("fecha_inicio")
+  fechaFin            DateTime          @map("fecha_fin")
+  fechaLimiteInscr    DateTime          @map("fecha_limite_inscr")
+  flyerUrl            String            @map("flyer_url")
+  estado              TournamentStatus  @default(BORRADOR)
+  costoInscripcion    Decimal           @map("costo_inscripcion") @db.Decimal(10, 2)
+  sede                String?
+  direccion           String?
+  mapsUrl             String?           @map("maps_url")
+  organizadorId       String            @map("organizador_id")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  organizador     User                  @relation("OrganizadorTorneos", fields: [organizadorId], references: [id])
+  categorias      TournamentCategory[]
+  modalidades     TournamentModalidad[]
+  complejos       Complejo[]
+  inscripciones   Inscripcion[]
+  partidos        Match[]
+  fotos           Foto[]
+  sponsors        TournamentSponsor[]
+  premios         TournamentPremio[]
+  historialPuntos HistorialPuntos[]
+
+  @@map("tournaments")
+}
+
+model TournamentCategory {
+  id           String     @id @default(uuid())
+  tournamentId String     @map("tournament_id")
+  categoryId   String     @map("category_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category   Category   @relation(fields: [categoryId], references: [id])
+
+  @@unique([tournamentId, categoryId])
+  @@map("tournament_categories")
+}
+
+model TournamentModalidad {
+  id           String     @id @default(uuid())
+  tournamentId String     @map("tournament_id")
+  modalidad    Modalidad
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, modalidad])
+  @@map("tournament_modalidades")
+}
+
+model TournamentSponsor {
+  id           String     @id @default(uuid())
+  tournamentId String     @map("tournament_id")
+  nombre       String
+  logoUrl      String     @map("logo_url")
+  link         String?
+  orden        Int        @default(0)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("tournament_sponsors")
+}
+
+model TournamentPremio {
+  id           String     @id @default(uuid())
+  tournamentId String     @map("tournament_id")
+  categoria    String
+  campeon      String?
+  finalista    String?
+  semifinalista String?
+  otros        String?    @db.Text
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("tournament_premios")
+}
+
+model Complejo {
+  id                String   @id @default(uuid())
+  tournamentId      String   @map("tournament_id")
+  nombre            String
+  direccion         String?
+  mapsUrl           String?  @map("maps_url")
+  esSedePrincipal   Boolean  @default(false) @map("es_sede_principal")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  canchas    Cancha[]
+  horarios   HorarioCompetencia[]
+
+  @@map("complejos")
+}
+
+model Cancha {
+  id         String   @id @default(uuid())
+  complejoId String   @map("complejo_id")
+  nombre     String
+  tipo       String
+  estado     String   @default("DISPONIBLE")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  complejo Complejo @relation(fields: [complejoId], references: [id], onDelete: Cascade)
+  partidos Match[]
+
+  @@map("canchas")
+}
+
+model HorarioCompetencia {
+  id         String   @id @default(uuid())
+  complejoId String   @map("complejo_id")
+  fecha      DateTime @db.Date
+  horaInicio String   @map("hora_inicio")
+  horaFin    String   @map("hora_fin")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  complejo Complejo @relation(fields: [complejoId], references: [id], onDelete: Cascade)
+
+  @@map("horarios_competencia")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 3: INSCRIPCIONES Y PAGOS
+// ═══════════════════════════════════════════════════════
+
+model Pareja {
+  id                String   @id @default(uuid())
+  jugador1Id        String   @map("jugador1_id")
+  jugador2Id        String?  @map("jugador2_id")
+  jugador2Documento String   @map("jugador2_documento")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  jugador1         User          @relation("Jugador1Parejas", fields: [jugador1Id], references: [id], onDelete: Cascade)
+  jugador2         User?         @relation("Jugador2Parejas", fields: [jugador2Id], references: [id], onDelete: Cascade)
+  inscripciones    Inscripcion[]
+  partidosComoP1   Match[]       @relation("Pareja1Matches")
+  partidosComoP2   Match[]       @relation("Pareja2Matches")
+  partidosGanados  Match[]       @relation("ParejaGanadora")
+  partidosPerdidos Match[]       @relation("ParejaPerdedora")
+
+  @@map("parejas")
+}
+
+model Inscripcion {
+  id           String             @id @default(uuid())
+  tournamentId String             @map("tournament_id")
+  parejaId     String             @map("pareja_id")
+  categoryId   String             @map("category_id")
+  modalidad    Modalidad
+  estado       InscripcionEstado  @default(PENDIENTE_PAGO)
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  tournament   Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  pareja       Pareja            @relation(fields: [parejaId], references: [id], onDelete: Cascade)
+  category     Category          @relation(fields: [categoryId], references: [id])
+  pago         Pago?
+  comprobantes ComprobantePago[]
+
+  @@map("inscripciones")
+}
+
+model Pago {
+  id             String       @id @default(uuid())
+  inscripcionId  String       @unique @map("inscripcion_id")
+  metodoPago     MetodoPago   @map("metodo_pago")
+  monto          Decimal      @db.Decimal(10, 2)
+  comision       Decimal      @db.Decimal(10, 2)
+  estado         PagoEstado   @default(PENDIENTE)
+  transactionId  String?      @map("transaction_id")
+  fechaPago      DateTime?    @map("fecha_pago")
+  fechaConfirm   DateTime?    @map("fecha_confirmacion")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+
+  @@map("pagos")
+}
+
+model ComprobantePago {
+  id             String            @id @default(uuid())
+  inscripcionId  String            @map("inscripcion_id")
+  url            String
+  estado         ModerationStatus  @default(PENDIENTE)
+  motivoRechazo  String?           @map("motivo_rechazo") @db.Text
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+
+  @@map("comprobantes_pago")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 4: PARTIDOS Y RESULTADOS
+// ═══════════════════════════════════════════════════════
+
+model Match {
+  id                 String       @id @default(uuid())
+  tournamentId       String       @map("tournament_id")
+  categoryId         String       @map("category_id")
+  ronda              String
+  numeroRonda        Int          @map("numero_ronda")
+  pareja1Id          String?      @map("pareja1_id")
+  pareja2Id          String?      @map("pareja2_id")
+  canchaId           String?      @map("cancha_id")
+  fechaProgramada    DateTime?    @map("fecha_programada") @db.Date
+  horaProgramada     String?      @map("hora_programada")
+  horaFinEstimada    String?      @map("hora_fin_estimada")
+  estado             MatchStatus  @default(PROGRAMADO)
+  parejaGanadoraId   String?      @map("pareja_ganadora_id")
+  parejaPerdedoraId  String?      @map("pareja_perdedora_id")
+  set1Pareja1        Int?         @map("set1_pareja1")
+  set1Pareja2        Int?         @map("set1_pareja2")
+  set2Pareja1        Int?         @map("set2_pareja1")
+  set2Pareja2        Int?         @map("set2_pareja2")
+  set3Pareja1        Int?         @map("set3_pareja1")
+  set3Pareja2        Int?         @map("set3_pareja2")
+  partidoSiguienteId String?      @map("partido_siguiente_id")
+  observaciones      String?      @db.Text
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  tournament       Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category         Category   @relation(fields: [categoryId], references: [id])
+  pareja1          Pareja?    @relation("Pareja1Matches", fields: [pareja1Id], references: [id])
+  pareja2          Pareja?    @relation("Pareja2Matches", fields: [pareja2Id], references: [id])
+  parejaGanadora   Pareja?    @relation("ParejaGanadora", fields: [parejaGanadoraId], references: [id])
+  parejaPerdedora  Pareja?    @relation("ParejaPerdedora", fields: [parejaPerdedoraId], references: [id])
+  cancha           Cancha?    @relation(fields: [canchaId], references: [id])
+
+  @@map("matches")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 5: RANKINGS
+// ═══════════════════════════════════════════════════════
+
+model Ranking {
+  id                  String       @id @default(uuid())
+  jugadorId           String       @map("jugador_id")
+  tipoRanking         TipoRanking  @map("tipo_ranking")
+  alcance             String
+  genero              Gender
+  puntosTotales       Int          @default(0) @map("puntos_totales")
+  posicion            Int
+  posicionAnterior    Int?         @map("posicion_anterior")
+  torneosJugados      Int          @default(0) @map("torneos_jugados")
+  victorias           Int          @default(0)
+  derrotas            Int          @default(0)
+  porcentajeVictorias Decimal?     @map("porcentaje_victorias") @db.Decimal(5, 2)
+  rachaActual         Int          @default(0) @map("racha_actual")
+  mejorPosicion       Int?         @map("mejor_posicion")
+  campeonatos         Int          @default(0)
+  ultimaActualizacion DateTime     @default(now()) @map("ultima_actualizacion")
+
+  jugador User @relation(fields: [jugadorId], references: [id], onDelete: Cascade)
+
+  @@unique([jugadorId, tipoRanking, alcance])
+  @@map("rankings")
+}
+
+model HistorialPuntos {
+  id            String   @id @default(uuid())
+  jugadorId     String   @map("jugador_id")
+  tournamentId  String   @map("tournament_id")
+  categoryId    String   @map("category_id")
+  posicionFinal String   @map("posicion_final")
+  puntosGanados Int      @map("puntos_ganados")
+  fechaTorneo   DateTime @map("fecha_torneo") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  jugador    User       @relation(fields: [jugadorId], references: [id], onDelete: Cascade)
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  category   Category   @relation(fields: [categoryId], references: [id])
+
+  @@map("historial_puntos")
+}
+
+model ConfiguracionPuntos {
+  id            String  @id @default(uuid())
+  posicion      String  @unique
+  puntosBase    Int     @map("puntos_base")
+  multiplicador Float   @default(1.0)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("configuracion_puntos")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 6: SOCIAL
+// ═══════════════════════════════════════════════════════
+
+model Seguimiento {
+  id                     String   @id @default(uuid())
+  seguidorId             String   @map("seguidor_id")
+  seguidoId              String   @map("seguido_id")
+  notificacionesActivas  Boolean  @default(true) @map("notificaciones_activas")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  seguidor User @relation("Seguidor", fields: [seguidorId], references: [id], onDelete: Cascade)
+  seguido  User @relation("Seguido", fields: [seguidoId], references: [id], onDelete: Cascade)
+
+  @@unique([seguidorId, seguidoId])
+  @@map("seguimientos")
+}
+
+model MensajePrivado {
+  id             String   @id @default(uuid())
+  remitenteId    String   @map("remitente_id")
+  destinatarioId String   @map("destinatario_id")
+  contenido      String   @db.Text
+  leido          Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  remitente    User @relation("MensajesEnviados", fields: [remitenteId], references: [id], onDelete: Cascade)
+  destinatario User @relation("MensajesRecibidos", fields: [destinatarioId], references: [id], onDelete: Cascade)
+
+  @@map("mensajes_privados")
+}
+
+model SolicitudJugar {
+  id             String          @id @default(uuid())
+  emisorId       String          @map("emisor_id")
+  receptorId     String          @map("receptor_id")
+  fechaPropuesta DateTime        @map("fecha_propuesta")
+  hora           String
+  lugar          String
+  mensaje        String?         @db.Text
+  estado         SolicitudEstado @default(PENDIENTE)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  emisor   User @relation("EmisorSolicitud", fields: [emisorId], references: [id], onDelete: Cascade)
+  receptor User @relation("ReceptorSolicitud", fields: [receptorId], references: [id], onDelete: Cascade)
+
+  @@map("solicitudes_jugar")
+}
+
+model Logro {
+  id          String   @id @default(uuid())
+  nombre      String   @unique
+  descripcion String   @db.Text
+  icono       String
+  condicion   String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  usuariosQueDesbloquearon UsuarioLogro[]
+
+  @@map("logros")
+}
+
+model UsuarioLogro {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  logroId         String   @map("logro_id")
+  fechaDesbloqueo DateTime @default(now()) @map("fecha_desbloqueo")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logro Logro @relation(fields: [logroId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, logroId])
+  @@map("usuario_logros")
+}
+
+model Bloqueo {
+  id           String   @id @default(uuid())
+  bloqueadorId String   @map("bloqueador_id")
+  bloqueadoId  String   @map("bloqueado_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  bloqueador User @relation("Bloqueador", fields: [bloqueadorId], references: [id], onDelete: Cascade)
+  bloqueado  User @relation("Bloqueado", fields: [bloqueadoId], references: [id], onDelete: Cascade)
+
+  @@unique([bloqueadorId, bloqueadoId])
+  @@map("bloqueos")
+}
+
+model Reporte {
+  id           String          @id @default(uuid())
+  reportadorId String          @map("reportador_id")
+  reportadoId  String          @map("reportado_id")
+  motivo       String
+  descripcion  String?         @db.Text
+  estado       SolicitudEstado @default(PENDIENTE)
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  reportador User @relation("Reportador", fields: [reportadorId], references: [id], onDelete: Cascade)
+  reportado  User @relation("Reportado", fields: [reportadoId], references: [id], onDelete: Cascade)
+
+  @@map("reportes")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 7: GALERÍA Y FOTOS
+// ═══════════════════════════════════════════════════════
+
+model Foto {
+  id                String            @id @default(uuid())
+  userId            String            @map("user_id")
+  tournamentId      String?           @map("tournament_id")
+  urlImagen         String            @map("url_imagen")
+  urlThumbnail      String?           @map("url_thumbnail")
+  descripcion       String?           @db.VarChar(500)
+  tipo              String            @default("PERSONAL")
+  estadoModeracion  ModerationStatus  @default(PENDIENTE) @map("estado_moderacion")
+  likesCount        Int               @default(0) @map("likes_count")
+  comentariosCount  Int               @default(0) @map("comentarios_count")
+  esPrivada         Boolean           @default(false) @map("es_privada")
+  fechaSubida       DateTime          @default(now()) @map("fecha_subida")
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tournament   Tournament?   @relation(fields: [tournamentId], references: [id])
+  likes        Like[]
+  comentarios  Comentario[]
+  reportes     ReporteFoto[]
+  albumFotos   AlbumFoto[]
+  etiquetados  FotoJugador[]
+
+  @@map("fotos")
+}
+
+model FotoJugador {
+  id        String   @id @default(uuid())
+  fotoId    String   @map("foto_id")
+  jugadorId String   @map("jugador_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  foto Foto @relation(fields: [fotoId], references: [id], onDelete: Cascade)
+
+  @@unique([fotoId, jugadorId])
+  @@map("foto_jugadores")
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  fotoId    String   @map("foto_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  foto Foto @relation(fields: [fotoId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([fotoId, userId])
+  @@map("likes")
+}
+
+model Comentario {
+  id        String   @id @default(uuid())
+  fotoId    String   @map("foto_id")
+  userId    String   @map("user_id")
+  contenido String   @db.Text
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  foto Foto @relation(fields: [fotoId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("comentarios")
+}
+
+model Album {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  nombre      String
+  descripcion String?  @db.Text
+  portadaUrl  String?  @map("portada_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fotos AlbumFoto[]
+
+  @@map("albumes")
+}
+
+model AlbumFoto {
+  id      String @id @default(uuid())
+  albumId String @map("album_id")
+  fotoId  String @map("foto_id")
+  orden   Int
+
+  album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  foto  Foto  @relation(fields: [fotoId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, fotoId])
+  @@map("album_fotos")
+}
+
+model ReporteFoto {
+  id        String          @id @default(uuid())
+  fotoId    String          @map("foto_id")
+  userId    String          @map("user_id")
+  motivo    String
+  estado    SolicitudEstado @default(PENDIENTE)
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  foto Foto @relation(fields: [fotoId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reportes_fotos")
+}
+
+model FotoPerfilModeracion {
+  id            String           @id @default(uuid())
+  userId        String           @map("user_id")
+  fotoUrl       String           @map("foto_url")
+  estado        ModerationStatus @default(PENDIENTE)
+  motivoRechazo String?          @map("motivo_rechazo") @db.Text
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("fotos_perfil_moderacion")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 8: SUSCRIPCIONES Y PREMIUM
+// ═══════════════════════════════════════════════════════
+
+model PlanPremium {
+  id              String   @id @default(uuid())
+  nombre          String   @unique
+  tipo            PlanTipo
+  precioMensual   Decimal  @map("precio_mensual") @db.Decimal(10, 2)
+  precioAnual     Decimal  @map("precio_anual") @db.Decimal(10, 2)
+  caracteristicas String   @db.Text
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  suscripciones Suscripcion[]
+
+  @@map("planes_premium")
+}
+
+model Suscripcion {
+  id              String             @id @default(uuid())
+  userId          String             @map("user_id")
+  planId          String             @map("plan_id")
+  periodo         PeriodoSuscripcion
+  precio          Decimal            @db.Decimal(10, 2)
+  estado          SuscripcionEstado  @default(ACTIVA)
+  fechaInicio     DateTime           @map("fecha_inicio")
+  fechaFin        DateTime           @map("fecha_fin")
+  fechaRenovacion DateTime?          @map("fecha_renovacion")
+  autoRenovar     Boolean            @default(true) @map("auto_renovar")
+  metodoPagoId    String?            @map("metodo_pago_id")
+  cuponAplicado   String?            @map("cupon_aplicado")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan PlanPremium @relation(fields: [planId], references: [id])
+
+  @@map("suscripciones")
+}
+
+model Cupon {
+  id            String   @id @default(uuid())
+  codigo        String   @unique
+  tipo          String
+  valor         Decimal  @db.Decimal(10, 2)
+  fechaInicio   DateTime @map("fecha_inicio")
+  fechaExpiracion DateTime @map("fecha_expiracion")
+  limiteUsos    Int      @map("limite_usos")
+  usosActuales  Int      @default(0) @map("usos_actuales")
+  estado        String   @default("ACTIVO")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("cupones")
+}
+
+model Notificacion {
+  id        String            @id @default(uuid())
+  userId    String            @map("user_id")
+  tipo      TipoNotificacion
+  contenido String            @db.Text
+  leida     Boolean           @default(false)
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notificaciones")
+}
