@@ -5,7 +5,11 @@ nixPkgs = ['nodejs-18_x']
 cmds = ['npm install --legacy-peer-deps']
 
 [phases.build]
-cmds = ['npx prisma generate', 'npm run build']
+cmds = [
+  'npx prisma generate',
+  'npx nest build',
+  'ls -la dist/'
+]
 
 [start]
-cmd = 'npx prisma migrate deploy && npm run start:prod'
+cmd = 'npx prisma migrate deploy && node dist/main.js'
