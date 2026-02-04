@@ -25,6 +25,9 @@ let RolesGuard = class RolesGuard {
             return true;
         }
         const { user } = context.switchToHttp().getRequest();
+        if (user.roles?.includes('admin')) {
+            return true;
+        }
         return requiredRoles.some((role) => user.roles?.includes(role));
     }
 };
