@@ -14,6 +14,7 @@ import { SocialModule } from './social/social.module';
 import { FotosModule } from './fotos/fotos.module';
 import { NotificacionesModule } from './notificaciones/notificaciones.module';
 import { SuscripcionesModule } from './suscripciones/suscripciones.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { SuscripcionesModule } from './suscripciones/suscripciones.module';
     FotosModule,
     NotificacionesModule,
     SuscripcionesModule,
+    AdminModule,
   ],
   controllers: [AppController],
 })
