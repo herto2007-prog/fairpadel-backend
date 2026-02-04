@@ -23,6 +23,7 @@ const social_module_1 = require("./social/social.module");
 const fotos_module_1 = require("./fotos/fotos.module");
 const notificaciones_module_1 = require("./notificaciones/notificaciones.module");
 const suscripciones_module_1 = require("./suscripciones/suscripciones.module");
+const admin_module_1 = require("./admin/admin.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -45,6 +46,7 @@ exports.AppModule = AppModule = __decorate([
             fotos_module_1.FotosModule,
             notificaciones_module_1.NotificacionesModule,
             suscripciones_module_1.SuscripcionesModule,
+            admin_module_1.AdminModule,
         ],
         controllers: [app_controller_1.AppController],
     })
