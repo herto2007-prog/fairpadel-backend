@@ -2,6 +2,15 @@ import { UsersService } from './users.service';
 export declare class UsersController {
     private readonly usersService;
     constructor(usersService: UsersService);
+    getByDocumento(documento: string): Promise<{
+        id: string;
+        documento: string;
+        nombre: string;
+        apellido: string;
+        genero: import(".prisma/client").$Enums.Gender;
+        ciudad: string;
+        fotoUrl: string;
+    }>;
     obtenerPerfil(id: string): Promise<{
         id: string;
         nombre: string;

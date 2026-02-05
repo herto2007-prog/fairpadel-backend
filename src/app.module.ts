@@ -15,6 +15,7 @@ import { FotosModule } from './fotos/fotos.module';
 import { NotificacionesModule } from './notificaciones/notificaciones.module';
 import { SuscripcionesModule } from './suscripciones/suscripciones.module';
 import { AdminModule } from './admin/admin.module';
+import { SedesModule } from './sedes/sedes.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { AdminModule } from './admin/admin.module';
     NotificacionesModule,
     SuscripcionesModule,
     AdminModule,
+    SedesModule,
   ],
   controllers: [AppController],
 })

@@ -20,6 +20,21 @@ let UsersController = class UsersController {
     constructor(usersService) {
         this.usersService = usersService;
     }
+    async getByDocumento(documento) {
+        const user = await this.usersService.buscarPorDocumento(documento);
+        if (!user) {
+            throw new common_1.NotFoundException('Usuario no encontrado');
+        }
+        return {
+            id: user.id,
+            documento: user.documento,
+            nombre: user.nombre,
+            apellido: user.apellido,
+            genero: user.genero,
+            ciudad: user.ciudad,
+            fotoUrl: user.fotoUrl,
+        };
+    }
     obtenerPerfil(id) {
         return this.usersService.obtenerPerfilPublico(id);
     }
@@ -31,6 +46,13 @@ let UsersController = class UsersController {
     }
 };
 exports.UsersController = UsersController;
+__decorate([
+    (0, common_1.Get)('documento/:documento'),
+    __param(0, (0, common_1.Param)('documento')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getByDocumento", null);
 __decorate([
     (0, common_1.Get)(':id'),
     __param(0, (0, common_1.Param)('id')),

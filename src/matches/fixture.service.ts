@@ -22,9 +22,13 @@ export class FixtureService {
             category: true,
           },
         },
-        complejos: {
+        torneoCanchas: {
           include: {
-            canchas: true,
+            sedeCancha: {
+              include: {
+                sede: true,
+              },
+            },
             horarios: true,
           },
         },
@@ -61,7 +65,7 @@ export class FixtureService {
         tournamentId,
         categoriaRelacion.categoryId,
         inscripcionesCategoria,
-        tournament.complejos,
+        tournament.torneoCanchas,
       );
 
       fixtures.push(fixtureCategoria);
@@ -80,7 +84,7 @@ export class FixtureService {
     tournamentId: string,
     categoryId: string,
     inscripciones: any[],
-    complejos: any[],
+    torneoCanchas: any[],
   ) {
     // Obtener parejas confirmadas
     const parejas = inscripciones.map((i) => i.pareja);
@@ -120,9 +124,9 @@ export class FixtureService {
       }
     }
 
-    // Asignar canchas y horarios (si hay complejos configurados)
-    if (complejos.length > 0) {
-      await this.asignarCanchasYHorarios(partidos, complejos);
+    // Asignar canchas y horarios (si hay canchas de torneo configuradas)
+    if (torneoCanchas.length > 0) {
+      await this.asignarCanchasYHorarios(partidos, torneoCanchas);
     }
 
     // Generar partido de ubicación (3er y 4to lugar)
@@ -214,12 +218,13 @@ export class FixtureService {
     return newArray;
   }
 
-  private async asignarCanchasYHorarios(partidos: any[], complejos: any[]) {
-    // Obtener todas las canchas disponibles
-    const canchas = complejos.flatMap((c) => c.canchas);
-    const horarios = complejos.flatMap((c) => c.horarios);
+  private async asignarCanchasYHorarios(partidos: any[], torneoCanchas: any[]) {
+    // Obtener todos los horarios disponibles de las canchas del torneo
+    const horarios = torneoCanchas.flatMap((tc) =>
+      (tc.horarios || []).map((h) => ({ ...h, torneoCanchaId: tc.id })),
+    );
 
-    if (canchas.length === 0 || horarios.length === 0) {
+    if (torneoCanchas.length === 0 || horarios.length === 0) {
       return; // No hay canchas u horarios configurados
     }
 
@@ -240,12 +245,12 @@ export class FixtureService {
       }
 
       const horario = horarios[horarioIndex];
-      const cancha = canchas[canchaIndex];
+      const torneoCancha = torneoCanchas[canchaIndex];
 
       await this.prisma.match.update({
         where: { id: partido.id },
         data: {
-          canchaId: cancha.id,
+          torneoCanchaId: torneoCancha.id,
           fechaProgramada: horario.fecha,
           horaProgramada: horario.horaInicio,
           horaFinEstimada: this.calcularHoraFin(horario.horaInicio, 90), // 90 min por partido
@@ -254,7 +259,7 @@ export class FixtureService {
 
       // Rotar canchas
       canchaIndex++;
-      if (canchaIndex >= canchas.length) {
+      if (canchaIndex >= torneoCanchas.length) {
         canchaIndex = 0;
         horarioIndex++;
       }
@@ -323,9 +328,13 @@ export class FixtureService {
             jugador2: true,
           },
         },
-        cancha: {
+        torneoCancha: {
           include: {
-            complejo: true,
+            sedeCancha: {
+              include: {
+                sede: true,
+              },
+            },
           },
         },
       },

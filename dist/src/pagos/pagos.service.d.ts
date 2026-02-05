@@ -25,16 +25,17 @@ export declare class PagosService {
                 ciudad: string;
                 estado: import(".prisma/client").$Enums.TournamentStatus;
                 updatedAt: Date;
+                sede: string | null;
                 pais: string;
                 region: string;
                 fechaInicio: Date;
                 fechaFin: Date;
                 flyerUrl: string;
                 costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-                sede: string | null;
                 direccion: string | null;
                 mapsUrl: string | null;
                 fechaLimiteInscr: Date;
+                sedeId: string | null;
                 organizadorId: string;
             };
             pareja: {

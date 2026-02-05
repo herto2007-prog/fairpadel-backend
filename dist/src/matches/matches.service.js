@@ -40,9 +40,13 @@ let MatchesService = class MatchesService {
                         jugador2: true,
                     },
                 },
-                cancha: {
+                torneoCancha: {
                     include: {
-                        complejo: true,
+                        sedeCancha: {
+                            include: {
+                                sede: true,
+                            },
+                        },
                     },
                 },
             },
@@ -169,7 +173,7 @@ let MatchesService = class MatchesService {
             data: {
                 fechaProgramada: new Date(data.fechaProgramada),
                 horaProgramada: data.horaProgramada,
-                canchaId: data.canchaId || match.canchaId,
+                torneoCanchaId: data.torneoCanchaId || match.torneoCanchaId,
             },
         });
     }
@@ -193,9 +197,13 @@ let MatchesService = class MatchesService {
                         jugador2: true,
                     },
                 },
-                cancha: {
+                torneoCancha: {
                     include: {
-                        complejo: true,
+                        sedeCancha: {
+                            include: {
+                                sede: true,
+                            },
+                        },
                     },
                 },
             },

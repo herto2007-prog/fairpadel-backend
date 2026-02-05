@@ -38,16 +38,17 @@ export declare class TournamentsController {
         ciudad: string;
         estado: import(".prisma/client").$Enums.TournamentStatus;
         updatedAt: Date;
+        sede: string | null;
         pais: string;
         region: string;
         fechaInicio: Date;
         fechaFin: Date;
         flyerUrl: string;
         costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-        sede: string | null;
         direccion: string | null;
         mapsUrl: string | null;
         fechaLimiteInscr: Date;
+        sedeId: string | null;
         organizadorId: string;
     }>;
     findAll(pais?: string, ciudad?: string, estado?: string): Promise<({
@@ -84,16 +85,17 @@ export declare class TournamentsController {
         ciudad: string;
         estado: import(".prisma/client").$Enums.TournamentStatus;
         updatedAt: Date;
+        sede: string | null;
         pais: string;
         region: string;
         fechaInicio: Date;
         fechaFin: Date;
         flyerUrl: string;
         costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-        sede: string | null;
         direccion: string | null;
         mapsUrl: string | null;
         fechaLimiteInscr: Date;
+        sedeId: string | null;
         organizadorId: string;
     })[]>;
     obtenerCategorias(): Promise<{
@@ -132,16 +134,17 @@ export declare class TournamentsController {
         ciudad: string;
         estado: import(".prisma/client").$Enums.TournamentStatus;
         updatedAt: Date;
+        sede: string | null;
         pais: string;
         region: string;
         fechaInicio: Date;
         fechaFin: Date;
         flyerUrl: string;
         costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-        sede: string | null;
         direccion: string | null;
         mapsUrl: string | null;
         fechaLimiteInscr: Date;
+        sedeId: string | null;
         organizadorId: string;
     })[]>;
     findOne(id: string): Promise<{
@@ -180,16 +183,17 @@ export declare class TournamentsController {
         ciudad: string;
         estado: import(".prisma/client").$Enums.TournamentStatus;
         updatedAt: Date;
+        sede: string | null;
         pais: string;
         region: string;
         fechaInicio: Date;
         fechaFin: Date;
         flyerUrl: string;
         costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-        sede: string | null;
         direccion: string | null;
         mapsUrl: string | null;
         fechaLimiteInscr: Date;
+        sedeId: string | null;
         organizadorId: string;
     }>;
     update(id: string, updateTournamentDto: UpdateTournamentDto, req: any): Promise<{
@@ -226,16 +230,17 @@ export declare class TournamentsController {
         ciudad: string;
         estado: import(".prisma/client").$Enums.TournamentStatus;
         updatedAt: Date;
+        sede: string | null;
         pais: string;
         region: string;
         fechaInicio: Date;
         fechaFin: Date;
         flyerUrl: string;
         costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-        sede: string | null;
         direccion: string | null;
         mapsUrl: string | null;
         fechaLimiteInscr: Date;
+        sedeId: string | null;
         organizadorId: string;
     }>;
     publish(id: string, req: any): Promise<{
@@ -267,16 +272,17 @@ export declare class TournamentsController {
         ciudad: string;
         estado: import(".prisma/client").$Enums.TournamentStatus;
         updatedAt: Date;
+        sede: string | null;
         pais: string;
         region: string;
         fechaInicio: Date;
         fechaFin: Date;
         flyerUrl: string;
         costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-        sede: string | null;
         direccion: string | null;
         mapsUrl: string | null;
         fechaLimiteInscr: Date;
+        sedeId: string | null;
         organizadorId: string;
     }>;
     remove(id: string, req: any): Promise<{

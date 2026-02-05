@@ -34,9 +34,13 @@ export class MatchesService {
             jugador2: true,
           },
         },
-        cancha: {
+        torneoCancha: {
           include: {
-            complejo: true,
+            sedeCancha: {
+              include: {
+                sede: true,
+              },
+            },
           },
         },
       },
@@ -217,7 +221,7 @@ export class MatchesService {
       data: {
         fechaProgramada: new Date(data.fechaProgramada),
         horaProgramada: data.horaProgramada,
-        canchaId: data.canchaId || match.canchaId,
+        torneoCanchaId: data.torneoCanchaId || match.torneoCanchaId,
       },
     });
   }
@@ -242,9 +246,13 @@ export class MatchesService {
             jugador2: true,
           },
         },
-        cancha: {
+        torneoCancha: {
           include: {
-            complejo: true,
+            sedeCancha: {
+              include: {
+                sede: true,
+              },
+            },
           },
         },
       },

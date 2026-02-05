@@ -122,6 +122,12 @@ enum SuscripcionEstado {
   PENDIENTE_PAGO
 }
 
+enum TipoCancha {
+  INDOOR
+  OUTDOOR
+  SEMI_TECHADA
+}
+
 // ═══════════════════════════════════════════════════════
 // MÓDULO 1: AUTENTICACIÓN Y USUARIOS
 // ═══════════════════════════════════════════════════════
@@ -264,6 +270,107 @@ model Category {
   @@map("categories")
 }
 
+// ═══════════════════════════════════════════════════════
+// NUEVO SISTEMA DE SEDES Y CANCHAS (Reutilizable)
+// ═══════════════════════════════════════════════════════
+
+// Sede/Club - Creada por ADMIN, reutilizable en múltiples torneos
+model Sede {
+  id                String      @id @default(uuid())
+  nombre            String
+  ciudad            String
+  direccion         String?
+  mapsUrl           String?     @map("maps_url")
+  telefono          String?
+  logoUrl           String?     @map("logo_url")
+  imagenFondo       String?     @map("imagen_fondo")
+  horarioAtencion   String?     @map("horario_atencion")
+  contactoEncargado String?     @map("contacto_encargado")
+  canvasWidth       Int         @default(800) @map("canvas_width")
+  canvasHeight      Int         @default(600) @map("canvas_height")
+  activo            Boolean     @default(true)
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  // Relaciones
+  canchas           SedeCancha[]
+  torneosPrincipal  Tournament[]      @relation("SedePrincipal")
+  torneoSedes       TorneoSede[]
+
+  @@map("sedes")
+}
+
+// Canchas físicas de una Sede - Con posición visual para el canvas
+model SedeCancha {
+  id            String      @id @default(uuid())
+  sedeId        String      @map("sede_id")
+  nombre        String
+  tipo          TipoCancha  @default(OUTDOOR)
+  posicionX     Int         @default(0) @map("posicion_x")
+  posicionY     Int         @default(0) @map("posicion_y")
+  ancho         Int         @default(100)
+  alto          Int         @default(150)
+  rotacion      Int         @default(0)
+  imagenUrl     String?     @map("imagen_url")
+  activa        Boolean     @default(true)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  // Relaciones
+  sede            Sede              @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+  torneoCanchas   TorneoCancha[]
+
+  @@map("sede_canchas")
+}
+
+// Sedes adicionales vinculadas a un torneo
+model TorneoSede {
+  id            String      @id @default(uuid())
+  tournamentId  String      @map("tournament_id")
+  sedeId        String      @map("sede_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  tournament    Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  sede          Sede        @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, sedeId])
+  @@map("torneo_sedes")
+}
+
+// Canchas seleccionadas para un torneo específico
+model TorneoCancha {
+  id            String      @id @default(uuid())
+  tournamentId  String      @map("tournament_id")
+  sedeCanchaId  String      @map("sede_cancha_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  tournament    Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  sedeCancha    SedeCancha            @relation(fields: [sedeCanchaId], references: [id], onDelete: Cascade)
+  horarios      TorneoCanchaHorario[]
+  partidos      Match[]
+
+  @@unique([tournamentId, sedeCanchaId])
+  @@map("torneo_canchas")
+}
+
+// Horarios disponibles por cancha por día en un torneo
+model TorneoCanchaHorario {
+  id              String      @id @default(uuid())
+  torneoCanchaId  String      @map("torneo_cancha_id")
+  fecha           DateTime    @db.Date
+  horaInicio      String      @map("hora_inicio")
+  horaFin         String      @map("hora_fin")
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  torneoCancha    TorneoCancha @relation(fields: [torneoCanchaId], references: [id], onDelete: Cascade)
+
+  @@map("torneo_cancha_horarios")
+}
+
+// ═══════════════════════════════════════════════════════
+// TORNEOS (Actualizado con nuevo sistema de Sedes)
+// ═══════════════════════════════════════════════════════
+
 model Tournament {
   id                  String            @id @default(uuid())
   nombre              String
@@ -277,23 +384,29 @@ model Tournament {
   flyerUrl            String            @map("flyer_url")
   estado              TournamentStatus  @default(BORRADOR)
   costoInscripcion    Decimal           @map("costo_inscripcion") @db.Decimal(10, 2)
+  // Campos legacy (se mantienen por compatibilidad, pero se usará sedeId)
   sede                String?
   direccion           String?
   mapsUrl             String?           @map("maps_url")
+  // Nueva relación con Sede
+  sedeId              String?           @map("sede_id")
   organizadorId       String            @map("organizador_id")
   createdAt           DateTime          @default(now()) @map("created_at")
   updatedAt           DateTime          @updatedAt @map("updated_at")
 
-  organizador     User                  @relation("OrganizadorTorneos", fields: [organizadorId], references: [id])
-  categorias      TournamentCategory[]
-  modalidades     TournamentModalidad[]
-  complejos       Complejo[]
-  inscripciones   Inscripcion[]
-  partidos        Match[]
-  fotos           Foto[]
-  sponsors        TournamentSponsor[]
-  premios         TournamentPremio[]
-  historialPuntos HistorialPuntos[]
+  // Relaciones
+  organizador       User                  @relation("OrganizadorTorneos", fields: [organizadorId], references: [id])
+  sedePrincipal     Sede?                 @relation("SedePrincipal", fields: [sedeId], references: [id])
+  categorias        TournamentCategory[]
+  modalidades       TournamentModalidad[]
+  torneoSedes       TorneoSede[]
+  torneoCanchas     TorneoCancha[]
+  inscripciones     Inscripcion[]
+  partidos          Match[]
+  fotos             Foto[]
+  sponsors          TournamentSponsor[]
+  premios           TournamentPremio[]
+  historialPuntos   HistorialPuntos[]
 
   @@map("tournaments")
 }
@@ -350,49 +463,6 @@ model TournamentPremio {
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   @@map("tournament_premios")
-}
-
-model Complejo {
-  id                String   @id @default(uuid())
-  tournamentId      String   @map("tournament_id")
-  nombre            String
-  direccion         String?
-  mapsUrl           String?  @map("maps_url")
-  esSedePrincipal   Boolean  @default(false) @map("es_sede_principal")
-  createdAt         DateTime @default(now()) @map("created_at")
-
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  canchas    Cancha[]
-  horarios   HorarioCompetencia[]
-
-  @@map("complejos")
-}
-
-model Cancha {
-  id         String   @id @default(uuid())
-  complejoId String   @map("complejo_id")
-  nombre     String
-  tipo       String
-  estado     String   @default("DISPONIBLE")
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  complejo Complejo @relation(fields: [complejoId], references: [id], onDelete: Cascade)
-  partidos Match[]
-
-  @@map("canchas")
-}
-
-model HorarioCompetencia {
-  id         String   @id @default(uuid())
-  complejoId String   @map("complejo_id")
-  fecha      DateTime @db.Date
-  horaInicio String   @map("hora_inicio")
-  horaFin    String   @map("hora_fin")
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  complejo Complejo @relation(fields: [complejoId], references: [id], onDelete: Cascade)
-
-  @@map("horarios_competencia")
 }
 
 // ═══════════════════════════════════════════════════════
@@ -479,7 +549,8 @@ model Match {
   numeroRonda        Int          @map("numero_ronda")
   pareja1Id          String?      @map("pareja1_id")
   pareja2Id          String?      @map("pareja2_id")
-  canchaId           String?      @map("cancha_id")
+  // Nueva relación con TorneoCancha
+  torneoCanchaId     String?      @map("torneo_cancha_id")
   fechaProgramada    DateTime?    @map("fecha_programada") @db.Date
   horaProgramada     String?      @map("hora_programada")
   horaFinEstimada    String?      @map("hora_fin_estimada")
@@ -497,13 +568,13 @@ model Match {
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 
-  tournament       Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  category         Category   @relation(fields: [categoryId], references: [id])
-  pareja1          Pareja?    @relation("Pareja1Matches", fields: [pareja1Id], references: [id])
-  pareja2          Pareja?    @relation("Pareja2Matches", fields: [pareja2Id], references: [id])
-  parejaGanadora   Pareja?    @relation("ParejaGanadora", fields: [parejaGanadoraId], references: [id])
-  parejaPerdedora  Pareja?    @relation("ParejaPerdedora", fields: [parejaPerdedoraId], references: [id])
-  cancha           Cancha?    @relation(fields: [canchaId], references: [id])
+  tournament       Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category         Category      @relation(fields: [categoryId], references: [id])
+  pareja1          Pareja?       @relation("Pareja1Matches", fields: [pareja1Id], references: [id])
+  pareja2          Pareja?       @relation("Pareja2Matches", fields: [pareja2Id], references: [id])
+  parejaGanadora   Pareja?       @relation("ParejaGanadora", fields: [parejaGanadoraId], references: [id])
+  parejaPerdedora  Pareja?       @relation("ParejaPerdedora", fields: [parejaPerdedoraId], references: [id])
+  torneoCancha     TorneoCancha? @relation(fields: [torneoCanchaId], references: [id])
 
   @@map("matches")
 }
@@ -833,16 +904,16 @@ model Suscripcion {
 }
 
 model Cupon {
-  id            String   @id @default(uuid())
-  codigo        String   @unique
-  tipo          String
-  valor         Decimal  @db.Decimal(10, 2)
-  fechaInicio   DateTime @map("fecha_inicio")
+  id              String   @id @default(uuid())
+  codigo          String   @unique
+  tipo            String
+  valor           Decimal  @db.Decimal(10, 2)
+  fechaInicio     DateTime @map("fecha_inicio")
   fechaExpiracion DateTime @map("fecha_expiracion")
-  limiteUsos    Int      @map("limite_usos")
-  usosActuales  Int      @default(0) @map("usos_actuales")
-  estado        String   @default("ACTIVO")
-  createdAt     DateTime @default(now()) @map("created_at")
+  limiteUsos      Int      @map("limite_usos")
+  usosActuales    Int      @default(0) @map("usos_actuales")
+  estado          String   @default("ACTIVO")
+  createdAt       DateTime @default(now()) @map("created_at")
 
   @@map("cupones")
 }

@@ -19,6 +19,46 @@ export declare class MatchesController {
             tipo: import(".prisma/client").$Enums.Gender;
             orden: number;
         };
+        torneoCancha: {
+            sedeCancha: {
+                sede: {
+                    id: string;
+                    nombre: string;
+                    createdAt: Date;
+                    telefono: string | null;
+                    ciudad: string;
+                    updatedAt: Date;
+                    activo: boolean;
+                    direccion: string | null;
+                    mapsUrl: string | null;
+                    logoUrl: string | null;
+                    imagenFondo: string | null;
+                    horarioAtencion: string | null;
+                    contactoEncargado: string | null;
+                    canvasWidth: number;
+                    canvasHeight: number;
+                };
+            } & {
+                id: string;
+                nombre: string;
+                createdAt: Date;
+                tipo: import(".prisma/client").$Enums.TipoCancha;
+                updatedAt: Date;
+                sedeId: string;
+                posicionX: number;
+                posicionY: number;
+                ancho: number;
+                alto: number;
+                rotacion: number;
+                imagenUrl: string | null;
+                activa: boolean;
+            };
+        } & {
+            id: string;
+            createdAt: Date;
+            tournamentId: string;
+            sedeCanchaId: string;
+        };
         tournament: {
             id: string;
             nombre: string;
@@ -27,35 +67,18 @@ export declare class MatchesController {
             ciudad: string;
             estado: import(".prisma/client").$Enums.TournamentStatus;
             updatedAt: Date;
+            sede: string | null;
             pais: string;
             region: string;
             fechaInicio: Date;
             fechaFin: Date;
             flyerUrl: string;
             costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-            sede: string | null;
             direccion: string | null;
             mapsUrl: string | null;
             fechaLimiteInscr: Date;
+            sedeId: string | null;
             organizadorId: string;
-        };
-        cancha: {
-            complejo: {
-                id: string;
-                nombre: string;
-                createdAt: Date;
-                direccion: string | null;
-                mapsUrl: string | null;
-                tournamentId: string;
-                esSedePrincipal: boolean;
-            };
-        } & {
-            id: string;
-            nombre: string;
-            createdAt: Date;
-            tipo: string;
-            estado: string;
-            complejoId: string;
         };
         pareja1: {
             jugador1: {
@@ -223,7 +246,7 @@ export declare class MatchesController {
         numeroRonda: number;
         pareja1Id: string | null;
         pareja2Id: string | null;
-        canchaId: string | null;
+        torneoCanchaId: string | null;
         fechaProgramada: Date | null;
         horaProgramada: string | null;
         horaFinEstimada: string | null;
@@ -238,6 +261,46 @@ export declare class MatchesController {
             tipo: import(".prisma/client").$Enums.Gender;
             orden: number;
         };
+        torneoCancha: {
+            sedeCancha: {
+                sede: {
+                    id: string;
+                    nombre: string;
+                    createdAt: Date;
+                    telefono: string | null;
+                    ciudad: string;
+                    updatedAt: Date;
+                    activo: boolean;
+                    direccion: string | null;
+                    mapsUrl: string | null;
+                    logoUrl: string | null;
+                    imagenFondo: string | null;
+                    horarioAtencion: string | null;
+                    contactoEncargado: string | null;
+                    canvasWidth: number;
+                    canvasHeight: number;
+                };
+            } & {
+                id: string;
+                nombre: string;
+                createdAt: Date;
+                tipo: import(".prisma/client").$Enums.TipoCancha;
+                updatedAt: Date;
+                sedeId: string;
+                posicionX: number;
+                posicionY: number;
+                ancho: number;
+                alto: number;
+                rotacion: number;
+                imagenUrl: string | null;
+                activa: boolean;
+            };
+        } & {
+            id: string;
+            createdAt: Date;
+            tournamentId: string;
+            sedeCanchaId: string;
+        };
         tournament: {
             id: string;
             nombre: string;
@@ -246,35 +309,18 @@ export declare class MatchesController {
             ciudad: string;
             estado: import(".prisma/client").$Enums.TournamentStatus;
             updatedAt: Date;
+            sede: string | null;
             pais: string;
             region: string;
             fechaInicio: Date;
             fechaFin: Date;
             flyerUrl: string;
             costoInscripcion: import("@prisma/client/runtime/library").Decimal;
-            sede: string | null;
             direccion: string | null;
             mapsUrl: string | null;
             fechaLimiteInscr: Date;
+            sedeId: string | null;
             organizadorId: string;
-        };
-        cancha: {
-            complejo: {
-                id: string;
-                nombre: string;
-                createdAt: Date;
-                direccion: string | null;
-                mapsUrl: string | null;
-                tournamentId: string;
-                esSedePrincipal: boolean;
-            };
-        } & {
-            id: string;
-            nombre: string;
-            createdAt: Date;
-            tipo: string;
-            estado: string;
-            complejoId: string;
         };
         pareja1: {
             jugador1: {
@@ -442,7 +488,7 @@ export declare class MatchesController {
         numeroRonda: number;
         pareja1Id: string | null;
         pareja2Id: string | null;
-        canchaId: string | null;
+        torneoCanchaId: string | null;
         fechaProgramada: Date | null;
         horaProgramada: string | null;
         horaFinEstimada: string | null;
@@ -472,7 +518,7 @@ export declare class MatchesController {
         numeroRonda: number;
         pareja1Id: string | null;
         pareja2Id: string | null;
-        canchaId: string | null;
+        torneoCanchaId: string | null;
         fechaProgramada: Date | null;
         horaProgramada: string | null;
         horaFinEstimada: string | null;
@@ -487,23 +533,45 @@ export declare class MatchesController {
             tipo: import(".prisma/client").$Enums.Gender;
             orden: number;
         };
-        cancha: {
-            complejo: {
+        torneoCancha: {
+            sedeCancha: {
+                sede: {
+                    id: string;
+                    nombre: string;
+                    createdAt: Date;
+                    telefono: string | null;
+                    ciudad: string;
+                    updatedAt: Date;
+                    activo: boolean;
+                    direccion: string | null;
+                    mapsUrl: string | null;
+                    logoUrl: string | null;
+                    imagenFondo: string | null;
+                    horarioAtencion: string | null;
+                    contactoEncargado: string | null;
+                    canvasWidth: number;
+                    canvasHeight: number;
+                };
+            } & {
                 id: string;
                 nombre: string;
                 createdAt: Date;
-                direccion: string | null;
-                mapsUrl: string | null;
-                tournamentId: string;
-                esSedePrincipal: boolean;
+                tipo: import(".prisma/client").$Enums.TipoCancha;
+                updatedAt: Date;
+                sedeId: string;
+                posicionX: number;
+                posicionY: number;
+                ancho: number;
+                alto: number;
+                rotacion: number;
+                imagenUrl: string | null;
+                activa: boolean;
             };
         } & {
             id: string;
-            nombre: string;
             createdAt: Date;
-            tipo: string;
-            estado: string;
-            complejoId: string;
+            tournamentId: string;
+            sedeCanchaId: string;
         };
         pareja1: {
             jugador1: {
@@ -622,7 +690,7 @@ export declare class MatchesController {
         numeroRonda: number;
         pareja1Id: string | null;
         pareja2Id: string | null;
-        canchaId: string | null;
+        torneoCanchaId: string | null;
         fechaProgramada: Date | null;
         horaProgramada: string | null;
         horaFinEstimada: string | null;

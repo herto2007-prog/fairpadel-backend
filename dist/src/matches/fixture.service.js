@@ -32,9 +32,13 @@ let FixtureService = class FixtureService {
                         category: true,
                     },
                 },
-                complejos: {
+                torneoCanchas: {
                     include: {
-                        canchas: true,
+                        sedeCancha: {
+                            include: {
+                                sede: true,
+                            },
+                        },
                         horarios: true,
                     },
                 },
@@ -56,7 +60,7 @@ let FixtureService = class FixtureService {
             if (inscripcionesCategoria.length === 0) {
                 continue;
             }
-            const fixtureCategoria = await this.generarFixturePorCategoria(tournamentId, categoriaRelacion.categoryId, inscripcionesCategoria, tournament.complejos);
+            const fixtureCategoria = await this.generarFixturePorCategoria(tournamentId, categoriaRelacion.categoryId, inscripcionesCategoria, tournament.torneoCanchas);
             fixtures.push(fixtureCategoria);
         }
         return {
@@ -65,7 +69,7 @@ let FixtureService = class FixtureService {
             message: 'Fixture generado exitosamente',
         };
     }
-    async generarFixturePorCategoria(tournamentId, categoryId, inscripciones, complejos) {
+    async generarFixturePorCategoria(tournamentId, categoryId, inscripciones, torneoCanchas) {
         const parejas = inscripciones.map((i) => i.pareja);
         const numParejas = parejas.length;
         if (numParejas === 0) {
@@ -93,8 +97,8 @@ let FixtureService = class FixtureService {
                 numeroRonda++;
             }
         }
-        if (complejos.length > 0) {
-            await this.asignarCanchasYHorarios(partidos, complejos);
+        if (torneoCanchas.length > 0) {
+            await this.asignarCanchasYHorarios(partidos, torneoCanchas);
         }
         await this.generarPartidoUbicacion(tournamentId, categoryId, partidos);
         return {
@@ -162,10 +166,9 @@ let FixtureService = class FixtureService {
         }
         return newArray;
     }
-    async asignarCanchasYHorarios(partidos, complejos) {
-        const canchas = complejos.flatMap((c) => c.canchas);
-        const horarios = complejos.flatMap((c) => c.horarios);
-        if (canchas.length === 0 || horarios.length === 0) {
+    async asignarCanchasYHorarios(partidos, torneoCanchas) {
+        const horarios = torneoCanchas.flatMap((tc) => (tc.horarios || []).map((h) => ({ ...h, torneoCanchaId: tc.id })));
+        if (torneoCanchas.length === 0 || horarios.length === 0) {
             return;
         }
         horarios.sort((a, b) => {
@@ -180,18 +183,18 @@ let FixtureService = class FixtureService {
                 break;
             }
             const horario = horarios[horarioIndex];
-            const cancha = canchas[canchaIndex];
+            const torneoCancha = torneoCanchas[canchaIndex];
             await this.prisma.match.update({
                 where: { id: partido.id },
                 data: {
-                    canchaId: cancha.id,
+                    torneoCanchaId: torneoCancha.id,
                     fechaProgramada: horario.fecha,
                     horaProgramada: horario.horaInicio,
                     horaFinEstimada: this.calcularHoraFin(horario.horaInicio, 90),
                 },
             });
             canchaIndex++;
-            if (canchaIndex >= canchas.length) {
+            if (canchaIndex >= torneoCanchas.length) {
                 canchaIndex = 0;
                 horarioIndex++;
             }
@@ -248,9 +251,13 @@ let FixtureService = class FixtureService {
                         jugador2: true,
                     },
                 },
-                cancha: {
+                torneoCancha: {
                     include: {
-                        complejo: true,
+                        sedeCancha: {
+                            include: {
+                                sede: true,
+                            },
+                        },
                     },
                 },
             },
