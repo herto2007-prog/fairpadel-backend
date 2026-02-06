@@ -7,6 +7,7 @@ import {
   Min,
   Max,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateSedeDto {
@@ -26,6 +27,7 @@ export class UpdateSedeDto {
   direccion?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.mapsUrl !== '' && o.mapsUrl != null)
   @IsUrl()
   mapsUrl?: string;
 
@@ -35,10 +37,12 @@ export class UpdateSedeDto {
   telefono?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.logoUrl !== '' && o.logoUrl != null)
   @IsUrl()
   logoUrl?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.imagenFondo !== '' && o.imagenFondo != null)
   @IsUrl()
   imagenFondo?: string;
 

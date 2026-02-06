@@ -2,11 +2,11 @@ import {
   IsString,
   IsOptional,
   IsInt,
-  IsBoolean,
   IsUrl,
   Min,
   Max,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateSedeDto {
@@ -24,6 +24,7 @@ export class CreateSedeDto {
   direccion?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.mapsUrl !== '' && o.mapsUrl != null)
   @IsUrl()
   mapsUrl?: string;
 
@@ -33,10 +34,12 @@ export class CreateSedeDto {
   telefono?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.logoUrl !== '' && o.logoUrl != null)
   @IsUrl()
   logoUrl?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.imagenFondo !== '' && o.imagenFondo != null)
   @IsUrl()
   imagenFondo?: string;
 

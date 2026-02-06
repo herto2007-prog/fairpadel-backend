@@ -7,6 +7,7 @@ import {
   Min,
   Max,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { TipoCancha } from '@prisma/client';
 
@@ -50,6 +51,7 @@ export class CreateSedeCanchaDto {
   rotacion?: number;
 
   @IsOptional()
+  @ValidateIf((o) => o.imagenUrl !== '' && o.imagenUrl != null)
   @IsUrl()
   imagenUrl?: string;
 }
