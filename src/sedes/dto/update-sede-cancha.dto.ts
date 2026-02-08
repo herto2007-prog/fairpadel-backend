@@ -9,9 +9,12 @@ import {
   Min,
   Max,
   MaxLength,
-  ValidateIf,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { TipoCancha } from '@prisma/client';
+
+const EmptyToUndefined = () =>
+  Transform(({ value }) => (value === '' ? undefined : value));
 
 export class UpdateSedeCanchaDto {
   @IsOptional()
@@ -19,6 +22,7 @@ export class UpdateSedeCanchaDto {
   id?: string;
 
   @IsOptional()
+  @EmptyToUndefined()
   @IsString()
   @MaxLength(100)
   nombre?: string;
@@ -58,7 +62,7 @@ export class UpdateSedeCanchaDto {
   rotacion?: number;
 
   @IsOptional()
-  @ValidateIf((o) => o.imagenUrl !== '' && o.imagenUrl != null)
+  @EmptyToUndefined()
   @IsUrl()
   imagenUrl?: string;
 

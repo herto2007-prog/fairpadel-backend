@@ -7,51 +7,60 @@ import {
   Min,
   Max,
   MaxLength,
-  ValidateIf,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+
+const EmptyToUndefined = () =>
+  Transform(({ value }) => (value === '' ? undefined : value));
 
 export class UpdateSedeDto {
   @IsOptional()
+  @EmptyToUndefined()
   @IsString()
   @MaxLength(200)
   nombre?: string;
 
   @IsOptional()
+  @EmptyToUndefined()
   @IsString()
   @MaxLength(100)
   ciudad?: string;
 
   @IsOptional()
+  @EmptyToUndefined()
   @IsString()
   @MaxLength(300)
   direccion?: string;
 
   @IsOptional()
-  @ValidateIf((o) => o.mapsUrl !== '' && o.mapsUrl != null)
+  @EmptyToUndefined()
   @IsUrl()
   mapsUrl?: string;
 
   @IsOptional()
+  @EmptyToUndefined()
   @IsString()
   @MaxLength(20)
   telefono?: string;
 
   @IsOptional()
-  @ValidateIf((o) => o.logoUrl !== '' && o.logoUrl != null)
+  @EmptyToUndefined()
   @IsUrl()
   logoUrl?: string;
 
   @IsOptional()
-  @ValidateIf((o) => o.imagenFondo !== '' && o.imagenFondo != null)
+  @EmptyToUndefined()
   @IsUrl()
   imagenFondo?: string;
 
   @IsOptional()
+  @EmptyToUndefined()
   @IsString()
   @MaxLength(200)
   horarioAtencion?: string;
 
   @IsOptional()
+  @EmptyToUndefined()
   @IsString()
   @MaxLength(200)
   contactoEncargado?: string;
