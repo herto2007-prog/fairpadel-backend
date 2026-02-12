@@ -357,18 +357,20 @@ export class SedesService {
         );
       }
 
+      const horariosData = (canchaConfig.horarios || []).map((h) => ({
+        fecha: new Date(h.fecha),
+        horaInicio: h.horaInicio,
+        horaFin: h.horaFin,
+      }));
+
       // Crear TorneoCancha con sus horarios
       const torneoCancha = await this.prisma.torneoCancha.create({
         data: {
           tournamentId,
           sedeCanchaId: canchaConfig.sedeCanchaId,
-          horarios: {
-            create: canchaConfig.horarios.map((h) => ({
-              fecha: new Date(h.fecha),
-              horaInicio: h.horaInicio,
-              horaFin: h.horaFin,
-            })),
-          },
+          ...(horariosData.length > 0
+            ? { horarios: { create: horariosData } }
+            : {}),
         },
         include: {
           sedeCancha: {
@@ -390,7 +392,7 @@ export class SedesService {
 
     return {
       message: 'Configuración de canchas guardada exitosamente',
-      torneoCanchas,
+      canchasConfiguradas: torneoCanchas,
     };
   }
 

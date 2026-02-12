@@ -3,8 +3,8 @@ import {
   IsString,
   IsUUID,
   ValidateNested,
-  ArrayMinSize,
   IsDateString,
+  IsOptional,
   Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -33,7 +33,7 @@ export class CanchaConfigDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => HorarioDto)
-  @ArrayMinSize(1)
+  @IsOptional()
   horarios: HorarioDto[];
 }
 
@@ -41,6 +41,5 @@ export class ConfigurarTorneoCanchasDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CanchaConfigDto)
-  @ArrayMinSize(1)
   canchas: CanchaConfigDto[];
 }
