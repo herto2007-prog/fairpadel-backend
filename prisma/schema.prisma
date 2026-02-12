@@ -670,6 +670,17 @@ model ConfiguracionPuntos {
   @@map("configuracion_puntos")
 }
 
+model ConfiguracionSistema {
+  id        String   @id @default(uuid())
+  clave     String   @unique
+  valor     String
+  descripcion String? @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("configuracion_sistema")
+}
+
 // ═══════════════════════════════════════════════════════
 // MÓDULO 6: SOCIAL
 // ═══════════════════════════════════════════════════════

@@ -214,6 +214,26 @@ async function main() {
 
   console.log('✅ Logros creados');
 
+  // 7. Configuración del sistema
+  console.log('📝 Creando configuración del sistema...');
+  const configuraciones = [
+    {
+      clave: 'COMISION_INSCRIPCION',
+      valor: '5',
+      descripcion: 'Porcentaje de comisión que cobra la plataforma por cada inscripción a un torneo',
+    },
+  ];
+
+  for (const config of configuraciones) {
+    await prisma.configuracionSistema.upsert({
+      where: { clave: config.clave },
+      update: {},
+      create: config,
+    });
+  }
+
+  console.log('✅ Configuración del sistema creada');
+
   console.log('🎉 Seed completado exitosamente!');
 }
 

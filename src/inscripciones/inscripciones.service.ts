@@ -141,9 +141,17 @@ export class InscripcionesService {
       return inscripcion;
     }
 
+    // Obtener porcentaje de comisión desde configuración del sistema
+    const configComision = await this.prisma.configuracionSistema.findUnique({
+      where: { clave: 'COMISION_INSCRIPCION' },
+    });
+    const porcentajeComision = configComision
+      ? parseFloat(configComision.valor) / 100
+      : 0.05; // Fallback 5% si no existe config
+
     // Crear registro de pago pendiente
-    const comision = tournament.costoInscripcion.toNumber() * 0.05; // 5% de comisión
     const monto = tournament.costoInscripcion.toNumber();
+    const comision = monto * porcentajeComision;
 
     await this.prisma.pago.create({
       data: {

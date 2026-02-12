@@ -58,6 +58,11 @@ export class AdminController {
     return this.adminService.rechazarSolicitudOrganizador(id, body.motivo);
   }
 
+  @Post('promover-organizador')
+  promoverOrganizador(@Body() body: { documento: string }) {
+    return this.adminService.promoverOrganizadorPorDocumento(body.documento);
+  }
+
   // ============ MODERACIÓN FOTOS ============
   @Get('fotos-moderacion')
   obtenerFotosModeracion() {
@@ -152,6 +157,20 @@ export class AdminController {
     @Body() body: { puntosBase: number; multiplicador: number },
   ) {
     return this.adminService.actualizarConfiguracionPuntos(id, body);
+  }
+
+  // ============ CONFIGURACIÓN SISTEMA ============
+  @Get('configuracion/sistema')
+  obtenerConfiguracionSistema() {
+    return this.adminService.obtenerConfiguracionSistema();
+  }
+
+  @Put('configuracion/sistema/:clave')
+  actualizarConfiguracionSistema(
+    @Param('clave') clave: string,
+    @Body() body: { valor: string },
+  ) {
+    return this.adminService.actualizarConfiguracionSistema(clave, body.valor);
   }
 
   // ============ CUPONES ============

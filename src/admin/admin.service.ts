@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RankingsService } from '../rankings/rankings.service';
 
@@ -637,5 +642,107 @@ export class AdminService {
       totalComisiones,
       suscripcionesActivas: suscripciones.length,
     };
+  }
+
+  // ============ PROMOVER ORGANIZADOR POR DOCUMENTO ============
+
+  async promoverOrganizadorPorDocumento(documento: string) {
+    // Buscar usuario por documento
+    const user = await this.prisma.user.findUnique({
+      where: { documento },
+      include: {
+        roles: {
+          include: { role: true },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(
+        `No se encontró usuario con documento: ${documento}`,
+      );
+    }
+
+    // Verificar si ya es organizador
+    const yaEsOrganizador = user.roles.some(
+      (ur) => ur.role.nombre === 'organizador',
+    );
+    if (yaEsOrganizador) {
+      throw new ConflictException(
+        `${user.nombre} ${user.apellido} ya tiene rol de organizador`,
+      );
+    }
+
+    // Buscar rol de organizador
+    const rolOrganizador = await this.prisma.role.findUnique({
+      where: { nombre: 'organizador' },
+    });
+
+    if (!rolOrganizador) {
+      throw new NotFoundException('Rol organizador no encontrado');
+    }
+
+    // Asignar rol
+    await this.prisma.userRole.create({
+      data: {
+        userId: user.id,
+        roleId: rolOrganizador.id,
+      },
+    });
+
+    return {
+      message: `${user.nombre} ${user.apellido} ahora es organizador`,
+      usuario: {
+        id: user.id,
+        nombre: user.nombre,
+        apellido: user.apellido,
+        email: user.email,
+        documento: user.documento,
+      },
+    };
+  }
+
+  // ============ CONFIGURACIÓN DEL SISTEMA ============
+
+  async obtenerConfiguracionSistema() {
+    return this.prisma.configuracionSistema.findMany({
+      orderBy: { clave: 'asc' },
+    });
+  }
+
+  async actualizarConfiguracionSistema(clave: string, valor: string) {
+    const config = await this.prisma.configuracionSistema.findUnique({
+      where: { clave },
+    });
+
+    if (!config) {
+      throw new NotFoundException(
+        `Configuración '${clave}' no encontrada`,
+      );
+    }
+
+    // Validar que el valor sea numérico para comisiones
+    if (clave === 'COMISION_INSCRIPCION') {
+      const numVal = parseFloat(valor);
+      if (isNaN(numVal) || numVal < 0 || numVal > 100) {
+        throw new BadRequestException(
+          'El porcentaje de comisión debe ser un número entre 0 y 100',
+        );
+      }
+    }
+
+    await this.prisma.configuracionSistema.update({
+      where: { clave },
+      data: { valor },
+    });
+
+    return { message: `Configuración '${clave}' actualizada a: ${valor}` };
+  }
+
+  async obtenerValorConfiguracion(clave: string): Promise<string | null> {
+    const config = await this.prisma.configuracionSistema.findUnique({
+      where: { clave },
+    });
+    return config?.valor ?? null;
   }
 }
