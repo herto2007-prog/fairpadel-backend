@@ -168,6 +168,7 @@ model User {
   parejasComoJugador2       Pareja[]                @relation("Jugador2Parejas")
   rankings                  Ranking[]
   historialPuntos           HistorialPuntos[]
+  ayudanteEnTorneos         TorneoAyudante[]        @relation("AyudanteTorneos")
   logrosDesbloqueados       UsuarioLogro[]
   fotos                     Foto[]
   likes                     Like[]
@@ -367,6 +368,36 @@ model TorneoCanchaHorario {
   @@map("torneo_cancha_horarios")
 }
 
+// Configuración de pelotas por ronda de un torneo (Premium)
+model TorneoPelotasRonda {
+  id              String      @id @default(uuid())
+  tournamentId    String      @map("tournament_id")
+  ronda           String      // "ronda1", "ronda2", "octavos", "cuartos", "semis", "final"
+  cantidadPelotas Int         @default(2) @map("cantidad_pelotas")
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  tournament      Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, ronda])
+  @@map("torneo_pelotas_ronda")
+}
+
+model TorneoAyudante {
+  id              String      @id @default(uuid())
+  tournamentId    String      @map("tournament_id")
+  userId          String?     @map("user_id")
+  documento       String
+  nombre          String?
+  rol             String      @default("ayudante") // "ayudante", "arbitro", "mesa"
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  tournament      Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user            User?       @relation("AyudanteTorneos", fields: [userId], references: [id])
+
+  @@unique([tournamentId, documento])
+  @@map("torneo_ayudantes")
+}
+
 // ═══════════════════════════════════════════════════════
 // TORNEOS (Actualizado con nuevo sistema de Sedes)
 // ═══════════════════════════════════════════════════════
@@ -390,6 +421,7 @@ model Tournament {
   mapsUrl             String?           @map("maps_url")
   // Nueva relación con Sede
   sedeId              String?           @map("sede_id")
+  minutosPorPartido   Int               @default(60) @map("minutos_por_partido")
   organizadorId       String            @map("organizador_id")
   createdAt           DateTime          @default(now()) @map("created_at")
   updatedAt           DateTime          @updatedAt @map("updated_at")
@@ -401,6 +433,8 @@ model Tournament {
   modalidades       TournamentModalidad[]
   torneoSedes       TorneoSede[]
   torneoCanchas     TorneoCancha[]
+  pelotasRonda      TorneoPelotasRonda[]
+  ayudantes         TorneoAyudante[]
   inscripciones     Inscripcion[]
   partidos          Match[]
   fotos             Foto[]
@@ -412,10 +446,11 @@ model Tournament {
 }
 
 model TournamentCategory {
-  id           String     @id @default(uuid())
-  tournamentId String     @map("tournament_id")
-  categoryId   String     @map("category_id")
-  createdAt    DateTime   @default(now()) @map("created_at")
+  id                 String     @id @default(uuid())
+  tournamentId       String     @map("tournament_id")
+  categoryId         String     @map("category_id")
+  inscripcionAbierta Boolean    @default(true) @map("inscripcion_abierta")
+  createdAt          DateTime   @default(now()) @map("created_at")
 
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   category   Category   @relation(fields: [categoryId], references: [id])

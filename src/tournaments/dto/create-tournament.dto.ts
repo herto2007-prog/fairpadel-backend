@@ -58,6 +58,15 @@ export class CreateTournamentDto {
 
   @IsString()
   @IsOptional()
+  sedeId?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(15)
+  minutosPorPartido?: number;
+
+  @IsString()
+  @IsOptional()
   sede?: string;
 
   @IsString()

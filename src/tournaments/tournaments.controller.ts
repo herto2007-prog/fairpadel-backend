@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Patch,
   Param,
@@ -76,5 +77,74 @@ export class TournamentsController {
   @Roles('organizador')
   remove(@Param('id') id: string, @Request() req) {
     return this.tournamentsService.remove(id, req.user.id);
+  }
+
+  @Patch(':id/categorias/:tournamentCategoryId/toggle-inscripcion')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador')
+  toggleInscripcionCategoria(
+    @Param('id') id: string,
+    @Param('tournamentCategoryId') tournamentCategoryId: string,
+    @Request() req,
+  ) {
+    return this.tournamentsService.toggleInscripcionCategoria(id, tournamentCategoryId, req.user.id);
+  }
+
+  @Get(':id/stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador')
+  getStats(@Param('id') id: string, @Request() req) {
+    return this.tournamentsService.getStats(id, req.user.id);
+  }
+
+  @Get(':id/pelotas-ronda')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador')
+  getPelotasRonda(@Param('id') id: string, @Request() req) {
+    return this.tournamentsService.getPelotasRonda(id, req.user.id);
+  }
+
+  @Put(':id/pelotas-ronda')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador')
+  updatePelotasRonda(
+    @Param('id') id: string,
+    @Body() data: { rondas: { ronda: string; cantidadPelotas: number }[] },
+    @Request() req,
+  ) {
+    return this.tournamentsService.updatePelotasRonda(id, data.rondas, req.user.id);
+  }
+
+  // ═══════════════════════════════════════════
+  // AYUDANTES
+  // ═══════════════════════════════════════════
+
+  @Get(':id/ayudantes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador')
+  getAyudantes(@Param('id') id: string, @Request() req) {
+    return this.tournamentsService.getAyudantes(id, req.user.id);
+  }
+
+  @Post(':id/ayudantes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador')
+  addAyudante(
+    @Param('id') id: string,
+    @Body() data: { documento: string; nombre?: string; rol?: string },
+    @Request() req,
+  ) {
+    return this.tournamentsService.addAyudante(id, data, req.user.id);
+  }
+
+  @Delete(':id/ayudantes/:ayudanteId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador')
+  removeAyudante(
+    @Param('id') id: string,
+    @Param('ayudanteId') ayudanteId: string,
+    @Request() req,
+  ) {
+    return this.tournamentsService.removeAyudante(id, ayudanteId, req.user.id);
   }
 }

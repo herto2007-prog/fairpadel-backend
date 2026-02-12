@@ -78,6 +78,8 @@ export class TournamentsService {
           fechaLimiteInscr: fechaLimite,
           flyerUrl: createTournamentDto.flyerUrl,
           costoInscripcion: createTournamentDto.costoInscripcion,
+          sedeId: createTournamentDto.sedeId || undefined,
+          minutosPorPartido: createTournamentDto.minutosPorPartido || 60,
           sede: createTournamentDto.sede,
           direccion: createTournamentDto.direccion,
           mapsUrl: createTournamentDto.mapsUrl,
@@ -257,6 +259,8 @@ export class TournamentsService {
       pais: updateTournamentDto.pais,
       region: updateTournamentDto.region,
       ciudad: updateTournamentDto.ciudad,
+      sedeId: updateTournamentDto.sedeId,
+      minutosPorPartido: updateTournamentDto.minutosPorPartido,
       sede: updateTournamentDto.sede,
       direccion: updateTournamentDto.direccion,
       mapsUrl: updateTournamentDto.mapsUrl,
@@ -372,5 +376,167 @@ export class TournamentsService {
       ],
     });
     return categorias;
+  }
+
+  async toggleInscripcionCategoria(tournamentId: string, tournamentCategoryId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      throw new ForbiddenException('No tienes permiso para modificar este torneo');
+    }
+
+    const tournamentCategory = await this.prisma.tournamentCategory.findFirst({
+      where: { id: tournamentCategoryId, tournamentId },
+    });
+
+    if (!tournamentCategory) {
+      throw new NotFoundException('Categoría del torneo no encontrada');
+    }
+
+    return this.prisma.tournamentCategory.update({
+      where: { id: tournamentCategoryId },
+      data: { inscripcionAbierta: !tournamentCategory.inscripcionAbierta },
+      include: { category: true },
+    });
+  }
+
+  async getStats(tournamentId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      throw new ForbiddenException('No tienes permiso para ver las estadísticas de este torneo');
+    }
+
+    const [inscripcionesCount, partidosCount, canchasCount, inscripcionesPorCategoria] = await Promise.all([
+      this.prisma.inscripcion.count({ where: { tournamentId } }),
+      this.prisma.match.count({ where: { tournamentId } }),
+      this.prisma.torneoCancha.count({ where: { tournamentId } }),
+      this.prisma.inscripcion.groupBy({
+        by: ['categoryId'],
+        where: { tournamentId },
+        _count: { id: true },
+      }),
+    ]);
+
+    const categorias = await this.prisma.tournamentCategory.findMany({
+      where: { tournamentId },
+      include: { category: true },
+    });
+
+    const categoriasConStats = categorias.map((tc) => {
+      const stats = inscripcionesPorCategoria.find((i) => i.categoryId === tc.categoryId);
+      return {
+        ...tc,
+        inscripcionesCount: stats?._count?.id || 0,
+      };
+    });
+
+    return {
+      inscripcionesTotal: inscripcionesCount,
+      partidosTotal: partidosCount,
+      canchasConfiguradas: canchasCount,
+      categorias: categoriasConStats,
+    };
+  }
+
+  async getPelotasRonda(tournamentId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      throw new ForbiddenException('No tienes permiso para ver esta configuración');
+    }
+
+    return this.prisma.torneoPelotasRonda.findMany({
+      where: { tournamentId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async updatePelotasRonda(
+    tournamentId: string,
+    rondas: { ronda: string; cantidadPelotas: number }[],
+    userId: string,
+  ) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      throw new ForbiddenException('No tienes permiso para modificar esta configuración');
+    }
+
+    // Eliminar configuración anterior
+    await this.prisma.torneoPelotasRonda.deleteMany({
+      where: { tournamentId },
+    });
+
+    // Crear nuevas configuraciones
+    const creadas = await Promise.all(
+      rondas.map((r) =>
+        this.prisma.torneoPelotasRonda.create({
+          data: {
+            tournamentId,
+            ronda: r.ronda,
+            cantidadPelotas: r.cantidadPelotas,
+          },
+        }),
+      ),
+    );
+
+    return creadas;
+  }
+
+  // ═══════════════════════════════════════════
+  // AYUDANTES
+  // ═══════════════════════════════════════════
+
+  async getAyudantes(tournamentId: string, userId: string) {
+    await this.findOne(tournamentId); // Verifica existencia
+
+    return this.prisma.torneoAyudante.findMany({
+      where: { tournamentId },
+      include: { user: { select: { id: true, nombre: true, apellido: true, documento: true, email: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async addAyudante(
+    tournamentId: string,
+    data: { documento: string; nombre?: string; rol?: string },
+    userId: string,
+  ) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      throw new ForbiddenException('No tienes permiso para modificar este torneo');
+    }
+
+    // Buscar usuario por documento
+    const matchedUser = await this.prisma.user.findFirst({
+      where: { documento: data.documento },
+    });
+
+    return this.prisma.torneoAyudante.create({
+      data: {
+        tournamentId,
+        documento: data.documento,
+        nombre: data.nombre || (matchedUser ? `${matchedUser.nombre} ${matchedUser.apellido}` : null),
+        userId: matchedUser?.id || null,
+        rol: data.rol || 'ayudante',
+      },
+      include: { user: { select: { id: true, nombre: true, apellido: true, documento: true, email: true } } },
+    });
+  }
+
+  async removeAyudante(tournamentId: string, ayudanteId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      throw new ForbiddenException('No tienes permiso para modificar este torneo');
+    }
+
+    await this.prisma.torneoAyudante.delete({
+      where: { id: ayudanteId },
+    });
+
+    return { deleted: true };
   }
 }
