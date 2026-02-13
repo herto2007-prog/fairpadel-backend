@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
+import { calcularHoraFin } from './scheduling-utils';
 
 @Injectable()
 export class MatchesService {
@@ -138,14 +139,7 @@ export class MatchesService {
       await this.avanzarGanador(match.partidoSiguienteId, ganadorId, match.id);
     }
 
-    // Si es SEMIFINAL, colocar perdedor en partido de UBICACION
-    if (match.ronda === 'SEMIFINAL' && perdedorId) {
-      await this.colocarPerdedorEnUbicacion(
-        match.tournamentId,
-        match.categoryId,
-        perdedorId,
-      );
-    }
+    // ELIMINADO: No se juega 3er/4to puesto en formato paraguayo
 
     // TODO: Actualizar ranking
     // TODO: Enviar notificaciones
@@ -216,37 +210,47 @@ export class MatchesService {
     });
   }
 
-  // Colocar perdedor de SEMIFINAL en el partido de UBICACION (3er y 4to lugar)
-  private async colocarPerdedorEnUbicacion(
+  // ELIMINADO: colocarPerdedorEnUbicacion — No se juega 3er/4to puesto en formato paraguayo
+
+  // ═══════════════════════════════════════════════════════
+  // VALIDACIÓN ANTI-CONFLICTO DE SLOTS
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Valida que un slot (cancha+fecha+hora) esté disponible.
+   * Opcionalmente excluye un match (para reprogramar el mismo match).
+   */
+  private async validarSlotDisponible(
     tournamentId: string,
-    categoryId: string,
-    perdedorId: string,
-  ) {
-    const ubicacionMatch = await this.prisma.match.findFirst({
+    canchaId: string,
+    fecha: Date | string,
+    hora: string,
+    excludeMatchId?: string,
+  ): Promise<void> {
+    const fechaDate = typeof fecha === 'string' ? new Date(fecha) : fecha;
+
+    const conflict = await this.prisma.match.findFirst({
       where: {
         tournamentId,
-        categoryId,
-        ronda: 'UBICACION',
+        torneoCanchaId: canchaId,
+        fechaProgramada: fechaDate,
+        horaProgramada: hora,
+        estado: { notIn: ['WO', 'CANCELADO'] },
+        ...(excludeMatchId ? { id: { not: excludeMatchId } } : {}),
       },
     });
 
-    if (!ubicacionMatch) return;
-
-    // Colocar en primer slot vacío
-    if (!ubicacionMatch.pareja1Id) {
-      await this.prisma.match.update({
-        where: { id: ubicacionMatch.id },
-        data: { pareja1Id: perdedorId },
-      });
-    } else if (!ubicacionMatch.pareja2Id) {
-      await this.prisma.match.update({
-        where: { id: ubicacionMatch.id },
-        data: { pareja2Id: perdedorId },
-      });
+    if (conflict) {
+      throw new BadRequestException(
+        `Ya existe un partido programado en esta cancha a las ${hora} en esa fecha. Elige otro horario o cancha.`,
+      );
     }
   }
 
-  // Intercambiar horarios/canchas entre dos partidos (Premium only)
+  // ═══════════════════════════════════════════════════════
+  // INTERCAMBIAR HORARIOS/CANCHAS (Swap — Premium only)
+  // ═══════════════════════════════════════════════════════
+
   async swapMatchSchedules(match1Id: string, match2Id: string, userId: string) {
     // Validar que el usuario es premium
     const user = await this.prisma.user.findUnique({
@@ -274,10 +278,17 @@ export class MatchesService {
       throw new BadRequestException('Los partidos deben ser del mismo torneo');
     }
 
-    // Validar ninguno finalizado
-    if (match1.estado === 'FINALIZADO' || match2.estado === 'FINALIZADO') {
+    // Validar ninguno finalizado o WO
+    if (['FINALIZADO', 'WO'].includes(match1.estado) || ['FINALIZADO', 'WO'].includes(match2.estado)) {
       throw new BadRequestException(
-        'No se puede intercambiar horarios de partidos finalizados',
+        'No se puede intercambiar horarios de partidos finalizados o WO',
+      );
+    }
+
+    // Validar que ambos tienen horario asignado
+    if (!match1.horaProgramada || !match2.horaProgramada) {
+      throw new BadRequestException(
+        'Ambos partidos deben tener horario asignado para intercambiar',
       );
     }
 
@@ -306,6 +317,10 @@ export class MatchesService {
     return { message: 'Horarios intercambiados exitosamente' };
   }
 
+  // ═══════════════════════════════════════════════════════
+  // REPROGRAMAR PARTIDO (con validación anti-conflicto)
+  // ═══════════════════════════════════════════════════════
+
   async reprogramar(id: string, data: any) {
     const match = await this.findOne(id);
 
@@ -313,12 +328,43 @@ export class MatchesService {
       throw new BadRequestException('No se puede reprogramar un partido finalizado');
     }
 
+    if (match.estado === 'WO') {
+      throw new BadRequestException('No se puede reprogramar un partido WO');
+    }
+
+    const canchaId = data.torneoCanchaId || match.torneoCanchaId;
+    const fecha = data.fechaProgramada;
+    const hora = data.horaProgramada;
+
+    // Validar que el slot no esté ocupado por otro match
+    if (canchaId && fecha && hora) {
+      await this.validarSlotDisponible(
+        match.tournamentId,
+        canchaId,
+        fecha,
+        hora,
+        id, // excluir este mismo match
+      );
+    }
+
+    // Recalcular horaFinEstimada usando minutosPorPartido del torneo
+    let horaFinEstimada: string | undefined;
+    if (hora) {
+      const tournament = await this.prisma.tournament.findUnique({
+        where: { id: match.tournamentId },
+        select: { minutosPorPartido: true },
+      });
+      const minutos = tournament?.minutosPorPartido || 60;
+      horaFinEstimada = calcularHoraFin(hora, minutos);
+    }
+
     return this.prisma.match.update({
       where: { id },
       data: {
-        fechaProgramada: new Date(data.fechaProgramada),
-        horaProgramada: data.horaProgramada,
-        torneoCanchaId: data.torneoCanchaId || match.torneoCanchaId,
+        fechaProgramada: new Date(fecha),
+        horaProgramada: hora,
+        torneoCanchaId: canchaId,
+        ...(horaFinEstimada ? { horaFinEstimada } : {}),
       },
     });
   }

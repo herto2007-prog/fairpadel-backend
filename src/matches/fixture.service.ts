@@ -1,5 +1,11 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  calcularHoraFin,
+  generarTimeSlots,
+  slotKey,
+  getRondaOrden,
+} from './scheduling-utils';
 
 @Injectable()
 export class FixtureService {
@@ -209,12 +215,14 @@ export class FixtureService {
       where: { tournamentId, categoryId },
     });
 
-    // Generar fixture con seeding
+    // Generar fixture con seeding — pasar minutosPorPartido del torneo
+    const minutosPorPartido = tournament.minutosPorPartido || 60;
     const fixture = await this.generarFixturePorCategoria(
       tournamentId,
       categoryId,
       inscripciones,
       tournament.torneoCanchas,
+      minutosPorPartido,
     );
 
     // Categoría va a FIXTURE_BORRADOR (no a SORTEO_REALIZADO)
@@ -328,6 +336,8 @@ export class FixtureService {
       throw new BadRequestException('El torneo debe estar en estado PUBLICADO');
     }
 
+    const minutosPorPartido = tournament.minutosPorPartido || 60;
+
     // Generar fixture por cada categoría
     const fixtures = [];
 
@@ -345,6 +355,7 @@ export class FixtureService {
         categoriaRelacion.categoryId,
         inscripcionesCategoria,
         tournament.torneoCanchas,
+        minutosPorPartido,
       );
 
       fixtures.push(fixtureCategoria);
@@ -366,6 +377,7 @@ export class FixtureService {
     categoryId: string,
     inscripciones: any[],
     torneoCanchas: any[],
+    minutosPorPartido: number = 60,
   ) {
     const numParejas = inscripciones.length;
 
@@ -502,13 +514,15 @@ export class FixtureService {
     // Recoger todos los partidos creados (flat)
     const allMatches = createdMatchesByRound.flat();
 
-    // Asignar canchas y horarios
+    // === ASIGNAR CANCHAS Y HORARIOS (con detección cross-categoría) ===
     if (torneoCanchas.length > 0) {
-      await this.asignarCanchasYHorarios(allMatches, torneoCanchas);
+      await this.asignarCanchasYHorarios(
+        allMatches,
+        torneoCanchas,
+        tournamentId,
+        minutosPorPartido,
+      );
     }
-
-    // Generar partido de ubicación (3er y 4to lugar)
-    await this.generarPartidoUbicacion(tournamentId, categoryId, allMatches);
 
     return {
       categoryId,
@@ -571,84 +585,117 @@ export class FixtureService {
     return newArray;
   }
 
-  private async asignarCanchasYHorarios(partidos: any[], torneoCanchas: any[]) {
-    const horarios = torneoCanchas.flatMap((tc) =>
-      (tc.horarios || []).map((h) => ({ ...h, torneoCanchaId: tc.id })),
-    );
+  // ═══════════════════════════════════════════════════════
+  // SCHEDULING INTELIGENTE (cross-categoría, sin BYEs, minutosPorPartido)
+  // ═══════════════════════════════════════════════════════
 
-    if (torneoCanchas.length === 0 || horarios.length === 0) {
-      return;
-    }
+  /**
+   * Obtiene todos los slots ocupados del torneo (todas las categorías).
+   * Excluye matches WO y CANCELADO ya que no consumen cancha.
+   */
+  private async obtenerSlotsOcupados(tournamentId: string): Promise<Set<string>> {
+    const occupied = new Set<string>();
 
-    // Ordenar horarios por fecha y hora
-    horarios.sort((a, b) => {
-      const fechaA = new Date(a.fecha + ' ' + a.horaInicio);
-      const fechaB = new Date(b.fecha + ' ' + b.horaInicio);
-      return fechaA.getTime() - fechaB.getTime();
-    });
-
-    let horarioIndex = 0;
-    let canchaIndex = 0;
-
-    for (const partido of partidos) {
-      if (horarioIndex >= horarios.length) {
-        break;
-      }
-
-      const horario = horarios[horarioIndex];
-      const torneoCancha = torneoCanchas[canchaIndex];
-
-      await this.prisma.match.update({
-        where: { id: partido.id },
-        data: {
-          torneoCanchaId: torneoCancha.id,
-          fechaProgramada: horario.fecha,
-          horaProgramada: horario.horaInicio,
-          horaFinEstimada: this.calcularHoraFin(horario.horaInicio, 90),
-        },
-      });
-
-      // Rotar canchas
-      canchaIndex++;
-      if (canchaIndex >= torneoCanchas.length) {
-        canchaIndex = 0;
-        horarioIndex++;
-      }
-    }
-  }
-
-  private calcularHoraFin(horaInicio: string, duracionMinutos: number): string {
-    const [horas, minutos] = horaInicio.split(':').map(Number);
-    const totalMinutos = horas * 60 + minutos + duracionMinutos;
-    const nuevasHoras = Math.floor(totalMinutos / 60);
-    const nuevosMinutos = totalMinutos % 60;
-
-    return `${String(nuevasHoras).padStart(2, '0')}:${String(nuevosMinutos).padStart(2, '0')}`;
-  }
-
-  private async generarPartidoUbicacion(
-    tournamentId: string,
-    categoryId: string,
-    partidos: any[],
-  ) {
-    const semifinales = partidos.filter((p) => p.ronda === 'SEMIFINAL');
-
-    if (semifinales.length !== 2) {
-      return; // No se puede generar partido de ubicación si no hay exactamente 2 semis
-    }
-
-    await this.prisma.match.create({
-      data: {
+    const existingMatches = await this.prisma.match.findMany({
+      where: {
         tournamentId,
-        categoryId,
-        ronda: 'UBICACION',
-        numeroRonda: partidos.length + 1,
-        pareja1Id: null,
-        pareja2Id: null,
-        estado: 'PROGRAMADO',
+        estado: { notIn: ['WO', 'CANCELADO'] },
+        torneoCanchaId: { not: null },
+        horaProgramada: { not: null },
+        fechaProgramada: { not: null },
+      },
+      select: {
+        torneoCanchaId: true,
+        fechaProgramada: true,
+        horaProgramada: true,
       },
     });
+
+    for (const m of existingMatches) {
+      if (m.torneoCanchaId && m.fechaProgramada && m.horaProgramada) {
+        occupied.add(slotKey(m.torneoCanchaId, m.fechaProgramada, m.horaProgramada));
+      }
+    }
+
+    return occupied;
   }
+
+  /**
+   * Motor de asignación de canchas y horarios.
+   * - Cross-categoría: consulta todos los matches existentes del torneo
+   * - Salta matches BYE/WO (no necesitan cancha)
+   * - Genera time slots discretos desde rangos de disponibilidad
+   * - Usa minutosPorPartido configurable (no hardcoded)
+   * - Ordena matches por ronda (primera ronda primero)
+   */
+  private async asignarCanchasYHorarios(
+    partidos: any[],
+    torneoCanchas: any[],
+    tournamentId: string,
+    minutosPorPartido: number,
+    bufferMinutos: number = 10,
+  ): Promise<{ asignados: number; sinSlot: number }> {
+    // 1. Cargar slots ya ocupados globalmente (cross-categoría)
+    const ocupados = await this.obtenerSlotsOcupados(tournamentId);
+
+    // 2. Generar todos los time slots posibles desde rangos de disponibilidad
+    const allSlots = generarTimeSlots(torneoCanchas, minutosPorPartido, bufferMinutos);
+
+    if (allSlots.length === 0) {
+      return { asignados: 0, sinSlot: partidos.length };
+    }
+
+    // 3. Filtrar: excluir matches WO/BYE (no necesitan cancha)
+    const matchesNeedingSlot = partidos.filter(
+      (p) => p.estado !== 'WO' && p.estado !== 'CANCELADO',
+    );
+
+    // 4. Ordenar matches por ronda (primera ronda primero, final último)
+    matchesNeedingSlot.sort((a, b) => {
+      const orderA = getRondaOrden(a.ronda);
+      const orderB = getRondaOrden(b.ronda);
+      if (orderA !== orderB) return orderA - orderB;
+      return a.numeroRonda - b.numeroRonda;
+    });
+
+    // 5. Asignar primer slot libre a cada match
+    let asignados = 0;
+    let sinSlot = 0;
+
+    for (const partido of matchesNeedingSlot) {
+      let assigned = false;
+
+      for (const slot of allSlots) {
+        const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
+        if (!ocupados.has(key)) {
+          // Slot disponible → asignar
+          await this.prisma.match.update({
+            where: { id: partido.id },
+            data: {
+              torneoCanchaId: slot.torneoCanchaId,
+              fechaProgramada: slot.fecha,
+              horaProgramada: slot.horaInicio,
+              horaFinEstimada: calcularHoraFin(slot.horaInicio, minutosPorPartido),
+            },
+          });
+
+          // Marcar como ocupado
+          ocupados.add(key);
+          asignados++;
+          assigned = true;
+          break;
+        }
+      }
+
+      if (!assigned) {
+        sinSlot++;
+      }
+    }
+
+    return { asignados, sinSlot };
+  }
+
+  // ELIMINADO: generarPartidoUbicacion — No se juega 3er/4to puesto en formato paraguayo
 
   // ═══════════════════════════════════════════════════════
   // OBTENER FIXTURE
