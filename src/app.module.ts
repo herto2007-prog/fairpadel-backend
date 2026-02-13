@@ -16,6 +16,7 @@ import { NotificacionesModule } from './notificaciones/notificaciones.module';
 import { SuscripcionesModule } from './suscripciones/suscripciones.module';
 import { AdminModule } from './admin/admin.module';
 import { SedesModule } from './sedes/sedes.module';
+import { CircuitosModule } from './circuitos/circuitos.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { SedesModule } from './sedes/sedes.module';
     SuscripcionesModule,
     AdminModule,
     SedesModule,
+    CircuitosModule,
   ],
   controllers: [AppController],
 })

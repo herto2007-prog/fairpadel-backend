@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
@@ -76,7 +77,6 @@ export class MatchesService {
     let perdedorId: string;
 
     if (esWalkOver) {
-      // Walk Over - el ganador es especificado
       ganadorId = parejaGanadoraId;
       perdedorId = ganadorId === match.pareja1Id ? match.pareja2Id : match.pareja1Id;
 
@@ -90,7 +90,6 @@ export class MatchesService {
         },
       });
     } else {
-      // Validar marcador
       this.validarMarcador(
         set1Pareja1,
         set1Pareja2,
@@ -100,7 +99,6 @@ export class MatchesService {
         set3Pareja2,
       );
 
-      // Determinar ganador
       let setsGanadosP1 = 0;
       let setsGanadosP2 = 0;
 
@@ -135,9 +133,18 @@ export class MatchesService {
       });
     }
 
-    // Avanzar ganador al siguiente partido (si existe)
+    // Avanzar ganador al siguiente partido (usa posicionEnSiguiente)
     if (match.partidoSiguienteId) {
-      await this.avanzarGanador(match.partidoSiguienteId, ganadorId, match.numeroRonda);
+      await this.avanzarGanador(match.partidoSiguienteId, ganadorId, match.id);
+    }
+
+    // Si es SEMIFINAL, colocar perdedor en partido de UBICACION
+    if (match.ronda === 'SEMIFINAL' && perdedorId) {
+      await this.colocarPerdedorEnUbicacion(
+        match.tournamentId,
+        match.categoryId,
+        perdedorId,
+      );
     }
 
     // TODO: Actualizar ranking
@@ -154,7 +161,6 @@ export class MatchesService {
     s3p1?: number,
     s3p2?: number,
   ) {
-    // Validar que los games estén entre 0 y 7
     const games = [s1p1, s1p2, s2p1, s2p2];
     if (s3p1 !== null) games.push(s3p1);
     if (s3p2 !== null) games.push(s3p2);
@@ -165,9 +171,7 @@ export class MatchesService {
       }
     }
 
-    // Validar que un set se gana con 6 games y diferencia de 2
     const validarSet = (p1: number, p2: number) => {
-      const diff = Math.abs(p1 - p2);
       if (p1 === 6 && p2 <= 4) return true;
       if (p2 === 6 && p1 <= 4) return true;
       if (p1 === 7 && (p2 === 5 || p2 === 6)) return true;
@@ -182,7 +186,6 @@ export class MatchesService {
       throw new BadRequestException('Marcador inválido en set 2');
     }
 
-    // Si hay set 3, debe ser tie-break a 10 (o validar normal)
     if (s3p1 !== null && s3p2 !== null) {
       if (!validarSet(s3p1, s3p2)) {
         throw new BadRequestException('Marcador inválido en set 3');
@@ -190,23 +193,117 @@ export class MatchesService {
     }
   }
 
+  // Fix: usa posicionEnSiguiente del match actual en vez de rondaAnterior % 2
   private async avanzarGanador(
     partidoSiguienteId: string,
     ganadorId: string,
-    rondaAnterior: number,
+    matchId: string,
   ) {
-    const partidoSiguiente = await this.prisma.match.findUnique({
-      where: { id: partidoSiguienteId },
+    // Obtener el match actual para leer posicionEnSiguiente
+    const currentMatch = await this.prisma.match.findUnique({
+      where: { id: matchId },
     });
 
-    // Determinar si va a pareja1 o pareja2 del siguiente partido
-    // Esto depende del bracket (par/impar)
-    const campo = rondaAnterior % 2 === 0 ? 'pareja1Id' : 'pareja2Id';
+    if (!currentMatch || !currentMatch.posicionEnSiguiente) {
+      return; // No hay info de posición, no se puede avanzar
+    }
+
+    const campo = currentMatch.posicionEnSiguiente === 1 ? 'pareja1Id' : 'pareja2Id';
 
     await this.prisma.match.update({
       where: { id: partidoSiguienteId },
       data: { [campo]: ganadorId },
     });
+  }
+
+  // Colocar perdedor de SEMIFINAL en el partido de UBICACION (3er y 4to lugar)
+  private async colocarPerdedorEnUbicacion(
+    tournamentId: string,
+    categoryId: string,
+    perdedorId: string,
+  ) {
+    const ubicacionMatch = await this.prisma.match.findFirst({
+      where: {
+        tournamentId,
+        categoryId,
+        ronda: 'UBICACION',
+      },
+    });
+
+    if (!ubicacionMatch) return;
+
+    // Colocar en primer slot vacío
+    if (!ubicacionMatch.pareja1Id) {
+      await this.prisma.match.update({
+        where: { id: ubicacionMatch.id },
+        data: { pareja1Id: perdedorId },
+      });
+    } else if (!ubicacionMatch.pareja2Id) {
+      await this.prisma.match.update({
+        where: { id: ubicacionMatch.id },
+        data: { pareja2Id: perdedorId },
+      });
+    }
+  }
+
+  // Intercambiar horarios/canchas entre dos partidos (Premium only)
+  async swapMatchSchedules(match1Id: string, match2Id: string, userId: string) {
+    // Validar que el usuario es premium
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || !user.esPremium) {
+      throw new ForbiddenException(
+        'Esta función requiere una suscripción Premium',
+      );
+    }
+
+    // Obtener ambos partidos
+    const [match1, match2] = await Promise.all([
+      this.prisma.match.findUnique({ where: { id: match1Id } }),
+      this.prisma.match.findUnique({ where: { id: match2Id } }),
+    ]);
+
+    if (!match1 || !match2) {
+      throw new NotFoundException('Uno o ambos partidos no encontrados');
+    }
+
+    // Validar mismo torneo
+    if (match1.tournamentId !== match2.tournamentId) {
+      throw new BadRequestException('Los partidos deben ser del mismo torneo');
+    }
+
+    // Validar ninguno finalizado
+    if (match1.estado === 'FINALIZADO' || match2.estado === 'FINALIZADO') {
+      throw new BadRequestException(
+        'No se puede intercambiar horarios de partidos finalizados',
+      );
+    }
+
+    // Swap atómico de horarios y canchas
+    await this.prisma.$transaction([
+      this.prisma.match.update({
+        where: { id: match1Id },
+        data: {
+          fechaProgramada: match2.fechaProgramada,
+          horaProgramada: match2.horaProgramada,
+          horaFinEstimada: match2.horaFinEstimada,
+          torneoCanchaId: match2.torneoCanchaId,
+        },
+      }),
+      this.prisma.match.update({
+        where: { id: match2Id },
+        data: {
+          fechaProgramada: match1.fechaProgramada,
+          horaProgramada: match1.horaProgramada,
+          horaFinEstimada: match1.horaFinEstimada,
+          torneoCanchaId: match1.torneoCanchaId,
+        },
+      }),
+    ]);
+
+    return { message: 'Horarios intercambiados exitosamente' };
   }
 
   async reprogramar(id: string, data: any) {

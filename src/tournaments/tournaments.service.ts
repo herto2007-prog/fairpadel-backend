@@ -393,9 +393,28 @@ export class TournamentsService {
       throw new NotFoundException('Categoría del torneo no encontrada');
     }
 
+    // No permitir toggle si la categoría ya tiene sorteo realizado
+    if (
+      ['SORTEO_REALIZADO', 'EN_CURSO', 'FINALIZADA'].includes(
+        tournamentCategory.estado,
+      )
+    ) {
+      throw new BadRequestException(
+        'No se puede reabrir inscripciones de una categoría que ya tiene sorteo',
+      );
+    }
+
+    const newInscripcionAbierta = !tournamentCategory.inscripcionAbierta;
+    const newEstado = newInscripcionAbierta
+      ? 'INSCRIPCIONES_ABIERTAS'
+      : 'INSCRIPCIONES_CERRADAS';
+
     return this.prisma.tournamentCategory.update({
       where: { id: tournamentCategoryId },
-      data: { inscripcionAbierta: !tournamentCategory.inscripcionAbierta },
+      data: {
+        inscripcionAbierta: newInscripcionAbierta,
+        estado: newEstado as any,
+      },
       include: { category: true },
     });
   }

@@ -42,6 +42,15 @@ enum Modalidad {
   SUMA
 }
 
+enum CategoriaEstado {
+  INSCRIPCIONES_ABIERTAS
+  INSCRIPCIONES_CERRADAS
+  FIXTURE_BORRADOR
+  SORTEO_REALIZADO
+  EN_CURSO
+  FINALIZADA
+}
+
 enum InscripcionEstado {
   PENDIENTE_PAGO
   PENDIENTE_CONFIRMACION
@@ -126,6 +135,12 @@ enum TipoCancha {
   INDOOR
   OUTDOOR
   SEMI_TECHADA
+}
+
+enum CircuitoEstado {
+  ACTIVO
+  FINALIZADO
+  CANCELADO
 }
 
 // ═══════════════════════════════════════════════════════
@@ -399,6 +414,30 @@ model TorneoAyudante {
 }
 
 // ═══════════════════════════════════════════════════════
+// CIRCUITOS / LIGAS
+// ═══════════════════════════════════════════════════════
+
+model Circuito {
+  id          String          @id @default(uuid())
+  nombre      String          @unique
+  descripcion String?         @db.Text
+  pais        String
+  region      String?
+  ciudad      String?
+  temporada   String
+  fechaInicio DateTime        @map("fecha_inicio")
+  fechaFin    DateTime        @map("fecha_fin")
+  estado      CircuitoEstado  @default(ACTIVO)
+  logoUrl     String?         @map("logo_url")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  torneos     Tournament[]
+
+  @@map("circuitos")
+}
+
+// ═══════════════════════════════════════════════════════
 // TORNEOS (Actualizado con nuevo sistema de Sedes)
 // ═══════════════════════════════════════════════════════
 
@@ -421,6 +460,8 @@ model Tournament {
   mapsUrl             String?           @map("maps_url")
   // Nueva relación con Sede
   sedeId              String?           @map("sede_id")
+  // Circuito / Liga
+  circuitoId          String?           @map("circuito_id")
   minutosPorPartido   Int               @default(60) @map("minutos_por_partido")
   organizadorId       String            @map("organizador_id")
   createdAt           DateTime          @default(now()) @map("created_at")
@@ -429,6 +470,7 @@ model Tournament {
   // Relaciones
   organizador       User                  @relation("OrganizadorTorneos", fields: [organizadorId], references: [id])
   sedePrincipal     Sede?                 @relation("SedePrincipal", fields: [sedeId], references: [id])
+  circuito          Circuito?             @relation(fields: [circuitoId], references: [id], onDelete: SetNull)
   categorias        TournamentCategory[]
   modalidades       TournamentModalidad[]
   torneoSedes       TorneoSede[]
@@ -446,11 +488,12 @@ model Tournament {
 }
 
 model TournamentCategory {
-  id                 String     @id @default(uuid())
-  tournamentId       String     @map("tournament_id")
-  categoryId         String     @map("category_id")
-  inscripcionAbierta Boolean    @default(true) @map("inscripcion_abierta")
-  createdAt          DateTime   @default(now()) @map("created_at")
+  id                 String           @id @default(uuid())
+  tournamentId       String           @map("tournament_id")
+  categoryId         String           @map("category_id")
+  inscripcionAbierta Boolean          @default(true) @map("inscripcion_abierta")
+  estado             CategoriaEstado  @default(INSCRIPCIONES_ABIERTAS)
+  createdAt          DateTime         @default(now()) @map("created_at")
 
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   category   Category   @relation(fields: [categoryId], references: [id])
@@ -598,8 +641,9 @@ model Match {
   set2Pareja2        Int?         @map("set2_pareja2")
   set3Pareja1        Int?         @map("set3_pareja1")
   set3Pareja2        Int?         @map("set3_pareja2")
-  partidoSiguienteId String?      @map("partido_siguiente_id")
-  observaciones      String?      @db.Text
+  partidoSiguienteId  String?      @map("partido_siguiente_id")
+  posicionEnSiguiente Int?         @map("posicion_en_siguiente")
+  observaciones       String?      @db.Text
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 

@@ -37,21 +37,24 @@ export class InscripcionesService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (tournament.estado !== 'PUBLICADO') {
+    if (!['PUBLICADO', 'EN_CURSO'].includes(tournament.estado)) {
       throw new BadRequestException('El torneo no acepta inscripciones');
     }
 
-    // Verificar fecha límite
-    if (new Date() > tournament.fechaLimiteInscr) {
-      throw new BadRequestException('La fecha límite de inscripción ha vencido');
-    }
+    // fechaLimiteInscr es informativa (para notificaciones), no bloquea inscripciones.
+    // El control real lo hace inscripcionAbierta por categoría.
 
-    // Verificar que la categoría existe en el torneo
-    const categoriaExiste = tournament.categorias.some(
+    // Verificar que la categoría existe en el torneo y tiene inscripciones abiertas
+    const categoriaRelacion = tournament.categorias.find(
       (c) => c.categoryId === categoryId,
     );
-    if (!categoriaExiste) {
+    if (!categoriaRelacion) {
       throw new BadRequestException('Categoría no disponible en este torneo');
+    }
+    if (!categoriaRelacion.inscripcionAbierta) {
+      throw new BadRequestException(
+        'Las inscripciones están cerradas para esta categoría',
+      );
     }
 
     // Verificar que la modalidad existe en el torneo

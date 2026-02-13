@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { MatchesService } from './matches.service';
 import { FixtureService } from './fixture.service';
@@ -23,6 +24,26 @@ export class MatchesController {
     private readonly fixtureService: FixtureService,
   ) {}
 
+  @Post('torneo/:tournamentId/categoria/:categoryId/sortear')
+  @Roles('organizador', 'admin')
+  @UseGuards(RolesGuard)
+  sortearCategoria(
+    @Param('tournamentId') tournamentId: string,
+    @Param('categoryId') categoryId: string,
+  ) {
+    return this.fixtureService.sortearCategoria(tournamentId, categoryId);
+  }
+
+  @Post('torneo/:tournamentId/categoria/:categoryId/publicar-fixture')
+  @Roles('organizador', 'admin')
+  @UseGuards(RolesGuard)
+  publicarFixture(
+    @Param('tournamentId') tournamentId: string,
+    @Param('categoryId') categoryId: string,
+  ) {
+    return this.fixtureService.publicarFixture(tournamentId, categoryId);
+  }
+
   @Post('torneo/:tournamentId/generar-fixture')
   @Roles('organizador', 'admin')
   @UseGuards(RolesGuard)
@@ -36,6 +57,20 @@ export class MatchesController {
     @Query('categoryId') categoryId?: string,
   ) {
     return this.fixtureService.obtenerFixture(tournamentId, categoryId);
+  }
+
+  @Post('swap-schedules')
+  @Roles('organizador', 'admin')
+  @UseGuards(RolesGuard)
+  swapSchedules(
+    @Body() body: { match1Id: string; match2Id: string },
+    @Request() req,
+  ) {
+    return this.matchesService.swapMatchSchedules(
+      body.match1Id,
+      body.match2Id,
+      req.user.id,
+    );
   }
 
   @Get(':id')
@@ -58,7 +93,7 @@ export class MatchesController {
   @UseGuards(RolesGuard)
   reprogramar(
     @Param('id') id: string,
-    @Body() body: { fechaProgramada: string; horaProgramada: string; canchaId?: string },
+    @Body() body: { fechaProgramada: string; horaProgramada: string; torneoCanchaId?: string },
   ) {
     return this.matchesService.reprogramar(id, body);
   }
