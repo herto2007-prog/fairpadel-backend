@@ -77,7 +77,10 @@ function generarJugadores() {
 }
 
 async function main() {
-  console.log('🧪 Creando 96 jugadores de prueba (48M + 48F) para 24 parejas por categoría...\n');
+  // Aceptar tournamentId como argumento
+  const tournamentId = process.argv[2];
+
+  console.log('🧪 Creando 96 jugadores de prueba (48M + 48F)...\n');
 
   const passwordHash = await bcrypt.hash('test123', 10);
   const jugadores = generarJugadores();
@@ -129,52 +132,68 @@ async function main() {
 
   console.log(`✅ ${nuevos} jugadores nuevos creados, ${existentes} ya existían`);
   console.log(`📋 Total: ${createdUsers.length} jugadores listos. Password: test123`);
-  console.log('\n--- Algunos ejemplos de login ---');
-  console.log('  Hombre: Doc: 2000001 | Carlos González');
-  console.log('  Hombre: Doc: 2000010 | Lucas Villalba');
-  console.log('  Mujer:  Doc: 3000001 | Sofía González');
-  console.log('  Mujer:  Doc: 3000010 | Florencia Villalba');
-  console.log('  Password para todos: test123');
 
-  // ─── Inscribir a torneo ───
+  // ─── Buscar torneo ───
 
-  const torneos = await prisma.tournament.findMany({
-    where: {
-      estado: { in: ['PUBLICADO', 'EN_CURSO'] },
-    },
-    include: {
-      categorias: { include: { category: true } },
-      modalidades: true,
-    },
-  });
+  let torneo: any;
 
-  if (torneos.length === 0) {
-    console.log('\n⚠️  No hay torneos publicados. Crea un torneo y publícalo para inscribir jugadores.');
-    console.log('   Luego vuelve a correr: npx ts-node prisma/seed-test-players.ts');
-    return;
+  if (tournamentId) {
+    torneo = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        categorias: { include: { category: true } },
+        modalidades: true,
+      },
+    });
+
+    if (!torneo) {
+      console.error(`\n❌ Torneo con ID "${tournamentId}" no encontrado.`);
+      return;
+    }
+  } else {
+    const torneos = await prisma.tournament.findMany({
+      where: {
+        estado: { in: ['PUBLICADO', 'EN_CURSO'] },
+      },
+      include: {
+        categorias: { include: { category: true } },
+        modalidades: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 1,
+    });
+
+    if (torneos.length === 0) {
+      console.log('\n⚠️  No hay torneos publicados. Crea y publica uno primero.');
+      console.log('   Uso: npx ts-node prisma/seed-test-players.ts [tournamentId]');
+      return;
+    }
+    torneo = torneos[0];
   }
 
-  const torneo = torneos[0];
-  console.log(`\n🏆 Inscribiendo al torneo: "${torneo.nombre}"`);
+  console.log(`\n🏆 Inscribiendo al torneo: "${torneo.nombre}" (${torneo.id})`);
+  console.log(`   Estado: ${torneo.estado}`);
+  console.log(`   Categorías: ${torneo.categorias.length}`);
 
   if (torneo.categorias.length === 0) {
     console.log('⚠️  El torneo no tiene categorías asignadas');
     return;
   }
 
-  // Separar por género usando los datos originales
+  // Separar por género
   const hombres = createdUsers.filter((_, i) => jugadores[i].genero === 'MASCULINO');
   const mujeres = createdUsers.filter((_, i) => jugadores[i].genero === 'FEMENINO');
 
-  // Buscar categorías
-  const catCaballeros = torneo.categorias.find(tc =>
-    tc.category.nombre.toLowerCase().includes('caballeros') ||
-    tc.category.nombre.toLowerCase().includes('masculino')
+  // Separar categorías del torneo por tipo (usando campo tipo de Category)
+  const catsMasculinas = torneo.categorias.filter((tc: any) =>
+    tc.category.tipo === 'MASCULINO'
   );
-  const catDamas = torneo.categorias.find(tc =>
-    tc.category.nombre.toLowerCase().includes('damas') ||
-    tc.category.nombre.toLowerCase().includes('femenino')
+  const catsFemeninas = torneo.categorias.filter((tc: any) =>
+    tc.category.tipo === 'FEMENINO'
   );
+
+  console.log(`   📊 Categorías masculinas: ${catsMasculinas.length} → ${catsMasculinas.map((tc: any) => tc.category.nombre).join(', ')}`);
+  console.log(`   📊 Categorías femeninas: ${catsFemeninas.length} → ${catsFemeninas.map((tc: any) => tc.category.nombre).join(', ')}`);
 
   const modalidad = torneo.modalidades.length > 0
     ? torneo.modalidades[0].modalidad
@@ -183,34 +202,47 @@ async function main() {
   const monto = torneo.costoInscripcion.toNumber();
   const comision = monto * 0.05;
 
+  // Calcular parejas por categoría según jugadores disponibles
+  // 48 hombres = 24 parejas total, dividir entre categorías masculinas
+  // 48 mujeres = 24 parejas total, dividir entre categorías femeninas
+  const parejasPerCatM = catsMasculinas.length > 0
+    ? Math.floor(24 / catsMasculinas.length)
+    : 0;
+  const parejasPerCatF = catsFemeninas.length > 0
+    ? Math.floor(24 / catsFemeninas.length)
+    : 0;
+
+  console.log(`   🎯 Parejas por categoría masculina: ${parejasPerCatM}`);
+  console.log(`   🎯 Parejas por categoría femenina: ${parejasPerCatF}`);
+
   async function inscribirParejas(
     players: any[],
-    playerData: typeof jugadores,
+    startIdx: number,
     categoryId: string,
-    categoryName: string,
     targetPairs: number,
   ) {
     let created = 0;
 
-    for (let i = 0; i < players.length - 1 && created < targetPairs; i += 2) {
+    for (let i = startIdx; i < players.length - 1 && created < targetPairs; i += 2) {
       const j1 = players[i];
       const j2 = players[i + 1];
 
-      // Buscar documento del jugador 2
-      const j2Data = playerData.find(j => j.documento === j2.documento);
-      if (!j2Data) continue;
-
-      // Verificar si ya existe
-      const existingPareja = await prisma.pareja.findFirst({
+      // Verificar si ya existe pareja inscrita en esta categoría del torneo
+      const existingInscripcion = await prisma.inscripcion.findFirst({
         where: {
-          jugador1Id: j1.id,
-          jugador2Id: j2.id,
-          inscripciones: { some: { tournamentId: torneo.id } },
+          tournamentId: torneo.id,
+          categoryId,
+          pareja: {
+            OR: [
+              { jugador1Id: j1.id, jugador2Id: j2.id },
+              { jugador1Id: j2.id, jugador2Id: j1.id },
+            ],
+          },
         },
       });
 
-      if (existingPareja) {
-        created++; // Contar como creada para el total
+      if (existingInscripcion) {
+        created++;
         continue;
       }
 
@@ -218,7 +250,7 @@ async function main() {
         data: {
           jugador1Id: j1.id,
           jugador2Id: j2.id,
-          jugador2Documento: j2Data.documento,
+          jugador2Documento: j2.documento,
         },
       });
 
@@ -255,41 +287,34 @@ async function main() {
 
   let totalInscritas = 0;
 
-  // 24 parejas de caballeros
-  if (catCaballeros) {
-    console.log(`\n👔 Inscribiendo 24 parejas en: ${catCaballeros.category.nombre}`);
-    const hombresData = jugadores.filter(j => j.genero === 'MASCULINO');
-    const count = await inscribirParejas(hombres, hombresData, catCaballeros.categoryId, catCaballeros.category.nombre, 24);
+  // Inscribir en TODAS las categorías masculinas
+  let mPlayerIdx = 0;
+  for (const tc of catsMasculinas) {
+    console.log(`\n👔 Inscribiendo ${parejasPerCatM} parejas en: ${tc.category.nombre}`);
+    const count = await inscribirParejas(hombres, mPlayerIdx, tc.categoryId, parejasPerCatM);
     totalInscritas += count;
-    console.log(`   ✅ ${count} parejas de caballeros inscritas`);
-  } else {
-    console.log('  ℹ️  No hay categoría de caballeros en este torneo');
+    mPlayerIdx += parejasPerCatM * 2;
+    console.log(`   ✅ ${count} parejas inscritas`);
   }
 
-  // 24 parejas de damas
-  if (catDamas) {
-    console.log(`\n👗 Inscribiendo 24 parejas en: ${catDamas.category.nombre}`);
-    const mujeresData = jugadores.filter(j => j.genero === 'FEMENINO');
-    const count = await inscribirParejas(mujeres, mujeresData, catDamas.categoryId, catDamas.category.nombre, 24);
+  // Inscribir en TODAS las categorías femeninas
+  let fPlayerIdx = 0;
+  for (const tc of catsFemeninas) {
+    console.log(`\n👗 Inscribiendo ${parejasPerCatF} parejas en: ${tc.category.nombre}`);
+    const count = await inscribirParejas(mujeres, fPlayerIdx, tc.categoryId, parejasPerCatF);
     totalInscritas += count;
-    console.log(`   ✅ ${count} parejas de damas inscritas`);
-  } else {
-    console.log('  ℹ️  No hay categoría de damas en este torneo');
-  }
-
-  // Fallback: si no hay categorías genéricas
-  if (!catCaballeros && !catDamas && torneo.categorias.length > 0) {
-    const cat = torneo.categorias[0];
-    console.log(`\n  ℹ️  Usando categoría genérica: ${cat.category.nombre}`);
-    const count = await inscribirParejas(createdUsers, jugadores, cat.categoryId, cat.category.nombre, 24);
-    totalInscritas += count;
+    fPlayerIdx += parejasPerCatF * 2;
     console.log(`   ✅ ${count} parejas inscritas`);
   }
 
   console.log(`\n🎉 Total: ${totalInscritas} parejas inscritas al torneo "${torneo.nombre}"`);
   if (monto > 0) {
-    console.log(`💰 Pagos generados: ${totalInscritas} x $${monto} = $${totalInscritas * monto} (comisión: $${(totalInscritas * comision).toFixed(2)})`);
+    console.log(`💰 Pagos generados: ${totalInscritas} x Gs.${monto.toLocaleString()} = Gs.${(totalInscritas * monto).toLocaleString()}`);
   }
+
+  console.log('\n--- Login de ejemplo ---');
+  console.log('  Hombre: Doc: 2000001 | Password: test123');
+  console.log('  Mujer:  Doc: 3000001 | Password: test123');
 }
 
 main()
