@@ -189,6 +189,21 @@ export class FixtureService {
       );
     }
 
+    // Validar que hay canchas y horarios configurados
+    const canchasConHorarios = tournament.torneoCanchas.filter(
+      (tc) => tc.horarios && tc.horarios.length > 0,
+    );
+    if (tournament.torneoCanchas.length === 0) {
+      throw new BadRequestException(
+        'No hay canchas configuradas para este torneo. Configura las canchas antes de sortear.',
+      );
+    }
+    if (canchasConHorarios.length === 0) {
+      throw new BadRequestException(
+        'Las canchas no tienen horarios configurados. Configura los horarios antes de sortear.',
+      );
+    }
+
     // Eliminar partidos existentes de esta categoría (safety reset para re-sorteo)
     await this.prisma.match.deleteMany({
       where: { tournamentId, categoryId },
