@@ -472,14 +472,20 @@ export class CategoriasService {
       },
     });
 
-    // 3. Send notification
-    const tipoLabel = tipo.includes('ASCENSO') ? 'ascendido' : 'movido';
-    await this.notificacionesService.crearNotificacion(
-      userId,
-      'RANKING',
-      `¡Felicidades! Has ${tipoLabel} a la categoría ${nuevaCategoria.nombre}`,
-      true,
-      false,
-    );
+    // 3. Send notification (use specialized method for ascensos, fallback for descensos)
+    if (tipo.includes('ASCENSO')) {
+      const categoriaAnterior = user.categoriaActual?.nombre || 'Sin categoría';
+      await this.notificacionesService.notificarAscensoCategoria(
+        userId,
+        categoriaAnterior,
+        nuevaCategoria.nombre,
+      );
+    } else {
+      await this.notificacionesService.crearNotificacion(
+        userId,
+        'RANKING',
+        `Tu categoría ha sido actualizada a ${nuevaCategoria.nombre}`,
+      );
+    }
   }
 }

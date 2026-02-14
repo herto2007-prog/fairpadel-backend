@@ -1,5 +1,6 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import {
   calcularHoraFin,
   generarTimeSlots,
@@ -9,7 +10,12 @@ import {
 
 @Injectable()
 export class FixtureService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(FixtureService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notificacionesService: NotificacionesService,
+  ) {}
 
   // ═══════════════════════════════════════════════════════
   // SEEDING: Calcular fuerza de parejas por ranking
@@ -288,11 +294,114 @@ export class FixtureService {
       });
     }
 
+    // Notificar a todos los jugadores de la primera ronda con partidos programados
+    try {
+      await this.notificarFixturePublicado(tournamentId, categoryId);
+    } catch (e) {
+      this.logger.error(`Error notificando fixture publicado: ${e.message}`);
+    }
+
     return {
       message: 'Fixture publicado exitosamente',
       tournamentId,
       categoryId,
     };
+  }
+
+  /**
+   * Notifica a todos los jugadores de matches de primera ronda (ACOMODACION_1)
+   * que tengan ambas parejas y schedule asignado.
+   */
+  private async notificarFixturePublicado(tournamentId: string, categoryId: string) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+    });
+    if (!tournament) return;
+
+    // Obtener matches de primera ronda con ambas parejas y horario
+    const matches = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        categoryId,
+        ronda: 'ACOMODACION_1',
+        estado: { notIn: ['WO', 'CANCELADO'] },
+        pareja1Id: { not: null },
+        pareja2Id: { not: null },
+      },
+      include: {
+        pareja1: {
+          include: { jugador1: true, jugador2: true },
+        },
+        pareja2: {
+          include: { jugador1: true, jugador2: true },
+        },
+        torneoCancha: {
+          include: {
+            sedeCancha: { include: { sede: true } },
+          },
+        },
+      },
+    });
+
+    for (const match of matches) {
+      const fecha = match.fechaProgramada
+        ? new Date(match.fechaProgramada).toLocaleDateString('es-PY', { day: '2-digit', month: '2-digit' })
+        : 'Por definir';
+      const hora = match.horaProgramada || 'Por definir';
+      const cancha = match.torneoCancha?.sedeCancha?.nombre || 'Por definir';
+      const sede = match.torneoCancha?.sedeCancha?.sede?.nombre || '';
+
+      // Notificar a los 4 jugadores (2 de cada pareja)
+      const jugadores: Array<{ id: string; nombre: string }> = [];
+      const p1j1 = match.pareja1?.jugador1;
+      const p1j2 = match.pareja1?.jugador2;
+      const p2j1 = match.pareja2?.jugador1;
+      const p2j2 = match.pareja2?.jugador2;
+
+      // Para pareja1: oponentes son pareja2
+      const oponentesP1 = [p2j1?.nombre, p2j2?.nombre].filter(Boolean).join(' / ') || 'Rival';
+      const oponentesP2 = [p1j1?.nombre, p1j2?.nombre].filter(Boolean).join(' / ') || 'Rival';
+
+      // Notificar jugadores de pareja1
+      for (const jugador of [p1j1, p1j2].filter(Boolean)) {
+        try {
+          await this.notificacionesService.notificarFixturePublicado(
+            jugador.id,
+            {
+              torneoNombre: tournament.nombre,
+              tournamentId,
+              oponentes: oponentesP1,
+              fecha,
+              hora,
+              cancha,
+              sede,
+            },
+          );
+        } catch (e) {
+          this.logger.error(`Error notificando fixture a ${jugador.id}: ${e.message}`);
+        }
+      }
+
+      // Notificar jugadores de pareja2
+      for (const jugador of [p2j1, p2j2].filter(Boolean)) {
+        try {
+          await this.notificacionesService.notificarFixturePublicado(
+            jugador.id,
+            {
+              torneoNombre: tournament.nombre,
+              tournamentId,
+              oponentes: oponentesP2,
+              fecha,
+              hora,
+              cancha,
+              sede,
+            },
+          );
+        } catch (e) {
+          this.logger.error(`Error notificando fixture a ${jugador.id}: ${e.message}`);
+        }
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════

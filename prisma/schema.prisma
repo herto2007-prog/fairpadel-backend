@@ -183,7 +183,8 @@ model User {
   solicitudesOrganizador    SolicitudOrganizador[]
   verificacionesEmail       EmailVerification[]
   passwordResets            PasswordReset[]
-  notificaciones            Notificacion[]
+  notificaciones              Notificacion[]
+  preferenciasNotificacion    PreferenciaNotificacion[]
   mensajesEnviados          MensajePrivado[]        @relation("MensajesEnviados")
   mensajesRecibidos         MensajePrivado[]        @relation("MensajesRecibidos")
   seguimientos              Seguimiento[]           @relation("Seguidor")
@@ -1045,16 +1046,35 @@ model Cupon {
 }
 
 model Notificacion {
-  id        String            @id @default(uuid())
-  userId    String            @map("user_id")
-  tipo      TipoNotificacion
-  contenido String            @db.Text
-  leida     Boolean           @default(false)
-  createdAt DateTime          @default(now()) @map("created_at")
+  id           String            @id @default(uuid())
+  userId       String            @map("user_id")
+  tipo         TipoNotificacion
+  titulo       String?           @db.VarChar(200)
+  contenido    String            @db.Text
+  enlace       String?           @db.VarChar(500)
+  leida        Boolean           @default(false)
+  emailEnviado Boolean           @default(false) @map("email_enviado")
+  smsEnviado   Boolean           @default(false) @map("sms_enviado")
+  createdAt    DateTime          @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notificaciones")
+}
+
+model PreferenciaNotificacion {
+  id               String            @id @default(uuid())
+  userId           String            @map("user_id")
+  tipoNotificacion TipoNotificacion  @map("tipo_notificacion")
+  recibirEmail     Boolean           @default(true) @map("recibir_email")
+  recibirSms       Boolean           @default(true) @map("recibir_sms")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tipoNotificacion])
+  @@map("preferencias_notificacion")
 }
 
 // ═══════════════════════════════════════════════════════

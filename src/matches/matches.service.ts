@@ -3,19 +3,24 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RankingsService } from '../rankings/rankings.service';
 import { CategoriasService } from '../categorias/categorias.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
 import { calcularHoraFin } from './scheduling-utils';
 
 @Injectable()
 export class MatchesService {
+  private readonly logger = new Logger(MatchesService.name);
+
   constructor(
     private prisma: PrismaService,
     private rankingsService: RankingsService,
     private categoriasService: CategoriasService,
+    private notificacionesService: NotificacionesService,
   ) {}
 
   async findOne(id: string) {
@@ -209,6 +214,24 @@ export class MatchesService {
             await this.autoAdvanceR2Bye(r2Match.id, r2Match[campoP]);
           }
         }
+      }
+    }
+
+    // Notificar resultado al ganador (solo resultados reales, no WO automáticos)
+    if (!esWalkOver) {
+      try {
+        await this.notificarResultadoGanador(match, ganadorId);
+      } catch (e) {
+        this.logger.error(`Error notificando resultado ganador: ${e.message}`);
+      }
+    }
+
+    // Verificar si el siguiente partido tiene ambas parejas listas → notificar
+    if (match.partidoSiguienteId) {
+      try {
+        await this.verificarYNotificarSiguientePartido(match.partidoSiguienteId, match.tournamentId);
+      } catch (e) {
+        this.logger.error(`Error notificando siguiente partido: ${e.message}`);
       }
     }
 
@@ -755,5 +778,140 @@ export class MatchesService {
       standings,
       promociones,
     };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // NOTIFICATION HELPERS
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Notifica a la pareja ganadora que avanzaron.
+   */
+  private async notificarResultadoGanador(match: any, ganadorId: string) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: match.tournamentId },
+    });
+    if (!tournament) return;
+
+    const parejaGanadora = await this.prisma.pareja.findUnique({
+      where: { id: ganadorId },
+      include: { jugador1: true, jugador2: true },
+    });
+    if (!parejaGanadora) return;
+
+    // Construir resultado legible
+    const sets: string[] = [];
+    if (match.set1Pareja1 != null && match.set1Pareja2 != null) {
+      sets.push(`${match.set1Pareja1}-${match.set1Pareja2}`);
+    }
+    if (match.set2Pareja1 != null && match.set2Pareja2 != null) {
+      sets.push(`${match.set2Pareja1}-${match.set2Pareja2}`);
+    }
+    if (match.set3Pareja1 != null && match.set3Pareja2 != null) {
+      sets.push(`${match.set3Pareja1}-${match.set3Pareja2}`);
+    }
+    const resultado = sets.join(', ') || 'Retiro';
+
+    // Determinar siguiente ronda
+    let siguienteRonda: string | undefined;
+    if (match.partidoSiguienteId) {
+      const nextMatch = await this.prisma.match.findUnique({
+        where: { id: match.partidoSiguienteId },
+      });
+      if (nextMatch) {
+        siguienteRonda = nextMatch.ronda;
+      }
+    }
+
+    const data = {
+      torneoNombre: tournament.nombre,
+      tournamentId: match.tournamentId,
+      ronda: match.ronda,
+      resultado,
+      siguienteRonda,
+    };
+
+    // Notificar ambos jugadores de la pareja ganadora
+    for (const jugador of [parejaGanadora.jugador1, parejaGanadora.jugador2].filter(Boolean)) {
+      try {
+        await this.notificacionesService.notificarResultadoGanador(jugador.id, data);
+      } catch (e) {
+        this.logger.error(`Error notificando resultado a ${jugador.id}: ${e.message}`);
+      }
+    }
+  }
+
+  /**
+   * Verifica si un match tiene ambas parejas y horario, y notifica a los 4 jugadores.
+   */
+  private async verificarYNotificarSiguientePartido(matchId: string, tournamentId: string) {
+    const nextMatch = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        pareja1: { include: { jugador1: true, jugador2: true } },
+        pareja2: { include: { jugador1: true, jugador2: true } },
+        torneoCancha: {
+          include: {
+            sedeCancha: { include: { sede: true } },
+          },
+        },
+      },
+    });
+
+    if (!nextMatch || !nextMatch.pareja1Id || !nextMatch.pareja2Id) return;
+
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+    });
+    if (!tournament) return;
+
+    const fecha = nextMatch.fechaProgramada
+      ? new Date(nextMatch.fechaProgramada).toLocaleDateString('es-PY', { day: '2-digit', month: '2-digit' })
+      : 'Por definir';
+    const hora = nextMatch.horaProgramada || 'Por definir';
+    const cancha = nextMatch.torneoCancha?.sedeCancha?.nombre || 'Por definir';
+    const sede = nextMatch.torneoCancha?.sedeCancha?.sede?.nombre || '';
+
+    const p1j1 = nextMatch.pareja1?.jugador1;
+    const p1j2 = nextMatch.pareja1?.jugador2;
+    const p2j1 = nextMatch.pareja2?.jugador1;
+    const p2j2 = nextMatch.pareja2?.jugador2;
+
+    const nombresP1 = [p1j1?.nombre, p1j2?.nombre].filter(Boolean).join(' / ');
+    const nombresP2 = [p2j1?.nombre, p2j2?.nombre].filter(Boolean).join(' / ');
+
+    const data = {
+      torneoNombre: tournament.nombre,
+      tournamentId,
+      ronda: nextMatch.ronda,
+      fecha,
+      hora,
+      cancha,
+      sede,
+    };
+
+    // Notificar pareja1 (oponentes = pareja2)
+    for (const jugador of [p1j1, p1j2].filter(Boolean)) {
+      try {
+        await this.notificacionesService.notificarSiguientePartidoListo(
+          jugador.id,
+          { ...data, oponentes: nombresP2 || 'Rival' },
+        );
+      } catch (e) {
+        this.logger.error(`Error notificando siguiente partido a ${jugador.id}: ${e.message}`);
+      }
+    }
+
+    // Notificar pareja2 (oponentes = pareja1)
+    for (const jugador of [p2j1, p2j2].filter(Boolean)) {
+      try {
+        await this.notificacionesService.notificarSiguientePartidoListo(
+          jugador.id,
+          { ...data, oponentes: nombresP1 || 'Rival' },
+        );
+      } catch (e) {
+        this.logger.error(`Error notificando siguiente partido a ${jugador.id}: ${e.message}`);
+      }
+    }
   }
 }

@@ -3,16 +3,21 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInscripcionDto } from './dto/create-inscripcion.dto';
 import { ParejasService } from '../parejas/parejas.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 
 @Injectable()
 export class InscripcionesService {
+  private readonly logger = new Logger(InscripcionesService.name);
+
   constructor(
     private prisma: PrismaService,
     private parejasService: ParejasService,
+    private notificacionesService: NotificacionesService,
   ) {}
 
   async create(createInscripcionDto: CreateInscripcionDto, userId: string) {
@@ -190,8 +195,13 @@ export class InscripcionesService {
       },
     });
 
-    // Si el torneo es gratuito, marcar como confirmada
+    // Si el torneo es gratuito, marcar como confirmada y notificar
     if (tournament.costoInscripcion.toNumber() === 0) {
+      try {
+        await this.enviarNotificacionInscripcion(inscripcion);
+      } catch (e) {
+        this.logger.error(`Error notificando inscripcion gratuita: ${e.message}`);
+      }
       return inscripcion;
     }
 
@@ -376,17 +386,27 @@ export class InscripcionesService {
     });
 
     // Confirmar inscripción
-    return this.prisma.inscripcion.update({
+    const inscripcionConfirmada = await this.prisma.inscripcion.update({
       where: { id: inscripcionId },
       data: { estado: 'CONFIRMADA' },
       include: {
         pareja: {
           include: { jugador1: true, jugador2: true },
         },
+        tournament: true,
         category: true,
         pago: true,
       },
     });
+
+    // Notificar ambos jugadores
+    try {
+      await this.enviarNotificacionInscripcion(inscripcionConfirmada);
+    } catch (e) {
+      this.logger.error(`Error notificando inscripcion confirmada: ${e.message}`);
+    }
+
+    return inscripcionConfirmada;
   }
 
   async rechazarPagoCompleto(inscripcionId: string, motivo?: string) {
@@ -433,5 +453,58 @@ export class InscripcionesService {
         pago: true,
       },
     });
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // NOTIFICATION HELPER
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Envía notificación de inscripción confirmada a ambos jugadores de la pareja.
+   */
+  private async enviarNotificacionInscripcion(inscripcion: any) {
+    const torneoNombre = inscripcion.tournament?.nombre || 'Torneo';
+    const categoriaNombre = inscripcion.category?.nombre || 'Categoría';
+    const jugador1 = inscripcion.pareja?.jugador1;
+    const jugador2 = inscripcion.pareja?.jugador2;
+
+    // Obtener fechas del torneo
+    const fechaInicio = inscripcion.tournament?.fechaInicio
+      ? new Date(inscripcion.tournament.fechaInicio).toLocaleDateString('es-PY', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
+    const fechaFin = inscripcion.tournament?.fechaFin
+      ? new Date(inscripcion.tournament.fechaFin).toLocaleDateString('es-PY', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
+    const fechas = fechaInicio && fechaFin ? `${fechaInicio} - ${fechaFin}` : fechaInicio || '';
+
+    // Notificar jugador1 (compañero = jugador2)
+    if (jugador1) {
+      try {
+        await this.notificacionesService.notificarInscripcionConfirmada(
+          jugador1.id,
+          torneoNombre,
+          categoriaNombre,
+          jugador2?.nombre ? `${jugador2.nombre} ${jugador2.apellido || ''}`.trim() : 'Por confirmar',
+          fechas,
+        );
+      } catch (e) {
+        this.logger.error(`Error notificando inscripcion a jugador1: ${e.message}`);
+      }
+    }
+
+    // Notificar jugador2 (compañero = jugador1)
+    if (jugador2) {
+      try {
+        await this.notificacionesService.notificarInscripcionConfirmada(
+          jugador2.id,
+          torneoNombre,
+          categoriaNombre,
+          jugador1?.nombre ? `${jugador1.nombre} ${jugador1.apellido || ''}`.trim() : 'Por confirmar',
+          fechas,
+        );
+      } catch (e) {
+        this.logger.error(`Error notificando inscripcion a jugador2: ${e.message}`);
+      }
+    }
   }
 }

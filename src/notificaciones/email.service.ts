@@ -1,85 +1,239 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
 export class EmailService {
-  private readonly fromEmail = process.env.FROM_EMAIL || 'noreply@fairpadel.com';
+  private readonly logger = new Logger(EmailService.name);
+  private resend: any = null;
+  private readonly fromEmail: string;
+  private readonly frontendUrl: string;
 
-  async enviarEmail(to: string, subject: string, html: string) {
-    // En producción, aquí usarías SendGrid o AWS SES
-    // Por ahora, solo logueamos
-    console.log('📧 Enviando email:');
-    console.log('To:', to);
-    console.log('Subject:', subject);
-    console.log('HTML:', html);
+  constructor() {
+    const apiKey = process.env.RESEND_API_KEY;
+    this.fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+    this.frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-    // Simular envío exitoso
-    return { success: true };
+    if (apiKey && apiKey !== 'dev-mode-no-key') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { Resend } = require('resend');
+        this.resend = new Resend(apiKey);
+        this.logger.log('Resend email service initialized');
+      } catch (e) {
+        this.logger.warn('Failed to initialize Resend: ' + e.message);
+      }
+    } else {
+      this.logger.warn('RESEND_API_KEY not configured, emails will be logged only');
+    }
   }
 
+  async enviarEmail(
+    to: string,
+    subject: string,
+    html: string,
+  ): Promise<{ success: boolean }> {
+    if (!this.resend) {
+      this.logger.log(`[DEV] Email -> ${to}: ${subject}`);
+      return { success: true };
+    }
+
+    try {
+      await this.resend.emails.send({
+        from: this.fromEmail,
+        to,
+        subject,
+        html,
+      });
+      this.logger.log(`Email enviado -> ${to}: ${subject}`);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Email fallo -> ${to}: ${error.message}`);
+      return { success: false };
+    }
+  }
+
+  // ═══════════════════════════════════════
+  // TEMPLATES DE AUTENTICACION
+  // ═══════════════════════════════════════
+
   async enviarEmailVerificacion(email: string, nombre: string, token: string) {
-    const verificationUrl = `${process.env.FRONTEND_URL}/auth/verify-email?token=${token}`;
-
-    const html = `
-      <h1>Bienvenido a FairPadel, ${nombre}!</h1>
-      <p>Por favor verifica tu email haciendo click en el siguiente enlace:</p>
-      <a href="${verificationUrl}">${verificationUrl}</a>
-      <p>Este enlace expira en 24 horas.</p>
-    `;
-
+    const verificationUrl = `${this.frontendUrl}/verify-email?token=${token}`;
+    const html = this.wrapTemplate(`
+      <h2 style="color: #f97316;">Verifica tu email</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Bienvenido a FairPadel. Verifica tu email haciendo click en el boton:</p>
+      ${this.buttonHtml(verificationUrl, 'Verificar Email')}
+      <p style="color: #888; font-size: 12px; margin-top: 24px;">Este enlace expira en 24 horas.</p>
+    `);
     return this.enviarEmail(email, 'Verifica tu email - FairPadel', html);
   }
 
   async enviarEmailBienvenida(email: string, nombre: string) {
-    const html = `
-      <h1>¡Bienvenido a FairPadel, ${nombre}!</h1>
-      <p>Tu cuenta ha sido verificada exitosamente.</p>
-      <p>Ya puedes comenzar a inscribirte en torneos y gestionar tus partidos.</p>
-      <a href="${process.env.FRONTEND_URL}/dashboard">Ir al Dashboard</a>
-    `;
-
-    return this.enviarEmail(email, '¡Bienvenido a FairPadel!', html);
+    const html = this.wrapTemplate(`
+      <h2 style="color: #22c55e;">Bienvenido a FairPadel!</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Tu cuenta ha sido verificada exitosamente. Ya puedes inscribirte en torneos.</p>
+      ${this.buttonHtml(`${this.frontendUrl}/tournaments`, 'Ver Torneos')}
+    `);
+    return this.enviarEmail(email, 'Bienvenido a FairPadel!', html);
   }
 
   async enviarEmailRecuperacion(email: string, nombre: string, token: string) {
-    const resetUrl = `${process.env.FRONTEND_URL}/auth/reset-password?token=${token}`;
-
-    const html = `
-      <h1>Recuperación de contraseña</h1>
-      <p>Hola ${nombre},</p>
-      <p>Recibimos una solicitud para restablecer tu contraseña.</p>
-      <p>Haz click en el siguiente enlace para crear una nueva contraseña:</p>
-      <a href="${resetUrl}">${resetUrl}</a>
-      <p>Este enlace expira en 1 hora.</p>
-      <p>Si no solicitaste esto, ignora este email.</p>
-    `;
-
-    return this.enviarEmail(email, 'Recuperación de contraseña - FairPadel', html);
+    const resetUrl = `${this.frontendUrl}/forgot-password?token=${token}`;
+    const html = this.wrapTemplate(`
+      <h2 style="color: #f97316;">Recuperacion de contrasena</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Recibimos una solicitud para restablecer tu contrasena:</p>
+      ${this.buttonHtml(resetUrl, 'Restablecer Contrasena')}
+      <p style="color: #888; font-size: 12px; margin-top: 24px;">Expira en 1 hora. Si no solicitaste esto, ignora este email.</p>
+    `);
+    return this.enviarEmail(email, 'Recuperacion de contrasena - FairPadel', html);
   }
 
-  async enviarNotificacion(email: string, nombre: string, contenido: string) {
-    const html = `
-      <h2>Notificación de FairPadel</h2>
-      <p>Hola ${nombre},</p>
-      <p>${contenido}</p>
-      <a href="${process.env.FRONTEND_URL}/dashboard">Ver en FairPadel</a>
-    `;
+  // ═══════════════════════════════════════
+  // TEMPLATES DE NOTIFICACIONES
+  // ═══════════════════════════════════════
 
-    return this.enviarEmail(email, 'Notificación - FairPadel', html);
+  async enviarNotificacion(email: string, nombre: string, contenido: string) {
+    const html = this.wrapTemplate(`
+      <h2 style="color: #f97316;">Notificacion</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>${contenido}</p>
+      ${this.buttonHtml(`${this.frontendUrl}/profile`, 'Ir a FairPadel')}
+    `);
+    return this.enviarEmail(email, 'Notificacion - FairPadel', html);
+  }
+
+  async enviarInscripcionConfirmada(
+    email: string,
+    nombre: string,
+    data: { torneoNombre: string; categoria: string; companero: string; fechas: string },
+  ) {
+    const html = this.wrapTemplate(`
+      <h2 style="color: #22c55e;">Inscripcion Confirmada</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Tu inscripcion al torneo <strong>${data.torneoNombre}</strong> fue confirmada.</p>
+      ${this.infoBox(`
+        <p><strong>Categoria:</strong> ${data.categoria}</p>
+        <p><strong>Companero/a:</strong> ${data.companero}</p>
+        <p><strong>Fechas:</strong> ${data.fechas}</p>
+      `)}
+      ${this.buttonHtml(`${this.frontendUrl}/inscripciones`, 'Ver Mis Inscripciones')}
+    `);
+    return this.enviarEmail(email, `Inscripcion Confirmada - ${data.torneoNombre}`, html);
+  }
+
+  async enviarFixturePublicado(
+    email: string,
+    nombre: string,
+    data: { torneoNombre: string; oponentes: string; fecha: string; hora: string; cancha: string; sede: string; fixtureUrl: string },
+  ) {
+    const html = this.wrapTemplate(`
+      <h2 style="color: #f97316;">Fixture Publicado</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>El fixture del torneo <strong>${data.torneoNombre}</strong> fue publicado.</p>
+      ${this.infoBox(`
+        <p><strong>Vs.</strong> ${data.oponentes}</p>
+        <p><strong>Fecha:</strong> ${data.fecha} - ${data.hora}</p>
+        <p><strong>Cancha:</strong> ${data.cancha} (${data.sede})</p>
+      `)}
+      ${this.buttonHtml(data.fixtureUrl, 'Ver Fixture')}
+    `);
+    return this.enviarEmail(email, `Fixture Publicado - ${data.torneoNombre}`, html);
+  }
+
+  async enviarSiguientePartido(
+    email: string,
+    nombre: string,
+    data: { torneoNombre: string; ronda: string; oponentes: string; fecha: string; hora: string; cancha: string; sede: string; fixtureUrl: string },
+  ) {
+    const html = this.wrapTemplate(`
+      <h2 style="color: #f97316;">Proximo Partido Confirmado</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Tu siguiente partido en <strong>${data.torneoNombre}</strong> esta listo:</p>
+      ${this.infoBox(`
+        <p><strong>${data.ronda}</strong></p>
+        <p><strong>Vs.</strong> ${data.oponentes}</p>
+        <p><strong>Fecha:</strong> ${data.fecha} - ${data.hora}</p>
+        <p><strong>Cancha:</strong> ${data.cancha} (${data.sede})</p>
+      `)}
+      ${this.buttonHtml(data.fixtureUrl, 'Ver Fixture')}
+    `);
+    return this.enviarEmail(email, `Proximo Partido - ${data.torneoNombre} (${data.ronda})`, html);
+  }
+
+  async enviarResultadoPartido(
+    email: string,
+    nombre: string,
+    data: { torneoNombre: string; ronda: string; resultado: string; siguienteRonda?: string },
+  ) {
+    const msg = data.siguienteRonda
+      ? `Felicidades! Avanzas a <strong>${data.siguienteRonda}</strong> en <strong>${data.torneoNombre}</strong>.`
+      : `Felicidades por tu victoria en <strong>${data.torneoNombre}</strong>!`;
+    const html = this.wrapTemplate(`
+      <h2 style="color: #22c55e;">Victoria!</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>${msg}</p>
+      ${this.infoBox(`
+        <p><strong>Ronda:</strong> ${data.ronda}</p>
+        <p><strong>Resultado:</strong> ${data.resultado}</p>
+      `)}
+    `);
+    return this.enviarEmail(email, `Victoria en ${data.torneoNombre}!`, html);
+  }
+
+  async enviarAscensoCategoria(
+    email: string,
+    nombre: string,
+    data: { categoriaAnterior: string; categoriaNueva: string },
+  ) {
+    const html = this.wrapTemplate(`
+      <h2 style="color: #f97316;">Ascenso de Categoria!</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Felicidades! Has ascendido de <strong>${data.categoriaAnterior}</strong> a <strong>${data.categoriaNueva}</strong>.</p>
+      ${this.buttonHtml(`${this.frontendUrl}/profile`, 'Ver Mi Perfil')}
+    `);
+    return this.enviarEmail(email, `Ascendiste a ${data.categoriaNueva}!`, html);
   }
 
   async enviarResumenSemanal(email: string, nombre: string, datos: any) {
-    const html = `
-      <h1>Resumen Semanal - FairPadel</h1>
-      <p>Hola ${nombre},</p>
-      <h3>Tu actividad esta semana:</h3>
+    const html = this.wrapTemplate(`
+      <h2 style="color: #f97316;">Resumen Semanal</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
       <ul>
         <li>Partidos jugados: ${datos.partidosJugados}</li>
         <li>Victorias: ${datos.victorias}</li>
         <li>Ranking actual: #${datos.ranking}</li>
       </ul>
-      <a href="${process.env.FRONTEND_URL}/rankings">Ver Rankings</a>
-    `;
-
+      ${this.buttonHtml(`${this.frontendUrl}/rankings`, 'Ver Rankings')}
+    `);
     return this.enviarEmail(email, 'Resumen Semanal - FairPadel', html);
+  }
+
+  // ═══════════════════════════════════════
+  // HELPERS HTML
+  // ═══════════════════════════════════════
+
+  private wrapTemplate(body: string): string {
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f0f1a; color: #e0e0e0; padding: 32px; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <span style="font-size: 28px; font-weight: bold; color: #f97316;">FairPadel</span>
+        </div>
+        ${body}
+        <hr style="border: none; border-top: 1px solid #2a2a3e; margin: 24px 0;" />
+        <p style="color: #666; font-size: 11px; text-align: center;">
+          FairPadel - Torneos de Padel en Paraguay<br/>
+          Configura tus preferencias de notificacion en tu perfil.
+        </p>
+      </div>
+    `;
+  }
+
+  private buttonHtml(url: string, text: string): string {
+    return `<div style="text-align: center; margin: 24px 0;"><a href="${url}" style="display: inline-block; background: #f97316; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: bold;">${text}</a></div>`;
+  }
+
+  private infoBox(content: string): string {
+    return `<div style="background: #1a1a2e; border: 1px solid #2a2a3e; padding: 16px; border-radius: 8px; margin: 16px 0;">${content}</div>`;
   }
 }

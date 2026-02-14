@@ -1,14 +1,18 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../notificaciones/email.service';
 import { RegisterDto, LoginDto } from './dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private emailService: EmailService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -113,9 +117,17 @@ export class AuthService {
       },
     });
 
-    // TODO: Enviar email de verificación (lo haremos después)
-    console.log('🔗 Token de verificación:', verificationToken);
-    console.log('📧 Enviar email a:', user.email);
+    // Enviar email de verificación
+    try {
+      await this.emailService.enviarEmailVerificacion(
+        user.email,
+        user.nombre,
+        verificationToken,
+      );
+    } catch (e) {
+      this.logger.error(`Error enviando email de verificación a ${user.email}: ${e.message}`);
+      // No bloquear el registro si el email falla
+    }
 
     return {
       message: '¡Registro exitoso! Verifica tu email para activar tu cuenta',
