@@ -95,13 +95,15 @@ export function slotKey(canchaId: string, fecha: Date | string, hora: string): s
  */
 export function getRondaOrden(ronda: string): number {
   const ordenes: Record<string, number> = {
-    DIECISEISAVOS: 1,
-    RONDA_6: 1,
-    RONDA_5: 1,
-    OCTAVOS: 2,
-    CUARTOS: 3,
-    SEMIFINAL: 4,
-    FINAL: 5,
+    ACOMODACION_1: 1,
+    ACOMODACION_2: 2,
+    DIECISEISAVOS: 3,
+    RONDA_6: 3,
+    RONDA_5: 3,
+    OCTAVOS: 4,
+    CUARTOS: 5,
+    SEMIFINAL: 6,
+    FINAL: 7,
   };
   return ordenes[ronda] || 0;
 }

@@ -14,6 +14,7 @@ import { FixtureService } from './fixture.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TournamentRoleGuard } from '../auth/guards/tournament-role.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('matches')
@@ -79,8 +80,7 @@ export class MatchesController {
   }
 
   @Put(':id/cargar-resultado')
-  @Roles('organizador', 'admin')
-  @UseGuards(RolesGuard)
+  @UseGuards(TournamentRoleGuard)
   cargarResultado(
     @Param('id') id: string,
     @Body() dto: CargarResultadoDto,

@@ -70,6 +70,7 @@ export class MatchesService {
       set3Pareja1,
       set3Pareja2,
       esWalkOver,
+      esRetiro,
       parejaGanadoraId,
       observaciones,
     } = dto;
@@ -78,6 +79,7 @@ export class MatchesService {
     let perdedorId: string;
 
     if (esWalkOver) {
+      // Walk Over — sin puntaje, solo ganador
       ganadorId = parejaGanadoraId;
       perdedorId = ganadorId === match.pareja1Id ? match.pareja2Id : match.pareja1Id;
 
@@ -90,7 +92,32 @@ export class MatchesService {
           observaciones: observaciones || 'Walk Over',
         },
       });
+    } else if (esRetiro) {
+      // Retiro por lesión — se requiere parejaGanadoraId, sets parciales opcionales
+      if (!parejaGanadoraId) {
+        throw new BadRequestException('Debe indicar la pareja ganadora en caso de retiro');
+      }
+      ganadorId = parejaGanadoraId;
+      perdedorId = ganadorId === match.pareja1Id ? match.pareja2Id : match.pareja1Id;
+
+      await this.prisma.match.update({
+        where: { id },
+        data: {
+          set1Pareja1: set1Pareja1 ?? null,
+          set1Pareja2: set1Pareja2 ?? null,
+          set2Pareja1: set2Pareja1 ?? null,
+          set2Pareja2: set2Pareja2 ?? null,
+          set3Pareja1: set3Pareja1 ?? null,
+          set3Pareja2: set3Pareja2 ?? null,
+          estado: 'FINALIZADO',
+          parejaGanadoraId: ganadorId,
+          parejaPerdedoraId: perdedorId,
+          observaciones: observaciones || 'Retiro',
+        },
+      });
     } else {
+      // Resultado normal — validar marcador según ronda
+      const esSemiFinal = ['SEMIFINAL', 'FINAL'].includes(match.ronda);
       this.validarMarcador(
         set1Pareja1,
         set1Pareja2,
@@ -98,6 +125,7 @@ export class MatchesService {
         set2Pareja2,
         set3Pareja1,
         set3Pareja2,
+        esSemiFinal,
       );
 
       let setsGanadosP1 = 0;
@@ -109,7 +137,8 @@ export class MatchesService {
       if (set2Pareja1 > set2Pareja2) setsGanadosP1++;
       else setsGanadosP2++;
 
-      if (set3Pareja1 !== null && set3Pareja2 !== null) {
+      if (set3Pareja1 !== null && set3Pareja1 !== undefined &&
+          set3Pareja2 !== null && set3Pareja2 !== undefined) {
         if (set3Pareja1 > set3Pareja2) setsGanadosP1++;
         else setsGanadosP2++;
       }
@@ -139,7 +168,43 @@ export class MatchesService {
       await this.avanzarGanador(match.partidoSiguienteId, ganadorId, match.id);
     }
 
-    // ELIMINADO: No se juega 3er/4to puesto en formato paraguayo
+    // Avanzar perdedor al partido de acomodación R2 (si aplica)
+    if (match.partidoPerdedorSiguienteId && match.posicionEnPerdedor) {
+      const campoP = match.posicionEnPerdedor === 1 ? 'pareja1Id' : 'pareja2Id';
+      await this.prisma.match.update({
+        where: { id: match.partidoPerdedorSiguienteId },
+        data: { [campoP]: perdedorId },
+      });
+
+      // Verificar si el match R2 destino ya tiene ambas parejas → auto-check BYE
+      const r2Match = await this.prisma.match.findUnique({
+        where: { id: match.partidoPerdedorSiguienteId },
+      });
+      if (r2Match && r2Match.pareja1Id && r2Match.pareja2Id) {
+        // Ambos slots llenos → match R2 listo para jugar (no es BYE)
+      } else if (r2Match) {
+        // Verificar si hay otro feeder pendiente para el slot vacío
+        const otherPos = match.posicionEnPerdedor === 1 ? 2 : 1;
+        const otherSlotField = otherPos === 1 ? 'pareja1Id' : 'pareja2Id';
+        if (r2Match[otherSlotField]) {
+          // Ambos slots llenos ahora → nada que hacer
+        } else {
+          // Slot vacío — verificar si hay feeders pendientes
+          const pendingFeeders = await this.prisma.match.count({
+            where: {
+              OR: [
+                { partidoPerdedorSiguienteId: r2Match.id, posicionEnPerdedor: otherPos },
+              ],
+              estado: { notIn: ['FINALIZADO', 'WO', 'CANCELADO'] },
+            },
+          });
+          if (pendingFeeders === 0 && r2Match[campoP]) {
+            // No hay feeders pendientes y ya tiene 1 pareja → BYE en R2
+            await this.autoAdvanceR2Bye(r2Match.id, r2Match[campoP]);
+          }
+        }
+      }
+    }
 
     // TODO: Actualizar ranking
     // TODO: Enviar notificaciones
@@ -147,6 +212,10 @@ export class MatchesService {
     return this.findOne(id);
   }
 
+  /**
+   * Valida marcador según reglas paraguayas de pádel.
+   * @param esSemiFinal - true si es SEMIFINAL o FINAL (3 sets completos, sin super tie-break)
+   */
   private validarMarcador(
     s1p1: number,
     s1p2: number,
@@ -154,18 +223,17 @@ export class MatchesService {
     s2p2: number,
     s3p1?: number,
     s3p2?: number,
+    esSemiFinal: boolean = false,
   ) {
-    const games = [s1p1, s1p2, s2p1, s2p2];
-    if (s3p1 !== null) games.push(s3p1);
-    if (s3p2 !== null) games.push(s3p2);
-
-    for (const g of games) {
+    // Validar rango de games para sets 1 y 2 (0-7)
+    const gamesSet12 = [s1p1, s1p2, s2p1, s2p2];
+    for (const g of gamesSet12) {
       if (g < 0 || g > 7) {
         throw new BadRequestException('Los games deben estar entre 0 y 7');
       }
     }
 
-    const validarSet = (p1: number, p2: number) => {
+    const validarSetNormal = (p1: number, p2: number) => {
       if (p1 === 6 && p2 <= 4) return true;
       if (p2 === 6 && p1 <= 4) return true;
       if (p1 === 7 && (p2 === 5 || p2 === 6)) return true;
@@ -173,16 +241,44 @@ export class MatchesService {
       return false;
     };
 
-    if (!validarSet(s1p1, s1p2)) {
+    /**
+     * Valida super tie-break: al menos uno llega a 10+, diferencia >= 2
+     */
+    const validarSuperTieBreak = (p1: number, p2: number) => {
+      const max = Math.max(p1, p2);
+      const diff = Math.abs(p1 - p2);
+      if (max < 10) return false;
+      if (diff < 2) return false;
+      return true;
+    };
+
+    if (!validarSetNormal(s1p1, s1p2)) {
       throw new BadRequestException('Marcador inválido en set 1');
     }
-    if (!validarSet(s2p1, s2p2)) {
+    if (!validarSetNormal(s2p1, s2p2)) {
       throw new BadRequestException('Marcador inválido en set 2');
     }
 
-    if (s3p1 !== null && s3p2 !== null) {
-      if (!validarSet(s3p1, s3p2)) {
-        throw new BadRequestException('Marcador inválido en set 3');
+    if (s3p1 !== null && s3p1 !== undefined &&
+        s3p2 !== null && s3p2 !== undefined) {
+      if (esSemiFinal) {
+        // Semi/Final: set 3 es un set normal (0-7)
+        if (s3p1 < 0 || s3p1 > 7 || s3p2 < 0 || s3p2 > 7) {
+          throw new BadRequestException('Los games del set 3 deben estar entre 0 y 7');
+        }
+        if (!validarSetNormal(s3p1, s3p2)) {
+          throw new BadRequestException('Marcador inválido en set 3');
+        }
+      } else {
+        // Rondas normales: set 3 es super tie-break (a 10, diferencia 2)
+        if (s3p1 < 0 || s3p2 < 0) {
+          throw new BadRequestException('El marcador del super tie-break no puede ser negativo');
+        }
+        if (!validarSuperTieBreak(s3p1, s3p2)) {
+          throw new BadRequestException(
+            'Super tie-break inválido: al menos uno debe llegar a 10 con diferencia de 2',
+          );
+        }
       }
     }
   }
@@ -210,7 +306,29 @@ export class MatchesService {
     });
   }
 
-  // ELIMINADO: colocarPerdedorEnUbicacion — No se juega 3er/4to puesto en formato paraguayo
+  /**
+   * Auto-avanza un BYE en R2 de acomodación: marca como WO y avanza
+   * al bracket principal si hay partidoSiguienteId.
+   */
+  private async autoAdvanceR2Bye(matchId: string, winnerId: string) {
+    const match = await this.prisma.match.update({
+      where: { id: matchId },
+      data: {
+        estado: 'WO',
+        parejaGanadoraId: winnerId,
+        observaciones: 'BYE - Avance automático (Acomodación)',
+      },
+    });
+
+    // Avanzar al bracket principal
+    if (match.partidoSiguienteId && match.posicionEnSiguiente) {
+      const campo = match.posicionEnSiguiente === 1 ? 'pareja1Id' : 'pareja2Id';
+      await this.prisma.match.update({
+        where: { id: match.partidoSiguienteId },
+        data: { [campo]: winnerId },
+      });
+    }
+  }
 
   // ═══════════════════════════════════════════════════════
   // VALIDACIÓN ANTI-CONFLICTO DE SLOTS

@@ -643,6 +643,9 @@ model Match {
   set3Pareja2        Int?         @map("set3_pareja2")
   partidoSiguienteId  String?      @map("partido_siguiente_id")
   posicionEnSiguiente Int?         @map("posicion_en_siguiente")
+  // Routing de perdedores (para rondas de acomodación)
+  partidoPerdedorSiguienteId  String?  @map("partido_perdedor_siguiente_id")
+  posicionEnPerdedor          Int?     @map("posicion_en_perdedor")
   observaciones       String?      @db.Text
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
