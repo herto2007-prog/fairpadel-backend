@@ -545,6 +545,59 @@ export class TournamentsService {
     });
   }
 
+  // ═══════════════════════════════════════════
+  // FINALIZACIÓN DE TORNEO
+  // ═══════════════════════════════════════════
+
+  async finalizarTorneo(id: string, userId: string) {
+    const tournament = await this.findOne(id);
+
+    if (tournament.organizadorId !== userId) {
+      // Check if user is admin
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para finalizar este torneo');
+      }
+    }
+
+    if (tournament.estado === 'FINALIZADO') {
+      throw new BadRequestException('Este torneo ya está finalizado');
+    }
+
+    if (tournament.estado !== 'EN_CURSO') {
+      throw new BadRequestException('Solo se pueden finalizar torneos en curso');
+    }
+
+    // Verificar que TODAS las categorías estén finalizadas
+    const categorias = await this.prisma.tournamentCategory.findMany({
+      where: { tournamentId: id },
+      include: { category: true },
+    });
+
+    const noFinalizadas = categorias.filter((tc) => tc.estado !== 'FINALIZADA');
+    if (noFinalizadas.length > 0) {
+      const nombres = noFinalizadas.map((tc) => tc.category.nombre).join(', ');
+      throw new BadRequestException(
+        `No se puede finalizar: las siguientes categorías no están finalizadas: ${nombres}`,
+      );
+    }
+
+    // Transicionar torneo → FINALIZADO
+    await this.prisma.tournament.update({
+      where: { id },
+      data: { estado: 'FINALIZADO' },
+    });
+
+    return {
+      message: 'Torneo finalizado exitosamente',
+      categoriasFinalizadas: categorias.length,
+    };
+  }
+
   async removeAyudante(tournamentId: string, ayudanteId: string, userId: string) {
     const tournament = await this.findOne(tournamentId);
 

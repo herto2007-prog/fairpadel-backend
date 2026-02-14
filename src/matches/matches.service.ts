@@ -5,12 +5,16 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RankingsService } from '../rankings/rankings.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
 import { calcularHoraFin } from './scheduling-utils';
 
 @Injectable()
 export class MatchesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private rankingsService: RankingsService,
+  ) {}
 
   async findOne(id: string) {
     const match = await this.prisma.match.findUnique({
@@ -206,10 +210,14 @@ export class MatchesService {
       }
     }
 
-    // TODO: Actualizar ranking
-    // TODO: Enviar notificaciones
+    // Verificar si la categoría está completa (todos los matches finalizados)
+    const categoriaCompleta = await this.verificarCategoriaCompleta(
+      match.tournamentId,
+      match.categoryId,
+    );
 
-    return this.findOne(id);
+    const resultado = await this.findOne(id);
+    return { ...resultado, categoriaCompleta };
   }
 
   /**
@@ -522,5 +530,214 @@ export class MatchesService {
         { horaProgramada: 'asc' },
       ],
     });
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // VERIFICACIÓN Y FINALIZACIÓN DE CATEGORÍA
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Verifica si todos los matches con parejas asignadas de una categoría están finalizados.
+   */
+  private async verificarCategoriaCompleta(
+    tournamentId: string,
+    categoryId: string,
+  ): Promise<boolean> {
+    const pendientes = await this.prisma.match.count({
+      where: {
+        tournamentId,
+        categoryId,
+        estado: { notIn: ['FINALIZADO', 'WO', 'CANCELADO'] },
+        pareja1Id: { not: null },
+      },
+    });
+    return pendientes === 0;
+  }
+
+  /**
+   * Obtener standings de una categoría (preview sin finalizar).
+   * Retorna posiciones con parejas y puntos que recibirían.
+   */
+  async obtenerStandings(tournamentId: string, categoryId: string) {
+    const matches = await this.prisma.match.findMany({
+      where: { tournamentId, categoryId },
+      include: {
+        parejaGanadora: {
+          include: { jugador1: true, jugador2: true },
+        },
+        parejaPerdedora: {
+          include: { jugador1: true, jugador2: true },
+        },
+      },
+    });
+
+    return this.calcularStandings(matches);
+  }
+
+  /**
+   * Calcula standings a partir de los matches de una categoría.
+   */
+  private calcularStandings(matches: any[]) {
+    // Tabla de puntos por posición
+    const puntosPorRonda: Record<string, { posicion: string; puntos: number }> = {
+      CAMPEON: { posicion: 'Campeón', puntos: 100 },
+      FINALISTA: { posicion: 'Finalista', puntos: 60 },
+      SEMIFINALISTA: { posicion: 'Semifinalista', puntos: 35 },
+      CUARTOS: { posicion: 'Cuartos de Final', puntos: 15 },
+      OCTAVOS: { posicion: 'Octavos de Final', puntos: 8 },
+      PRIMERA_RONDA: { posicion: 'Primera Ronda', puntos: 3 },
+    };
+
+    const standings: Array<{
+      pareja: any;
+      posicion: string;
+      puntos: number;
+      orden: number;
+    }> = [];
+
+    // Buscar match de FINAL
+    const finalMatch = matches.find((m) => m.ronda === 'FINAL');
+    if (finalMatch?.parejaGanadora) {
+      standings.push({
+        pareja: finalMatch.parejaGanadora,
+        posicion: puntosPorRonda.CAMPEON.posicion,
+        puntos: puntosPorRonda.CAMPEON.puntos,
+        orden: 1,
+      });
+    }
+    if (finalMatch?.parejaPerdedora) {
+      standings.push({
+        pareja: finalMatch.parejaPerdedora,
+        posicion: puntosPorRonda.FINALISTA.posicion,
+        puntos: puntosPorRonda.FINALISTA.puntos,
+        orden: 2,
+      });
+    }
+
+    // Buscar perdedores de SEMIFINAL
+    const semiMatches = matches.filter((m) => m.ronda === 'SEMIFINAL');
+    for (const semi of semiMatches) {
+      if (semi.parejaPerdedora) {
+        standings.push({
+          pareja: semi.parejaPerdedora,
+          posicion: puntosPorRonda.SEMIFINALISTA.posicion,
+          puntos: puntosPorRonda.SEMIFINALISTA.puntos,
+          orden: 3,
+        });
+      }
+    }
+
+    // Buscar perdedores de CUARTOS
+    const cuartosMatches = matches.filter((m) => m.ronda === 'CUARTOS');
+    for (const cuarto of cuartosMatches) {
+      if (cuarto.parejaPerdedora) {
+        standings.push({
+          pareja: cuarto.parejaPerdedora,
+          posicion: puntosPorRonda.CUARTOS.posicion,
+          puntos: puntosPorRonda.CUARTOS.puntos,
+          orden: 4,
+        });
+      }
+    }
+
+    // Buscar perdedores de OCTAVOS
+    const octavosMatches = matches.filter((m) => m.ronda === 'OCTAVOS' || m.ronda === 'DIECISEISAVOS');
+    for (const oct of octavosMatches) {
+      if (oct.parejaPerdedora) {
+        standings.push({
+          pareja: oct.parejaPerdedora,
+          posicion: puntosPorRonda.OCTAVOS.posicion,
+          puntos: puntosPorRonda.OCTAVOS.puntos,
+          orden: 5,
+        });
+      }
+    }
+
+    // Perdedores en rondas de acomodación (eliminados en R2)
+    const acomodacion2Matches = matches.filter((m) => m.ronda === 'ACOMODACION_2');
+    for (const a2 of acomodacion2Matches) {
+      if (a2.parejaPerdedora) {
+        // Verificar que no esté ya en standings (puede ser WO/BYE)
+        const yaIncluida = standings.some(
+          (s) => s.pareja?.id === a2.parejaPerdedora?.id,
+        );
+        if (!yaIncluida) {
+          standings.push({
+            pareja: a2.parejaPerdedora,
+            posicion: puntosPorRonda.PRIMERA_RONDA.posicion,
+            puntos: puntosPorRonda.PRIMERA_RONDA.puntos,
+            orden: 6,
+          });
+        }
+      }
+    }
+
+    // Ordenar por puntos (desc) y luego por orden
+    standings.sort((a, b) => b.puntos - a.puntos || a.orden - b.orden);
+
+    return { standings, puntosPorRonda };
+  }
+
+  /**
+   * Finalizar una categoría: asignar puntos, actualizar rankings, cambiar estado.
+   */
+  async finalizarCategoria(tournamentId: string, categoryId: string) {
+    // 1. Verificar que todos los matches estén completos
+    const completa = await this.verificarCategoriaCompleta(tournamentId, categoryId);
+    if (!completa) {
+      throw new BadRequestException(
+        'No se puede finalizar: hay partidos pendientes en esta categoría',
+      );
+    }
+
+    // 2. Verificar estado actual de la categoría
+    const tc = await this.prisma.tournamentCategory.findFirst({
+      where: { tournamentId, categoryId },
+    });
+    if (!tc) {
+      throw new NotFoundException('Categoría no encontrada en este torneo');
+    }
+    if (tc.estado === 'FINALIZADA') {
+      throw new BadRequestException('Esta categoría ya fue finalizada');
+    }
+
+    // 3. Obtener standings
+    const { standings } = await this.obtenerStandings(tournamentId, categoryId);
+
+    // 4. Registrar puntos en rankings para cada jugador
+    for (const entry of standings) {
+      if (!entry.pareja) continue;
+      const jugadores = [entry.pareja.jugador1, entry.pareja.jugador2].filter(Boolean);
+      for (const jugador of jugadores) {
+        // Registrar en historial de puntos
+        await this.prisma.historialPuntos.create({
+          data: {
+            jugadorId: jugador.id,
+            tournamentId,
+            categoryId,
+            posicionFinal: entry.posicion,
+            puntosGanados: entry.puntos,
+            fechaTorneo: new Date(),
+          },
+        });
+
+        // Actualizar ranking global
+        await this.rankingsService.actualizarRankingJugador(jugador.id, entry.puntos);
+      }
+    }
+
+    // 5. Recalcular posiciones globales
+    await this.rankingsService.recalcularPosiciones();
+
+    // 6. Transicionar estado de la categoría → FINALIZADA
+    await this.prisma.tournamentCategory.update({
+      where: { id: tc.id },
+      data: { estado: 'FINALIZADA' },
+    });
+
+    return {
+      message: 'Categoría finalizada exitosamente',
+      standings,
+    };
   }
 }

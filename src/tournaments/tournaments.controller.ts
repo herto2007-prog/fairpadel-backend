@@ -79,6 +79,13 @@ export class TournamentsController {
     return this.tournamentsService.remove(id, req.user.id);
   }
 
+  @Post(':id/finalizar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  finalizarTorneo(@Param('id') id: string, @Request() req) {
+    return this.tournamentsService.finalizarTorneo(id, req.user.id);
+  }
+
   @Patch(':id/categorias/:tournamentCategoryId/toggle-inscripcion')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('organizador')

@@ -262,7 +262,7 @@ export class RankingsService {
     }
   }
 
-  private async actualizarRankingJugador(jugadorId: string, puntosNuevos: number) {
+  async actualizarRankingJugador(jugadorId: string, puntosNuevos: number) {
     const jugador = await this.prisma.user.findUnique({
       where: { id: jugadorId },
     });
@@ -306,7 +306,7 @@ export class RankingsService {
     }
   }
 
-  private async recalcularPosiciones() {
+  async recalcularPosiciones() {
     // Recalcular posiciones globales
     const rankingsGlobales = await this.prisma.ranking.findMany({
       where: { tipoRanking: 'GLOBAL' },

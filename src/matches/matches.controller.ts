@@ -74,6 +74,26 @@ export class MatchesController {
     );
   }
 
+  @Get('torneo/:tournamentId/categoria/:categoryId/standings')
+  @Roles('organizador', 'admin')
+  @UseGuards(RolesGuard)
+  obtenerStandings(
+    @Param('tournamentId') tournamentId: string,
+    @Param('categoryId') categoryId: string,
+  ) {
+    return this.matchesService.obtenerStandings(tournamentId, categoryId);
+  }
+
+  @Post('torneo/:tournamentId/categoria/:categoryId/finalizar')
+  @Roles('organizador', 'admin')
+  @UseGuards(RolesGuard)
+  finalizarCategoria(
+    @Param('tournamentId') tournamentId: string,
+    @Param('categoryId') categoryId: string,
+  ) {
+    return this.matchesService.finalizarCategoria(tournamentId, categoryId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.matchesService.findOne(id);
