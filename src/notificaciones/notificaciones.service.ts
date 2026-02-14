@@ -184,7 +184,7 @@ export class NotificacionesService {
       enlace: `/tournaments/${data.tournamentId}/fixture`,
       emailTemplate: () =>
         this.emailService.enviarFixturePublicado(usuario.email, usuario.nombre, { ...data, fixtureUrl }),
-      smsTexto: `Fixture listo! vs ${data.oponentes} - ${data.fecha} ${data.hora} en ${data.cancha}`,
+      smsTexto: `Fixture listo! vs ${data.oponentes} - ${data.fecha} ${data.hora}, ${data.cancha} (${data.sede})`,
     });
   }
 
@@ -216,7 +216,7 @@ export class NotificacionesService {
       enlace: `/tournaments/${data.tournamentId}/fixture`,
       emailTemplate: () =>
         this.emailService.enviarSiguientePartido(usuario.email, usuario.nombre, { ...data, fixtureUrl }),
-      smsTexto: `${data.ronda}: vs ${data.oponentes} - ${data.fecha} ${data.hora}, ${data.cancha}`,
+      smsTexto: `${data.ronda}: vs ${data.oponentes} - ${data.fecha} ${data.hora}, ${data.cancha} (${data.sede})`,
     });
   }
 
