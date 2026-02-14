@@ -151,6 +151,16 @@ enum TipoCambioCategoria {
   ASIGNACION_INICIAL
 }
 
+enum BannerZona {
+  HEADER
+  SIDEBAR
+  ENTRE_TORNEOS
+  FOOTER
+  HOME_HERO
+  HOME_MEDIO
+  TORNEO_DETALLE
+}
+
 // ═══════════════════════════════════════════════════════
 // MÓDULO 1: AUTENTICACIÓN Y USUARIOS
 // ═══════════════════════════════════════════════════════
@@ -871,19 +881,20 @@ model Reporte {
 // ═══════════════════════════════════════════════════════
 
 model Foto {
-  id                String            @id @default(uuid())
-  userId            String            @map("user_id")
-  tournamentId      String?           @map("tournament_id")
-  urlImagen         String            @map("url_imagen")
-  urlThumbnail      String?           @map("url_thumbnail")
-  descripcion       String?           @db.VarChar(500)
-  tipo              String            @default("PERSONAL")
-  estadoModeracion  ModerationStatus  @default(PENDIENTE) @map("estado_moderacion")
-  likesCount        Int               @default(0) @map("likes_count")
-  comentariosCount  Int               @default(0) @map("comentarios_count")
-  esPrivada         Boolean           @default(false) @map("es_privada")
-  fechaSubida       DateTime          @default(now()) @map("fecha_subida")
-  createdAt         DateTime          @default(now()) @map("created_at")
+  id                  String            @id @default(uuid())
+  userId              String            @map("user_id")
+  tournamentId        String?           @map("tournament_id")
+  urlImagen           String            @map("url_imagen")
+  urlThumbnail        String?           @map("url_thumbnail")
+  cloudinaryPublicId  String?           @map("cloudinary_public_id")
+  descripcion         String?           @db.VarChar(500)
+  tipo                String            @default("PERSONAL")
+  estadoModeracion    ModerationStatus  @default(PENDIENTE) @map("estado_moderacion")
+  likesCount          Int               @default(0) @map("likes_count")
+  comentariosCount    Int               @default(0) @map("comentarios_count")
+  esPrivada           Boolean           @default(false) @map("es_privada")
+  fechaSubida         DateTime          @default(now()) @map("fecha_subida")
+  createdAt           DateTime          @default(now()) @map("created_at")
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   tournament   Tournament?   @relation(fields: [tournamentId], references: [id])
@@ -1113,4 +1124,29 @@ model HistorialCategoria {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("historial_categorias")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 12: PUBLICIDAD Y BANNERS
+// ═══════════════════════════════════════════════════════
+
+model Banner {
+  id                 String      @id @default(uuid())
+  titulo             String      @db.VarChar(200)
+  imagenUrl          String      @map("imagen_url")
+  imagenPublicId     String?     @map("imagen_public_id")
+  linkUrl            String?     @map("link_url") @db.VarChar(500)
+  zona               BannerZona
+  activo             Boolean     @default(true)
+  fechaInicio        DateTime?   @map("fecha_inicio")
+  fechaFin           DateTime?   @map("fecha_fin")
+  orden              Int         @default(0)
+  clicks             Int         @default(0)
+  impresiones        Int         @default(0)
+  anunciante         String?     @db.VarChar(200)
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  @@index([zona, activo])
+  @@map("banners")
 }

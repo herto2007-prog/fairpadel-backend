@@ -18,6 +18,7 @@ import { AdminModule } from './admin/admin.module';
 import { SedesModule } from './sedes/sedes.module';
 import { CircuitosModule } from './circuitos/circuitos.module';
 import { CategoriasModule } from './categorias/categorias.module';
+import { PublicidadModule } from './publicidad/publicidad.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { CategoriasModule } from './categorias/categorias.module';
     SedesModule,
     CircuitosModule,
     CategoriasModule,
+    PublicidadModule,
   ],
   controllers: [AppController],
 })

@@ -1,17 +1,25 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Patch,
   Body,
   Param,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   Request,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
+
+const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 @Controller('users')
 export class UsersController {
@@ -29,6 +37,30 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   async updateMyProfile(@Request() req: any, @Body() data: any) {
     return this.usersService.actualizarPerfil(req.user.id, data);
+  }
+
+  @Post('foto')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: MAX_PHOTO_SIZE },
+    fileFilter: (_req, file, callback) => {
+      if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+        return callback(
+          new BadRequestException('Solo se permiten imágenes (JPEG, PNG, WebP)'),
+          false,
+        );
+      }
+      callback(null, true);
+    },
+  }))
+  async updatePhoto(
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Debe adjuntar una imagen');
+    }
+    return this.usersService.actualizarFotoPerfil(req.user.id, file);
   }
 
   @Get('documento/:documento')

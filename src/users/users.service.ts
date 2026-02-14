@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CloudinaryService } from '../fotos/cloudinary.service';
 
 export interface EstadisticasJugador {
   efectividad: number;
@@ -13,7 +14,12 @@ export interface EstadisticasJugador {
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(UsersService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private cloudinary: CloudinaryService,
+  ) {}
 
   async obtenerPerfilPrivado(id: string) {
     const usuario = await this.prisma.user.findUnique({
@@ -96,6 +102,29 @@ export class UsersService {
     });
 
     return usuarioActualizado;
+  }
+
+  async actualizarFotoPerfil(userId: string, file: Express.Multer.File) {
+    const usuario = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Subir a Cloudinary con crop facial
+    const resultado = await this.cloudinary.uploadProfilePhoto(file, userId);
+
+    // Actualizar URL en usuario
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { fotoUrl: resultado.url },
+    });
+
+    this.logger.log(`Foto de perfil actualizada para user ${userId}`);
+
+    return { fotoUrl: resultado.url };
   }
 
   async buscarPorDocumento(documento: string) {

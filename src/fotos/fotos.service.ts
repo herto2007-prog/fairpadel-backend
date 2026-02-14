@@ -1,15 +1,17 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from './cloudinary.service';
 
 @Injectable()
 export class FotosService {
+  private readonly logger = new Logger(FotosService.name);
+
   constructor(
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
   ) {}
 
-  async subirFoto(userId: string, data: any) {
+  async subirFoto(userId: string, file: Express.Multer.File, data: any) {
     // Verificar límite de fotos para usuarios no premium
     const usuario = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -31,24 +33,42 @@ export class FotosService {
       }
     }
 
-    // Simular subida a Cloudinary (en desarrollo)
-    const resultado = {
-      url: `https://fake-cloudinary.com/fotos/${Date.now()}.jpg`,
-      thumbnail: `https://fake-cloudinary.com/fotos/thumb_${Date.now()}.jpg`,
-    };
+    // Determinar folder y transformación según tipo
+    const tipo = data.tipo || 'PERSONAL';
+    let folder = 'fairpadel/galeria';
+    let transformation: Record<string, any>[] | undefined;
+
+    if (tipo === 'TORNEO' && data.tournamentId) {
+      folder = `fairpadel/torneos/${data.tournamentId}`;
+      transformation = [CloudinaryService.PRESETS.GALLERY];
+    } else if (tipo === 'FLYER') {
+      folder = 'fairpadel/flyers';
+      transformation = [CloudinaryService.PRESETS.TOURNAMENT_FLYER];
+    } else {
+      transformation = [CloudinaryService.PRESETS.GALLERY];
+    }
+
+    // Subir a Cloudinary
+    const resultado = await this.cloudinary.uploadImage(file, {
+      folder,
+      transformation,
+    });
 
     // Crear registro en BD
     const foto = await this.prisma.foto.create({
       data: {
         userId,
         urlImagen: resultado.url,
-        urlThumbnail: resultado.thumbnail,
+        urlThumbnail: resultado.thumbnailUrl,
+        cloudinaryPublicId: resultado.publicId,
         descripcion: data.descripcion,
         tournamentId: data.tournamentId,
-        tipo: data.tipo || 'PERSONAL',
+        tipo,
         estadoModeracion: 'PENDIENTE',
       },
     });
+
+    this.logger.log(`Foto subida por user ${userId}: ${foto.id}`);
 
     return foto;
   }
@@ -147,6 +167,11 @@ export class FotosService {
 
     if (foto.userId !== userId) {
       throw new ForbiddenException('No tienes permiso para eliminar esta foto');
+    }
+
+    // Eliminar de Cloudinary si tiene publicId
+    if (foto.cloudinaryPublicId) {
+      await this.cloudinary.deleteImage(foto.cloudinaryPublicId);
     }
 
     await this.prisma.foto.delete({
