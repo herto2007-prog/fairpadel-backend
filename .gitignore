@@ -6,3 +6,4 @@ node_modules
 dist/
 
 /generated/prisma
+package-lock.json
