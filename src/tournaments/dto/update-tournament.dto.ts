@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsNumber, IsDateString, Min } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsNumber, IsDateString, IsBoolean, Min } from 'class-validator';
 
 export class UpdateTournamentDto {
   @IsString()
@@ -65,6 +65,10 @@ export class UpdateTournamentDto {
   @IsArray()
   @IsOptional()
   categorias?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  habilitarBancard?: boolean;
 
   @IsArray()
   @IsOptional()

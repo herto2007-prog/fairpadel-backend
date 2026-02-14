@@ -154,4 +154,62 @@ export class TournamentsController {
   ) {
     return this.tournamentsService.removeAyudante(id, ayudanteId, req.user.id);
   }
+
+  // ═══════════════════════════════════════════
+  // CUENTAS BANCARIAS
+  // ═══════════════════════════════════════════
+
+  @Get(':id/cuentas-bancarias')
+  getCuentasBancarias(@Param('id') id: string) {
+    return this.tournamentsService.getCuentasBancarias(id);
+  }
+
+  @Post(':id/cuentas-bancarias')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  createCuentaBancaria(
+    @Param('id') id: string,
+    @Body() data: {
+      banco: string;
+      titular: string;
+      cedulaRuc: string;
+      nroCuenta?: string;
+      aliasSpi?: string;
+      telefonoComprobante?: string;
+    },
+    @Request() req,
+  ) {
+    return this.tournamentsService.createCuentaBancaria(id, data, req.user.id);
+  }
+
+  @Put(':id/cuentas-bancarias/:cuentaId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  updateCuentaBancaria(
+    @Param('id') id: string,
+    @Param('cuentaId') cuentaId: string,
+    @Body() data: {
+      banco?: string;
+      titular?: string;
+      cedulaRuc?: string;
+      nroCuenta?: string;
+      aliasSpi?: string;
+      telefonoComprobante?: string;
+      activa?: boolean;
+    },
+    @Request() req,
+  ) {
+    return this.tournamentsService.updateCuentaBancaria(id, cuentaId, data, req.user.id);
+  }
+
+  @Delete(':id/cuentas-bancarias/:cuentaId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  deleteCuentaBancaria(
+    @Param('id') id: string,
+    @Param('cuentaId') cuentaId: string,
+    @Request() req,
+  ) {
+    return this.tournamentsService.deleteCuentaBancaria(id, cuentaId, req.user.id);
+  }
 }

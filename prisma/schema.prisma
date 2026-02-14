@@ -463,6 +463,7 @@ model Tournament {
   // Circuito / Liga
   circuitoId          String?           @map("circuito_id")
   minutosPorPartido   Int               @default(60) @map("minutos_por_partido")
+  habilitarBancard    Boolean           @default(false) @map("habilitar_bancard")
   organizadorId       String            @map("organizador_id")
   createdAt           DateTime          @default(now()) @map("created_at")
   updatedAt           DateTime          @updatedAt @map("updated_at")
@@ -483,6 +484,7 @@ model Tournament {
   sponsors          TournamentSponsor[]
   premios           TournamentPremio[]
   historialPuntos   HistorialPuntos[]
+  cuentasBancarias  CuentaBancaria[]
 
   @@map("tournaments")
 }
@@ -613,6 +615,23 @@ model ComprobantePago {
   inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
 
   @@map("comprobantes_pago")
+}
+
+model CuentaBancaria {
+  id                    String     @id @default(uuid())
+  tournamentId          String     @map("tournament_id")
+  banco                 String
+  titular               String
+  cedulaRuc             String     @map("cedula_ruc")
+  nroCuenta             String?    @map("nro_cuenta")
+  aliasSpi              String?    @map("alias_spi")
+  telefonoComprobante   String?    @map("telefono_comprobante")
+  activa                Boolean    @default(true)
+  createdAt             DateTime   @default(now()) @map("created_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("cuentas_bancarias")
 }
 
 // ═══════════════════════════════════════════════════════

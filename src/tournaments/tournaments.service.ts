@@ -265,6 +265,7 @@ export class TournamentsService {
       direccion: updateTournamentDto.direccion,
       mapsUrl: updateTournamentDto.mapsUrl,
       costoInscripcion: updateTournamentDto.costoInscripcion,
+      habilitarBancard: updateTournamentDto.habilitarBancard,
       flyerUrl: updateTournamentDto.flyerUrl,
     };
 
@@ -607,6 +608,128 @@ export class TournamentsService {
 
     await this.prisma.torneoAyudante.delete({
       where: { id: ayudanteId },
+    });
+
+    return { deleted: true };
+  }
+
+  // ═══════════════════════════════════════════
+  // CUENTAS BANCARIAS (para transferencias)
+  // ═══════════════════════════════════════════
+
+  async getCuentasBancarias(tournamentId: string) {
+    await this.findOne(tournamentId); // Verifica existencia
+
+    return this.prisma.cuentaBancaria.findMany({
+      where: { tournamentId, activa: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async createCuentaBancaria(
+    tournamentId: string,
+    data: {
+      banco: string;
+      titular: string;
+      cedulaRuc: string;
+      nroCuenta?: string;
+      aliasSpi?: string;
+      telefonoComprobante?: string;
+    },
+    userId: string,
+  ) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      // Check if user is admin
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para modificar este torneo');
+      }
+    }
+
+    return this.prisma.cuentaBancaria.create({
+      data: {
+        tournamentId,
+        banco: data.banco,
+        titular: data.titular,
+        cedulaRuc: data.cedulaRuc,
+        nroCuenta: data.nroCuenta || null,
+        aliasSpi: data.aliasSpi || null,
+        telefonoComprobante: data.telefonoComprobante || null,
+      },
+    });
+  }
+
+  async updateCuentaBancaria(
+    tournamentId: string,
+    cuentaId: string,
+    data: {
+      banco?: string;
+      titular?: string;
+      cedulaRuc?: string;
+      nroCuenta?: string;
+      aliasSpi?: string;
+      telefonoComprobante?: string;
+      activa?: boolean;
+    },
+    userId: string,
+  ) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para modificar este torneo');
+      }
+    }
+
+    const cuenta = await this.prisma.cuentaBancaria.findFirst({
+      where: { id: cuentaId, tournamentId },
+    });
+
+    if (!cuenta) {
+      throw new NotFoundException('Cuenta bancaria no encontrada');
+    }
+
+    return this.prisma.cuentaBancaria.update({
+      where: { id: cuentaId },
+      data,
+    });
+  }
+
+  async deleteCuentaBancaria(tournamentId: string, cuentaId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para modificar este torneo');
+      }
+    }
+
+    const cuenta = await this.prisma.cuentaBancaria.findFirst({
+      where: { id: cuentaId, tournamentId },
+    });
+
+    if (!cuenta) {
+      throw new NotFoundException('Cuenta bancaria no encontrada');
+    }
+
+    await this.prisma.cuentaBancaria.delete({
+      where: { id: cuentaId },
     });
 
     return { deleted: true };

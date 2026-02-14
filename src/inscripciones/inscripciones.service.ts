@@ -236,6 +236,7 @@ export class InscripcionesService {
         },
         category: true,
         pago: true,
+        comprobantes: true,
       },
       orderBy: {
         createdAt: 'desc',
@@ -290,27 +291,96 @@ export class InscripcionesService {
     });
   }
 
-  async confirmarPago(inscripcionId: string) {
+  async confirmarPagoCompleto(inscripcionId: string) {
+    const inscripcion = await this.findOne(inscripcionId);
+
+    const estadosPermitidos = [
+      'PENDIENTE_PAGO',
+      'PENDIENTE_CONFIRMACION',
+      'PENDIENTE_PAGO_PRESENCIAL',
+    ];
+
+    if (!estadosPermitidos.includes(inscripcion.estado)) {
+      throw new BadRequestException(
+        `No se puede confirmar una inscripción en estado ${inscripcion.estado}`,
+      );
+    }
+
+    // Actualizar Pago record si existe
+    if (inscripcion.pago) {
+      await this.prisma.pago.update({
+        where: { id: inscripcion.pago.id },
+        data: {
+          estado: 'CONFIRMADO',
+          fechaPago: inscripcion.pago.fechaPago || new Date(),
+          fechaConfirm: new Date(),
+        },
+      });
+    }
+
+    // Aprobar comprobantes pendientes
+    await this.prisma.comprobantePago.updateMany({
+      where: { inscripcionId, estado: 'PENDIENTE' },
+      data: { estado: 'APROBADA' },
+    });
+
+    // Confirmar inscripción
     return this.prisma.inscripcion.update({
       where: { id: inscripcionId },
       data: { estado: 'CONFIRMADA' },
+      include: {
+        pareja: {
+          include: { jugador1: true, jugador2: true },
+        },
+        category: true,
+        pago: true,
+      },
     });
   }
 
-  async rechazarComprobante(inscripcionId: string, motivo: string) {
-    // Marcar comprobante como rechazado
+  async rechazarPagoCompleto(inscripcionId: string, motivo?: string) {
+    const inscripcion = await this.findOne(inscripcionId);
+
+    const estadosPermitidos = [
+      'PENDIENTE_PAGO',
+      'PENDIENTE_CONFIRMACION',
+      'PENDIENTE_PAGO_PRESENCIAL',
+    ];
+
+    if (!estadosPermitidos.includes(inscripcion.estado)) {
+      throw new BadRequestException(
+        `No se puede rechazar una inscripción en estado ${inscripcion.estado}`,
+      );
+    }
+
+    // Actualizar Pago record
+    if (inscripcion.pago) {
+      await this.prisma.pago.update({
+        where: { id: inscripcion.pago.id },
+        data: { estado: 'RECHAZADO' },
+      });
+    }
+
+    // Rechazar comprobantes pendientes
     await this.prisma.comprobantePago.updateMany({
-      where: { inscripcionId },
+      where: { inscripcionId, estado: 'PENDIENTE' },
       data: {
         estado: 'RECHAZADA',
-        motivoRechazo: motivo,
+        motivoRechazo: motivo || 'Rechazado por el organizador',
       },
     });
 
-    // Volver a estado pendiente pago
+    // Rechazar inscripción
     return this.prisma.inscripcion.update({
       where: { id: inscripcionId },
       data: { estado: 'RECHAZADA' },
+      include: {
+        pareja: {
+          include: { jugador1: true, jugador2: true },
+        },
+        category: true,
+        pago: true,
+      },
     });
   }
 }

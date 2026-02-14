@@ -12,6 +12,7 @@ import {
 import { InscripcionesService } from './inscripciones.service';
 import { CreateInscripcionDto } from './dto/create-inscripcion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TournamentRoleGuard } from '../auth/guards/tournament-role.guard';
 
 @Controller('inscripciones')
 @UseGuards(JwtAuthGuard)
@@ -52,5 +53,24 @@ export class InscripcionesController {
     @Body() body: { comprobanteUrl: string },
   ) {
     return this.inscripcionesService.subirComprobante(id, body.comprobanteUrl);
+  }
+
+  // ═══════════════════════════════════════════
+  // GESTIÓN DE PAGOS (organizador / admin)
+  // ═══════════════════════════════════════════
+
+  @Put('torneo/:tournamentId/inscripcion/:id/confirmar-pago')
+  @UseGuards(TournamentRoleGuard)
+  confirmarPago(@Param('id') id: string) {
+    return this.inscripcionesService.confirmarPagoCompleto(id);
+  }
+
+  @Put('torneo/:tournamentId/inscripcion/:id/rechazar-pago')
+  @UseGuards(TournamentRoleGuard)
+  rechazarPago(
+    @Param('id') id: string,
+    @Body() body: { motivo?: string },
+  ) {
+    return this.inscripcionesService.rechazarPagoCompleto(id, body.motivo);
   }
 }
