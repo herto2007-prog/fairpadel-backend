@@ -7,6 +7,20 @@ export class EmailService {
   private readonly fromEmail: string;
   private readonly frontendUrl: string;
 
+  // Paleta FairPadel (dark + rojo)
+  private readonly COLORS = {
+    primary: '#e63946',      // Rojo FairPadel
+    primaryLight: '#f87171',  // Rojo claro (hover/accent)
+    success: '#22c55e',       // Verde confirmaciones
+    bg: '#0f0f13',            // Fondo principal
+    card: '#1a1a24',          // Fondo tarjetas/infobox
+    surface: '#252532',       // Superficie elevada
+    border: '#2d2d3d',        // Bordes
+    text: '#f1f1f1',          // Texto principal
+    secondary: '#a0a0b0',     // Texto secundario
+    muted: '#6b6b7b',         // Texto muted
+  };
+
   constructor() {
     const apiKey = process.env.RESEND_API_KEY;
     this.fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
@@ -58,18 +72,18 @@ export class EmailService {
   async enviarEmailVerificacion(email: string, nombre: string, token: string) {
     const verificationUrl = `${this.frontendUrl}/verify-email?token=${token}`;
     const html = this.wrapTemplate(`
-      <h2 style="color: #f97316;">Verifica tu email</h2>
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Verifica tu email</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>Bienvenido a FairPadel. Verifica tu email haciendo click en el boton:</p>
       ${this.buttonHtml(verificationUrl, 'Verificar Email')}
-      <p style="color: #888; font-size: 12px; margin-top: 24px;">Este enlace expira en 24 horas.</p>
+      <p style="color: ${this.COLORS.muted}; font-size: 12px; margin-top: 24px;">Este enlace expira en 24 horas.</p>
     `);
     return this.enviarEmail(email, 'Verifica tu email - FairPadel', html);
   }
 
   async enviarEmailBienvenida(email: string, nombre: string) {
     const html = this.wrapTemplate(`
-      <h2 style="color: #22c55e;">Bienvenido a FairPadel!</h2>
+      <h2 style="color: ${this.COLORS.success}; margin: 0 0 16px 0;">Bienvenido a FairPadel!</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>Tu cuenta ha sido verificada exitosamente. Ya puedes inscribirte en torneos.</p>
       ${this.buttonHtml(`${this.frontendUrl}/tournaments`, 'Ver Torneos')}
@@ -80,11 +94,11 @@ export class EmailService {
   async enviarEmailRecuperacion(email: string, nombre: string, token: string) {
     const resetUrl = `${this.frontendUrl}/forgot-password?token=${token}`;
     const html = this.wrapTemplate(`
-      <h2 style="color: #f97316;">Recuperacion de contrasena</h2>
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Recuperacion de contrasena</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>Recibimos una solicitud para restablecer tu contrasena:</p>
       ${this.buttonHtml(resetUrl, 'Restablecer Contrasena')}
-      <p style="color: #888; font-size: 12px; margin-top: 24px;">Expira en 1 hora. Si no solicitaste esto, ignora este email.</p>
+      <p style="color: ${this.COLORS.muted}; font-size: 12px; margin-top: 24px;">Expira en 1 hora. Si no solicitaste esto, ignora este email.</p>
     `);
     return this.enviarEmail(email, 'Recuperacion de contrasena - FairPadel', html);
   }
@@ -95,7 +109,7 @@ export class EmailService {
 
   async enviarNotificacion(email: string, nombre: string, contenido: string) {
     const html = this.wrapTemplate(`
-      <h2 style="color: #f97316;">Notificacion</h2>
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Notificacion</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>${contenido}</p>
       ${this.buttonHtml(`${this.frontendUrl}/profile`, 'Ir a FairPadel')}
@@ -109,7 +123,7 @@ export class EmailService {
     data: { torneoNombre: string; categoria: string; companero: string; fechas: string },
   ) {
     const html = this.wrapTemplate(`
-      <h2 style="color: #22c55e;">Inscripcion Confirmada</h2>
+      <h2 style="color: ${this.COLORS.success}; margin: 0 0 16px 0;">Inscripcion Confirmada</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>Tu inscripcion al torneo <strong>${data.torneoNombre}</strong> fue confirmada.</p>
       ${this.infoBox(`
@@ -128,7 +142,7 @@ export class EmailService {
     data: { torneoNombre: string; oponentes: string; fecha: string; hora: string; cancha: string; sede: string; fixtureUrl: string },
   ) {
     const html = this.wrapTemplate(`
-      <h2 style="color: #f97316;">Fixture Publicado</h2>
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Fixture Publicado</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>El fixture del torneo <strong>${data.torneoNombre}</strong> fue publicado.</p>
       ${this.infoBox(`
@@ -147,7 +161,7 @@ export class EmailService {
     data: { torneoNombre: string; ronda: string; oponentes: string; fecha: string; hora: string; cancha: string; sede: string; fixtureUrl: string },
   ) {
     const html = this.wrapTemplate(`
-      <h2 style="color: #f97316;">Proximo Partido Confirmado</h2>
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Proximo Partido Confirmado</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>Tu siguiente partido en <strong>${data.torneoNombre}</strong> esta listo:</p>
       ${this.infoBox(`
@@ -170,7 +184,7 @@ export class EmailService {
       ? `Felicidades! Avanzas a <strong>${data.siguienteRonda}</strong> en <strong>${data.torneoNombre}</strong>.`
       : `Felicidades por tu victoria en <strong>${data.torneoNombre}</strong>!`;
     const html = this.wrapTemplate(`
-      <h2 style="color: #22c55e;">Victoria!</h2>
+      <h2 style="color: ${this.COLORS.success}; margin: 0 0 16px 0;">Victoria!</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>${msg}</p>
       ${this.infoBox(`
@@ -187,7 +201,7 @@ export class EmailService {
     data: { categoriaAnterior: string; categoriaNueva: string },
   ) {
     const html = this.wrapTemplate(`
-      <h2 style="color: #f97316;">Ascenso de Categoria!</h2>
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Ascenso de Categoria!</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
       <p>Felicidades! Has ascendido de <strong>${data.categoriaAnterior}</strong> a <strong>${data.categoriaNueva}</strong>.</p>
       ${this.buttonHtml(`${this.frontendUrl}/profile`, 'Ver Mi Perfil')}
@@ -197,9 +211,9 @@ export class EmailService {
 
   async enviarResumenSemanal(email: string, nombre: string, datos: any) {
     const html = this.wrapTemplate(`
-      <h2 style="color: #f97316;">Resumen Semanal</h2>
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Resumen Semanal</h2>
       <p>Hola <strong>${nombre}</strong>,</p>
-      <ul>
+      <ul style="padding-left: 20px;">
         <li>Partidos jugados: ${datos.partidosJugados}</li>
         <li>Victorias: ${datos.victorias}</li>
         <li>Ranking actual: #${datos.ranking}</li>
@@ -215,13 +229,13 @@ export class EmailService {
 
   private wrapTemplate(body: string): string {
     return `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f0f1a; color: #e0e0e0; padding: 32px; border-radius: 12px;">
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: ${this.COLORS.bg}; color: ${this.COLORS.text}; padding: 32px; border-radius: 12px;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <span style="font-size: 28px; font-weight: bold; color: #f97316;">FairPadel</span>
+          <span style="font-size: 28px; font-weight: bold; color: ${this.COLORS.primary};">FairPadel</span>
         </div>
         ${body}
-        <hr style="border: none; border-top: 1px solid #2a2a3e; margin: 24px 0;" />
-        <p style="color: #666; font-size: 11px; text-align: center;">
+        <hr style="border: none; border-top: 1px solid ${this.COLORS.border}; margin: 24px 0;" />
+        <p style="color: ${this.COLORS.muted}; font-size: 11px; text-align: center;">
           FairPadel - Torneos de Padel en Paraguay<br/>
           Configura tus preferencias de notificacion en tu perfil.
         </p>
@@ -230,10 +244,10 @@ export class EmailService {
   }
 
   private buttonHtml(url: string, text: string): string {
-    return `<div style="text-align: center; margin: 24px 0;"><a href="${url}" style="display: inline-block; background: #f97316; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: bold;">${text}</a></div>`;
+    return `<div style="text-align: center; margin: 24px 0;"><a href="${url}" style="display: inline-block; background: ${this.COLORS.primary}; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: bold;">${text}</a></div>`;
   }
 
   private infoBox(content: string): string {
-    return `<div style="background: #1a1a2e; border: 1px solid #2a2a3e; padding: 16px; border-radius: 8px; margin: 16px 0;">${content}</div>`;
+    return `<div style="background: ${this.COLORS.card}; border: 1px solid ${this.COLORS.border}; padding: 16px; border-radius: 8px; margin: 16px 0;">${content}</div>`;
   }
 }
