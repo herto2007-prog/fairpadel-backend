@@ -10,13 +10,14 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 
 @Controller('users')
-@UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get('documento/:documento')
+  @UseGuards(JwtAuthGuard)
   async getByDocumento(@Param('documento') documento: string) {
     const user = await this.usersService.buscarPorDocumento(documento);
 
@@ -35,12 +36,24 @@ export class UsersController {
     };
   }
 
+  @Get(':id/perfil-completo')
+  @UseGuards(OptionalJwtAuthGuard)
+  obtenerPerfilCompleto(
+    @Param('id') id: string,
+    @Request() req: any,
+  ) {
+    const viewerId = req.user?.id || req.user?.userId || null;
+    return this.usersService.obtenerPerfilCompleto(id, viewerId);
+  }
+
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   obtenerPerfil(@Param('id') id: string) {
     return this.usersService.obtenerPerfilPublico(id);
   }
 
   @Put(':id')
+  @UseGuards(JwtAuthGuard)
   actualizarPerfil(
     @Param('id') id: string,
     @Body() data: any,
