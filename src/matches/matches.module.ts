@@ -5,9 +5,10 @@ import { FixtureService } from './fixture.service';
 import { TournamentRoleGuard } from '../auth/guards/tournament-role.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RankingsModule } from '../rankings/rankings.module';
+import { CategoriasModule } from '../categorias/categorias.module';
 
 @Module({
-  imports: [PrismaModule, RankingsModule],
+  imports: [PrismaModule, RankingsModule, CategoriasModule],
   controllers: [MatchesController],
   providers: [MatchesService, FixtureService, TournamentRoleGuard],
   exports: [MatchesService, FixtureService],

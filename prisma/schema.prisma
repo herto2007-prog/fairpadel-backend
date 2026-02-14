@@ -143,6 +143,14 @@ enum CircuitoEstado {
   CANCELADO
 }
 
+enum TipoCambioCategoria {
+  ASCENSO_AUTOMATICO
+  ASCENSO_POR_DEMOSTRACION
+  ASCENSO_MANUAL
+  DESCENSO_MANUAL
+  ASIGNACION_INICIAL
+}
+
 // ═══════════════════════════════════════════════════════
 // MÓDULO 1: AUTENTICACIÓN Y USUARIOS
 // ═══════════════════════════════════════════════════════
@@ -163,11 +171,14 @@ model User {
   estado            UserStatus  @default(NO_VERIFICADO)
   emailVerificado   Boolean     @default(false) @map("email_verificado")
   esPremium         Boolean     @default(false) @map("es_premium")
+  categoriaActualId String?     @map("categoria_actual_id")
   ultimaSesion      DateTime?   @map("ultima_sesion")
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
 
   // Relaciones
+  categoriaActual           Category?               @relation("CategoriaActualUsuarios", fields: [categoriaActualId], references: [id])
+  historialCategorias       HistorialCategoria[]
   roles                     UserRole[]
   solicitudesOrganizador    SolicitudOrganizador[]
   verificacionesEmail       EmailVerification[]
@@ -282,6 +293,9 @@ model Category {
   inscripciones     Inscripcion[]
   partidos          Match[]
   historialPuntos   HistorialPuntos[]
+  usuariosActuales  User[]              @relation("CategoriaActualUsuarios")
+  reglasOrigen      ReglaAscenso[]      @relation("CategoriaOrigen")
+  reglasDestino     ReglaAscenso[]      @relation("CategoriaDestino")
 
   @@map("categories")
 }
@@ -1041,4 +1055,42 @@ model Notificacion {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notificaciones")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO: GESTIÓN DE CATEGORÍAS Y ASCENSOS
+// ═══════════════════════════════════════════════════════
+
+model ReglaAscenso {
+  id                       String   @id @default(uuid())
+  categoriaOrigenId        String   @map("categoria_origen_id")
+  categoriaDestinoId       String   @map("categoria_destino_id")
+  campeonatosConsecutivos  Int?     @map("campeonatos_consecutivos")
+  campeonatosAlternados    Int?     @map("campeonatos_alternados")
+  finalistaCalifica        Boolean  @default(false) @map("finalista_califica")
+  activa                   Boolean  @default(true)
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  categoriaOrigen  Category @relation("CategoriaOrigen", fields: [categoriaOrigenId], references: [id])
+  categoriaDestino Category @relation("CategoriaDestino", fields: [categoriaDestinoId], references: [id])
+
+  @@unique([categoriaOrigenId, categoriaDestinoId])
+  @@map("reglas_ascenso")
+}
+
+model HistorialCategoria {
+  id                  String              @id @default(uuid())
+  userId              String              @map("user_id")
+  categoriaAnteriorId String?             @map("categoria_anterior_id")
+  categoriaNuevaId    String              @map("categoria_nueva_id")
+  tipo                TipoCambioCategoria
+  motivo              String              @db.Text
+  tournamentId        String?             @map("tournament_id")
+  realizadoPor        String?             @map("realizado_por")
+  createdAt           DateTime            @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("historial_categorias")
 }

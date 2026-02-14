@@ -17,6 +17,7 @@ import { SuscripcionesModule } from './suscripciones/suscripciones.module';
 import { AdminModule } from './admin/admin.module';
 import { SedesModule } from './sedes/sedes.module';
 import { CircuitosModule } from './circuitos/circuitos.module';
+import { CategoriasModule } from './categorias/categorias.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { CircuitosModule } from './circuitos/circuitos.module';
     AdminModule,
     SedesModule,
     CircuitosModule,
+    CategoriasModule,
   ],
   controllers: [AppController],
 })

@@ -234,6 +234,78 @@ async function main() {
 
   console.log('✅ Configuración del sistema creada');
 
+  // 8. Reglas de ascenso por categoría
+  console.log('📝 Creando reglas de ascenso...');
+  const reglasAscenso = [
+    // { origen orden, destino orden, consecutivos, alternados }
+    { origenOrden: 8, destinoOrden: 7, consecutivos: 1, alternados: 1 },
+    { origenOrden: 7, destinoOrden: 6, consecutivos: 3, alternados: 4 },
+    { origenOrden: 6, destinoOrden: 5, consecutivos: 5, alternados: 5 },
+    { origenOrden: 5, destinoOrden: 4, consecutivos: 5, alternados: 6 },
+    { origenOrden: 4, destinoOrden: 3, consecutivos: 5, alternados: 7 },
+    { origenOrden: 3, destinoOrden: 2, consecutivos: 6, alternados: 8 },
+    { origenOrden: 2, destinoOrden: 1, consecutivos: 7, alternados: 10 },
+  ];
+
+  for (const genero of ['MASCULINO', 'FEMENINO'] as const) {
+    for (const regla of reglasAscenso) {
+      const catOrigen = await prisma.category.findFirst({
+        where: { tipo: genero, orden: regla.origenOrden },
+      });
+      const catDestino = await prisma.category.findFirst({
+        where: { tipo: genero, orden: regla.destinoOrden },
+      });
+      if (catOrigen && catDestino) {
+        await prisma.reglaAscenso.upsert({
+          where: {
+            categoriaOrigenId_categoriaDestinoId: {
+              categoriaOrigenId: catOrigen.id,
+              categoriaDestinoId: catDestino.id,
+            },
+          },
+          update: {},
+          create: {
+            categoriaOrigenId: catOrigen.id,
+            categoriaDestinoId: catDestino.id,
+            campeonatosConsecutivos: regla.consecutivos,
+            campeonatosAlternados: regla.alternados,
+            finalistaCalifica: false,
+            activa: true,
+          },
+        });
+      }
+    }
+  }
+  console.log('✅ Reglas de ascenso creadas (14 reglas: 7 Caballeros + 7 Damas)');
+
+  // 9. Asignar categoría default a usuarios existentes sin categoría
+  console.log('📝 Asignando categorías a usuarios existentes...');
+  const usersWithoutCategory = await prisma.user.findMany({
+    where: { categoriaActualId: null },
+    select: { id: true, genero: true },
+  });
+
+  for (const u of usersWithoutCategory) {
+    const defaultCat = await prisma.category.findFirst({
+      where: { tipo: u.genero, orden: 8 },
+    });
+    if (defaultCat) {
+      await prisma.user.update({
+        where: { id: u.id },
+        data: { categoriaActualId: defaultCat.id },
+      });
+      await prisma.historialCategoria.create({
+        data: {
+          userId: u.id,
+          categoriaNuevaId: defaultCat.id,
+          tipo: 'ASIGNACION_INICIAL',
+          motivo: 'Categoría asignada automáticamente (migración)',
+        },
+      });
+    }
+  }
+  console.log(`✅ ${usersWithoutCategory.length} usuarios actualizados con categoría default`);
+
   console.log('🎉 Seed completado exitosamente!');
 }
 

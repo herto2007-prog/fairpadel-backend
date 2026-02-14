@@ -47,6 +47,15 @@ export class AuthService {
     // Hashear contraseña
     const passwordHash = await bcrypt.hash(registerDto.password, 10);
 
+    // Determinar categoría inicial
+    let categoriaActualId = registerDto.categoriaActualId || null;
+    if (!categoriaActualId) {
+      const defaultCat = await this.prisma.category.findFirst({
+        where: { orden: 8, tipo: registerDto.genero },
+      });
+      categoriaActualId = defaultCat?.id || null;
+    }
+
     // Crear usuario
     const user = await this.prisma.user.create({
       data: {
@@ -59,10 +68,23 @@ export class AuthService {
         passwordHash,
         ciudad: registerDto.ciudad,
         fotoUrl: registerDto.fotoUrl,
+        categoriaActualId,
         estado: 'NO_VERIFICADO',
         emailVerificado: false,
       },
     });
+
+    // Registrar asignación inicial de categoría
+    if (categoriaActualId) {
+      await this.prisma.historialCategoria.create({
+        data: {
+          userId: user.id,
+          categoriaNuevaId: categoriaActualId,
+          tipo: 'ASIGNACION_INICIAL',
+          motivo: 'Categoría seleccionada al registrarse',
+        },
+      });
+    }
 
     // Asignar rol de "jugador" por defecto
     const jugadorRole = await this.prisma.role.findUnique({
@@ -113,6 +135,7 @@ export class AuthService {
             role: true,
           },
         },
+        categoriaActual: true,
       },
     });
 
@@ -164,6 +187,8 @@ export class AuthService {
         ciudad: user.ciudad,
         fotoUrl: user.fotoUrl,
         esPremium: user.esPremium,
+        categoriaActualId: user.categoriaActualId,
+        categoriaActual: user.categoriaActual,
         roles: user.roles.map((ur) => ur.role.nombre),
       },
     };

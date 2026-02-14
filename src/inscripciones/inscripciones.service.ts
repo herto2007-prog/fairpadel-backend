@@ -57,6 +57,33 @@ export class InscripcionesService {
       );
     }
 
+    // Verificar restricción de nivel de categoría
+    const categorySelected = await this.prisma.category.findUnique({ where: { id: categoryId } });
+    if (categorySelected) {
+      const jugador1Full = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { categoriaActual: true },
+      });
+
+      if (jugador1Full?.categoriaActualId && jugador1Full.categoriaActual) {
+        const catActual = jugador1Full.categoriaActual;
+        // Solo validar para TRADICIONAL con mismo género
+        if (modalidad === 'TRADICIONAL' && catActual.tipo === categorySelected.tipo) {
+          const levelDiff = catActual.orden - categorySelected.orden;
+          if (levelDiff < 0) {
+            throw new BadRequestException(
+              `No puedes inscribirte en una categoría inferior a la tuya (${catActual.nombre})`,
+            );
+          }
+          if (levelDiff > 1) {
+            throw new BadRequestException(
+              `Solo puedes inscribirte en tu categoría (${catActual.nombre}) o una categoría superior`,
+            );
+          }
+        }
+      }
+    }
+
     // Verificar que la modalidad existe en el torneo
     const modalidadExiste = tournament.modalidades.some(
       (m) => m.modalidad === modalidad,
@@ -99,6 +126,30 @@ export class InscripcionesService {
       }
 
       // Modalidad SUMA no tiene restricción de género
+
+      // Validar nivel de categoría del jugador 2
+      if (modalidad === 'TRADICIONAL' && categorySelected) {
+        const j2Full = await this.prisma.user.findUnique({
+          where: { id: jugador2.id },
+          include: { categoriaActual: true },
+        });
+        if (j2Full?.categoriaActualId && j2Full.categoriaActual) {
+          const cat2 = j2Full.categoriaActual;
+          if (cat2.tipo === categorySelected.tipo) {
+            const levelDiff2 = cat2.orden - categorySelected.orden;
+            if (levelDiff2 < 0) {
+              throw new BadRequestException(
+                `Tu compañero/a no puede inscribirse en una categoría inferior a la suya (${cat2.nombre})`,
+              );
+            }
+            if (levelDiff2 > 1) {
+              throw new BadRequestException(
+                `Tu compañero/a solo puede inscribirse en su categoría (${cat2.nombre}) o una categoría superior`,
+              );
+            }
+          }
+        }
+      }
     }
 
     // Verificar que la pareja no esté ya inscrita

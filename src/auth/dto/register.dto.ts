@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, MaxLength, IsEnum, IsOptional, Matches } from 'class-validator';
+import { IsEmail, IsString, MinLength, MaxLength, IsEnum, IsOptional, Matches, IsUUID } from 'class-validator';
 
 export enum Gender {
   FEMENINO = 'FEMENINO',
@@ -49,4 +49,8 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   fotoUrl?: string;
+
+  @IsUUID()
+  @IsOptional()
+  categoriaActualId?: string;
 }

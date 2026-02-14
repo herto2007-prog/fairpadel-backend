@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RankingsService } from '../rankings/rankings.service';
+import { CategoriasService } from '../categorias/categorias.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
 import { calcularHoraFin } from './scheduling-utils';
 
@@ -14,6 +15,7 @@ export class MatchesService {
   constructor(
     private prisma: PrismaService,
     private rankingsService: RankingsService,
+    private categoriasService: CategoriasService,
   ) {}
 
   async findOne(id: string) {
@@ -729,6 +731,19 @@ export class MatchesService {
     // 5. Recalcular posiciones globales
     await this.rankingsService.recalcularPosiciones();
 
+    // 5.5. Verificar y ejecutar promociones de categoría
+    let promociones = [];
+    try {
+      promociones = await this.categoriasService.verificarYEjecutarPromociones(
+        standings,
+        categoryId,
+        tournamentId,
+      );
+    } catch (e) {
+      console.error('Error al verificar promociones:', e);
+      // No bloquear finalización si falla la lógica de promociones
+    }
+
     // 6. Transicionar estado de la categoría → FINALIZADA
     await this.prisma.tournamentCategory.update({
       where: { id: tc.id },
@@ -738,6 +753,7 @@ export class MatchesService {
     return {
       message: 'Categoría finalizada exitosamente',
       standings,
+      promociones,
     };
   }
 }
