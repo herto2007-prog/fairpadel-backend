@@ -92,7 +92,7 @@ export class EmailService {
   }
 
   async enviarEmailRecuperacion(email: string, nombre: string, token: string) {
-    const resetUrl = `${this.frontendUrl}/forgot-password?token=${token}`;
+    const resetUrl = `${this.frontendUrl}/reset-password?token=${token}`;
     const html = this.wrapTemplate(`
       <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Recuperacion de contrasena</h2>
       <p>Hola <strong>${nombre}</strong>,</p>

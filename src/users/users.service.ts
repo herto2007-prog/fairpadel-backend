@@ -15,6 +15,41 @@ export interface EstadisticasJugador {
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
+  async obtenerPerfilPrivado(id: string) {
+    const usuario = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        roles: { include: { role: true } },
+        categoriaActual: true,
+      },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    return {
+      id: usuario.id,
+      documento: usuario.documento,
+      nombre: usuario.nombre,
+      apellido: usuario.apellido,
+      email: usuario.email,
+      telefono: usuario.telefono,
+      genero: usuario.genero,
+      ciudad: usuario.ciudad,
+      bio: usuario.bio,
+      fotoUrl: usuario.fotoUrl,
+      fechaNacimiento: usuario.fechaNacimiento,
+      esPremium: usuario.esPremium,
+      estado: usuario.estado,
+      categoriaActualId: usuario.categoriaActualId,
+      categoriaActual: usuario.categoriaActual,
+      roles: usuario.roles.map((ur) => ur.role.nombre),
+      createdAt: usuario.createdAt,
+      ultimaSesion: usuario.ultimaSesion,
+    };
+  }
+
   async obtenerPerfilPublico(id: string) {
     const usuario = await this.prisma.user.findUnique({
       where: { id },

@@ -1,9 +1,17 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../notificaciones/email.service';
-import { RegisterDto, LoginDto } from './dto';
+import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto, ResendVerificationDto } from './dto';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -14,6 +22,10 @@ export class AuthService {
     private jwtService: JwtService,
     private emailService: EmailService,
   ) {}
+
+  // ═══════════════════════════════════════════════════════
+  // REGISTER
+  // ═══════════════════════════════════════════════════════
 
   async register(registerDto: RegisterDto) {
     // Validar que las contraseñas coincidan
@@ -105,7 +117,7 @@ export class AuthService {
     }
 
     // Crear token de verificación de email
-    const verificationToken = this.generateRandomToken();
+    const verificationToken = this.generateSecureToken();
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24); // 24 horas
 
@@ -126,27 +138,24 @@ export class AuthService {
       );
     } catch (e) {
       this.logger.error(`Error enviando email de verificación a ${user.email}: ${e.message}`);
-      // No bloquear el registro si el email falla
     }
 
     return {
       message: '¡Registro exitoso! Verifica tu email para activar tu cuenta',
       userId: user.id,
-      // En desarrollo, devolvemos el token (en producción NO)
       verificationToken: process.env.NODE_ENV === 'development' ? verificationToken : undefined,
     };
   }
 
+  // ═══════════════════════════════════════════════════════
+  // LOGIN
+  // ═══════════════════════════════════════════════════════
+
   async login(loginDto: LoginDto) {
-    // Buscar usuario por documento
     const user = await this.prisma.user.findUnique({
       where: { documento: loginDto.documento },
       include: {
-        roles: {
-          include: {
-            role: true,
-          },
-        },
+        roles: { include: { role: true } },
         categoriaActual: true,
       },
     });
@@ -155,12 +164,10 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // Verificar que el email esté verificado
     if (!user.emailVerificado) {
       throw new UnauthorizedException('Debes verificar tu email antes de iniciar sesión');
     }
 
-    // Verificar que el usuario esté activo
     if (user.estado !== 'ACTIVO') {
       if (user.estado === 'INACTIVO') {
         throw new UnauthorizedException('Tu cuenta ha sido desactivada. Contacta al administrador');
@@ -170,20 +177,16 @@ export class AuthService {
       }
     }
 
-    // Verificar contraseña
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.passwordHash);
-
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // Actualizar última sesión
     await this.prisma.user.update({
       where: { id: user.id },
       data: { ultimaSesion: new Date() },
     });
 
-    // Generar JWT token
     const payload = { sub: user.id, email: user.email };
     const accessToken = this.jwtService.sign(payload);
 
@@ -206,7 +209,15 @@ export class AuthService {
     };
   }
 
+  // ═══════════════════════════════════════════════════════
+  // VERIFY EMAIL
+  // ═══════════════════════════════════════════════════════
+
   async verifyEmail(token: string) {
+    if (!token) {
+      throw new BadRequestException('Token de verificación requerido');
+    }
+
     const verification = await this.prisma.emailVerification.findUnique({
       where: { token },
     });
@@ -216,8 +227,16 @@ export class AuthService {
     }
 
     if (verification.expiresAt < new Date()) {
-      throw new BadRequestException('El token de verificación ha expirado');
+      // Limpiar token expirado
+      await this.prisma.emailVerification.delete({
+        where: { id: verification.id },
+      });
+      throw new BadRequestException('El token de verificación ha expirado. Solicita uno nuevo.');
     }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: verification.userId },
+    });
 
     // Actualizar usuario
     await this.prisma.user.update({
@@ -233,12 +252,210 @@ export class AuthService {
       where: { id: verification.id },
     });
 
+    // Enviar email de bienvenida
+    if (user) {
+      try {
+        await this.emailService.enviarEmailBienvenida(user.email, user.nombre);
+      } catch (e) {
+        this.logger.error(`Error enviando email de bienvenida: ${e.message}`);
+      }
+    }
+
     return {
       message: '¡Email verificado exitosamente! Ya puedes iniciar sesión',
     };
   }
 
-  private generateRandomToken(): string {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  // ═══════════════════════════════════════════════════════
+  // RESEND VERIFICATION
+  // ═══════════════════════════════════════════════════════
+
+  async resendVerification(dto: ResendVerificationDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    // No revelar si el email existe o no (seguridad)
+    if (!user) {
+      return { message: 'Si el email está registrado, recibirás un correo de verificación' };
+    }
+
+    if (user.emailVerificado) {
+      return { message: 'Este email ya está verificado. Puedes iniciar sesión.' };
+    }
+
+    // Eliminar tokens anteriores de este usuario
+    await this.prisma.emailVerification.deleteMany({
+      where: { userId: user.id },
+    });
+
+    // Crear nuevo token
+    const verificationToken = this.generateSecureToken();
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    await this.prisma.emailVerification.create({
+      data: {
+        userId: user.id,
+        token: verificationToken,
+        expiresAt,
+      },
+    });
+
+    // Enviar email
+    try {
+      await this.emailService.enviarEmailVerificacion(
+        user.email,
+        user.nombre,
+        verificationToken,
+      );
+    } catch (e) {
+      this.logger.error(`Error reenviando email de verificación a ${user.email}: ${e.message}`);
+    }
+
+    return { message: 'Si el email está registrado, recibirás un correo de verificación' };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // FORGOT PASSWORD
+  // ═══════════════════════════════════════════════════════
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    // No revelar si el email existe o no (seguridad)
+    if (!user) {
+      return { message: 'Si existe una cuenta con ese email, recibirás instrucciones para restablecer tu contraseña' };
+    }
+
+    // Eliminar tokens anteriores de reset para este usuario
+    await this.prisma.passwordReset.deleteMany({
+      where: { userId: user.id },
+    });
+
+    // Crear token de reset
+    const resetToken = this.generateSecureToken();
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // 1 hora
+
+    await this.prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        token: resetToken,
+        expiresAt,
+      },
+    });
+
+    // Enviar email de recuperación
+    try {
+      await this.emailService.enviarEmailRecuperacion(
+        user.email,
+        user.nombre,
+        resetToken,
+      );
+      this.logger.log(`Email de recuperación enviado a ${user.email}`);
+    } catch (e) {
+      this.logger.error(`Error enviando email de recuperación a ${user.email}: ${e.message}`);
+    }
+
+    return { message: 'Si existe una cuenta con ese email, recibirás instrucciones para restablecer tu contraseña' };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // RESET PASSWORD
+  // ═══════════════════════════════════════════════════════
+
+  async resetPassword(dto: ResetPasswordDto) {
+    if (dto.password !== dto.confirmPassword) {
+      throw new BadRequestException('Las contraseñas no coinciden');
+    }
+
+    if (dto.password.length < 6) {
+      throw new BadRequestException('La contraseña debe tener al menos 6 caracteres');
+    }
+
+    const resetRecord = await this.prisma.passwordReset.findUnique({
+      where: { token: dto.token },
+    });
+
+    if (!resetRecord) {
+      throw new BadRequestException('Token de recuperación inválido');
+    }
+
+    if (resetRecord.expiresAt < new Date()) {
+      await this.prisma.passwordReset.delete({
+        where: { id: resetRecord.id },
+      });
+      throw new BadRequestException('El token de recuperación ha expirado. Solicita uno nuevo.');
+    }
+
+    // Hashear nueva contraseña
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    // Actualizar contraseña
+    await this.prisma.user.update({
+      where: { id: resetRecord.userId },
+      data: { passwordHash },
+    });
+
+    // Eliminar token usado
+    await this.prisma.passwordReset.delete({
+      where: { id: resetRecord.id },
+    });
+
+    // Eliminar todos los tokens de reset pendientes del usuario
+    await this.prisma.passwordReset.deleteMany({
+      where: { userId: resetRecord.userId },
+    });
+
+    return { message: '¡Contraseña restablecida exitosamente! Ya puedes iniciar sesión con tu nueva contraseña.' };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PROFILE
+  // ═══════════════════════════════════════════════════════
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: { include: { role: true } },
+        categoriaActual: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    return {
+      id: user.id,
+      documento: user.documento,
+      nombre: user.nombre,
+      apellido: user.apellido,
+      email: user.email,
+      telefono: user.telefono,
+      genero: user.genero,
+      ciudad: user.ciudad,
+      fotoUrl: user.fotoUrl,
+      fechaNacimiento: user.fechaNacimiento,
+      esPremium: user.esPremium,
+      estado: user.estado,
+      categoriaActualId: user.categoriaActualId,
+      categoriaActual: user.categoriaActual,
+      roles: user.roles.map((ur) => ur.role.nombre),
+      createdAt: user.createdAt,
+      ultimaSesion: user.ultimaSesion,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // HELPERS
+  // ═══════════════════════════════════════════════════════
+
+  private generateSecureToken(): string {
+    return crypto.randomBytes(32).toString('hex');
   }
 }

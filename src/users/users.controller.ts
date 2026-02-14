@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Body,
   Param,
   UseGuards,
@@ -15,6 +16,20 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  // ═══ Rutas fijas ANTES de rutas con :id ═══
+
+  @Get('profile')
+  @UseGuards(JwtAuthGuard)
+  async getMyProfile(@Request() req: any) {
+    return this.usersService.obtenerPerfilPrivado(req.user.id);
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  async updateMyProfile(@Request() req: any, @Body() data: any) {
+    return this.usersService.actualizarPerfil(req.user.id, data);
+  }
 
   @Get('documento/:documento')
   @UseGuards(JwtAuthGuard)
