@@ -6,6 +6,7 @@ import {
   Patch,
   Body,
   Param,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -61,6 +62,12 @@ export class UsersController {
       throw new BadRequestException('Debe adjuntar una imagen');
     }
     return this.usersService.actualizarFotoPerfil(req.user.id, file);
+  }
+
+  @Get('search')
+  @UseGuards(JwtAuthGuard)
+  async searchUsers(@Query('q') query: string) {
+    return this.usersService.buscarPorNombreODocumento(query);
   }
 
   @Get('documento/:documento')

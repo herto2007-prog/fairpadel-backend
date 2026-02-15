@@ -133,6 +133,37 @@ export class UsersService {
     });
   }
 
+  /**
+   * Search users by name or documento for partner selection in inscriptions.
+   * Returns minimal public info.
+   */
+  async buscarPorNombreODocumento(query: string, limit: number = 10) {
+    if (!query || query.trim().length < 2) return [];
+
+    const search = query.trim();
+    return this.prisma.user.findMany({
+      where: {
+        estado: 'ACTIVO',
+        OR: [
+          { nombre: { contains: search, mode: 'insensitive' } },
+          { apellido: { contains: search, mode: 'insensitive' } },
+          { documento: { contains: search } },
+        ],
+      },
+      select: {
+        id: true,
+        documento: true,
+        nombre: true,
+        apellido: true,
+        genero: true,
+        ciudad: true,
+        fotoUrl: true,
+      },
+      take: Math.min(limit, 20),
+      orderBy: [{ nombre: 'asc' }, { apellido: 'asc' }],
+    });
+  }
+
   async buscarPorEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },

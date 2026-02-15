@@ -45,8 +45,9 @@ export class TournamentsController {
     @Query('ciudad') ciudad?: string,
     @Query('estado') estado?: string,
     @Query('nombre') nombre?: string,
+    @Query('circuitoId') circuitoId?: string,
   ) {
-    return this.tournamentsService.findAll({ pais, ciudad, estado, nombre });
+    return this.tournamentsService.findAll({ pais, ciudad, estado, nombre, circuitoId });
   }
 
   @Get('categories')

@@ -183,6 +183,7 @@ export class TournamentsService {
     ciudad?: string;
     estado?: string;
     nombre?: string;
+    circuitoId?: string;
   }) {
     const where: any = {};
 
@@ -196,6 +197,10 @@ export class TournamentsService {
 
     if (filters?.nombre) {
       where.nombre = { contains: filters.nombre, mode: 'insensitive' };
+    }
+
+    if (filters?.circuitoId) {
+      where.circuitoId = filters.circuitoId;
     }
 
     if (filters?.estado) {
@@ -220,6 +225,12 @@ export class TournamentsService {
             id: true,
             nombre: true,
             apellido: true,
+          },
+        },
+        circuito: {
+          select: {
+            id: true,
+            nombre: true,
           },
         },
       },
@@ -255,6 +266,7 @@ export class TournamentsService {
             telefono: true,
           },
         },
+        circuito: true,
       },
     });
 
