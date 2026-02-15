@@ -7,6 +7,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto';
 import * as ExcelJS from 'exceljs';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const PDFDocument = require('pdfkit');
 
 @Injectable()
 export class TournamentsService {
@@ -777,6 +779,363 @@ export class TournamentsService {
 
     // Auto-filter
     sheet.autoFilter = { from: 'A1', to: `M${inscripciones.length + 1}` };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  // ═══════════════════════════════════════════
+  // REPORTS
+  // ═══════════════════════════════════════════
+
+  private async verifyReportAccess(tournamentId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+    if (tournament.organizadorId !== userId) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para generar reportes');
+      }
+    }
+    return tournament;
+  }
+
+  /**
+   * 7.1 — Results report: generates a PDF with bracket results per category.
+   * Uses PDFKit for server-side PDF generation (A4 landscape).
+   */
+  async reporteResultadosPdf(tournamentId: string, userId: string): Promise<Buffer> {
+    const tournament = await this.verifyReportAccess(tournamentId, userId);
+
+    // Load all matches with pair/player data
+    const matches = await this.prisma.match.findMany({
+      where: { tournamentId },
+      include: {
+        pareja1: { include: { jugador1: true, jugador2: true } },
+        pareja2: { include: { jugador1: true, jugador2: true } },
+        parejaGanadora: { include: { jugador1: true, jugador2: true } },
+        category: true,
+      },
+      orderBy: [{ categoryId: 'asc' }, { numeroRonda: 'asc' }],
+    });
+
+    const categories = await this.prisma.tournamentCategory.findMany({
+      where: { tournamentId },
+      include: { category: true },
+      orderBy: { category: { nombre: 'asc' } },
+    });
+
+    // Helper: format pair name
+    const pairName = (pareja: any, full = false) => {
+      if (!pareja) return 'BYE';
+      const j1 = pareja.jugador1;
+      const j2 = pareja.jugador2;
+      if (full) {
+        return `${j1?.nombre || ''} ${j1?.apellido || ''} / ${j2?.nombre || ''} ${j2?.apellido || ''}`;
+      }
+      return `${j1?.apellido || '?'} / ${j2?.apellido || '?'}`;
+    };
+
+    // Helper: format score string
+    const formatScore = (m: any): string => {
+      if (m.set1Pareja1 === null || m.set1Pareja2 === null) return '-';
+      let s = `${m.set1Pareja1}-${m.set1Pareja2}`;
+      if (m.set2Pareja1 !== null && m.set2Pareja2 !== null) {
+        s += ` / ${m.set2Pareja1}-${m.set2Pareja2}`;
+      }
+      if (m.set3Pareja1 !== null && m.set3Pareja2 !== null) {
+        s += ` / ${m.set3Pareja1}-${m.set3Pareja2}`;
+      }
+      return s;
+    };
+
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
+
+    // Collect PDF into buffer
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+    // Title
+    doc.fontSize(18).font('Helvetica-Bold').text(tournament.nombre, { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(10).font('Helvetica').fillColor('#666666')
+      .text(`${tournament.ciudad}, ${tournament.pais} | ${new Date(tournament.fechaInicio).toLocaleDateString('es-PY')} al ${new Date(tournament.fechaFin).toLocaleDateString('es-PY')}`, { align: 'center' });
+    doc.moveDown(1);
+    doc.fillColor('#000000');
+
+    for (const tc of categories) {
+      const catMatches = matches.filter((m) => m.categoryId === tc.categoryId);
+      if (catMatches.length === 0) continue;
+
+      // Check if we need a new page (if less than 120 points left)
+      if (doc.y > doc.page.height - 120) doc.addPage();
+
+      // Category header
+      doc.fontSize(13).font('Helvetica-Bold').fillColor('#4F46E5')
+        .text(tc.category.nombre);
+      doc.moveDown(0.4);
+      doc.fillColor('#000000');
+
+      // Podium: champion, finalist, semifinalists
+      const finalMatch = catMatches.find((m) => m.ronda === 'FINAL');
+      const semiMatches = catMatches.filter((m) => m.ronda === 'SEMIFINAL');
+
+      if (finalMatch?.parejaGanadora) {
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#16a34a')
+          .text(`CAMPEON: ${pairName(finalMatch.parejaGanadora, true)}`);
+        doc.fillColor('#000000');
+
+        const finalist = finalMatch.pareja1Id === finalMatch.parejaGanadoraId
+          ? finalMatch.pareja2 : finalMatch.pareja1;
+        if (finalist) {
+          doc.fontSize(10).font('Helvetica').fillColor('#ea580c')
+            .text(`FINALISTA: ${pairName(finalist, true)}`);
+          doc.fillColor('#000000');
+        }
+
+        for (const semi of semiMatches) {
+          if (semi.parejaGanadoraId) {
+            const loser = semi.pareja1Id === semi.parejaGanadoraId ? semi.pareja2 : semi.pareja1;
+            if (loser) {
+              doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
+                .text(`SEMIFINALISTA: ${pairName(loser, true)}`);
+            }
+          }
+        }
+        doc.fillColor('#000000');
+      }
+
+      doc.moveDown(0.5);
+
+      // Results table
+      const tableTop = doc.y;
+      const colWidths = [100, 220, 80, 220];
+      const colX = [40, 140, 360, 440];
+      const rowH = 18;
+
+      // Header row
+      doc.fontSize(8).font('Helvetica-Bold');
+      doc.rect(colX[0], tableTop, colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3], rowH).fill('#4F46E5');
+      doc.fillColor('#FFFFFF');
+      doc.text('Ronda', colX[0] + 4, tableTop + 4, { width: colWidths[0] - 8 });
+      doc.text('Pareja 1', colX[1] + 4, tableTop + 4, { width: colWidths[1] - 8 });
+      doc.text('Score', colX[2] + 4, tableTop + 4, { width: colWidths[2] - 8 });
+      doc.text('Pareja 2', colX[3] + 4, tableTop + 4, { width: colWidths[3] - 8 });
+      doc.fillColor('#000000');
+
+      let currentY = tableTop + rowH;
+
+      for (let i = 0; i < catMatches.length; i++) {
+        const m = catMatches[i];
+
+        // Check page break
+        if (currentY + rowH > doc.page.height - 40) {
+          doc.addPage();
+          currentY = 40;
+        }
+
+        // Alternate row background
+        if (i % 2 === 0) {
+          doc.rect(colX[0], currentY, colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3], rowH).fill('#f5f5f5');
+          doc.fillColor('#000000');
+        }
+
+        const p1 = pairName(m.pareja1);
+        const p2 = pairName(m.pareja2);
+        const score = formatScore(m);
+        const isP1Winner = m.parejaGanadoraId && m.parejaGanadoraId === m.pareja1Id;
+        const isP2Winner = m.parejaGanadoraId && m.parejaGanadoraId === m.pareja2Id;
+
+        doc.fontSize(8);
+        doc.font('Helvetica').text(m.ronda.replace(/_/g, ' '), colX[0] + 4, currentY + 4, { width: colWidths[0] - 8 });
+        doc.font(isP1Winner ? 'Helvetica-Bold' : 'Helvetica').text(p1, colX[1] + 4, currentY + 4, { width: colWidths[1] - 8 });
+        doc.font('Helvetica').text(score, colX[2] + 4, currentY + 4, { width: colWidths[2] - 8 });
+        doc.font(isP2Winner ? 'Helvetica-Bold' : 'Helvetica').text(p2, colX[3] + 4, currentY + 4, { width: colWidths[3] - 8 });
+
+        currentY += rowH;
+      }
+
+      // Draw bottom border
+      doc.moveTo(colX[0], currentY).lineTo(colX[0] + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3], currentY).stroke('#cccccc');
+      doc.y = currentY + 15;
+      doc.moveDown(0.5);
+    }
+
+    // Footer
+    doc.fontSize(8).font('Helvetica').fillColor('#9ca3af')
+      .text(`Generado por FairPadel - ${new Date().toLocaleDateString('es-PY')}`, 40, doc.page.height - 30, { align: 'center' });
+
+    doc.end();
+
+    return new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+  }
+
+  /**
+   * 7.2 — Financial report: generates an Excel with income breakdown.
+   */
+  async reporteFinancieroExcel(tournamentId: string, userId: string): Promise<Buffer> {
+    const tournament = await this.verifyReportAccess(tournamentId, userId);
+    const dashboard = await this.getDashboardFinanciero(tournamentId, userId);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'FairPadel';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Reporte Financiero');
+
+    // Tournament header
+    sheet.mergeCells('A1:F1');
+    sheet.getCell('A1').value = `Reporte Financiero — ${tournament.nombre}`;
+    sheet.getCell('A1').font = { bold: true, size: 14 };
+    sheet.mergeCells('A2:F2');
+    sheet.getCell('A2').value = `${tournament.ciudad}, ${tournament.pais} | ${new Date(tournament.fechaInicio).toLocaleDateString('es-PY')} - ${new Date(tournament.fechaFin).toLocaleDateString('es-PY')}`;
+    sheet.getCell('A2').font = { size: 10, color: { argb: 'FF666666' } };
+
+    // Summary
+    sheet.getCell('A4').value = 'Resumen Financiero';
+    sheet.getCell('A4').font = { bold: true, size: 12 };
+
+    const summaryData = [
+      ['Total Inscripciones', dashboard.totalInscripciones],
+      ['Costo por Inscripción', dashboard.costoInscripcion],
+      ['Total Recaudado', dashboard.totalRecaudado],
+      ['Total Comisiones', dashboard.totalComisiones],
+      ['Total Neto', dashboard.totalNeto],
+      ['Pagos Confirmados', dashboard.pagosConfirmados],
+      ['Pagos Pendientes', dashboard.pagosPendientes],
+      ['Pagos Rechazados', dashboard.pagosRechazados],
+      ['Inscripciones Gratis', dashboard.inscripcionesGratis],
+    ];
+
+    let row = 5;
+    for (const [label, value] of summaryData) {
+      sheet.getCell(`A${row}`).value = label as string;
+      sheet.getCell(`A${row}`).font = { bold: true };
+      sheet.getCell(`B${row}`).value = typeof value === 'number' ? value : Number(value);
+      if (typeof value === 'number' && (label as string).includes('Recaudado') || (label as string).includes('Comisiones') || (label as string).includes('Neto') || (label as string).includes('Costo')) {
+        sheet.getCell(`B${row}`).numFmt = '#,##0';
+      }
+      row++;
+    }
+
+    // Per-category breakdown
+    row += 2;
+    sheet.getCell(`A${row}`).value = 'Desglose por Categoría';
+    sheet.getCell(`A${row}`).font = { bold: true, size: 12 };
+    row++;
+
+    sheet.getRow(row).values = ['Categoría', 'Inscriptas', 'Confirmadas', 'Pendientes', 'Rechazadas', 'Recaudado', 'Comisiones'];
+    sheet.getRow(row).font = { bold: true };
+    sheet.getRow(row).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+    sheet.getRow(row).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    row++;
+
+    for (const cat of dashboard.porCategoria) {
+      sheet.getRow(row).values = [
+        cat.categoryNombre,
+        cat.totalInscritas,
+        cat.confirmadas,
+        cat.pendientes,
+        cat.rechazadas,
+        cat.montoRecaudado,
+        cat.montoComisiones,
+      ];
+      row++;
+    }
+
+    // Column widths
+    sheet.getColumn(1).width = 30;
+    sheet.getColumn(2).width = 15;
+    sheet.getColumn(3).width = 15;
+    sheet.getColumn(4).width = 15;
+    sheet.getColumn(5).width = 15;
+    sheet.getColumn(6).width = 15;
+    sheet.getColumn(7).width = 15;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  /**
+   * 7.3 — Attendance report: generates an Excel listing players per category.
+   */
+  async reporteAsistenciaExcel(tournamentId: string, userId: string): Promise<Buffer> {
+    const tournament = await this.verifyReportAccess(tournamentId, userId);
+
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: { tournamentId, estado: 'CONFIRMADA' },
+      include: {
+        pareja: { include: { jugador1: true, jugador2: true } },
+        category: true,
+      },
+      orderBy: [{ category: { nombre: 'asc' } }, { createdAt: 'asc' }],
+    });
+
+    // Get match results for individual stats
+    const matches = await this.prisma.match.findMany({
+      where: { tournamentId, parejaGanadoraId: { not: null } },
+      select: { pareja1Id: true, pareja2Id: true, parejaGanadoraId: true, categoryId: true },
+    });
+
+    // Build win/loss map per pareja
+    const parejaStats: Record<string, { played: number; won: number }> = {};
+    for (const m of matches) {
+      if (m.pareja1Id) {
+        if (!parejaStats[m.pareja1Id]) parejaStats[m.pareja1Id] = { played: 0, won: 0 };
+        parejaStats[m.pareja1Id].played++;
+        if (m.parejaGanadoraId === m.pareja1Id) parejaStats[m.pareja1Id].won++;
+      }
+      if (m.pareja2Id) {
+        if (!parejaStats[m.pareja2Id]) parejaStats[m.pareja2Id] = { played: 0, won: 0 };
+        parejaStats[m.pareja2Id].played++;
+        if (m.parejaGanadoraId === m.pareja2Id) parejaStats[m.pareja2Id].won++;
+      }
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'FairPadel';
+    const sheet = workbook.addWorksheet('Asistencia');
+
+    sheet.columns = [
+      { header: 'Categoría', key: 'categoria', width: 22 },
+      { header: 'Jugador 1', key: 'jugador1', width: 28 },
+      { header: 'Doc J1', key: 'docJ1', width: 14 },
+      { header: 'Jugador 2', key: 'jugador2', width: 28 },
+      { header: 'Doc J2', key: 'docJ2', width: 14 },
+      { header: 'Partidos', key: 'partidos', width: 12 },
+      { header: 'Ganados', key: 'ganados', width: 12 },
+      { header: 'Efectividad', key: 'efectividad', width: 14 },
+    ];
+
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+    sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+    for (const insc of inscripciones) {
+      const j1 = insc.pareja?.jugador1;
+      const j2 = insc.pareja?.jugador2;
+      const stats = parejaStats[insc.parejaId] || { played: 0, won: 0 };
+      const efectividad = stats.played > 0 ? Math.round((stats.won / stats.played) * 100) : 0;
+
+      sheet.addRow({
+        categoria: insc.category?.nombre || '—',
+        jugador1: j1 ? `${j1.nombre} ${j1.apellido}` : '—',
+        docJ1: j1?.documento || '—',
+        jugador2: j2 ? `${j2.nombre} ${j2.apellido}` : '—',
+        docJ2: j2?.documento || '—',
+        partidos: stats.played,
+        ganados: stats.won,
+        efectividad: `${efectividad}%`,
+      });
+    }
+
+    sheet.autoFilter = { from: 'A1', to: `H${inscripciones.length + 1}` };
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);

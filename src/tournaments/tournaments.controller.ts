@@ -208,6 +208,70 @@ export class TournamentsController {
     return new StreamableFile(buffer);
   }
 
+  // ═══════════════════════════════════════════
+  // REPORTES
+  // ═══════════════════════════════════════════
+
+  @Get(':id/reporte/resultados')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async reporteResultadosPdf(
+    @Param('id') id: string,
+    @Request() req,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const buffer = await this.tournamentsService.reporteResultadosPdf(id, req.user.id);
+    const tournament = await this.tournamentsService.findOne(id);
+    const filename = `resultados-${tournament.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
+  @Get(':id/reporte/financiero')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async reporteFinancieroExcel(
+    @Param('id') id: string,
+    @Request() req,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const buffer = await this.tournamentsService.reporteFinancieroExcel(id, req.user.id);
+    const tournament = await this.tournamentsService.findOne(id);
+    const filename = `financiero-${tournament.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`;
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
+  @Get(':id/reporte/asistencia')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async reporteAsistenciaExcel(
+    @Param('id') id: string,
+    @Request() req,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const buffer = await this.tournamentsService.reporteAsistenciaExcel(id, req.user.id);
+    const tournament = await this.tournamentsService.findOne(id);
+    const filename = `asistencia-${tournament.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`;
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
   @Get(':id/pelotas-ronda')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('organizador')
