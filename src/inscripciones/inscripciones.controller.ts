@@ -8,7 +8,11 @@ import {
   UseGuards,
   Request,
   Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { InscripcionesService } from './inscripciones.service';
 import { CreateInscripcionDto } from './dto/create-inscripcion.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -48,11 +52,24 @@ export class InscripcionesController {
   }
 
   @Post(':id/comprobante')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+      fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+          return cb(new BadRequestException('Solo se permiten imágenes'), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
   subirComprobante(
     @Param('id') id: string,
-    @Body() body: { comprobanteUrl: string },
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { comprobanteUrl?: string },
   ) {
-    return this.inscripcionesService.subirComprobante(id, body.comprobanteUrl);
+    // Accept either file upload or URL
+    return this.inscripcionesService.subirComprobante(id, file, body.comprobanteUrl);
   }
 
   // ═══════════════════════════════════════════

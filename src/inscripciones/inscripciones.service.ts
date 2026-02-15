@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateInscripcionDto } from './dto/create-inscripcion.dto';
 import { ParejasService } from '../parejas/parejas.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { CloudinaryService } from '../fotos/cloudinary.service';
 
 @Injectable()
 export class InscripcionesService {
@@ -18,6 +19,7 @@ export class InscripcionesService {
     private prisma: PrismaService,
     private parejasService: ParejasService,
     private notificacionesService: NotificacionesService,
+    private cloudinaryService: CloudinaryService,
   ) {}
 
   async create(createInscripcionDto: CreateInscripcionDto, userId: string) {
@@ -329,18 +331,36 @@ export class InscripcionesService {
     });
   }
 
-  async subirComprobante(inscripcionId: string, comprobanteUrl: string) {
+  async subirComprobante(
+    inscripcionId: string,
+    file?: Express.Multer.File,
+    comprobanteUrl?: string,
+  ) {
     const inscripcion = await this.findOne(inscripcionId);
 
-    if (inscripcion.estado !== 'PENDIENTE_PAGO') {
-      throw new BadRequestException('Esta inscripción no requiere comprobante');
+    if (!['PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION'].includes(inscripcion.estado)) {
+      throw new BadRequestException('Esta inscripción no acepta comprobantes');
+    }
+
+    let url: string;
+
+    if (file) {
+      // Upload file to Cloudinary
+      const result = await this.cloudinaryService.uploadImage(file, {
+        folder: 'fairpadel/comprobantes',
+      });
+      url = result.url;
+    } else if (comprobanteUrl) {
+      url = comprobanteUrl;
+    } else {
+      throw new BadRequestException('Debe enviar un archivo o una URL de comprobante');
     }
 
     // Crear comprobante
     await this.prisma.comprobantePago.create({
       data: {
         inscripcionId,
-        url: comprobanteUrl,
+        url,
         estado: 'PENDIENTE',
       },
     });
@@ -349,6 +369,13 @@ export class InscripcionesService {
     return this.prisma.inscripcion.update({
       where: { id: inscripcionId },
       data: { estado: 'PENDIENTE_CONFIRMACION' },
+      include: {
+        pareja: { include: { jugador1: true, jugador2: true } },
+        tournament: true,
+        category: true,
+        pago: true,
+        comprobantes: true,
+      },
     });
   }
 

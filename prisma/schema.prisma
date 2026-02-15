@@ -497,6 +497,7 @@ model Tournament {
   circuitoId          String?           @map("circuito_id")
   minutosPorPartido   Int               @default(60) @map("minutos_por_partido")
   habilitarBancard    Boolean           @default(false) @map("habilitar_bancard")
+  slug                String?           @unique
   organizadorId       String            @map("organizador_id")
   createdAt           DateTime          @default(now()) @map("created_at")
   updatedAt           DateTime          @updatedAt @map("updated_at")

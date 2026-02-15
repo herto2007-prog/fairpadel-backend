@@ -13,7 +13,10 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto';
@@ -56,6 +59,11 @@ export class TournamentsController {
   @Roles('organizador')
   findMyTournaments(@Request() req) {
     return this.tournamentsService.findMyTournaments(req.user.id);
+  }
+
+  @Get('slug/:slug')
+  findBySlug(@Param('slug') slug: string) {
+    return this.tournamentsService.findBySlug(slug);
   }
 
   @Get(':id')
@@ -163,6 +171,33 @@ export class TournamentsController {
   @Roles('organizador')
   getStats(@Param('id') id: string, @Request() req) {
     return this.tournamentsService.getStats(id, req.user.id);
+  }
+
+  @Get(':id/financiero')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  getDashboardFinanciero(@Param('id') id: string, @Request() req) {
+    return this.tournamentsService.getDashboardFinanciero(id, req.user.id);
+  }
+
+  @Get(':id/inscripciones/excel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async exportInscripcionesExcel(
+    @Param('id') id: string,
+    @Request() req,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const buffer = await this.tournamentsService.exportInscripcionesExcel(id, req.user.id);
+    const tournament = await this.tournamentsService.findOne(id);
+    const filename = `inscripciones-${tournament.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`;
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
   }
 
   @Get(':id/pelotas-ronda')

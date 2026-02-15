@@ -1,15 +1,42 @@
-import { 
-  Injectable, 
-  NotFoundException, 
-  ForbiddenException, 
-  BadRequestException 
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto';
+import * as ExcelJS from 'exceljs';
 
 @Injectable()
 export class TournamentsService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Genera un slug único a partir del nombre del torneo.
+   * Formato: nombre-torneo-2025 (con sufijo numérico si ya existe)
+   */
+  private async generateSlug(nombre: string): Promise<string> {
+    const year = new Date().getFullYear();
+    const base = nombre
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .substring(0, 50)
+      .replace(/^-|-$/g, '');
+    let slug = `${base}-${year}`;
+    let counter = 0;
+    while (true) {
+      const existing = await this.prisma.tournament.findUnique({
+        where: { slug: counter === 0 ? slug : `${slug}-${counter}` },
+      });
+      if (!existing) return counter === 0 ? slug : `${slug}-${counter}`;
+      counter++;
+    }
+  }
 
   async create(createTournamentDto: CreateTournamentDto, organizadorId: string) {
     // Premium gating: free organizers can have max 1 active tournament
@@ -88,6 +115,8 @@ export class TournamentsService {
     }
 
     try {
+      const slug = await this.generateSlug(createTournamentDto.nombre);
+
       const tournament = await this.prisma.tournament.create({
         data: {
           nombre: createTournamentDto.nombre,
@@ -107,6 +136,7 @@ export class TournamentsService {
           mapsUrl: createTournamentDto.mapsUrl,
           organizadorId: organizadorId,
           estado: 'BORRADOR',
+          slug,
           categorias: {
             create: createTournamentDto.categorias.map((categoryId) => ({
               categoryId: categoryId,
@@ -224,6 +254,30 @@ export class TournamentsService {
             email: true,
             telefono: true,
           },
+        },
+      },
+    });
+
+    if (!tournament) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    return tournament;
+  }
+
+  async findBySlug(slug: string) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { slug },
+      include: {
+        categorias: {
+          include: { category: true },
+        },
+        modalidades: true,
+        sedePrincipal: {
+          include: { canchas: true },
+        },
+        organizador: {
+          select: { id: true, nombre: true, apellido: true, email: true, telefono: true },
         },
       },
     });
@@ -489,6 +543,194 @@ export class TournamentsService {
       canchasConfiguradas: canchasCount,
       categorias: categoriasConStats,
     };
+  }
+
+  async getDashboardFinanciero(tournamentId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      // Check admin role via user roles
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para ver el dashboard financiero');
+      }
+    }
+
+    // Get all inscriptions with payments, grouped by category
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: { tournamentId },
+      include: {
+        pago: true,
+        category: true,
+        comprobantes: true,
+      },
+    });
+
+    const costoInscripcion = tournament.costoInscripcion.toNumber();
+
+    // Aggregate totals
+    let totalRecaudado = 0;
+    let totalComisiones = 0;
+    let pagosConfirmados = 0;
+    let pagosPendientes = 0;
+    let pagosRechazados = 0;
+    let inscripcionesGratis = 0;
+
+    const porCategoria: Record<string, {
+      categoryId: string;
+      categoryNombre: string;
+      totalInscritas: number;
+      confirmadas: number;
+      pendientes: number;
+      rechazadas: number;
+      montoRecaudado: number;
+      montoComisiones: number;
+    }> = {};
+
+    for (const insc of inscripciones) {
+      const catId = insc.categoryId;
+      if (!porCategoria[catId]) {
+        porCategoria[catId] = {
+          categoryId: catId,
+          categoryNombre: insc.category?.nombre || 'Sin categoría',
+          totalInscritas: 0,
+          confirmadas: 0,
+          pendientes: 0,
+          rechazadas: 0,
+          montoRecaudado: 0,
+          montoComisiones: 0,
+        };
+      }
+      porCategoria[catId].totalInscritas++;
+
+      if (insc.pago) {
+        if (insc.pago.estado === 'CONFIRMADO') {
+          const monto = insc.pago.monto.toNumber();
+          const comision = insc.pago.comision.toNumber();
+          totalRecaudado += monto;
+          totalComisiones += comision;
+          pagosConfirmados++;
+          porCategoria[catId].confirmadas++;
+          porCategoria[catId].montoRecaudado += monto;
+          porCategoria[catId].montoComisiones += comision;
+        } else if (insc.pago.estado === 'RECHAZADO') {
+          pagosRechazados++;
+          porCategoria[catId].rechazadas++;
+        } else {
+          pagosPendientes++;
+          porCategoria[catId].pendientes++;
+        }
+      } else {
+        // Free inscription
+        inscripcionesGratis++;
+        porCategoria[catId].confirmadas++;
+      }
+    }
+
+    const totalNeto = totalRecaudado - totalComisiones;
+
+    return {
+      costoInscripcion,
+      totalInscripciones: inscripciones.length,
+      totalRecaudado,
+      totalComisiones,
+      totalNeto,
+      pagosConfirmados,
+      pagosPendientes,
+      pagosRechazados,
+      inscripcionesGratis,
+      porCategoria: Object.values(porCategoria),
+    };
+  }
+
+  async exportInscripcionesExcel(tournamentId: string, userId: string): Promise<Buffer> {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para exportar inscripciones');
+      }
+    }
+
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: { tournamentId },
+      include: {
+        pareja: { include: { jugador1: true, jugador2: true } },
+        category: true,
+        pago: true,
+        comprobantes: true,
+      },
+      orderBy: [{ category: { nombre: 'asc' } }, { createdAt: 'asc' }],
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'FairPadel';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Inscripciones');
+
+    // Header row
+    sheet.columns = [
+      { header: 'Categoría', key: 'categoria', width: 22 },
+      { header: 'Modalidad', key: 'modalidad', width: 14 },
+      { header: 'Jugador 1', key: 'jugador1', width: 28 },
+      { header: 'Doc J1', key: 'docJ1', width: 14 },
+      { header: 'Jugador 2', key: 'jugador2', width: 28 },
+      { header: 'Doc J2', key: 'docJ2', width: 14 },
+      { header: 'Estado', key: 'estado', width: 24 },
+      { header: 'Método Pago', key: 'metodoPago', width: 16 },
+      { header: 'Monto', key: 'monto', width: 14 },
+      { header: 'Comisión', key: 'comision', width: 14 },
+      { header: 'Estado Pago', key: 'estadoPago', width: 16 },
+      { header: 'Comprobante', key: 'comprobante', width: 12 },
+      { header: 'Fecha Inscripción', key: 'fechaInscripcion', width: 20 },
+    ];
+
+    // Style header
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4F46E5' },
+    };
+    sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+    for (const insc of inscripciones) {
+      const j1 = insc.pareja?.jugador1;
+      const j2 = insc.pareja?.jugador2;
+      const hasComprobante = insc.comprobantes && insc.comprobantes.length > 0;
+
+      sheet.addRow({
+        categoria: insc.category?.nombre || '—',
+        modalidad: insc.modalidad,
+        jugador1: j1 ? `${j1.nombre} ${j1.apellido}` : '—',
+        docJ1: j1?.documento || '—',
+        jugador2: j2 ? `${j2.nombre} ${j2.apellido}` : insc.pareja?.jugador2Documento || '—',
+        docJ2: j2?.documento || insc.pareja?.jugador2Documento || '—',
+        estado: insc.estado.replace(/_/g, ' '),
+        metodoPago: insc.pago?.metodoPago || '—',
+        monto: insc.pago ? Number(insc.pago.monto) : 0,
+        comision: insc.pago ? Number(insc.pago.comision) : 0,
+        estadoPago: insc.pago?.estado?.replace(/_/g, ' ') || 'GRATIS',
+        comprobante: hasComprobante ? 'Sí' : 'No',
+        fechaInscripcion: insc.createdAt.toLocaleDateString('es-PY'),
+      });
+    }
+
+    // Auto-filter
+    sheet.autoFilter = { from: 'A1', to: `M${inscripciones.length + 1}` };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 
   async getPelotasRonda(tournamentId: string, userId: string) {
