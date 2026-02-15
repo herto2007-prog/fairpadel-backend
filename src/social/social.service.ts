@@ -539,38 +539,78 @@ export class SocialService {
 
   // ============ BÚSQUEDA ============
 
-  async buscarJugadores(query: string, ciudad?: string, genero?: string) {
+  async buscarJugadores(
+    query?: string,
+    ciudad?: string,
+    genero?: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
     const where: any = {
       estado: 'ACTIVO',
-      OR: [
+    };
+
+    if (query && query.trim()) {
+      where.OR = [
         { nombre: { contains: query, mode: 'insensitive' } },
         { apellido: { contains: query, mode: 'insensitive' } },
         { documento: { contains: query } },
-      ],
-    };
+      ];
+    }
 
     if (ciudad) {
-      where.ciudad = ciudad;
+      where.ciudad = { equals: ciudad, mode: 'insensitive' };
     }
 
     if (genero) {
       where.genero = genero;
     }
 
-    const jugadores = await this.prisma.user.findMany({
-      where,
-      take: 20,
-      select: {
-        id: true,
-        nombre: true,
-        apellido: true,
-        documento: true,
-        genero: true,
-        ciudad: true,
-        fotoUrl: true,
-      },
-    });
+    const skip = (page - 1) * limit;
+    const take = Math.min(limit, 50);
 
-    return jugadores;
+    const [jugadores, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { nombre: 'asc' },
+        select: {
+          id: true,
+          nombre: true,
+          apellido: true,
+          genero: true,
+          ciudad: true,
+          fotoUrl: true,
+          esPremium: true,
+          categoriaActual: {
+            select: { id: true, nombre: true, orden: true },
+          },
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      jugadores,
+      total,
+      page,
+      totalPages: Math.ceil(total / take),
+    };
+  }
+
+  async obtenerCiudadesActivas(): Promise<string[]> {
+    const result = await this.prisma.user.groupBy({
+      by: ['ciudad'],
+      where: {
+        estado: 'ACTIVO',
+        ciudad: { not: null },
+      },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+    });
+    return result
+      .filter((r) => r.ciudad)
+      .map((r) => r.ciudad as string);
   }
 }
