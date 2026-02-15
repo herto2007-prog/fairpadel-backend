@@ -1,4 +1,5 @@
 import { IsString, IsOptional, IsEnum, IsBoolean, IsInt, IsDateString, MaxLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 enum BannerZona {
   HEADER = 'HEADER',
@@ -27,6 +28,11 @@ export class UpdateBannerDto {
 
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return value;
+  })
   activo?: boolean;
 
   @IsOptional()
@@ -39,6 +45,7 @@ export class UpdateBannerDto {
 
   @IsOptional()
   @IsInt()
+  @Type(() => Number)
   orden?: number;
 
   @IsOptional()
