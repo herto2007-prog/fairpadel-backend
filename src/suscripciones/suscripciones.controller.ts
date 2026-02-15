@@ -54,4 +54,27 @@ export class SuscripcionesController {
   validarCupon(@Body() body: { codigo: string }) {
     return this.suscripcionesService.validarCupon(body.codigo);
   }
+
+  /**
+   * Confirmar pago de suscripción.
+   * Called after Bancard redirect or for manual confirmation.
+   */
+  @Post('confirmar-pago')
+  @UseGuards(JwtAuthGuard)
+  confirmarPago(
+    @Body() body: { suscripcionId: string; transactionId?: string },
+  ) {
+    return this.suscripcionesService.confirmarPagoSuscripcion(
+      body.suscripcionId,
+      body.transactionId,
+    );
+  }
+
+  /**
+   * Webhook for Bancard payment callbacks (no auth — Bancard calls directly).
+   */
+  @Post('webhook/bancard')
+  webhookBancard(@Body() webhookData: any) {
+    return this.suscripcionesService.procesarWebhookPago(webhookData);
+  }
 }
