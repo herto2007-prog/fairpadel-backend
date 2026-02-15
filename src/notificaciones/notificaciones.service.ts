@@ -4,75 +4,20 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Subject, Observable } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 import { SmsService } from './sms.service';
 import { TipoNotificacion } from '@prisma/client';
 
-export interface NotificacionEvent {
-  userId: string;
-  tipo: string;
-  titulo: string;
-  contenido: string;
-  count: number;
-}
-
 @Injectable()
 export class NotificacionesService {
   private readonly logger = new Logger(NotificacionesService.name);
-
-  // SSE: per-user subjects for real-time notification streaming
-  private userStreams = new Map<string, Subject<NotificacionEvent>>();
 
   constructor(
     private prisma: PrismaService,
     private emailService: EmailService,
     private smsService: SmsService,
   ) {}
-
-  // ═══════════════════════════════════════════════════════
-  // SSE STREAM MANAGEMENT
-  // ═══════════════════════════════════════════════════════
-
-  /**
-   * Get or create an observable stream for a user.
-   * Frontend connects to this via SSE.
-   */
-  getStreamForUser(userId: string): Observable<NotificacionEvent> {
-    if (!this.userStreams.has(userId)) {
-      this.userStreams.set(userId, new Subject<NotificacionEvent>());
-    }
-    return this.userStreams.get(userId)!.asObservable();
-  }
-
-  /**
-   * Remove a user stream when they disconnect.
-   */
-  removeStream(userId: string) {
-    const subject = this.userStreams.get(userId);
-    if (subject) {
-      subject.complete();
-      this.userStreams.delete(userId);
-    }
-  }
-
-  /**
-   * Emit a notification event to a specific user's stream.
-   */
-  private async emitToUser(userId: string, notificacion: any) {
-    const subject = this.userStreams.get(userId);
-    if (subject) {
-      const { count } = await this.contarNoLeidas(userId);
-      subject.next({
-        userId,
-        tipo: notificacion.tipo,
-        titulo: notificacion.titulo,
-        contenido: notificacion.contenido,
-        count,
-      });
-    }
-  }
 
   // ═══════════════════════════════════════════════════════
   // CORE DISPATCHER
@@ -100,11 +45,6 @@ export class NotificacionesService {
     const notificacion = await this.prisma.notificacion.create({
       data: { userId, tipo, titulo, contenido, enlace },
     });
-
-    // 1b. Emit SSE event for real-time bell update
-    this.emitToUser(userId, notificacion).catch((e) =>
-      this.logger.error(`SSE emit failed: ${e.message}`),
-    );
 
     // 2. Cargar usuario + preferencia
     const usuario = await this.prisma.user.findUnique({
