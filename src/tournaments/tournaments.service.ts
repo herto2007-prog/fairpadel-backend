@@ -152,6 +152,7 @@ export class TournamentsService {
     pais?: string;
     ciudad?: string;
     estado?: string;
+    nombre?: string;
   }) {
     const where: any = {};
 
@@ -161,6 +162,10 @@ export class TournamentsService {
 
     if (filters?.ciudad) {
       where.ciudad = filters.ciudad;
+    }
+
+    if (filters?.nombre) {
+      where.nombre = { contains: filters.nombre, mode: 'insensitive' };
     }
 
     if (filters?.estado) {
@@ -206,6 +211,11 @@ export class TournamentsService {
           },
         },
         modalidades: true,
+        sedePrincipal: {
+          include: {
+            canchas: true,
+          },
+        },
         organizador: {
           select: {
             id: true,
@@ -624,6 +634,64 @@ export class TournamentsService {
     return {
       message: 'Torneo finalizado exitosamente',
       categoriasFinalizadas: categorias.length,
+    };
+  }
+
+  // ═══════════════════════════════════════════
+  // CANCELAR TORNEO
+  // ═══════════════════════════════════════════
+
+  async cancelarTorneo(id: string, userId: string, motivo: string) {
+    const tournament = await this.findOne(id);
+
+    // Solo organizador dueño o admin
+    if (tournament.organizadorId !== userId) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para cancelar este torneo');
+      }
+    }
+
+    // Solo se puede cancelar si no está EN_CURSO o FINALIZADO
+    const estadosPermitidos = ['BORRADOR', 'PENDIENTE_APROBACION', 'PUBLICADO', 'RECHAZADO'];
+    if (!estadosPermitidos.includes(tournament.estado)) {
+      throw new BadRequestException(
+        `No se puede cancelar un torneo en estado ${tournament.estado}. Solo se permite cancelar torneos en estado: ${estadosPermitidos.join(', ')}`,
+      );
+    }
+
+    // Cancelar todas las inscripciones confirmadas
+    const inscripcionesActivas = await this.prisma.inscripcion.findMany({
+      where: {
+        tournamentId: id,
+        estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION', 'PENDIENTE_PAGO_PRESENCIAL'] },
+      },
+    });
+
+    if (inscripcionesActivas.length > 0) {
+      await this.prisma.inscripcion.updateMany({
+        where: {
+          tournamentId: id,
+          estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION', 'PENDIENTE_PAGO_PRESENCIAL'] },
+        },
+        data: { estado: 'CANCELADA' },
+      });
+    }
+
+    // Actualizar estado del torneo
+    await this.prisma.tournament.update({
+      where: { id },
+      data: { estado: 'CANCELADO' },
+    });
+
+    return {
+      message: 'Torneo cancelado exitosamente',
+      motivo,
+      inscripcionesCanceladas: inscripcionesActivas.length,
     };
   }
 

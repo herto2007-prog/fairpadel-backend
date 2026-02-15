@@ -33,8 +33,9 @@ export class TournamentsController {
     @Query('pais') pais?: string,
     @Query('ciudad') ciudad?: string,
     @Query('estado') estado?: string,
+    @Query('nombre') nombre?: string,
   ) {
-    return this.tournamentsService.findAll({ pais, ciudad, estado });
+    return this.tournamentsService.findAll({ pais, ciudad, estado, nombre });
   }
 
   @Get('categories')
@@ -84,6 +85,17 @@ export class TournamentsController {
   @Roles('organizador', 'admin')
   finalizarTorneo(@Param('id') id: string, @Request() req) {
     return this.tournamentsService.finalizarTorneo(id, req.user.id);
+  }
+
+  @Put(':id/cancelar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  cancelarTorneo(
+    @Param('id') id: string,
+    @Body() body: { motivo: string },
+    @Request() req,
+  ) {
+    return this.tournamentsService.cancelarTorneo(id, req.user.id, body.motivo);
   }
 
   @Patch(':id/categorias/:tournamentCategoryId/toggle-inscripcion')
