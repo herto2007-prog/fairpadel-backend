@@ -132,6 +132,16 @@ export class MatchesController {
     return this.matchesService.cargarResultado(id, dto);
   }
 
+  @Put(':id/editar-resultado')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  editarResultado(
+    @Param('id') id: string,
+    @Body() dto: CargarResultadoDto,
+  ) {
+    return this.matchesService.editarResultado(id, dto);
+  }
+
   @Put(':id/reprogramar')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('organizador', 'admin')

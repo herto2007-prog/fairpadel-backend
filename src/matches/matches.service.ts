@@ -280,6 +280,77 @@ export class MatchesService {
   }
 
   /**
+   * Editar resultado de un match ya finalizado.
+   * Reversa avance del ganador anterior, aplica nuevo resultado, re-avanza.
+   */
+  async editarResultado(id: string, dto: CargarResultadoDto) {
+    const match = await this.findOne(id);
+
+    if (match.estado !== 'FINALIZADO' && match.estado !== 'WO') {
+      throw new BadRequestException('Solo se pueden editar partidos ya finalizados');
+    }
+
+    // Verificar que la categoría no esté FINALIZADA (ya se asignaron puntos)
+    const tc = await this.prisma.tournamentCategory.findFirst({
+      where: { tournamentId: match.tournamentId, categoryId: match.categoryId },
+    });
+    if (tc?.estado === 'FINALIZADA') {
+      throw new BadRequestException(
+        'No se puede editar: la categoría ya fue finalizada y los puntos asignados.',
+      );
+    }
+
+    const oldGanadorId = match.parejaGanadoraId;
+
+    // 1. Si ganador anterior avanzó al siguiente partido, reversar
+    if (match.partidoSiguienteId && oldGanadorId) {
+      const nextMatch = await this.prisma.match.findUnique({
+        where: { id: match.partidoSiguienteId },
+      });
+      if (nextMatch) {
+        // Solo reversar si el siguiente partido NO está finalizado
+        if (['FINALIZADO', 'WO'].includes(nextMatch.estado)) {
+          throw new BadRequestException(
+            'No se puede editar: el partido siguiente ya tiene resultado. Edita ese primero.',
+          );
+        }
+        // Limpiar el slot del ganador anterior
+        if (nextMatch.pareja1Id === oldGanadorId) {
+          await this.prisma.match.update({
+            where: { id: nextMatch.id },
+            data: { pareja1Id: null },
+          });
+        } else if (nextMatch.pareja2Id === oldGanadorId) {
+          await this.prisma.match.update({
+            where: { id: nextMatch.id },
+            data: { pareja2Id: null },
+          });
+        }
+      }
+    }
+
+    // 2. Resetear el match actual
+    await this.prisma.match.update({
+      where: { id },
+      data: {
+        estado: 'PROGRAMADO',
+        set1Pareja1: null,
+        set1Pareja2: null,
+        set2Pareja1: null,
+        set2Pareja2: null,
+        set3Pareja1: null,
+        set3Pareja2: null,
+        parejaGanadoraId: null,
+        parejaPerdedoraId: null,
+        observaciones: null,
+      },
+    });
+
+    // 3. Cargar el nuevo resultado normalmente
+    return this.cargarResultado(id, dto);
+  }
+
+  /**
    * Valida marcador según reglas paraguayas de pádel.
    * @param esSemiFinal - true si es SEMIFINAL o FINAL (3 sets completos, sin super tie-break)
    */
