@@ -49,6 +49,12 @@ export class FotosController {
     return this.fotosService.subirFoto(req.user.id, file, dto);
   }
 
+  @Get('mis-fotos/count')
+  @UseGuards(JwtAuthGuard)
+  contarMisFotos(@Request() req: any) {
+    return this.fotosService.contarFotosUsuario(req.user.id);
+  }
+
   @Get()
   listarFotos(
     @Query('userId') userId?: string,

@@ -64,7 +64,7 @@ export class FotosService {
         descripcion: data.descripcion,
         tournamentId: data.tournamentId,
         tipo,
-        estadoModeracion: 'PENDIENTE',
+        estadoModeracion: 'APROBADA',
       },
     });
 
@@ -315,6 +315,19 @@ export class FotosService {
     });
 
     return { message: 'Comentario eliminado' };
+  }
+
+  async contarFotosUsuario(userId: string) {
+    const usuario = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { esPremium: true },
+    });
+    const count = await this.prisma.foto.count({ where: { userId } });
+    return {
+      count,
+      limit: usuario?.esPremium ? null : 6,
+      esPremium: usuario?.esPremium || false,
+    };
   }
 
   async reportarFoto(fotoId: string, userId: string, motivo: string) {
