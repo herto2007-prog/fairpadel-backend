@@ -1043,7 +1043,95 @@ export class FixtureService {
   // ELIMINADO: generarPartidoUbicacion — No se juega 3er/4to puesto en formato paraguayo
 
   // ═══════════════════════════════════════════════════════
-  // OBTENER FIXTURE
+  // OBTENER FIXTURE PÚBLICO (solo categorías publicadas)
+  // ═══════════════════════════════════════════════════════
+
+  async obtenerFixturePublico(tournamentId: string, categoryId?: string) {
+    // Obtener categorías con fixture publicado (SORTEO_REALIZADO, EN_CURSO, FINALIZADA)
+    const estadosPublicados = ['SORTEO_REALIZADO', 'EN_CURSO', 'FINALIZADA'];
+    const tournamentCategories = await this.prisma.tournamentCategory.findMany({
+      where: {
+        tournamentId,
+        estado: { in: estadosPublicados as any },
+        ...(categoryId ? { categoryId } : {}),
+      },
+      select: { categoryId: true },
+    });
+
+    const publishedCategoryIds = tournamentCategories.map(tc => tc.categoryId);
+
+    if (publishedCategoryIds.length === 0) {
+      return {};
+    }
+
+    const where: any = {
+      tournamentId,
+      categoryId: { in: publishedCategoryIds },
+    };
+    if (categoryId && publishedCategoryIds.includes(categoryId)) {
+      where.categoryId = categoryId;
+    } else if (categoryId) {
+      return {}; // Requested category is not published
+    }
+
+    const partidos = await this.prisma.match.findMany({
+      where,
+      include: {
+        category: true,
+        pareja1: {
+          include: {
+            jugador1: true,
+            jugador2: true,
+          },
+        },
+        pareja2: {
+          include: {
+            jugador1: true,
+            jugador2: true,
+          },
+        },
+        parejaGanadora: {
+          include: {
+            jugador1: true,
+            jugador2: true,
+          },
+        },
+        torneoCancha: {
+          include: {
+            sedeCancha: {
+              include: {
+                sede: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ numeroRonda: 'asc' }],
+    });
+
+    // Agrupar por categoría y ronda
+    const fixturePorCategoria = {};
+
+    for (const partido of partidos) {
+      const catId = partido.categoryId;
+      if (!fixturePorCategoria[catId]) {
+        fixturePorCategoria[catId] = {
+          category: partido.category,
+          rondas: {},
+        };
+      }
+
+      if (!fixturePorCategoria[catId].rondas[partido.ronda]) {
+        fixturePorCategoria[catId].rondas[partido.ronda] = [];
+      }
+
+      fixturePorCategoria[catId].rondas[partido.ronda].push(partido);
+    }
+
+    return fixturePorCategoria;
+  }
+
+  // OBTENER FIXTURE (interno, incluye borradores para admin/organizer)
   // ═══════════════════════════════════════════════════════
 
   async obtenerFixture(tournamentId: string, categoryId?: string) {
