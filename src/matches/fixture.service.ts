@@ -1,6 +1,10 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+
+/** Prisma transactional client or regular PrismaService — used to pass tx into helpers */
+type PrismaTx = Prisma.TransactionClient;
 import {
   calcularHoraFin,
   generarTimeSlots,
@@ -21,9 +25,11 @@ export class FixtureService {
   // SEEDING: Calcular fuerza de parejas por ranking
   // ═══════════════════════════════════════════════════════
 
-  async obtenerSeedingParaCategoria(tournamentId: string, categoryId: string) {
+  async obtenerSeedingParaCategoria(tournamentId: string, categoryId: string, dbClient?: PrismaTx) {
+    const db = dbClient || this.prisma;
+
     // 1. Obtener inscripciones confirmadas con parejas y jugadores
-    const inscripciones = await this.prisma.inscripcion.findMany({
+    const inscripciones = await db.inscripcion.findMany({
       where: {
         tournamentId,
         categoryId,
@@ -45,7 +51,7 @@ export class FixtureService {
       .filter(Boolean) as string[];
 
     // 3. Consultar rankings GLOBAL de todos los jugadores
-    const rankings = await this.prisma.ranking.findMany({
+    const rankings = await db.ranking.findMany({
       where: {
         jugadorId: { in: playerIds },
         tipoRanking: 'GLOBAL',
@@ -140,6 +146,7 @@ export class FixtureService {
   // ═══════════════════════════════════════════════════════
 
   async sortearCategoria(tournamentId: string, categoryId: string, userId?: string) {
+    // ── Validaciones previas (fuera de transacción para fail-fast) ──
     const tournament = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: {
@@ -230,29 +237,44 @@ export class FixtureService {
       );
     }
 
-    // Eliminar partidos existentes de esta categoría (safety reset para re-sorteo)
-    await this.prisma.match.deleteMany({
-      where: { tournamentId, categoryId },
-    });
-
-    // Generar fixture con seeding — pasar minutosPorPartido del torneo
+    // ── Todo el sorteo dentro de transacción atómica ──
+    // Si algo falla, no quedan matches huérfanos ni estado inconsistente.
+    // Timeout de 30s para brackets grandes.
     const minutosPorPartido = tournament.minutosPorPartido || 60;
-    const fixture = await this.generarFixturePorCategoria(
-      tournamentId,
-      categoryId,
-      inscripciones,
-      tournament.torneoCanchas,
-      minutosPorPartido,
-    );
 
-    // Categoría va a FIXTURE_BORRADOR (no a SORTEO_REALIZADO)
-    await this.prisma.tournamentCategory.update({
-      where: { id: tournamentCategory.id },
-      data: {
-        estado: 'FIXTURE_BORRADOR',
-        inscripcionAbierta: false,
+    const fixture = await this.prisma.$transaction(
+      async (tx) => {
+        // Eliminar partidos existentes de esta categoría (safety reset para re-sorteo)
+        await tx.match.deleteMany({
+          where: { tournamentId, categoryId },
+        });
+
+        // Generar fixture con seeding
+        const result = await this.generarFixturePorCategoria(
+          tx,
+          tournamentId,
+          categoryId,
+          inscripciones,
+          tournament.torneoCanchas,
+          minutosPorPartido,
+        );
+
+        // Categoría va a FIXTURE_BORRADOR (no a SORTEO_REALIZADO)
+        await tx.tournamentCategory.update({
+          where: { id: tournamentCategory.id },
+          data: {
+            estado: 'FIXTURE_BORRADOR',
+            inscripcionAbierta: false,
+          },
+        });
+
+        return result;
       },
-    });
+      {
+        maxWait: 10000,  // max wait to acquire connection
+        timeout: 30000,  // max execution time
+      },
+    );
 
     // NO transicionar torneo a EN_CURSO aquí — eso ocurre al publicar
 
@@ -474,6 +496,7 @@ export class FixtureService {
       }
 
       const fixtureCategoria = await this.generarFixturePorCategoria(
+        this.prisma,
         tournamentId,
         categoriaRelacion.categoryId,
         inscripcionesCategoria,
@@ -506,6 +529,7 @@ export class FixtureService {
   }
 
   async generarFixturePorCategoria(
+    tx: PrismaTx,
     tournamentId: string,
     categoryId: string,
     inscripciones: any[],
@@ -522,7 +546,7 @@ export class FixtureService {
     }
 
     // === SEEDING (serpentina: seed 1 vs seed N, seed 2 vs seed N-1, etc.) ===
-    const seededData = await this.obtenerSeedingParaCategoria(tournamentId, categoryId);
+    const seededData = await this.obtenerSeedingParaCategoria(tournamentId, categoryId, tx);
 
     // Separar ranked y unranked, shuffle unranked
     const rankedPairs = seededData.filter((sp) => sp.pairStrength > 0);
@@ -562,7 +586,7 @@ export class FixtureService {
     let globalMatchNumber = 1;
 
     for (const m of r1Matches) {
-      const match = await this.prisma.match.create({
+      const match = await tx.match.create({
         data: {
           tournamentId,
           categoryId,
@@ -593,7 +617,7 @@ export class FixtureService {
     // Crear matches R2 en DB (slots vacíos — se llenan con perdedores de R1)
     const createdR2: any[] = [];
     for (let i = 0; i < numR2Matches; i++) {
-      const match = await this.prisma.match.create({
+      const match = await tx.match.create({
         data: {
           tournamentId,
           categoryId,
@@ -624,7 +648,7 @@ export class FixtureService {
 
       if (r2MatchIdx < createdR2.length) {
         const campo = r2Pos === 1 ? 'pareja1Id' : 'pareja2Id';
-        await this.prisma.match.update({
+        await tx.match.update({
           where: { id: createdR2[r2MatchIdx].id },
           data: { [campo]: byePair.id },
         });
@@ -639,7 +663,7 @@ export class FixtureService {
       const r2Pos: 1 | 2 = (r2SlotCounter % 2 === 0) ? 1 : 2;
 
       if (r2MatchIdx < createdR2.length) {
-        await this.prisma.match.update({
+        await tx.match.update({
           where: { id: createdR1[i].id },
           data: {
             partidoPerdedorSiguienteId: createdR2[r2MatchIdx].id,
@@ -695,7 +719,7 @@ export class FixtureService {
       const createdMatches: any[] = [];
 
       for (const m of roundMatches) {
-        const match = await this.prisma.match.create({
+        const match = await tx.match.create({
           data: {
             tournamentId,
             categoryId,
@@ -723,7 +747,7 @@ export class FixtureService {
 
         if (nextMatch) {
           const posicion = match.matchIndex % 2 === 0 ? 1 : 2;
-          await this.prisma.match.update({
+          await tx.match.update({
             where: { id: match.id },
             data: {
               partidoSiguienteId: nextMatch.id,
@@ -750,7 +774,7 @@ export class FixtureService {
       const bracketPos: 1 | 2 = (bracketSlotCounter % 2 === 0) ? 1 : 2;
 
       if (bracketMatchIdx < bracketFirstRound.length) {
-        await this.prisma.match.update({
+        await tx.match.update({
           where: { id: createdR1[i].id },
           data: {
             partidoSiguienteId: bracketFirstRound[bracketMatchIdx].id,
@@ -767,7 +791,7 @@ export class FixtureService {
       const bracketPos: 1 | 2 = (bracketSlotCounter % 2 === 0) ? 1 : 2;
 
       if (bracketMatchIdx < bracketFirstRound.length) {
-        await this.prisma.match.update({
+        await tx.match.update({
           where: { id: createdR2[i].id },
           data: {
             partidoSiguienteId: bracketFirstRound[bracketMatchIdx].id,
@@ -786,7 +810,7 @@ export class FixtureService {
 
       if (bracketMatchIdx < bracketFirstRound.length) {
         // El perdedor de este R1 match va directo al bracket (BYE en R2)
-        await this.prisma.match.update({
+        await tx.match.update({
           where: { id: createdR1[r2ByeR1MatchIdx].id },
           data: {
             partidoPerdedorSiguienteId: bracketFirstRound[bracketMatchIdx].id,
@@ -803,7 +827,7 @@ export class FixtureService {
     // Refrescar el estado de la primera ronda del bracket (puede tener BYEs)
     for (const match of bracketFirstRound) {
       // Recargar de DB para tener los datos actualizados
-      const freshMatch = await this.prisma.match.findUnique({ where: { id: match.id } });
+      const freshMatch = await tx.match.findUnique({ where: { id: match.id } });
       if (!freshMatch) continue;
 
       const hasP1 = freshMatch.pareja1Id !== null;
@@ -814,7 +838,7 @@ export class FixtureService {
       // Un match tiene BYE cuando: tiene 1 pareja y ningún match R1/R2 alimenta al slot vacío
       if (hasP1 && !hasP2) {
         // Verificar si alguien va a llenar pareja2Id dinámicamente
-        const feedersToPos2 = await this.prisma.match.count({
+        const feedersToPos2 = await tx.match.count({
           where: {
             OR: [
               { partidoSiguienteId: freshMatch.id, posicionEnSiguiente: 2 },
@@ -823,10 +847,10 @@ export class FixtureService {
           },
         });
         if (feedersToPos2 === 0) {
-          await this.autoAdvanceBye(freshMatch.id, freshMatch.pareja1Id);
+          await this.autoAdvanceByeTx(tx, freshMatch.id, freshMatch.pareja1Id);
         }
       } else if (!hasP1 && hasP2) {
-        const feedersToPos1 = await this.prisma.match.count({
+        const feedersToPos1 = await tx.match.count({
           where: {
             OR: [
               { partidoSiguienteId: freshMatch.id, posicionEnSiguiente: 1 },
@@ -835,11 +859,11 @@ export class FixtureService {
           },
         });
         if (feedersToPos1 === 0) {
-          await this.autoAdvanceBye(freshMatch.id, freshMatch.pareja2Id);
+          await this.autoAdvanceByeTx(tx, freshMatch.id, freshMatch.pareja2Id);
         }
       } else if (!hasP1 && !hasP2) {
         // Ambos null — verificar si hay feeders. Si no hay, es match vacío puro → BYE doble
-        const anyFeeders = await this.prisma.match.count({
+        const anyFeeders = await tx.match.count({
           where: {
             OR: [
               { partidoSiguienteId: freshMatch.id },
@@ -849,7 +873,7 @@ export class FixtureService {
         });
         if (anyFeeders === 0) {
           // Match completamente vacío sin feeders — marcar como BYE vacío
-          await this.prisma.match.update({
+          await tx.match.update({
             where: { id: freshMatch.id },
             data: {
               estado: 'WO',
@@ -867,6 +891,7 @@ export class FixtureService {
 
     if (torneoCanchas.length > 0) {
       await this.asignarCanchasYHorarios(
+        tx,
         allMatches,
         torneoCanchas,
         tournamentId,
@@ -919,6 +944,26 @@ export class FixtureService {
     }
   }
 
+  /** Transaction-aware version of autoAdvanceBye — used inside $transaction */
+  private async autoAdvanceByeTx(tx: PrismaTx, matchId: string, winnerId: string) {
+    const match = await tx.match.update({
+      where: { id: matchId },
+      data: {
+        estado: 'WO',
+        parejaGanadoraId: winnerId,
+        observaciones: 'BYE - Avance automático',
+      },
+    });
+
+    if (match.partidoSiguienteId && match.posicionEnSiguiente) {
+      const campo = match.posicionEnSiguiente === 1 ? 'pareja1Id' : 'pareja2Id';
+      await tx.match.update({
+        where: { id: match.partidoSiguienteId },
+        data: { [campo]: winnerId },
+      });
+    }
+  }
+
   // ═══════════════════════════════════════════════════════
   // MÉTODOS AUXILIARES
   // ═══════════════════════════════════════════════════════
@@ -952,10 +997,10 @@ export class FixtureService {
    * Obtiene todos los slots ocupados del torneo (todas las categorías).
    * Excluye matches WO y CANCELADO ya que no consumen cancha.
    */
-  private async obtenerSlotsOcupados(tournamentId: string): Promise<Set<string>> {
+  private async obtenerSlotsOcupados(tx: PrismaTx, tournamentId: string): Promise<Set<string>> {
     const occupied = new Set<string>();
 
-    const existingMatches = await this.prisma.match.findMany({
+    const existingMatches = await tx.match.findMany({
       where: {
         tournamentId,
         estado: { notIn: ['WO', 'CANCELADO'] },
@@ -988,6 +1033,7 @@ export class FixtureService {
    * - Ordena matches por ronda (primera ronda primero)
    */
   private async asignarCanchasYHorarios(
+    tx: PrismaTx,
     partidos: any[],
     torneoCanchas: any[],
     tournamentId: string,
@@ -995,7 +1041,7 @@ export class FixtureService {
     bufferMinutos: number = 10,
   ): Promise<{ asignados: number; sinSlot: number }> {
     // 1. Cargar slots ya ocupados globalmente (cross-categoría)
-    const ocupados = await this.obtenerSlotsOcupados(tournamentId);
+    const ocupados = await this.obtenerSlotsOcupados(tx, tournamentId);
 
     // 2. Generar todos los time slots posibles desde rangos de disponibilidad
     const allSlots = generarTimeSlots(torneoCanchas, minutosPorPartido, bufferMinutos);
@@ -1028,7 +1074,7 @@ export class FixtureService {
         const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
         if (!ocupados.has(key)) {
           // Slot disponible → asignar
-          await this.prisma.match.update({
+          await tx.match.update({
             where: { id: partido.id },
             data: {
               torneoCanchaId: slot.torneoCanchaId,
