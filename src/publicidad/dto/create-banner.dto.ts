@@ -50,4 +50,8 @@ export class CreateBannerDto {
   @IsString()
   @MaxLength(200)
   anunciante?: string;
+
+  @IsOptional()
+  @IsString()
+  torneoId?: string;
 }

@@ -3,6 +3,17 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../fotos/cloudinary.service';
 import { CreateBannerDto, UpdateBannerDto } from './dto';
 
+// Mapeo zona → preset de Cloudinary para tamaños correctos
+const ZONE_PRESET_MAP: Record<string, any> = {
+  HOME_HERO: CloudinaryService.PRESETS.BANNER,          // 1200x200
+  HOME_MEDIO: CloudinaryService.PRESETS.BANNER_MEDIUM,  // 1200x150
+  ENTRE_TORNEOS: CloudinaryService.PRESETS.BANNER_MEDIUM, // 1200x150
+  HEADER: CloudinaryService.PRESETS.BANNER_SLIM,         // 1200x90
+  FOOTER: CloudinaryService.PRESETS.BANNER_SLIM,         // 1200x90
+  TORNEO_DETALLE: CloudinaryService.PRESETS.BANNER_TORNEO, // 1200x100
+  SIDEBAR: CloudinaryService.PRESETS.BANNER,             // default
+};
+
 @Injectable()
 export class PublicidadService {
   private readonly logger = new Logger(PublicidadService.name);
@@ -11,6 +22,10 @@ export class PublicidadService {
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
   ) {}
+
+  private getPresetForZone(zona: string) {
+    return ZONE_PRESET_MAP[zona] || CloudinaryService.PRESETS.BANNER;
+  }
 
   // ═══════════════════════════════════════════════════════
   // ADMIN: CRUD BANNERS
@@ -21,9 +36,10 @@ export class PublicidadService {
     let imagenPublicId: string | null = null;
 
     if (file) {
+      const preset = this.getPresetForZone(dto.zona);
       const resultado = await this.cloudinary.uploadImage(file, {
         folder: 'fairpadel/banners',
-        transformation: [CloudinaryService.PRESETS.BANNER],
+        transformation: [preset],
       });
       imagenUrl = resultado.url;
       imagenPublicId = resultado.publicId;
@@ -41,10 +57,11 @@ export class PublicidadService {
         fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : null,
         orden: dto.orden ?? 0,
         anunciante: dto.anunciante,
+        torneoId: dto.torneoId || null,
       },
     });
 
-    this.logger.log(`Banner creado: ${banner.id} (${banner.titulo})`);
+    this.logger.log(`Banner creado: ${banner.id} (${banner.titulo}) zona=${banner.zona} torneo=${banner.torneoId || 'global'}`);
     return banner;
   }
 
@@ -60,9 +77,11 @@ export class PublicidadService {
       if (existing.imagenPublicId) {
         await this.cloudinary.deleteImage(existing.imagenPublicId);
       }
+      const zona = dto.zona || existing.zona;
+      const preset = this.getPresetForZone(zona);
       const resultado = await this.cloudinary.uploadImage(file, {
         folder: 'fairpadel/banners',
-        transformation: [CloudinaryService.PRESETS.BANNER],
+        transformation: [preset],
       });
       imagenUrl = resultado.url;
       imagenPublicId = resultado.publicId;
@@ -81,6 +100,7 @@ export class PublicidadService {
         fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : existing.fechaFin,
         orden: dto.orden ?? existing.orden,
         anunciante: dto.anunciante !== undefined ? dto.anunciante : existing.anunciante,
+        torneoId: dto.torneoId !== undefined ? (dto.torneoId || null) : existing.torneoId,
       },
     });
 
@@ -105,6 +125,11 @@ export class PublicidadService {
   async listarBanners() {
     return this.prisma.banner.findMany({
       orderBy: [{ zona: 'asc' }, { orden: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        torneo: {
+          select: { id: true, nombre: true },
+        },
+      },
     });
   }
 
@@ -127,6 +152,9 @@ export class PublicidadService {
   async obtenerEstadisticas() {
     const banners = await this.prisma.banner.findMany({
       orderBy: { clicks: 'desc' },
+      include: {
+        torneo: { select: { id: true, nombre: true } },
+      },
     });
 
     const totalClicks = banners.reduce((sum, b) => sum + b.clicks, 0);
@@ -146,6 +174,7 @@ export class PublicidadService {
         clicks: b.clicks,
         impresiones: b.impresiones,
         ctr: b.impresiones > 0 ? ((b.clicks / b.impresiones) * 100).toFixed(2) : '0.00',
+        torneoNombre: b.torneo?.nombre || null,
       })),
     };
   }
@@ -154,24 +183,30 @@ export class PublicidadService {
   // PÚBLICO: BANNERS ACTIVOS POR ZONA
   // ═══════════════════════════════════════════════════════
 
-  async obtenerBannersActivos(zona: string) {
+  async obtenerBannersActivos(zona: string, torneoId?: string) {
     const ahora = new Date();
 
+    const where: any = {
+      zona: zona as any,
+      activo: true,
+      OR: [
+        { fechaInicio: null, fechaFin: null },
+        { fechaInicio: { lte: ahora }, fechaFin: null },
+        { fechaInicio: { lte: ahora }, fechaFin: { gte: ahora } },
+        { fechaInicio: null, fechaFin: { gte: ahora } },
+      ],
+    };
+
+    // Para zonas de torneo (SIDEBAR, TORNEO_DETALLE), filtrar por torneoId
+    if (torneoId) {
+      where.torneoId = torneoId;
+    } else {
+      // Zonas globales: solo banners sin torneoId
+      where.torneoId = null;
+    }
+
     return this.prisma.banner.findMany({
-      where: {
-        zona: zona as any,
-        activo: true,
-        OR: [
-          // Sin rango de fechas (siempre activo)
-          { fechaInicio: null, fechaFin: null },
-          // Solo inicio, sin fin
-          { fechaInicio: { lte: ahora }, fechaFin: null },
-          // Rango completo
-          { fechaInicio: { lte: ahora }, fechaFin: { gte: ahora } },
-          // Solo fin, sin inicio
-          { fechaInicio: null, fechaFin: { gte: ahora } },
-        ],
-      },
+      where,
       orderBy: [{ orden: 'asc' }, { createdAt: 'desc' }],
       select: {
         id: true,

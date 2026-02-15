@@ -5,6 +5,7 @@ import {
   Put,
   Delete,
   Param,
+  Query,
   Body,
   UseGuards,
   UseInterceptors,
@@ -107,8 +108,11 @@ export class PublicidadController {
   // ═══════════════════════════════════════════════════════
 
   @Get('activos/:zona')
-  obtenerBannersActivos(@Param('zona') zona: string) {
-    return this.publicidadService.obtenerBannersActivos(zona);
+  obtenerBannersActivos(
+    @Param('zona') zona: string,
+    @Query('torneoId') torneoId?: string,
+  ) {
+    return this.publicidadService.obtenerBannersActivos(zona, torneoId);
   }
 
   @Post('click/:id')

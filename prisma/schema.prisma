@@ -510,6 +510,7 @@ model Tournament {
   premios           TournamentPremio[]
   historialPuntos   HistorialPuntos[]
   cuentasBancarias  CuentaBancaria[]
+  banners           Banner[]
 
   @@map("tournaments")
 }
@@ -1144,9 +1145,13 @@ model Banner {
   clicks             Int         @default(0)
   impresiones        Int         @default(0)
   anunciante         String?     @db.VarChar(200)
+  torneoId           String?     @map("torneo_id")
   createdAt          DateTime    @default(now()) @map("created_at")
   updatedAt          DateTime    @updatedAt @map("updated_at")
 
+  torneo             Tournament? @relation(fields: [torneoId], references: [id], onDelete: SetNull)
+
   @@index([zona, activo])
+  @@index([torneoId])
   @@map("banners")
 }

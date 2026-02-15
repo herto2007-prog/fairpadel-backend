@@ -52,4 +52,8 @@ export class UpdateBannerDto {
   @IsString()
   @MaxLength(200)
   anunciante?: string;
+
+  @IsOptional()
+  @IsString()
+  torneoId?: string;
 }
