@@ -622,8 +622,8 @@ export class AdminService {
     });
 
     const mrrSuscripciones = suscripciones.reduce((acc, sub) => {
-      const precioMensual = sub.periodo === 'MENSUAL' 
-        ? sub.precio.toNumber() 
+      const precioMensual = sub.periodo === 'MENSUAL'
+        ? sub.precio.toNumber()
         : sub.precio.toNumber() / 12;
       return acc + precioMensual;
     }, 0);
@@ -641,6 +641,369 @@ export class AdminService {
       mrr: mrrSuscripciones,
       totalComisiones,
       suscripcionesActivas: suscripciones.length,
+    };
+  }
+
+  // ============ PREMIUM DASHBOARD AVANZADO ============
+
+  /**
+   * Lista todos los usuarios premium con detalles de suscripción
+   */
+  async obtenerUsuariosPremium(search?: string, estado?: string) {
+    const where: any = { esPremium: true };
+
+    if (search) {
+      where.AND = [
+        { esPremium: true },
+        {
+          OR: [
+            { nombre: { contains: search, mode: 'insensitive' } },
+            { apellido: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { documento: { contains: search } },
+          ],
+        },
+      ];
+      delete where.esPremium;
+    }
+
+    const usuarios = await this.prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        nombre: true,
+        apellido: true,
+        documento: true,
+        email: true,
+        telefono: true,
+        ciudad: true,
+        genero: true,
+        fotoUrl: true,
+        esPremium: true,
+        createdAt: true,
+        suscripciones: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: {
+            plan: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    // Filter by subscription estado if requested
+    if (estado) {
+      return usuarios.filter(
+        (u) => u.suscripciones.length > 0 && u.suscripciones[0].estado === estado,
+      );
+    }
+
+    return usuarios;
+  }
+
+  /**
+   * Dashboard completo de métricas premium
+   */
+  async obtenerMetricasPremium() {
+    const now = new Date();
+    const hace30Dias = new Date(now);
+    hace30Dias.setDate(hace30Dias.getDate() - 30);
+    const hace60Dias = new Date(now);
+    hace60Dias.setDate(hace60Dias.getDate() - 60);
+
+    // Conteos básicos
+    const totalPremium = await this.prisma.user.count({ where: { esPremium: true } });
+    const totalUsuarios = await this.prisma.user.count();
+    const suscripcionesActivas = await this.prisma.suscripcion.count({ where: { estado: 'ACTIVA' } });
+    const suscripcionesPendientes = await this.prisma.suscripcion.count({ where: { estado: 'PENDIENTE_PAGO' } });
+
+    // Nuevos premium últimos 30 días
+    const nuevosPremium30d = await this.prisma.suscripcion.count({
+      where: {
+        estado: 'ACTIVA',
+        createdAt: { gte: hace30Dias },
+      },
+    });
+
+    // Cancelaciones últimos 30 días
+    const cancelaciones30d = await this.prisma.suscripcion.count({
+      where: {
+        estado: { in: ['CANCELADA', 'VENCIDA'] },
+        updatedAt: { gte: hace30Dias },
+      },
+    });
+
+    // Tasa de conversión (premium / total usuarios)
+    const tasaConversion = totalUsuarios > 0 ? (totalPremium / totalUsuarios) * 100 : 0;
+
+    // MRR
+    const susActivas = await this.prisma.suscripcion.findMany({
+      where: { estado: 'ACTIVA' },
+    });
+    const mrr = susActivas.reduce((acc, s) => acc + s.precio.toNumber(), 0);
+
+    // Churn rate (cancelaciones del mes / activas al inicio del mes)
+    const activasInicioMes = await this.prisma.suscripcion.count({
+      where: {
+        estado: 'ACTIVA',
+        createdAt: { lt: hace30Dias },
+      },
+    });
+    const churnRate = activasInicioMes > 0
+      ? (cancelaciones30d / (activasInicioMes + nuevosPremium30d)) * 100
+      : 0;
+
+    // Revenue por cupón
+    const conCupon = await this.prisma.suscripcion.count({
+      where: {
+        cuponAplicado: { not: null },
+      },
+    });
+
+    // Auto-renovación activada
+    const autoRenovarActivo = await this.prisma.suscripcion.count({
+      where: {
+        estado: 'ACTIVA',
+        autoRenovar: true,
+      },
+    });
+
+    // Próximos a vencer (7 días)
+    const en7Dias = new Date(now);
+    en7Dias.setDate(en7Dias.getDate() + 7);
+    const proximosVencer = await this.prisma.suscripcion.count({
+      where: {
+        estado: 'ACTIVA',
+        fechaFin: { lte: en7Dias, gte: now },
+      },
+    });
+
+    return {
+      totalPremium,
+      totalUsuarios,
+      tasaConversion: Math.round(tasaConversion * 100) / 100,
+      suscripcionesActivas,
+      suscripcionesPendientes,
+      nuevosPremium30d,
+      cancelaciones30d,
+      mrr,
+      arr: mrr * 12,
+      churnRate: Math.round(churnRate * 100) / 100,
+      conCupon,
+      autoRenovarActivo,
+      proximosVencer,
+    };
+  }
+
+  /**
+   * Historial de suscripciones por mes (últimos 12 meses)
+   */
+  async obtenerTendenciasSuscripciones() {
+    const meses: {
+      mes: string;
+      nuevas: number;
+      canceladas: number;
+      ingresos: number;
+    }[] = [];
+
+    const now = new Date();
+
+    for (let i = 11; i >= 0; i--) {
+      const inicio = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const fin = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+
+      const nuevas = await this.prisma.suscripcion.count({
+        where: {
+          createdAt: { gte: inicio, lte: fin },
+          estado: { not: 'PENDIENTE_PAGO' },
+        },
+      });
+
+      const canceladas = await this.prisma.suscripcion.count({
+        where: {
+          estado: { in: ['CANCELADA', 'VENCIDA'] },
+          updatedAt: { gte: inicio, lte: fin },
+        },
+      });
+
+      // Revenue del mes (suscripciones creadas ese mes)
+      const susMes = await this.prisma.suscripcion.findMany({
+        where: {
+          createdAt: { gte: inicio, lte: fin },
+          estado: { in: ['ACTIVA', 'VENCIDA', 'CANCELADA'] },
+        },
+      });
+      const ingresos = susMes.reduce((acc, s) => acc + s.precio.toNumber(), 0);
+
+      const mesLabel = inicio.toLocaleDateString('es-PY', {
+        month: 'short',
+        year: '2-digit',
+      });
+
+      meses.push({ mes: mesLabel, nuevas, canceladas, ingresos });
+    }
+
+    return meses;
+  }
+
+  /**
+   * Actividad reciente premium (últimas 20 acciones)
+   */
+  async obtenerActividadPremium() {
+    const suscripciones = await this.prisma.suscripcion.findMany({
+      orderBy: { updatedAt: 'desc' },
+      take: 20,
+      include: {
+        user: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            email: true,
+            fotoUrl: true,
+          },
+        },
+        plan: {
+          select: {
+            nombre: true,
+          },
+        },
+      },
+    });
+
+    return suscripciones.map((s) => ({
+      id: s.id,
+      usuario: s.user,
+      plan: s.plan?.nombre,
+      estado: s.estado,
+      precio: s.precio.toNumber(),
+      fechaInicio: s.fechaInicio,
+      fechaFin: s.fechaFin,
+      autoRenovar: s.autoRenovar,
+      cuponAplicado: s.cuponAplicado,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+    }));
+  }
+
+  /**
+   * Otorgar premium manualmente a un usuario
+   */
+  async otorgarPremiumManual(userId: string, dias: number, motivo: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Buscar plan premium
+    const plan = await this.prisma.planPremium.findFirst({
+      where: { activo: true },
+    });
+
+    if (!plan) {
+      throw new NotFoundException('No hay plan premium activo');
+    }
+
+    const now = new Date();
+    const fechaFin = new Date(now);
+    fechaFin.setDate(fechaFin.getDate() + dias);
+
+    // Crear suscripción cortesía
+    const suscripcion = await this.prisma.suscripcion.create({
+      data: {
+        userId,
+        planId: plan.id,
+        periodo: 'MENSUAL',
+        precio: 0, // Cortesía
+        estado: 'ACTIVA',
+        fechaInicio: now,
+        fechaFin: fechaFin,
+        autoRenovar: false,
+        cuponAplicado: `CORTESIA_ADMIN: ${motivo}`,
+      },
+    });
+
+    // Activar premium en user
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { esPremium: true },
+    });
+
+    return {
+      message: `Premium otorgado a ${user.nombre} ${user.apellido} por ${dias} días`,
+      suscripcion,
+    };
+  }
+
+  /**
+   * Revocar premium manualmente
+   */
+  async revocarPremium(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Cancelar suscripciones activas
+    await this.prisma.suscripcion.updateMany({
+      where: { userId, estado: 'ACTIVA' },
+      data: { estado: 'CANCELADA' },
+    });
+
+    // Quitar premium
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { esPremium: false },
+    });
+
+    return {
+      message: `Premium revocado para ${user.nombre} ${user.apellido}`,
+    };
+  }
+
+  /**
+   * Estadísticas de cupones
+   */
+  async obtenerEstadisticasCupones() {
+    const cupones = await this.prisma.cupon.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const totalCupones = cupones.length;
+    const cuponesActivos = cupones.filter((c) => c.estado === 'ACTIVO').length;
+    const totalUsos = cupones.reduce((acc, c) => acc + c.usosActuales, 0);
+    const descuentoTotal = cupones.reduce((acc, c) => {
+      if (c.tipo === 'PORCENTAJE') return acc; // Can't calculate exact amount for percentage
+      return acc + c.valor.toNumber() * c.usosActuales;
+    }, 0);
+
+    // Top cupones por uso
+    const topCupones = [...cupones]
+      .sort((a, b) => b.usosActuales - a.usosActuales)
+      .slice(0, 5)
+      .map((c) => ({
+        codigo: c.codigo,
+        tipo: c.tipo,
+        valor: c.valor.toNumber(),
+        usos: c.usosActuales,
+        limite: c.limiteUsos,
+        estado: c.estado,
+      }));
+
+    return {
+      totalCupones,
+      cuponesActivos,
+      totalUsos,
+      descuentoTotal,
+      topCupones,
     };
   }
 

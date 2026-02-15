@@ -209,4 +209,49 @@ export class AdminController {
   obtenerMetricasIngresos() {
     return this.adminService.obtenerMetricasIngresos();
   }
+
+  // ============ PREMIUM DASHBOARD ============
+  @Get('premium/usuarios')
+  obtenerUsuariosPremium(
+    @Query('search') search?: string,
+    @Query('estado') estado?: string,
+  ) {
+    return this.adminService.obtenerUsuariosPremium(search, estado);
+  }
+
+  @Get('premium/metricas')
+  obtenerMetricasPremium() {
+    return this.adminService.obtenerMetricasPremium();
+  }
+
+  @Get('premium/tendencias')
+  obtenerTendenciasSuscripciones() {
+    return this.adminService.obtenerTendenciasSuscripciones();
+  }
+
+  @Get('premium/actividad')
+  obtenerActividadPremium() {
+    return this.adminService.obtenerActividadPremium();
+  }
+
+  @Post('premium/otorgar')
+  otorgarPremiumManual(
+    @Body() body: { userId: string; dias: number; motivo: string },
+  ) {
+    return this.adminService.otorgarPremiumManual(
+      body.userId,
+      body.dias,
+      body.motivo,
+    );
+  }
+
+  @Put('premium/revocar/:userId')
+  revocarPremium(@Param('userId') userId: string) {
+    return this.adminService.revocarPremium(userId);
+  }
+
+  @Get('premium/cupones/stats')
+  obtenerEstadisticasCupones() {
+    return this.adminService.obtenerEstadisticasCupones();
+  }
 }
