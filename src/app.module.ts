@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -28,6 +30,18 @@ import { FeedModule } from './feed/feed.module';
       isGlobal: true,
     }),
     ScheduleModule.forRoot(),
+
+    // ── Rate Limiting Global ──
+    // Default: 60 requests por minuto por IP para toda la app.
+    // Endpoints sensibles (login, register) tienen límites más estrictos via @Throttle().
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60000,  // 60 segundos (1 minuto)
+        limit: 60,   // máximo 60 requests por minuto por IP
+      },
+    ]),
+
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -49,5 +63,14 @@ import { FeedModule } from './feed/feed.module';
     FeedModule,
   ],
   controllers: [AppController],
+  providers: [
+    // Aplica ThrottlerGuard a TODOS los endpoints automáticamente.
+    // Cada request cuenta contra el límite de su IP.
+    // Si excede el límite → responde 429 Too Many Requests.
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}
