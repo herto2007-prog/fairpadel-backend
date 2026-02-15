@@ -10,16 +10,24 @@ import {
   UseGuards,
   Request,
   Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CloudinaryService } from '../fotos/cloudinary.service';
 
 @Controller('tournaments')
 export class TournamentsController {
-  constructor(private readonly tournamentsService: TournamentsService) {}
+  constructor(
+    private readonly tournamentsService: TournamentsService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -96,6 +104,47 @@ export class TournamentsController {
     @Request() req,
   ) {
     return this.tournamentsService.cancelarTorneo(id, req.user.id, body.motivo);
+  }
+
+  @Post(':id/flyer')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+      fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+          return cb(new BadRequestException('Solo se permiten imágenes'), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadFlyer(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Archivo de imagen requerido');
+    }
+
+    const tournament = await this.tournamentsService.findOne(id);
+    if (tournament.organizadorId !== req.user.id) {
+      const userRoles = req.user.roles || [];
+      if (!userRoles.includes('admin')) {
+        throw new BadRequestException('No tienes permiso para modificar este torneo');
+      }
+    }
+
+    const result = await this.cloudinaryService.uploadImage(file, {
+      folder: 'fairpadel/flyers',
+      transformation: [CloudinaryService.PRESETS.TOURNAMENT_FLYER],
+    });
+
+    await this.tournamentsService.updateFlyerUrl(id, result.url);
+
+    return { flyerUrl: result.url, message: 'Flyer subido exitosamente' };
   }
 
   @Patch(':id/categorias/:tournamentCategoryId/toggle-inscripcion')

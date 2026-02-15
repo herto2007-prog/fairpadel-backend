@@ -638,6 +638,17 @@ export class TournamentsService {
   }
 
   // ═══════════════════════════════════════════
+  // FLYER
+  // ═══════════════════════════════════════════
+
+  async updateFlyerUrl(id: string, flyerUrl: string) {
+    return this.prisma.tournament.update({
+      where: { id },
+      data: { flyerUrl },
+    });
+  }
+
+  // ═══════════════════════════════════════════
   // CANCELAR TORNEO
   // ═══════════════════════════════════════════
 
