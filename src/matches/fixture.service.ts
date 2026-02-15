@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import {
@@ -139,7 +139,7 @@ export class FixtureService {
   // SORTEO POR CATEGORÍA
   // ═══════════════════════════════════════════════════════
 
-  async sortearCategoria(tournamentId: string, categoryId: string) {
+  async sortearCategoria(tournamentId: string, categoryId: string, userId?: string) {
     const tournament = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: {
@@ -191,6 +191,20 @@ export class FixtureService {
       throw new BadRequestException(
         'Esta categoría ya tiene fixture publicado. No se puede re-sortear.',
       );
+    }
+
+    // Premium gating: re-sorteo (from FIXTURE_BORRADOR) requires premium or admin
+    if (tournamentCategory.estado === 'FIXTURE_BORRADOR' && userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { roles: { include: { role: true } } },
+      });
+      const isAdmin = user.roles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin && !user.esPremium) {
+        throw new ForbiddenException(
+          'Necesitas FairPadel Premium para re-sortear. Contacta a un administrador.',
+        );
+      }
     }
 
     const inscripciones = tournament.inscripciones;

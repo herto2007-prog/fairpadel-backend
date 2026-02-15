@@ -19,6 +19,7 @@ import { SedesModule } from './sedes/sedes.module';
 import { CircuitosModule } from './circuitos/circuitos.module';
 import { CategoriasModule } from './categorias/categorias.module';
 import { PublicidadModule } from './publicidad/publicidad.module';
+import { FeedModule } from './feed/feed.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { PublicidadModule } from './publicidad/publicidad.module';
     CircuitosModule,
     CategoriasModule,
     PublicidadModule,
+    FeedModule,
   ],
   controllers: [AppController],
 })

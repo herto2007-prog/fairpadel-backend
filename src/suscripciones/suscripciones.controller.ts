@@ -4,7 +4,6 @@ import {
   Post,
   Put,
   Body,
-  Param,
   UseGuards,
   Request,
 } from '@nestjs/common';
@@ -31,6 +30,12 @@ export class SuscripcionesController {
   @UseGuards(JwtAuthGuard)
   obtenerMiSuscripcion(@Request() req) {
     return this.suscripcionesService.obtenerSuscripcionActiva(req.user.id);
+  }
+
+  @Get('historial')
+  @UseGuards(JwtAuthGuard)
+  obtenerHistorial(@Request() req) {
+    return this.suscripcionesService.obtenerHistorialSuscripciones(req.user.id);
   }
 
   @Put('cancelar')

@@ -115,13 +115,18 @@ enum ModerationStatus {
 }
 
 enum PlanTipo {
-  JUGADOR
-  ORGANIZADOR
+  UNICO
+}
+
+enum TipoPublicacion {
+  FOTO
+  RESULTADO
+  LOGRO
+  ASCENSO
 }
 
 enum PeriodoSuscripcion {
   MENSUAL
-  ANUAL
 }
 
 enum SuscripcionEstado {
@@ -219,6 +224,9 @@ model User {
   suscripciones             Suscripcion[]
   solicitudesJugar          SolicitudJugar[]        @relation("EmisorSolicitud")
   solicitudesRecibidas      SolicitudJugar[]        @relation("ReceptorSolicitud")
+  publicacionesFeed         PublicacionFeed[]
+  likesPublicaciones        LikePublicacion[]
+  comentariosPublicaciones  ComentarioPublicacion[]
 
   @@map("users")
 }
@@ -511,6 +519,7 @@ model Tournament {
   historialPuntos   HistorialPuntos[]
   cuentasBancarias  CuentaBancaria[]
   banners           Banner[]
+  publicacionesFeed PublicacionFeed[] @relation("FeedTournament")
 
   @@map("tournaments")
 }
@@ -701,7 +710,8 @@ model Match {
   pareja2          Pareja?       @relation("Pareja2Matches", fields: [pareja2Id], references: [id])
   parejaGanadora   Pareja?       @relation("ParejaGanadora", fields: [parejaGanadoraId], references: [id])
   parejaPerdedora  Pareja?       @relation("ParejaPerdedora", fields: [parejaPerdedoraId], references: [id])
-  torneoCancha     TorneoCancha? @relation(fields: [torneoCanchaId], references: [id])
+  torneoCancha      TorneoCancha? @relation(fields: [torneoCanchaId], references: [id])
+  publicacionesFeed PublicacionFeed[]
 
   @@map("matches")
 }
@@ -903,7 +913,8 @@ model Foto {
   comentarios  Comentario[]
   reportes     ReporteFoto[]
   albumFotos   AlbumFoto[]
-  etiquetados  FotoJugador[]
+  etiquetados       FotoJugador[]
+  publicacionesFeed PublicacionFeed[]
 
   @@map("fotos")
 }
@@ -1008,9 +1019,8 @@ model FotoPerfilModeracion {
 model PlanPremium {
   id              String   @id @default(uuid())
   nombre          String   @unique
-  tipo            PlanTipo
+  tipo            PlanTipo @default(UNICO)
   precioMensual   Decimal  @map("precio_mensual") @db.Decimal(10, 2)
-  precioAnual     Decimal  @map("precio_anual") @db.Decimal(10, 2)
   caracteristicas String   @db.Text
   activo          Boolean  @default(true)
   createdAt       DateTime @default(now()) @map("created_at")
@@ -1154,4 +1164,61 @@ model Banner {
   @@index([zona, activo])
   @@index([torneoId])
   @@map("banners")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO 13: FEED SOCIAL
+// ═══════════════════════════════════════════════════════
+
+model PublicacionFeed {
+  id              String           @id @default(uuid())
+  userId          String           @map("user_id")
+  tipo            TipoPublicacion
+  contenido       String?          @db.Text
+  fotoId          String?          @map("foto_id")
+  matchId         String?          @map("match_id")
+  tournamentId    String?          @map("tournament_id")
+  categoriaId     String?          @map("categoria_id")
+  datosExtra      String?          @map("datos_extra") @db.Text
+  likesCount      Int              @default(0) @map("likes_count")
+  comentariosCount Int             @default(0) @map("comentarios_count")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foto       Foto?       @relation(fields: [fotoId], references: [id], onDelete: SetNull)
+  match      Match?      @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  tournament Tournament? @relation("FeedTournament", fields: [tournamentId], references: [id], onDelete: SetNull)
+
+  likesPublicacion    LikePublicacion[]
+  comentariosPublicacion ComentarioPublicacion[]
+
+  @@index([userId, createdAt])
+  @@index([tipo])
+  @@map("publicaciones_feed")
+}
+
+model LikePublicacion {
+  id             String   @id @default(uuid())
+  publicacionId  String   @map("publicacion_id")
+  userId         String   @map("user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  publicacion PublicacionFeed @relation(fields: [publicacionId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([publicacionId, userId])
+  @@map("likes_publicaciones")
+}
+
+model ComentarioPublicacion {
+  id             String   @id @default(uuid())
+  publicacionId  String   @map("publicacion_id")
+  userId         String   @map("user_id")
+  contenido      String   @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  publicacion PublicacionFeed @relation(fields: [publicacionId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("comentarios_publicaciones")
 }

@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RankingsService } from '../rankings/rankings.service';
 import { CategoriasService } from '../categorias/categorias.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { FeedService } from '../feed/feed.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
 import { calcularHoraFin } from './scheduling-utils';
 
@@ -21,6 +22,7 @@ export class MatchesService {
     private rankingsService: RankingsService,
     private categoriasService: CategoriasService,
     private notificacionesService: NotificacionesService,
+    private feedService: FeedService,
   ) {}
 
   async findOne(id: string) {
@@ -233,6 +235,38 @@ export class MatchesService {
       } catch (e) {
         this.logger.error(`Error notificando siguiente partido: ${e.message}`);
       }
+    }
+
+    // Auto-post result to feed for winning pair's players
+    try {
+      const ganadorPair = await this.prisma.pareja.findUnique({
+        where: { id: ganadorId },
+        include: {
+          jugador1: { select: { id: true, esPremium: true, nombre: true, apellido: true } },
+          jugador2: { select: { id: true, esPremium: true, nombre: true, apellido: true } },
+        },
+      });
+      if (ganadorPair) {
+        const tournament = await this.prisma.tournament.findUnique({
+          where: { id: match.tournamentId },
+          select: { nombre: true },
+        });
+        const rondaLabel = match.ronda || 'Ronda';
+        const contenido = `${ganadorPair.jugador1.nombre} ${ganadorPair.jugador1.apellido} y ${ganadorPair.jugador2.nombre} ${ganadorPair.jugador2.apellido} ganaron en ${rondaLabel} - ${tournament?.nombre || ''}`;
+        for (const jugador of [ganadorPair.jugador1, ganadorPair.jugador2]) {
+          if (jugador.esPremium) {
+            await this.feedService.crearPublicacionResultado(
+              jugador.id,
+              id,
+              match.tournamentId,
+              match.categoryId,
+              contenido,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      this.logger.error(`Error creando publicación feed: ${e.message}`);
     }
 
     // Verificar si la categoría está completa (todos los matches finalizados)
@@ -472,8 +506,20 @@ export class MatchesService {
   // REPROGRAMAR PARTIDO (con validación anti-conflicto)
   // ═══════════════════════════════════════════════════════
 
-  async reprogramar(id: string, data: any) {
+  async reprogramar(id: string, data: any, userId?: string) {
     const match = await this.findOne(id);
+
+    // Premium gating: only premium organizers (or admin) can reprogramar
+    if (userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { roles: { include: { role: true } } },
+      });
+      const isAdmin = user.roles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin && !user.esPremium) {
+        throw new ForbiddenException('Necesitas FairPadel Premium para reprogramar partidos');
+      }
+    }
 
     if (match.estado === 'FINALIZADO') {
       throw new BadRequestException('No se puede reprogramar un partido finalizado');

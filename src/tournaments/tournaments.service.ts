@@ -12,6 +12,28 @@ export class TournamentsService {
   constructor(private prisma: PrismaService) {}
 
   async create(createTournamentDto: CreateTournamentDto, organizadorId: string) {
+    // Premium gating: free organizers can have max 1 active tournament
+    const organizador = await this.prisma.user.findUnique({ where: { id: organizadorId } });
+    if (!organizador.esPremium) {
+      const torneosActivos = await this.prisma.tournament.count({
+        where: {
+          organizadorId,
+          estado: { in: ['BORRADOR', 'PENDIENTE_APROBACION', 'PUBLICADO', 'EN_CURSO'] },
+        },
+      });
+      if (torneosActivos >= 1) {
+        throw new ForbiddenException(
+          'Necesitas FairPadel Premium para crear más de un torneo activo a la vez',
+        );
+      }
+      // Free: max 12 categories
+      if (createTournamentDto.categorias && createTournamentDto.categorias.length > 12) {
+        throw new ForbiddenException(
+          'Necesitas FairPadel Premium para usar más de 12 categorías',
+        );
+      }
+    }
+
     let fechaInicio: Date;
     let fechaFin: Date;
     let fechaLimite: Date;
@@ -529,6 +551,12 @@ export class TournamentsService {
       throw new ForbiddenException('No tienes permiso para modificar este torneo');
     }
 
+    // Premium gating: ayudantes require premium
+    const organizador = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!organizador.esPremium) {
+      throw new ForbiddenException('Necesitas FairPadel Premium para agregar ayudantes');
+    }
+
     // Buscar usuario por documento
     const matchedUser = await this.prisma.user.findFirst({
       where: { documento: data.documento },
@@ -649,6 +677,19 @@ export class TournamentsService {
       const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
       if (!isAdmin) {
         throw new ForbiddenException('No tienes permiso para modificar este torneo');
+      }
+    }
+
+    // Premium gating: free organizers can have max 1 bank account
+    const organizador = await this.prisma.user.findUnique({ where: { id: tournament.organizadorId } });
+    if (!organizador.esPremium) {
+      const cuentasActivas = await this.prisma.cuentaBancaria.count({
+        where: { tournamentId, activa: true },
+      });
+      if (cuentasActivas >= 1) {
+        throw new ForbiddenException(
+          'Necesitas FairPadel Premium para agregar más de una cuenta bancaria',
+        );
       }
     }
 

@@ -52,8 +52,9 @@ export class MatchesController {
   sortearCategoria(
     @Param('tournamentId') tournamentId: string,
     @Param('categoryId') categoryId: string,
+    @Request() req,
   ) {
-    return this.fixtureService.sortearCategoria(tournamentId, categoryId);
+    return this.fixtureService.sortearCategoria(tournamentId, categoryId, req.user.id);
   }
 
   @Post('torneo/:tournamentId/categoria/:categoryId/publicar-fixture')
@@ -137,7 +138,8 @@ export class MatchesController {
   reprogramar(
     @Param('id') id: string,
     @Body() body: { fechaProgramada: string; horaProgramada: string; torneoCanchaId?: string },
+    @Request() req,
   ) {
-    return this.matchesService.reprogramar(id, body);
+    return this.matchesService.reprogramar(id, body, req.user.id);
   }
 }

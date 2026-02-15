@@ -7,9 +7,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { RankingsModule } from '../rankings/rankings.module';
 import { CategoriasModule } from '../categorias/categorias.module';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
+import { FeedModule } from '../feed/feed.module';
 
 @Module({
-  imports: [PrismaModule, RankingsModule, CategoriasModule, NotificacionesModule],
+  imports: [PrismaModule, RankingsModule, CategoriasModule, NotificacionesModule, FeedModule],
   controllers: [MatchesController],
   providers: [MatchesService, FixtureService, TournamentRoleGuard],
   exports: [MatchesService, FixtureService],

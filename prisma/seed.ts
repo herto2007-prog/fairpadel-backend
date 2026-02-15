@@ -129,45 +129,63 @@ async function main() {
 
   console.log('✅ Configuración de puntos creada');
 
-  // 5. Crear planes Premium
-  console.log('📝 Creando planes Premium...');
+  // 5. Crear plan Premium único
+  console.log('📝 Creando plan Premium...');
+  // Limpiar planes viejos
+  await prisma.planPremium.deleteMany({
+    where: { nombre: { in: ['Jugador Premium', 'Organizador Premium'] } },
+  });
   await prisma.planPremium.upsert({
-    where: { nombre: 'Jugador Premium' },
-    update: {},
-    create: {
-      nombre: 'Jugador Premium',
-      tipo: 'JUGADOR',
-      precioMensual: 9.99,
-      precioAnual: 99.99,
+    where: { nombre: 'FairPadel Premium' },
+    update: {
+      precioMensual: 3.00,
       caracteristicas: JSON.stringify([
+        'Feed social con fotos y resultados',
         'Mensajería privada ilimitada',
-        'Estadísticas avanzadas',
-        'Galería ilimitada',
+        'Solicitudes de juego',
+        'Galería de fotos ilimitada',
         'Notificaciones SMS',
-        'Sin publicidad',
+        'Estadísticas avanzadas',
+        'Exportar estadísticas',
+        'Historial completo de partidos',
+        'Torneos ilimitados (organizadores)',
+        'Categorías ilimitadas (organizadores)',
+        'Ayudantes y árbitros (organizadores)',
+        'Arbitraje en vivo (organizadores)',
+        'Re-sorteo y reprogramar partidos',
+        'Swap de horarios',
+        'Dashboard premium con métricas',
+        'Reportes exportables',
+        'Cuentas bancarias múltiples',
       ]),
     },
-  });
-
-  await prisma.planPremium.upsert({
-    where: { nombre: 'Organizador Premium' },
-    update: {},
     create: {
-      nombre: 'Organizador Premium',
-      tipo: 'ORGANIZADOR',
-      precioMensual: 29.99,
-      precioAnual: 299.99,
+      nombre: 'FairPadel Premium',
+      tipo: 'UNICO',
+      precioMensual: 3.00,
       caracteristicas: JSON.stringify([
-        'Analytics avanzados',
-        'Galería por torneo',
-        'Reportes descargables',
-        'Simulador de torneos',
-        'Soporte prioritario',
+        'Feed social con fotos y resultados',
+        'Mensajería privada ilimitada',
+        'Solicitudes de juego',
+        'Galería de fotos ilimitada',
+        'Notificaciones SMS',
+        'Estadísticas avanzadas',
+        'Exportar estadísticas',
+        'Historial completo de partidos',
+        'Torneos ilimitados (organizadores)',
+        'Categorías ilimitadas (organizadores)',
+        'Ayudantes y árbitros (organizadores)',
+        'Arbitraje en vivo (organizadores)',
+        'Re-sorteo y reprogramar partidos',
+        'Swap de horarios',
+        'Dashboard premium con métricas',
+        'Reportes exportables',
+        'Cuentas bancarias múltiples',
       ]),
     },
   });
 
-  console.log('✅ Planes Premium creados');
+  console.log('✅ Plan Premium creado');
 
   // 6. Crear logros
   console.log('📝 Creando logros...');

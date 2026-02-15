@@ -4,12 +4,14 @@ import { NotificacionesService } from '../notificaciones/notificaciones.service'
 import { CreateReglaAscensoDto } from './dto/create-regla-ascenso.dto';
 import { UpdateReglaAscensoDto } from './dto/update-regla-ascenso.dto';
 import { CambiarCategoriaDto } from './dto/cambiar-categoria.dto';
+import { FeedService } from '../feed/feed.service';
 
 @Injectable()
 export class CategoriasService {
   constructor(
     private prisma: PrismaService,
     private notificacionesService: NotificacionesService,
+    private feedService: FeedService,
   ) {}
 
   // ═══════════════════════════════════════════
@@ -486,6 +488,21 @@ export class CategoriasService {
         'RANKING',
         `Tu categoría ha sido actualizada a ${nuevaCategoria.nombre}`,
       );
+    }
+
+    // Auto-post ascenso to feed
+    if (tipo.includes('ASCENSO') && user.esPremium) {
+      try {
+        const categoriaAnterior = user.categoriaActual?.nombre || 'Sin categoría';
+        await this.feedService.crearPublicacionAscenso(
+          userId,
+          `¡Ascendió de ${categoriaAnterior} a ${nuevaCategoria.nombre}!`,
+          nuevaCategoriaId,
+          JSON.stringify({ anterior: categoriaAnterior, nueva: nuevaCategoria.nombre, tipo }),
+        );
+      } catch (e) {
+        // Non-critical, don't fail promotion
+      }
     }
   }
 }
