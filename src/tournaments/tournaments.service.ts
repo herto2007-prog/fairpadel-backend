@@ -465,6 +465,43 @@ export class TournamentsService {
     return categorias;
   }
 
+  // ═══════════════════════════════════════════
+  // BATCH CLOSE: cerrar TODAS las inscripciones de un torneo
+  // ═══════════════════════════════════════════
+
+  async cerrarTodasLasInscripciones(tournamentId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+
+    if (tournament.organizadorId !== userId) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para modificar este torneo');
+      }
+    }
+
+    // Only close categories that are currently open AND haven't progressed past inscriptions
+    const result = await this.prisma.tournamentCategory.updateMany({
+      where: {
+        tournamentId,
+        inscripcionAbierta: true,
+        estado: 'INSCRIPCIONES_ABIERTAS',
+      },
+      data: {
+        inscripcionAbierta: false,
+        estado: 'INSCRIPCIONES_CERRADAS',
+      },
+    });
+
+    return {
+      message: `${result.count} categoría(s) cerrada(s) exitosamente`,
+      categoriasCerradas: result.count,
+    };
+  }
+
   async toggleInscripcionCategoria(tournamentId: string, tournamentCategoryId: string, userId: string) {
     const tournament = await this.findOne(tournamentId);
 

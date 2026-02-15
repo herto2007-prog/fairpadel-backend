@@ -155,6 +155,13 @@ export class TournamentsController {
     return { flyerUrl: result.url, message: 'Flyer subido exitosamente' };
   }
 
+  @Post(':id/cerrar-todas-inscripciones')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  cerrarTodasLasInscripciones(@Param('id') id: string, @Request() req) {
+    return this.tournamentsService.cerrarTodasLasInscripciones(id, req.user.id);
+  }
+
   @Patch(':id/categorias/:tournamentCategoryId/toggle-inscripcion')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('organizador')

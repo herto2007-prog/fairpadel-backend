@@ -48,8 +48,16 @@ export class InscripcionesService {
       throw new BadRequestException('El torneo no acepta inscripciones');
     }
 
-    // fechaLimiteInscr es informativa (para notificaciones), no bloquea inscripciones.
-    // El control real lo hace inscripcionAbierta por categoría.
+    // Enforce inscription deadline: if fechaLimiteInscr has passed, reject new inscriptions
+    if (tournament.fechaLimiteInscr) {
+      const now = new Date();
+      const deadline = new Date(tournament.fechaLimiteInscr);
+      if (now > deadline) {
+        throw new BadRequestException(
+          'La fecha límite de inscripción ya ha pasado. Contacta al organizador para más información.',
+        );
+      }
+    }
 
     // Verificar que la categoría existe en el torneo y tiene inscripciones abiertas
     const categoriaRelacion = tournament.categorias.find(
