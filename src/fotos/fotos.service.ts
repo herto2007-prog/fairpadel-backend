@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from './cloudinary.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 
 @Injectable()
 export class FotosService {
@@ -9,6 +10,7 @@ export class FotosService {
   constructor(
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
+    private notificacionesService: NotificacionesService,
   ) {}
 
   async subirFoto(userId: string, file: Express.Multer.File, data: any) {
@@ -216,7 +218,7 @@ export class FotosService {
       },
     });
 
-    await this.prisma.foto.update({
+    const foto = await this.prisma.foto.update({
       where: { id: fotoId },
       data: {
         likesCount: {
@@ -224,6 +226,27 @@ export class FotosService {
         },
       },
     });
+
+    // Notificar al dueño de la foto (si no es el mismo)
+    if (foto.userId !== userId) {
+      try {
+        const liker = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { nombre: true, apellido: true },
+        });
+        if (liker) {
+          await this.notificacionesService.notificar({
+            userId: foto.userId,
+            tipo: 'SOCIAL',
+            titulo: 'Nuevo like',
+            contenido: `A ${liker.nombre} ${liker.apellido} le gustó tu foto`,
+            enlace: `/profile`,
+          });
+        }
+      } catch (e) {
+        this.logger.error(`Error notificando like: ${e.message}`);
+      }
+    }
 
     return { message: 'Like agregado' };
   }
@@ -255,7 +278,7 @@ export class FotosService {
       },
     });
 
-    await this.prisma.foto.update({
+    const foto = await this.prisma.foto.update({
       where: { id: fotoId },
       data: {
         comentariosCount: {
@@ -263,6 +286,28 @@ export class FotosService {
         },
       },
     });
+
+    // Notificar al dueño de la foto (si no es el mismo)
+    if (foto.userId !== userId) {
+      try {
+        const commenter = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { nombre: true, apellido: true },
+        });
+        if (commenter) {
+          const preview = contenido.length > 50 ? contenido.substring(0, 50) + '...' : contenido;
+          await this.notificacionesService.notificar({
+            userId: foto.userId,
+            tipo: 'SOCIAL',
+            titulo: 'Nuevo comentario',
+            contenido: `${commenter.nombre} ${commenter.apellido} comentó tu foto: "${preview}"`,
+            enlace: `/profile`,
+          });
+        }
+      } catch (e) {
+        this.logger.error(`Error notificando comentario: ${e.message}`);
+      }
+    }
 
     return comentario;
   }

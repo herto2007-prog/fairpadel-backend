@@ -3,13 +3,20 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { MensajeDto, SolicitudJugarDto } from './dto';
 
 @Injectable()
 export class SocialService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(SocialService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notificacionesService: NotificacionesService,
+  ) {}
 
   // ============ SEGUIMIENTOS ============
 
@@ -47,6 +54,25 @@ export class SocialService {
         seguidoId,
       },
     });
+
+    // Notificar al usuario seguido
+    try {
+      const seguidor = await this.prisma.user.findUnique({
+        where: { id: seguidorId },
+        select: { nombre: true, apellido: true },
+      });
+      if (seguidor) {
+        await this.notificacionesService.notificar({
+          userId: seguidoId,
+          tipo: 'SOCIAL',
+          titulo: 'Nuevo seguidor',
+          contenido: `${seguidor.nombre} ${seguidor.apellido} comenzó a seguirte`,
+          enlace: `/jugadores/${seguidorId}`,
+        });
+      }
+    } catch (e) {
+      this.logger.error(`Error notificando follow: ${e.message}`);
+    }
 
     return { message: 'Ahora sigues a este usuario', seguimiento };
   }
