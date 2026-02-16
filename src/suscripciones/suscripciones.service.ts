@@ -47,6 +47,9 @@ export class SuscripcionesService {
     if (!plan) {
       throw new NotFoundException('Plan no encontrado');
     }
+    if (!plan.activo) {
+      throw new BadRequestException('Este plan ya no está disponible');
+    }
 
     // Verificar que no tiene suscripción activa
     const suscripcionActiva = await this.prisma.suscripcion.findFirst({
@@ -86,12 +89,11 @@ export class SuscripcionesService {
       }
     }
 
-    // Calcular fechas (siempre mensual)
+    // Calcular fechas (siempre mensual) — safe month addition
     const fechaInicio = new Date();
-    const fechaFin = new Date();
-    fechaFin.setMonth(fechaFin.getMonth() + 1);
+    const fechaFin = this.addOneMonth(fechaInicio);
 
-    // Crear suscripción
+    // Crear suscripción (cupón se consume solo al confirmar pago, no aquí)
     const suscripcion = await this.prisma.suscripcion.create({
       data: {
         userId,
@@ -105,14 +107,6 @@ export class SuscripcionesService {
         cuponAplicado: cuponCodigo || null,
       },
     });
-
-    // Incrementar usos del cupón
-    if (cuponId) {
-      await this.prisma.cupon.update({
-        where: { id: cuponId },
-        data: { usosActuales: { increment: 1 } },
-      });
-    }
 
     // Generar checkout de Bancard
     const transactionId = `SUB-${Date.now()}-${suscripcion.id.substring(0, 8)}`;
@@ -142,10 +136,25 @@ export class SuscripcionesService {
   // ═══════════════════════════════════════════════════════
 
   async obtenerSuscripcionActiva(userId: string) {
-    return this.prisma.suscripcion.findFirst({
-      where: { userId, estado: 'ACTIVA' },
+    // Return the most relevant subscription: ACTIVA first, then PENDIENTE_PAGO, then recent VENCIDA
+    const suscripcion = await this.prisma.suscripcion.findFirst({
+      where: {
+        userId,
+        estado: { in: ['ACTIVA', 'PENDIENTE_PAGO', 'VENCIDA'] },
+      },
       include: { plan: true },
+      orderBy: { createdAt: 'desc' },
     });
+
+    // If VENCIDA, only return if it expired recently (within 30 days) — otherwise treat as no subscription
+    if (suscripcion && suscripcion.estado === 'VENCIDA') {
+      const diasDesdeVencimiento = Math.floor(
+        (Date.now() - new Date(suscripcion.fechaFin).getTime()) / (1000 * 60 * 60 * 24),
+      );
+      if (diasDesdeVencimiento > 30) return null;
+    }
+
+    return suscripcion;
   }
 
   async obtenerHistorialSuscripciones(userId: string) {
@@ -199,12 +208,22 @@ export class SuscripcionesService {
   // CONFIRMAR PAGO
   // ═══════════════════════════════════════════════════════
 
-  async confirmarPagoSuscripcion(suscripcionId: string, transactionId?: string) {
+  async confirmarPagoSuscripcion(suscripcionId: string, transactionId: string, userId?: string) {
+    if (!transactionId) {
+      throw new BadRequestException('Se requiere transactionId para confirmar el pago');
+    }
+
     const suscripcion = await this.prisma.suscripcion.findUnique({
       where: { id: suscripcionId },
     });
     if (!suscripcion) {
       throw new NotFoundException('Suscripción no encontrada');
+    }
+
+    // Ownership check: el usuario solo puede confirmar su propia suscripción
+    // userId es opcional porque el webhook de Bancard no envía userId
+    if (userId && suscripcion.userId !== userId) {
+      throw new BadRequestException('No tienes permiso para confirmar esta suscripción');
     }
 
     if (suscripcion.estado === 'ACTIVA') {
@@ -215,17 +234,29 @@ export class SuscripcionesService {
       throw new BadRequestException('Esta suscripción no está pendiente de pago');
     }
 
-    // Verificar pago con Bancard (si hay transactionId)
-    if (transactionId) {
-      try {
-        const verificacion = await this.bancardService.verifyPayment(transactionId);
-        if (verificacion.status !== 'success') {
-          throw new BadRequestException('El pago no fue confirmado por la pasarela');
-        }
-      } catch (e) {
-        if (e instanceof BadRequestException) throw e;
-        this.logger.warn(`Bancard verification failed for ${transactionId}: ${e.message}`);
-        // Continue — allow manual confirmation if Bancard is not configured
+    // Verificar pago con Bancard
+    try {
+      const verificacion = await this.bancardService.verifyPayment(transactionId);
+      if (verificacion.status !== 'success') {
+        throw new BadRequestException('El pago no fue confirmado por la pasarela');
+      }
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      this.logger.warn(`Bancard verification failed for ${transactionId}: ${e.message}`);
+      // Continue — allow confirmation if Bancard is not yet configured (stub returns success)
+    }
+
+    // Consumir cupón AHORA (al confirmar pago, no al crear suscripción)
+    // El cuponAplicado field stores the coupon code
+    if (suscripcion.cuponAplicado && !suscripcion.cuponAplicado.startsWith('CORTESIA_ADMIN')) {
+      const cupon = await this.prisma.cupon.findUnique({
+        where: { codigo: suscripcion.cuponAplicado },
+      });
+      if (cupon) {
+        await this.prisma.cupon.update({
+          where: { id: cupon.id },
+          data: { usosActuales: { increment: 1 } },
+        });
       }
     }
 
@@ -234,7 +265,7 @@ export class SuscripcionesService {
       where: { id: suscripcionId },
       data: {
         estado: 'ACTIVA',
-        metodoPagoId: transactionId || null,
+        metodoPagoId: transactionId,
       },
       include: { plan: true },
     });
@@ -332,6 +363,21 @@ export class SuscripcionesService {
     return { valido: true, cupon, mensaje: 'Cupón válido' };
   }
 
+  /**
+   * Adds exactly 1 month to a date, clamping to end-of-month.
+   * e.g. Jan 31 → Feb 28, Mar 31 → Apr 30
+   */
+  private addOneMonth(date: Date): Date {
+    const result = new Date(date);
+    const day = result.getDate();
+    result.setMonth(result.getMonth() + 1);
+    // If the day overflowed (e.g. Jan 31 → Mar 3), clamp to end of target month
+    if (result.getDate() !== day) {
+      result.setDate(0); // go to last day of previous month
+    }
+    return result;
+  }
+
   private aplicarDescuento(precio: number, cupon: any): number {
     if (cupon.tipo === 'PORCENTAJE') {
       const descuento = (precio * cupon.valor.toNumber()) / 100;
@@ -388,6 +434,10 @@ export class SuscripcionesService {
 
     for (const sub of vencenEn3Dias) {
       try {
+        // Dedup: don't send same notification twice (check if already notified today)
+        const yaNotificado = await this.notificacionYaEnviada(sub.userId, 'Tu Premium vence pronto');
+        if (yaNotificado) continue;
+
         await this.notificacionesService.notificar({
           userId: sub.userId,
           tipo: 'PAGO',
@@ -416,6 +466,10 @@ export class SuscripcionesService {
 
     for (const sub of vencenHoy) {
       try {
+        // Dedup: don't send same notification twice
+        const yaNotificado = await this.notificacionYaEnviada(sub.userId, 'Tu Premium vence hoy');
+        if (yaNotificado) continue;
+
         await this.notificacionesService.notificar({
           userId: sub.userId,
           tipo: 'PAGO',
@@ -495,22 +549,42 @@ export class SuscripcionesService {
   /**
    * Intenta renovar una suscripción cobrando al usuario.
    * Retorna true si se renovó exitosamente.
+   *
+   * IMPORTANTE: Deshabilitado hasta que Bancard soporte cobro recurrente real.
+   * El stub actual siempre retorna "success", lo cual otorgaría premium gratis.
+   * Cuando Bancard esté listo, descomentar la lógica de cobro.
    */
   private async intentarRenovacion(suscripcion: any): Promise<boolean> {
+    // TODO: Habilitar cuando Bancard soporte cobro recurrente real
+    // Actualmente el stub BancardService.verifyPayment() siempre retorna success,
+    // lo cual renovaría suscripciones gratis infinitamente.
+    this.logger.log(
+      `Renovación automática pendiente para ${suscripcion.id} — Bancard recurrente no disponible aún`,
+    );
+
+    // Notificar al usuario que necesita renovar manualmente
     try {
-      // Intentar cobro con Bancard
+      await this.notificacionesService.notificar({
+        userId: suscripcion.userId,
+        tipo: 'PAGO',
+        titulo: 'Renueva tu Premium',
+        contenido: 'Tu suscripción venció. Renová desde la sección Premium para mantener tus beneficios.',
+        enlace: '/premium',
+      });
+    } catch {
+      // non-critical
+    }
+
+    return false;
+
+    /* --- Descomentar cuando Bancard soporte cobro recurrente ---
+    try {
       const transactionId = `REN-${Date.now()}-${suscripcion.id.substring(0, 8)}`;
       const precio = suscripcion.plan.precioMensual.toNumber();
-
-      // TODO: Cuando Bancard tenga cobro recurrente real, usar:
-      // const resultado = await this.bancardService.chargeRecurring(suscripcion.metodoPagoId, precio);
-      // Por ahora, simulamos el intento de cobro
-      const resultado = await this.bancardService.verifyPayment(transactionId);
+      const resultado = await this.bancardService.chargeRecurring(suscripcion.metodoPagoId, precio);
 
       if (resultado.status === 'success') {
-        // Extender suscripción por 1 mes
-        const nuevaFechaFin = new Date(suscripcion.fechaFin);
-        nuevaFechaFin.setMonth(nuevaFechaFin.getMonth() + 1);
+        const nuevaFechaFin = this.addOneMonth(new Date(suscripcion.fechaFin));
 
         await this.prisma.suscripcion.update({
           where: { id: suscripcion.id },
@@ -521,7 +595,6 @@ export class SuscripcionesService {
           },
         });
 
-        // Notificar renovación exitosa
         try {
           await this.notificacionesService.notificar({
             userId: suscripcion.userId,
@@ -530,9 +603,7 @@ export class SuscripcionesService {
             contenido: `Tu suscripción fue renovada hasta el ${nuevaFechaFin.toLocaleDateString('es-PY')}.`,
             enlace: '/premium',
           });
-        } catch {
-          // non-critical
-        }
+        } catch {}
 
         this.logger.log(`Suscripción ${suscripcion.id} renovada hasta ${nuevaFechaFin.toISOString()}`);
         return true;
@@ -542,6 +613,7 @@ export class SuscripcionesService {
     }
 
     return false;
+    --- */
   }
 
   /**
@@ -589,5 +661,24 @@ export class SuscripcionesService {
     if (result.count > 0) {
       this.logger.log(`${result.count} suscripciones pendientes abandonadas limpiadas`);
     }
+  }
+
+  /**
+   * Check if a notification with the given title was already sent to the user today.
+   * Prevents sending duplicate notifications on cron re-runs or retries.
+   */
+  private async notificacionYaEnviada(userId: string, titulo: string): Promise<boolean> {
+    const ahora = new Date();
+    const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+
+    const existing = await this.prisma.notificacion.findFirst({
+      where: {
+        userId,
+        titulo,
+        createdAt: { gte: inicioHoy },
+      },
+    });
+
+    return !!existing;
   }
 }

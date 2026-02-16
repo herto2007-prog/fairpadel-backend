@@ -490,12 +490,24 @@ export class AdminService {
     const nuevaFechaFin = new Date(suscripcion.fechaFin);
     nuevaFechaFin.setDate(nuevaFechaFin.getDate() + dias);
 
+    // If subscription was VENCIDA, reactivate it and set user as premium
+    const updateData: any = {
+      fechaFin: nuevaFechaFin,
+      fechaRenovacion: nuevaFechaFin,
+    };
+    if (suscripcion.estado === 'VENCIDA') {
+      updateData.estado = 'ACTIVA';
+    }
+
     await this.prisma.suscripcion.update({
       where: { id },
-      data: {
-        fechaFin: nuevaFechaFin,
-        fechaRenovacion: nuevaFechaFin,
-      },
+      data: updateData,
+    });
+
+    // Ensure user is premium (especially if reactivated from VENCIDA)
+    await this.prisma.user.update({
+      where: { id: suscripcion.userId },
+      data: { esPremium: true },
     });
 
     return { message: `Suscripción extendida por ${dias} días` };
@@ -909,6 +921,12 @@ export class AdminService {
       throw new NotFoundException('No hay plan premium activo');
     }
 
+    // Cancelar suscripciones activas/pendientes existentes para evitar duplicados
+    await this.prisma.suscripcion.updateMany({
+      where: { userId, estado: { in: ['ACTIVA', 'PENDIENTE_PAGO'] } },
+      data: { estado: 'CANCELADA' },
+    });
+
     const now = new Date();
     const fechaFin = new Date(now);
     fechaFin.setDate(fechaFin.getDate() + dias);
@@ -952,9 +970,9 @@ export class AdminService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    // Cancelar suscripciones activas
+    // Cancelar suscripciones activas y pendientes
     await this.prisma.suscripcion.updateMany({
-      where: { userId, estado: 'ACTIVA' },
+      where: { userId, estado: { in: ['ACTIVA', 'PENDIENTE_PAGO'] } },
       data: { estado: 'CANCELADA' },
     });
 

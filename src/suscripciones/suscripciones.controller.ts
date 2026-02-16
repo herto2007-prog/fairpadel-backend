@@ -6,7 +6,10 @@ import {
   Body,
   UseGuards,
   Request,
+  Headers,
+  ForbiddenException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { SuscripcionesService } from './suscripciones.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateSuscripcionDto } from './dto';
@@ -22,6 +25,7 @@ export class SuscripcionesController {
 
   @Post('crear')
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   crearSuscripcion(@Body() dto: CreateSuscripcionDto, @Request() req) {
     return this.suscripcionesService.crearSuscripcion(dto, req.user.id);
   }
@@ -57,24 +61,34 @@ export class SuscripcionesController {
 
   /**
    * Confirmar pago de suscripción.
-   * Called after Bancard redirect or for manual confirmation.
+   * Called after Bancard redirect — requires transactionId to prevent free premium exploit.
+   * Ownership validated: only the subscription owner can confirm.
    */
   @Post('confirmar-pago')
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   confirmarPago(
-    @Body() body: { suscripcionId: string; transactionId?: string },
+    @Body() body: { suscripcionId: string; transactionId: string },
+    @Request() req,
   ) {
     return this.suscripcionesService.confirmarPagoSuscripcion(
       body.suscripcionId,
       body.transactionId,
+      req.user.id,
     );
   }
 
   /**
    * Webhook for Bancard payment callbacks (no auth — Bancard calls directly).
+   * Rate limited: 10 per minute to prevent abuse.
    */
   @Post('webhook/bancard')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   webhookBancard(@Body() webhookData: any) {
+    // Basic validation: reject empty or malformed payloads
+    if (!webhookData || !webhookData.operation) {
+      return { status: 'invalid_payload' };
+    }
     return this.suscripcionesService.procesarWebhookPago(webhookData);
   }
 }
