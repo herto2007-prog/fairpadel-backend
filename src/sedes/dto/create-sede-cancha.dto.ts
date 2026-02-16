@@ -1,5 +1,6 @@
 import {
   IsString,
+  IsNotEmpty,
   IsOptional,
   IsInt,
   IsEnum,
@@ -16,6 +17,7 @@ const EmptyToUndefined = () =>
 
 export class CreateSedeCanchaDto {
   @IsString()
+  @IsNotEmpty({ message: 'El nombre de la cancha es obligatorio' })
   @MaxLength(100)
   nombre: string;
 

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSedeDto } from './dto/create-sede.dto';
@@ -10,10 +11,52 @@ import { UpdateSedeDto } from './dto/update-sede.dto';
 import { CreateSedeCanchaDto } from './dto/create-sede-cancha.dto';
 import { UpdateSedeCanchaDto } from './dto/update-sede-cancha.dto';
 import { ConfigurarTorneoCanchasDto } from './dto/configurar-torneo-canchas.dto';
+import { TournamentStatus } from '@prisma/client';
+
+// Non-terminal tournament states that prevent sede deletion
+const ACTIVE_TOURNAMENT_STATES: TournamentStatus[] = [
+  TournamentStatus.BORRADOR,
+  TournamentStatus.PENDIENTE_APROBACION,
+  TournamentStatus.PUBLICADO,
+  TournamentStatus.EN_CURSO,
+];
 
 @Injectable()
 export class SedesService {
   constructor(private prisma: PrismaService) {}
+
+  // ═══════════════════════════════════════════════════════
+  // HELPERS
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Verify the requesting user is the tournament organizer or an admin
+   */
+  private async verifyTournamentOwnership(
+    tournamentId: string,
+    userId: string,
+    roles: string[],
+  ) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, organizadorId: true, nombre: true },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException(
+        `Torneo con ID ${tournamentId} no encontrado`,
+      );
+    }
+
+    const isAdmin = roles.includes('admin');
+    if (!isAdmin && torneo.organizadorId !== userId) {
+      throw new ForbiddenException(
+        'No tienes permisos para modificar este torneo',
+      );
+    }
+
+    return torneo;
+  }
 
   // ═══════════════════════════════════════════════════════
   // CRUD DE SEDES
@@ -47,12 +90,23 @@ export class SedesService {
   /**
    * Obtener todas las sedes con filtros opcionales
    */
-  async findAllSedes(filters: { ciudad?: string; activo?: boolean }) {
+  async findAllSedes(filters: {
+    ciudad?: string;
+    nombre?: string;
+    activo?: boolean;
+  }) {
     const where: any = {};
 
     if (filters.ciudad) {
       where.ciudad = {
         contains: filters.ciudad,
+        mode: 'insensitive',
+      };
+    }
+
+    if (filters.nombre) {
+      where.nombre = {
+        contains: filters.nombre,
         mode: 'insensitive',
       };
     }
@@ -146,32 +200,55 @@ export class SedesService {
   }
 
   /**
-   * Eliminar una sede (soft delete - desactivar)
+   * Desactivar una sede (soft delete)
    */
   async deleteSede(id: string) {
     // Verificar que existe
     await this.findOneSede(id);
 
-    // Verificar si tiene torneos activos
+    // Verificar si tiene torneos en cualquier estado activo (no terminal)
     const torneosActivos = await this.prisma.tournament.count({
       where: {
         sedeId: id,
         estado: {
-          in: ['PUBLICADO', 'EN_CURSO'],
+          in: ACTIVE_TOURNAMENT_STATES,
         },
       },
     });
 
     if (torneosActivos > 0) {
       throw new BadRequestException(
-        `No se puede eliminar la sede porque tiene ${torneosActivos} torneo(s) activo(s)`,
+        `No se puede desactivar la sede porque tiene ${torneosActivos} torneo(s) activo(s). Finalice o cancele los torneos primero.`,
       );
     }
 
-    // Soft delete - solo desactivar
+    // Soft delete
     return this.prisma.sede.update({
       where: { id },
       data: { activo: false },
+    });
+  }
+
+  /**
+   * Reactivar una sede desactivada
+   */
+  async reactivarSede(id: string) {
+    const sede = await this.prisma.sede.findUnique({
+      where: { id },
+    });
+
+    if (!sede) {
+      throw new NotFoundException(`Sede con ID ${id} no encontrada`);
+    }
+
+    if (sede.activo) {
+      throw new BadRequestException('La sede ya esta activa');
+    }
+
+    return this.prisma.sede.update({
+      where: { id },
+      data: { activo: true },
+      include: { canchas: true },
     });
   }
 
@@ -204,13 +281,19 @@ export class SedesService {
 
   /**
    * Obtener todas las canchas de una sede
+   * @param includeInactive - If true, includes inactive canchas (for admin view)
    */
-  async findAllCanchas(sedeId: string) {
+  async findAllCanchas(sedeId: string, includeInactive = false) {
     // Verificar que la sede existe
     await this.findOneSede(sedeId);
 
+    const where: any = { sedeId };
+    if (!includeInactive) {
+      where.activa = true;
+    }
+
     return this.prisma.sedeCancha.findMany({
-      where: { sedeId },
+      where,
       orderBy: { nombre: 'asc' },
     });
   }
@@ -251,7 +334,7 @@ export class SedesService {
   }
 
   /**
-   * Eliminar una cancha (soft delete)
+   * Desactivar una cancha (soft delete)
    */
   async deleteCancha(sedeId: string, canchaId: string) {
     // Verificar que la cancha existe y pertenece a la sede
@@ -265,7 +348,7 @@ export class SedesService {
       );
     }
 
-    // Verificar si tiene partidos programados
+    // Verificar si tiene partidos programados o en juego
     const partidosProgramados = await this.prisma.match.count({
       where: {
         torneoCancha: {
@@ -279,7 +362,7 @@ export class SedesService {
 
     if (partidosProgramados > 0) {
       throw new BadRequestException(
-        `No se puede eliminar la cancha porque tiene ${partidosProgramados} partido(s) programado(s)`,
+        `No se puede desactivar la cancha porque tiene ${partidosProgramados} partido(s) programado(s) o en juego`,
       );
     }
 
@@ -291,11 +374,44 @@ export class SedesService {
   }
 
   /**
-   * Actualizar múltiples canchas a la vez (para el canvas visual)
+   * Actualizar multiples canchas a la vez (para el canvas visual)
+   * Validates that ALL canchas belong to the specified sede
    */
   async updateCanchasBulk(sedeId: string, canchas: UpdateSedeCanchaDto[]) {
+    if (!canchas || canchas.length === 0) {
+      throw new BadRequestException('Debe enviar al menos una cancha');
+    }
+
     // Verificar que la sede existe
     await this.findOneSede(sedeId);
+
+    // Verify ALL cancha IDs belong to this sede
+    const canchaIds = canchas
+      .filter((c) => c.id)
+      .map((c) => c.id as string);
+
+    if (canchaIds.length !== canchas.length) {
+      throw new BadRequestException(
+        'Todas las canchas deben incluir un ID valido',
+      );
+    }
+
+    const existingCanchas = await this.prisma.sedeCancha.findMany({
+      where: {
+        id: { in: canchaIds },
+        sedeId,
+      },
+      select: { id: true },
+    });
+
+    const existingIds = new Set(existingCanchas.map((c) => c.id));
+    const invalidIds = canchaIds.filter((id) => !existingIds.has(id));
+
+    if (invalidIds.length > 0) {
+      throw new BadRequestException(
+        `Las siguientes canchas no pertenecen a esta sede: ${invalidIds.join(', ')}`,
+      );
+    }
 
     const updates = canchas.map((cancha) =>
       this.prisma.sedeCancha.update({
@@ -318,86 +434,139 @@ export class SedesService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // CONFIGURACIÓN DE CANCHAS PARA TORNEOS
+  // CONFIGURACION DE CANCHAS PARA TORNEOS
   // ═══════════════════════════════════════════════════════
 
   /**
    * Configurar las canchas y horarios para un torneo
+   * Wrapped in a transaction for atomicity
    */
   async configurarTorneoCanchas(
     tournamentId: string,
     dto: ConfigurarTorneoCanchasDto,
+    userId: string,
+    roles: string[],
   ) {
-    // Verificar que el torneo existe
-    const torneo = await this.prisma.tournament.findUnique({
-      where: { id: tournamentId },
-    });
+    // Verify ownership
+    await this.verifyTournamentOwnership(tournamentId, userId, roles);
 
-    if (!torneo) {
-      throw new NotFoundException(`Torneo con ID ${tournamentId} no encontrado`);
+    if (!dto.canchas || dto.canchas.length === 0) {
+      throw new BadRequestException(
+        'Debe configurar al menos una cancha para el torneo',
+      );
     }
 
-    // Eliminar configuración anterior (si existe)
-    await this.prisma.torneoCancha.deleteMany({
-      where: { tournamentId },
+    // Get tournament's linked sedes (principal + additional)
+    const torneoData = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: {
+        sedeId: true,
+        torneoSedes: { select: { sedeId: true } },
+      },
     });
 
-    // Crear las nuevas configuraciones
-    const torneoCanchas = [];
+    const linkedSedeIds = new Set<string>();
+    if (torneoData?.sedeId) linkedSedeIds.add(torneoData.sedeId);
+    torneoData?.torneoSedes.forEach((ts) => linkedSedeIds.add(ts.sedeId));
 
+    // Check for existing matches before deleting config
+    const matchesOnCanchas = await this.prisma.match.count({
+      where: {
+        torneoCancha: { tournamentId },
+        estado: { in: ['PROGRAMADO', 'EN_JUEGO'] },
+      },
+    });
+
+    if (matchesOnCanchas > 0) {
+      throw new BadRequestException(
+        `No se puede reconfigurar las canchas porque hay ${matchesOnCanchas} partido(s) programado(s) o en juego`,
+      );
+    }
+
+    // Validate all cancha IDs and their ownership
+    const sedeCanchaIds = dto.canchas.map((c) => c.sedeCanchaId);
+    const canchasDb = await this.prisma.sedeCancha.findMany({
+      where: { id: { in: sedeCanchaIds }, activa: true },
+      select: { id: true, sedeId: true },
+    });
+
+    const canchaMap = new Map(canchasDb.map((c) => [c.id, c]));
     for (const canchaConfig of dto.canchas) {
-      // Verificar que la cancha existe
-      const cancha = await this.prisma.sedeCancha.findUnique({
-        where: { id: canchaConfig.sedeCanchaId },
-      });
-
+      const cancha = canchaMap.get(canchaConfig.sedeCanchaId);
       if (!cancha) {
         throw new NotFoundException(
-          `Cancha con ID ${canchaConfig.sedeCanchaId} no encontrada`,
+          `Cancha con ID ${canchaConfig.sedeCanchaId} no encontrada o esta inactiva`,
+        );
+      }
+      if (!linkedSedeIds.has(cancha.sedeId)) {
+        throw new BadRequestException(
+          `La cancha ${canchaConfig.sedeCanchaId} no pertenece a una sede vinculada a este torneo`,
         );
       }
 
-      const horariosData = (canchaConfig.horarios || []).map((h) => ({
-        fecha: new Date(h.fecha),
-        horaInicio: h.horaInicio,
-        horaFin: h.horaFin,
-      }));
-
-      // Crear TorneoCancha con sus horarios
-      const torneoCancha = await this.prisma.torneoCancha.create({
-        data: {
-          tournamentId,
-          sedeCanchaId: canchaConfig.sedeCanchaId,
-          ...(horariosData.length > 0
-            ? { horarios: { create: horariosData } }
-            : {}),
-        },
-        include: {
-          sedeCancha: {
-            include: {
-              sede: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
-              },
-            },
-          },
-          horarios: true,
-        },
-      });
-
-      torneoCanchas.push(torneoCancha);
+      // Validate horario times
+      for (const h of canchaConfig.horarios || []) {
+        if (h.horaInicio >= h.horaFin) {
+          throw new BadRequestException(
+            `La hora de inicio (${h.horaInicio}) debe ser anterior a la hora de fin (${h.horaFin})`,
+          );
+        }
+      }
     }
 
-    return {
-      message: 'Configuración de canchas guardada exitosamente',
-      canchasConfiguradas: torneoCanchas,
-    };
+    // Execute in transaction
+    return this.prisma.$transaction(
+      async (tx) => {
+        // Delete previous configuration (cascade deletes horarios)
+        await tx.torneoCanchaHorario.deleteMany({
+          where: { torneoCancha: { tournamentId } },
+        });
+        await tx.torneoCancha.deleteMany({
+          where: { tournamentId },
+        });
+
+        // Create new configurations
+        const torneoCanchas = [];
+        for (const canchaConfig of dto.canchas) {
+          const horariosData = (canchaConfig.horarios || []).map((h) => ({
+            fecha: new Date(h.fecha),
+            horaInicio: h.horaInicio,
+            horaFin: h.horaFin,
+          }));
+
+          const torneoCancha = await tx.torneoCancha.create({
+            data: {
+              tournamentId,
+              sedeCanchaId: canchaConfig.sedeCanchaId,
+              ...(horariosData.length > 0
+                ? { horarios: { create: horariosData } }
+                : {}),
+            },
+            include: {
+              sedeCancha: {
+                include: {
+                  sede: {
+                    select: { id: true, nombre: true },
+                  },
+                },
+              },
+              horarios: true,
+            },
+          });
+          torneoCanchas.push(torneoCancha);
+        }
+
+        return {
+          message: 'Configuracion de canchas guardada exitosamente',
+          canchasConfiguradas: torneoCanchas,
+        };
+      },
+      { timeout: 15000 },
+    );
   }
 
   /**
-   * Obtener la configuración de canchas de un torneo
+   * Obtener la configuracion de canchas de un torneo
    */
   async getTorneoCanchas(tournamentId: string) {
     const torneo = await this.prisma.tournament.findUnique({
@@ -442,7 +611,9 @@ export class SedesService {
     });
 
     if (!torneo) {
-      throw new NotFoundException(`Torneo con ID ${tournamentId} no encontrado`);
+      throw new NotFoundException(
+        `Torneo con ID ${tournamentId} no encontrado`,
+      );
     }
 
     return {
@@ -461,20 +632,31 @@ export class SedesService {
   /**
    * Agregar una sede adicional a un torneo
    */
-  async agregarSedeATorneo(tournamentId: string, sedeId: string) {
-    // Verificar que el torneo existe
-    const torneo = await this.prisma.tournament.findUnique({
-      where: { id: tournamentId },
+  async agregarSedeATorneo(
+    tournamentId: string,
+    sedeId: string,
+    userId: string,
+    roles: string[],
+  ) {
+    // Verify ownership
+    await this.verifyTournamentOwnership(tournamentId, userId, roles);
+
+    // Verificar que la sede existe y esta activa
+    const sede = await this.prisma.sede.findUnique({
+      where: { id: sedeId },
     });
 
-    if (!torneo) {
-      throw new NotFoundException(`Torneo con ID ${tournamentId} no encontrado`);
+    if (!sede) {
+      throw new NotFoundException(`Sede con ID ${sedeId} no encontrada`);
     }
 
-    // Verificar que la sede existe
-    await this.findOneSede(sedeId);
+    if (!sede.activo) {
+      throw new BadRequestException(
+        'No se puede vincular una sede inactiva al torneo',
+      );
+    }
 
-    // Verificar si ya está vinculada
+    // Verificar si ya esta vinculada
     const existente = await this.prisma.torneoSede.findUnique({
       where: {
         tournamentId_sedeId: {
@@ -485,12 +667,19 @@ export class SedesService {
     });
 
     if (existente) {
-      throw new ConflictException('Esta sede ya está vinculada al torneo');
+      throw new ConflictException('Esta sede ya esta vinculada al torneo');
     }
 
-    // Verificar si es la sede principal
-    if (torneo.sedeId === sedeId) {
-      throw new ConflictException('Esta sede ya es la sede principal del torneo');
+    // Check if it's the main sede
+    const torneoFull = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { sedeId: true },
+    });
+
+    if (torneoFull?.sedeId === sedeId) {
+      throw new ConflictException(
+        'Esta sede ya es la sede principal del torneo',
+      );
     }
 
     return this.prisma.torneoSede.create({
@@ -513,8 +702,16 @@ export class SedesService {
   /**
    * Remover una sede adicional de un torneo
    */
-  async removerSedeDeTorneo(tournamentId: string, sedeId: string) {
-    // Verificar que existe la relación
+  async removerSedeDeTorneo(
+    tournamentId: string,
+    sedeId: string,
+    userId: string,
+    roles: string[],
+  ) {
+    // Verify ownership
+    await this.verifyTournamentOwnership(tournamentId, userId, roles);
+
+    // Verificar que existe la relacion
     const relacion = await this.prisma.torneoSede.findUnique({
       where: {
         tournamentId_sedeId: {
@@ -526,35 +723,65 @@ export class SedesService {
 
     if (!relacion) {
       throw new NotFoundException(
-        'Esta sede no está vinculada como sede adicional al torneo',
+        'Esta sede no esta vinculada como sede adicional al torneo',
       );
     }
 
-    // Eliminar canchas configuradas de esta sede para este torneo
+    // Check for matches on canchas of this sede before removing
     const canchasDeEstaSede = await this.prisma.sedeCancha.findMany({
       where: { sedeId },
       select: { id: true },
     });
-
     const canchaIds = canchasDeEstaSede.map((c) => c.id);
 
-    await this.prisma.torneoCancha.deleteMany({
-      where: {
-        tournamentId,
-        sedeCanchaId: {
-          in: canchaIds,
+    if (canchaIds.length > 0) {
+      const matchesOnCanchas = await this.prisma.match.count({
+        where: {
+          torneoCancha: {
+            tournamentId,
+            sedeCanchaId: { in: canchaIds },
+          },
+          estado: { in: ['PROGRAMADO', 'EN_JUEGO'] },
         },
-      },
-    });
+      });
 
-    // Eliminar la relación
-    return this.prisma.torneoSede.delete({
-      where: {
-        tournamentId_sedeId: {
-          tournamentId,
-          sedeId,
+      if (matchesOnCanchas > 0) {
+        throw new BadRequestException(
+          `No se puede remover esta sede porque tiene ${matchesOnCanchas} partido(s) programado(s) en sus canchas`,
+        );
+      }
+    }
+
+    // Remove in transaction: canchas config + sede relation
+    return this.prisma.$transaction(async (tx) => {
+      if (canchaIds.length > 0) {
+        // Delete horarios first
+        await tx.torneoCanchaHorario.deleteMany({
+          where: {
+            torneoCancha: {
+              tournamentId,
+              sedeCanchaId: { in: canchaIds },
+            },
+          },
+        });
+        // Delete cancha configs
+        await tx.torneoCancha.deleteMany({
+          where: {
+            tournamentId,
+            sedeCanchaId: { in: canchaIds },
+          },
+        });
+      }
+
+      // Delete the sede relation
+      return tx.torneoSede.delete({
+        where: {
+          tournamentId_sedeId: {
+            tournamentId,
+            sedeId,
+          },
         },
-      },
+      });
     });
   }
 
@@ -589,7 +816,9 @@ export class SedesService {
     });
 
     if (!torneo) {
-      throw new NotFoundException(`Torneo con ID ${tournamentId} no encontrado`);
+      throw new NotFoundException(
+        `Torneo con ID ${tournamentId} no encontrado`,
+      );
     }
 
     const sedes = [];

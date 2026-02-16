@@ -36,14 +36,24 @@ export class InscripcionesController {
   @Get('torneo/:tournamentId')
   findByTournament(
     @Param('tournamentId') tournamentId: string,
-    @Query('estado') estado?: string,
+    @Query('estado') estado: string,
+    @Request() req,
   ) {
-    return this.inscripcionesService.findByTournament(tournamentId, estado);
+    return this.inscripcionesService.findByTournament(
+      tournamentId,
+      req.user.id,
+      req.user.roles || [],
+      estado,
+    );
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.inscripcionesService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.inscripcionesService.findOneAuthorized(
+      id,
+      req.user.id,
+      req.user.roles || [],
+    );
   }
 
   @Put(':id/cancelar')
@@ -67,9 +77,14 @@ export class InscripcionesController {
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { comprobanteUrl?: string },
+    @Request() req,
   ) {
-    // Accept either file upload or URL
-    return this.inscripcionesService.subirComprobante(id, file, body.comprobanteUrl);
+    return this.inscripcionesService.subirComprobante(
+      id,
+      req.user.id,
+      file,
+      body.comprobanteUrl,
+    );
   }
 
   // ═══════════════════════════════════════════

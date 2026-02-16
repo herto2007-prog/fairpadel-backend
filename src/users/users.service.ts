@@ -88,17 +88,39 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    const datosPermitidos = {
-      nombre: data.nombre,
-      apellido: data.apellido,
-      ciudad: data.ciudad,
-      bio: data.bio,
-      fotoUrl: data.fotoUrl,
-    };
+    // Only allow safe, whitelisted fields (no fotoUrl — must go through /foto endpoint)
+    const datosPermitidos: Record<string, any> = {};
+    if (data.nombre !== undefined) datosPermitidos.nombre = data.nombre;
+    if (data.apellido !== undefined) datosPermitidos.apellido = data.apellido;
+    if (data.ciudad !== undefined) datosPermitidos.ciudad = data.ciudad;
+    if (data.bio !== undefined) datosPermitidos.bio = data.bio;
+    if (data.telefono !== undefined) datosPermitidos.telefono = data.telefono;
+    if (data.fechaNacimiento !== undefined) {
+      datosPermitidos.fechaNacimiento = data.fechaNacimiento
+        ? new Date(data.fechaNacimiento)
+        : null;
+    }
 
     const usuarioActualizado = await this.prisma.user.update({
       where: { id },
       data: datosPermitidos,
+      select: {
+        id: true,
+        documento: true,
+        nombre: true,
+        apellido: true,
+        email: true,
+        telefono: true,
+        genero: true,
+        ciudad: true,
+        bio: true,
+        fotoUrl: true,
+        fechaNacimiento: true,
+        esPremium: true,
+        estado: true,
+        categoriaActualId: true,
+        createdAt: true,
+      },
     });
 
     return usuarioActualizado;
@@ -174,7 +196,7 @@ export class UsersService {
   // PERFIL COMPLETO — Endpoint agregado para el perfil
   // ═══════════════════════════════════════════════════════
 
-  async obtenerPerfilCompleto(userId: string, viewerId: string | null) {
+  async obtenerPerfilCompleto(userId: string, viewerId: string | null, fotosPage = 1, fotosLimit = 24) {
     // 1. User info
     const usuario = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -231,21 +253,26 @@ export class UsersService {
       isFollowing = !!follow;
     }
 
-    // 7. Photos (approved)
-    const fotos = await this.prisma.foto.findMany({
-      where: { userId, estadoModeracion: 'APROBADA' },
-      select: {
-        id: true,
-        urlImagen: true,
-        urlThumbnail: true,
-        descripcion: true,
-        likesCount: true,
-        comentariosCount: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 12,
-    });
+    // 7. Photos (approved) with pagination
+    const fotosSkip = (fotosPage - 1) * fotosLimit;
+    const [fotos, totalFotos] = await Promise.all([
+      this.prisma.foto.findMany({
+        where: { userId, estadoModeracion: 'APROBADA' },
+        select: {
+          id: true,
+          urlImagen: true,
+          urlThumbnail: true,
+          descripcion: true,
+          likesCount: true,
+          comentariosCount: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: fotosSkip,
+        take: fotosLimit,
+      }),
+      this.prisma.foto.count({ where: { userId, estadoModeracion: 'APROBADA' } }),
+    ]);
 
     return {
       usuario,
@@ -260,6 +287,7 @@ export class UsersService {
         isOwnProfile: viewerId === userId,
       },
       fotos,
+      totalFotos,
     };
   }
 

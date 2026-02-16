@@ -31,6 +31,8 @@ export class InscripcionesService {
       metodoPago,
     } = createInscripcionDto;
 
+    // ── Pre-transaction validations (read-only) ──
+
     // Verificar que el torneo existe y acepta inscripciones
     const tournament = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
@@ -48,7 +50,7 @@ export class InscripcionesService {
       throw new BadRequestException('El torneo no acepta inscripciones');
     }
 
-    // Enforce inscription deadline: if fechaLimiteInscr has passed, reject new inscriptions
+    // Enforce inscription deadline
     if (tournament.fechaLimiteInscr) {
       const now = new Date();
       const deadline = new Date(tournament.fechaLimiteInscr);
@@ -59,7 +61,7 @@ export class InscripcionesService {
       }
     }
 
-    // Verificar que la categoría existe en el torneo y tiene inscripciones abiertas
+    // Verificar categoría en el torneo y abierta
     const categoriaRelacion = tournament.categorias.find(
       (c) => c.categoryId === categoryId,
     );
@@ -82,7 +84,6 @@ export class InscripcionesService {
 
       if (jugador1Full?.categoriaActualId && jugador1Full.categoriaActual) {
         const catActual = jugador1Full.categoriaActual;
-        // Solo validar para TRADICIONAL con mismo género
         if (modalidad === 'TRADICIONAL' && catActual.tipo === categorySelected.tipo) {
           const levelDiff = catActual.orden - categorySelected.orden;
           if (levelDiff < 0) {
@@ -99,7 +100,7 @@ export class InscripcionesService {
       }
     }
 
-    // Verificar que la modalidad existe en el torneo
+    // Verificar modalidad en el torneo
     const modalidadExiste = tournament.modalidades.some(
       (m) => m.modalidad === modalidad,
     );
@@ -107,18 +108,15 @@ export class InscripcionesService {
       throw new BadRequestException('Modalidad no disponible en este torneo');
     }
 
-    // Obtener información del usuario actual (jugador 1)
+    // Obtener jugador 1
     const jugador1 = await this.prisma.user.findUnique({
       where: { id: userId },
     });
+    if (!jugador1) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
 
-    // Buscar o crear pareja
-    const pareja = await this.parejasService.create(
-      { jugador2Documento },
-      userId,
-    );
-
-    // Validar compatibilidad de género según modalidad
+    // Validar compatibilidad de género
     const jugador2 = await this.prisma.user.findUnique({
       where: { documento: jugador2Documento },
     });
@@ -131,7 +129,6 @@ export class InscripcionesService {
           );
         }
       }
-
       if (modalidad === 'MIXTO') {
         if (jugador1.genero === jugador2.genero) {
           throw new BadRequestException(
@@ -139,8 +136,6 @@ export class InscripcionesService {
           );
         }
       }
-
-      // Modalidad SUMA no tiene restricción de género
 
       // Validar nivel de categoría del jugador 2
       if (modalidad === 'TRADICIONAL' && categorySelected) {
@@ -167,79 +162,106 @@ export class InscripcionesService {
       }
     }
 
-    // Verificar que la pareja no esté ya inscrita
-    const inscripcionExistente = await this.prisma.inscripcion.findFirst({
-      where: {
-        tournamentId,
-        parejaId: pareja.id,
-      },
-    });
+    // ── Atomic transaction: find/create pareja + check duplicate + create inscription + create pago ──
 
-    if (inscripcionExistente) {
-      throw new BadRequestException('Esta pareja ya está inscrita en el torneo');
-    }
+    return this.prisma.$transaction(async (tx) => {
+      // Find or create pareja (within transaction)
+      const pareja = await this.parejasService.findOrCreate(
+        { jugador2Documento },
+        userId,
+        tx,
+      );
 
-    // Crear inscripción
-    const inscripcion = await this.prisma.inscripcion.create({
-      data: {
-        tournamentId,
-        parejaId: pareja.id,
-        categoryId,
-        modalidad,
-        estado:
-          tournament.costoInscripcion.toNumber() === 0
-            ? 'CONFIRMADA'
-            : metodoPago === 'EFECTIVO'
-            ? 'PENDIENTE_PAGO_PRESENCIAL'
-            : 'PENDIENTE_PAGO',
-      },
-      include: {
-        pareja: {
-          include: {
-            jugador1: true,
-            jugador2: true,
+      // Duplicate check: same tournament + (same pareja OR same jugadores in any pareja)
+      const inscripcionExistente = await tx.inscripcion.findFirst({
+        where: {
+          tournamentId,
+          categoryId,
+          estado: { notIn: ['CANCELADA'] },
+          pareja: {
+            OR: [
+              { jugador1Id: userId, jugador2Documento },
+              ...(jugador2 ? [{ jugador1Id: jugador2.id, jugador2Documento: jugador1.documento }] : []),
+            ],
           },
         },
-        tournament: true,
-        category: true,
-      },
-    });
+      });
 
-    // Si el torneo es gratuito, marcar como confirmada y notificar
-    if (tournament.costoInscripcion.toNumber() === 0) {
-      try {
-        await this.enviarNotificacionInscripcion(inscripcion);
-      } catch (e) {
-        this.logger.error(`Error notificando inscripcion gratuita: ${e.message}`);
+      if (inscripcionExistente) {
+        throw new BadRequestException('Esta pareja ya está inscrita en esta categoría del torneo');
       }
+
+      // Determinar estado inicial
+      const esGratis = tournament.costoInscripcion.toNumber() === 0;
+      const estadoInicial = esGratis
+        ? 'CONFIRMADA'
+        : metodoPago === 'EFECTIVO'
+          ? 'PENDIENTE_PAGO_PRESENCIAL'
+          : 'PENDIENTE_PAGO';
+
+      // Crear inscripción
+      const inscripcion = await tx.inscripcion.create({
+        data: {
+          tournamentId,
+          parejaId: pareja.id,
+          categoryId,
+          modalidad,
+          estado: estadoInicial,
+        },
+        include: {
+          pareja: {
+            include: {
+              jugador1: true,
+              jugador2: true,
+            },
+          },
+          tournament: true,
+          category: true,
+        },
+      });
+
+      // Crear registro de pago si no es gratis
+      if (!esGratis) {
+        const configComision = await tx.configuracionSistema.findUnique({
+          where: { clave: 'COMISION_INSCRIPCION' },
+        });
+        const porcentajeComision = configComision
+          ? parseFloat(configComision.valor) / 100
+          : 0.05;
+
+        const monto = tournament.costoInscripcion.toNumber();
+        const comision = monto * porcentajeComision;
+
+        await tx.pago.create({
+          data: {
+            inscripcionId: inscripcion.id,
+            metodoPago: metodoPago as any,
+            monto,
+            comision,
+            estado: 'PENDIENTE',
+          },
+        });
+      }
+
+      // Notificar si es gratis (fuera del bloque crítico, fire-and-forget)
+      if (esGratis) {
+        // Schedule notification outside transaction
+        setImmediate(async () => {
+          try {
+            await this.enviarNotificacionInscripcion(inscripcion);
+          } catch (e) {
+            this.logger.error(`Error notificando inscripcion gratuita: ${e.message}`);
+          }
+        });
+      }
+
       return inscripcion;
-    }
-
-    // Obtener porcentaje de comisión desde configuración del sistema
-    const configComision = await this.prisma.configuracionSistema.findUnique({
-      where: { clave: 'COMISION_INSCRIPCION' },
-    });
-    const porcentajeComision = configComision
-      ? parseFloat(configComision.valor) / 100
-      : 0.05; // Fallback 5% si no existe config
-
-    // Crear registro de pago pendiente
-    const monto = tournament.costoInscripcion.toNumber();
-    const comision = monto * porcentajeComision;
-
-    await this.prisma.pago.create({
-      data: {
-        inscripcionId: inscripcion.id,
-        metodoPago: metodoPago as any,
-        monto,
-        comision,
-        estado: 'PENDIENTE',
-      },
-    });
-
-    return inscripcion;
+    }, { timeout: 15000 });
   }
 
+  /**
+   * Internal findOne — no authorization check. Used by other service methods.
+   */
   async findOne(id: string) {
     const inscripcion = await this.prisma.inscripcion.findUnique({
       where: { id },
@@ -253,12 +275,35 @@ export class InscripcionesService {
         tournament: true,
         category: true,
         pago: true,
-        comprobantes: true,
+        comprobantes: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
     if (!inscripcion) {
       throw new NotFoundException('Inscripción no encontrada');
+    }
+
+    return inscripcion;
+  }
+
+  /**
+   * Public findOne — with ownership/role authorization.
+   * Players can only see their own inscriptions.
+   * Admins/organizers can see any.
+   */
+  async findOneAuthorized(id: string, userId: string, userRoles: string[]) {
+    const inscripcion = await this.findOne(id);
+
+    const isAdmin = userRoles.includes('admin');
+    const isInPareja =
+      inscripcion.pareja.jugador1Id === userId ||
+      inscripcion.pareja.jugador2Id === userId;
+    const isOrganizer = inscripcion.tournament?.organizadorId === userId;
+
+    if (!isAdmin && !isInPareja && !isOrganizer) {
+      throw new ForbiddenException('No tienes permiso para ver esta inscripción');
     }
 
     return inscripcion;
@@ -281,6 +326,9 @@ export class InscripcionesService {
         tournament: true,
         category: true,
         pago: true,
+        comprobantes: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -290,7 +338,27 @@ export class InscripcionesService {
     return inscripciones;
   }
 
-  async findByTournament(tournamentId: string, estado?: string) {
+  /**
+   * Find inscriptions by tournament — restricted to organizer, ayudantes, or admin.
+   */
+  async findByTournament(tournamentId: string, userId: string, userRoles: string[], estado?: string) {
+    // Verify authorization: only organizer, ayudantes, or admin can list all inscriptions
+    const isAdmin = userRoles.includes('admin');
+    if (!isAdmin) {
+      const tournament = await this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        include: { ayudantes: true },
+      });
+      if (!tournament) {
+        throw new NotFoundException('Torneo no encontrado');
+      }
+      const isOrganizer = tournament.organizadorId === userId;
+      const isAyudante = tournament.ayudantes?.some(a => a.userId === userId);
+      if (!isOrganizer && !isAyudante) {
+        throw new ForbiddenException('No tienes permiso para ver las inscripciones de este torneo');
+      }
+    }
+
     const where: any = { tournamentId };
     if (estado) {
       where.estado = estado;
@@ -307,7 +375,9 @@ export class InscripcionesService {
         },
         category: true,
         pago: true,
-        comprobantes: true,
+        comprobantes: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -341,12 +411,22 @@ export class InscripcionesService {
 
   async subirComprobante(
     inscripcionId: string,
+    userId: string,
     file?: Express.Multer.File,
     comprobanteUrl?: string,
   ) {
     const inscripcion = await this.findOne(inscripcionId);
 
-    if (!['PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION'].includes(inscripcion.estado)) {
+    // Ownership check: only players in the pareja can upload comprobantes
+    if (
+      inscripcion.pareja.jugador1Id !== userId &&
+      inscripcion.pareja.jugador2Id !== userId
+    ) {
+      throw new ForbiddenException('No tienes permiso para subir comprobantes de esta inscripción');
+    }
+
+    // Allow RECHAZADA state so users can resubmit after rejection
+    if (!['PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION', 'RECHAZADA'].includes(inscripcion.estado)) {
       throw new BadRequestException('Esta inscripción no acepta comprobantes');
     }
 
@@ -359,6 +439,12 @@ export class InscripcionesService {
       });
       url = result.url;
     } else if (comprobanteUrl) {
+      // Basic URL validation
+      try {
+        new URL(comprobanteUrl);
+      } catch {
+        throw new BadRequestException('URL de comprobante inválida');
+      }
       url = comprobanteUrl;
     } else {
       throw new BadRequestException('Debe enviar un archivo o una URL de comprobante');
@@ -373,7 +459,7 @@ export class InscripcionesService {
       },
     });
 
-    // Actualizar estado de inscripción
+    // Actualizar estado de inscripción a PENDIENTE_CONFIRMACION
     return this.prisma.inscripcion.update({
       where: { id: inscripcionId },
       data: { estado: 'PENDIENTE_CONFIRMACION' },

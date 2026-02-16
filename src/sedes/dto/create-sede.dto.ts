@@ -1,5 +1,6 @@
 import {
   IsString,
+  IsNotEmpty,
   IsOptional,
   IsInt,
   IsUrl,
@@ -9,16 +10,18 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
-// Convierte strings vacíos a undefined
+// Convierte strings vacios a undefined
 const EmptyToUndefined = () =>
   Transform(({ value }) => (value === '' ? undefined : value));
 
 export class CreateSedeDto {
   @IsString()
+  @IsNotEmpty({ message: 'El nombre de la sede es obligatorio' })
   @MaxLength(200)
   nombre: string;
 
   @IsString()
+  @IsNotEmpty({ message: 'La ciudad es obligatoria' })
   @MaxLength(100)
   ciudad: string;
 
