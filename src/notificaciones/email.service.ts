@@ -50,12 +50,22 @@ export class EmailService {
       return { success: true };
     }
 
+    // Warn if still using Resend's shared sandbox domain (emails will go to spam)
+    if (this.fromEmail.includes('resend.dev')) {
+      this.logger.warn(
+        'SPAM WARNING: Using resend.dev shared domain. Configure FROM_EMAIL with your own verified domain (e.g. noreply@fairpadel.com) to avoid spam folders. See: https://resend.com/docs/dashboard/domains/introduction',
+      );
+    }
+
     try {
       await this.resend.emails.send({
         from: this.fromEmail,
         to,
         subject,
         html,
+        headers: {
+          'X-Entity-Ref-ID': `fairpadel-${Date.now()}`, // Unique ID helps avoid spam grouping
+        },
       });
       this.logger.log(`Email enviado -> ${to}: ${subject}`);
       return { success: true };
