@@ -1126,4 +1126,53 @@ export class AdminService {
     });
     return config?.valor ?? null;
   }
+
+  // ═══════════════════════════════════════════
+  // COMISION POR TORNEO
+  // ═══════════════════════════════════════════
+
+  async setComisionTorneo(tournamentId: string, comisionPorcentaje: number | null) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+    });
+    if (!tournament) throw new NotFoundException('Torneo no encontrado');
+
+    if (comisionPorcentaje !== null) {
+      if (comisionPorcentaje < 0 || comisionPorcentaje > 100) {
+        throw new BadRequestException('La comisión debe estar entre 0 y 100');
+      }
+    }
+
+    await this.prisma.tournament.update({
+      where: { id: tournamentId },
+      data: { comisionPorcentaje },
+    });
+
+    return {
+      message: comisionPorcentaje !== null
+        ? `Comisión del torneo configurada a ${comisionPorcentaje}%`
+        : 'Comisión del torneo eliminada (usará la configuración global)',
+      comisionPorcentaje,
+    };
+  }
+
+  async getComisionTorneo(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, nombre: true, comisionPorcentaje: true },
+    });
+    if (!tournament) throw new NotFoundException('Torneo no encontrado');
+
+    const globalConfig = await this.prisma.configuracionSistema.findUnique({
+      where: { clave: 'COMISION_INSCRIPCION' },
+    });
+
+    return {
+      tournamentId: tournament.id,
+      nombre: tournament.nombre,
+      comisionPorcentaje: tournament.comisionPorcentaje,
+      comisionGlobal: globalConfig ? parseFloat(globalConfig.valor) : 5,
+      usandoGlobal: tournament.comisionPorcentaje === null,
+    };
+  }
 }

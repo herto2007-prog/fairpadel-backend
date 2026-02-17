@@ -274,6 +274,97 @@ export class NotificacionesService {
     });
   }
 
+  async notificarInscripcionRegistrada(
+    userId: string,
+    data: {
+      torneoNombre: string;
+      categoria: string;
+      companero: string;
+      monto: string;
+      metodoPago: string;
+      estado: string;
+    },
+  ) {
+    const usuario = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!usuario) return;
+
+    return this.notificar({
+      userId,
+      tipo: 'INSCRIPCION',
+      titulo: 'Inscripcion registrada',
+      contenido: `Tu inscripcion al torneo "${data.torneoNombre}" (${data.categoria}) fue registrada. Companero/a: ${data.companero}`,
+      enlace: '/inscripciones',
+      emailTemplate: () =>
+        this.emailService.enviarInscripcionRegistrada(usuario.email, usuario.nombre, data),
+    });
+  }
+
+  async notificarPagoConfirmado(
+    userId: string,
+    data: {
+      torneoNombre: string;
+      categoria: string;
+      monto: string;
+      tournamentId: string;
+    },
+  ) {
+    const usuario = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!usuario) return;
+
+    return this.notificar({
+      userId,
+      tipo: 'PAGO',
+      titulo: 'Pago confirmado',
+      contenido: `Tu pago de ${data.monto} para "${data.torneoNombre}" (${data.categoria}) fue confirmado`,
+      enlace: `/tournaments/${data.tournamentId}`,
+      emailTemplate: () =>
+        this.emailService.enviarPagoConfirmado(usuario.email, usuario.nombre, data),
+    });
+  }
+
+  async notificarInscripcionRechazada(
+    userId: string,
+    data: {
+      torneoNombre: string;
+      categoria: string;
+      motivo: string;
+    },
+  ) {
+    const usuario = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!usuario) return;
+
+    return this.notificar({
+      userId,
+      tipo: 'INSCRIPCION',
+      titulo: 'Inscripcion rechazada',
+      contenido: `Tu inscripcion al torneo "${data.torneoNombre}" (${data.categoria}) fue rechazada. Motivo: ${data.motivo}`,
+      enlace: '/inscripciones',
+      emailTemplate: () =>
+        this.emailService.enviarInscripcionRechazada(usuario.email, usuario.nombre, data),
+    });
+  }
+
+  async notificarTorneoCancelado(
+    userId: string,
+    data: {
+      torneoNombre: string;
+      motivo?: string;
+    },
+  ) {
+    const usuario = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!usuario) return;
+
+    return this.notificar({
+      userId,
+      tipo: 'TORNEO',
+      titulo: 'Torneo cancelado',
+      contenido: `El torneo "${data.torneoNombre}" ha sido cancelado${data.motivo ? `. Motivo: ${data.motivo}` : ''}`,
+      enlace: '/tournaments',
+      emailTemplate: () =>
+        this.emailService.enviarTorneoCancelado(usuario.email, usuario.nombre, data),
+    });
+  }
+
   // ═══════════════════════════════════════════════════════
   // CRUD NOTIFICACIONES
   // ═══════════════════════════════════════════════════════

@@ -105,4 +105,23 @@ export class InscripcionesController {
   ) {
     return this.inscripcionesService.rechazarPagoCompleto(id, body.motivo);
   }
+
+  // ═══════════════════════════════════════════
+  // PAGO INDIVIDUAL
+  // ═══════════════════════════════════════════
+
+  @Post(':id/pagar-mi-parte')
+  pagarMiParte(
+    @Param('id') id: string,
+    @Body() body: { metodoPago?: string },
+    @Request() req,
+  ) {
+    return this.inscripcionesService.pagarMiParte(id, req.user.id, body.metodoPago);
+  }
+
+  @Put('torneo/:tournamentId/pago/:pagoId/confirmar')
+  @UseGuards(TournamentRoleGuard)
+  confirmarPagoIndividual(@Param('pagoId') pagoId: string) {
+    return this.inscripcionesService.confirmarPagoIndividual(pagoId);
+  }
 }

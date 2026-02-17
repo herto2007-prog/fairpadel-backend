@@ -9,11 +9,11 @@ export class PagosService {
     private bancardService: BancardService,
   ) {}
 
-  async createBancardCheckout(inscripcionId: string) {
+  async createBancardCheckout(inscripcionId: string, pagoId?: string) {
     const inscripcion = await this.prisma.inscripcion.findUnique({
       where: { id: inscripcionId },
       include: {
-        pago: true,
+        pagos: true,
         tournament: true,
         pareja: {
           include: {
@@ -27,11 +27,21 @@ export class PagosService {
       throw new NotFoundException('Inscripción no encontrada');
     }
 
-    if (!inscripcion.pago) {
+    const pagos = inscripcion.pagos || [];
+    if (pagos.length === 0) {
       throw new BadRequestException('No hay pago pendiente para esta inscripción');
     }
 
-    if (inscripcion.pago.estado !== 'PENDIENTE') {
+    // If pagoId provided, find that specific pago; otherwise use first pending
+    const pago = pagoId
+      ? pagos.find((p) => p.id === pagoId)
+      : pagos.find((p) => p.estado === 'PENDIENTE');
+
+    if (!pago) {
+      throw new BadRequestException('No hay pago pendiente para esta inscripción');
+    }
+
+    if (pago.estado !== 'PENDIENTE') {
       throw new BadRequestException('El pago ya fue procesado');
     }
 
@@ -40,14 +50,14 @@ export class PagosService {
 
     // Actualizar pago con transaction ID
     await this.prisma.pago.update({
-      where: { id: inscripcion.pago.id },
+      where: { id: pago.id },
       data: { transactionId },
     });
 
     // Crear checkout en Bancard
     const checkoutUrl = await this.bancardService.createCheckout({
       transactionId,
-      amount: inscripcion.pago.monto.toNumber(),
+      amount: pago.monto.toNumber(),
       description: `Inscripción ${inscripcion.tournament.nombre}`,
       returnUrl: `${process.env.FRONTEND_URL}/pago/confirmacion`,
       cancelUrl: `${process.env.FRONTEND_URL}/pago/cancelado`,
@@ -63,7 +73,9 @@ export class PagosService {
     const pago = await this.prisma.pago.findFirst({
       where: { transactionId },
       include: {
-        inscripcion: true,
+        inscripcion: {
+          include: { pagos: true },
+        },
       },
     });
 
@@ -85,13 +97,18 @@ export class PagosService {
         },
       });
 
-      // Actualizar inscripción como confirmada
-      await this.prisma.inscripcion.update({
-        where: { id: pago.inscripcionId },
-        data: { estado: 'CONFIRMADA' },
-      });
+      // Check if ALL pagos for this inscription are now confirmed
+      const allPagos = pago.inscripcion.pagos || [];
+      const othersPending = allPagos.some(
+        (p) => p.id !== pago.id && p.estado !== 'CONFIRMADO',
+      );
 
-      // TODO: Enviar notificaciones
+      if (!othersPending) {
+        await this.prisma.inscripcion.update({
+          where: { id: pago.inscripcionId },
+          data: { estado: 'CONFIRMADA' },
+        });
+      }
 
       return {
         success: true,
@@ -117,6 +134,11 @@ export class PagosService {
 
     const pago = await this.prisma.pago.findFirst({
       where: { transactionId },
+      include: {
+        inscripcion: {
+          include: { pagos: true },
+        },
+      },
     });
 
     if (!pago) {
@@ -133,17 +155,25 @@ export class PagosService {
         },
       });
 
-      await this.prisma.inscripcion.update({
-        where: { id: pago.inscripcionId },
-        data: { estado: 'CONFIRMADA' },
-      });
+      // Check if ALL pagos confirmed
+      const allPagos = pago.inscripcion.pagos || [];
+      const othersPending = allPagos.some(
+        (p) => p.id !== pago.id && p.estado !== 'CONFIRMADO',
+      );
+
+      if (!othersPending) {
+        await this.prisma.inscripcion.update({
+          where: { id: pago.inscripcionId },
+          data: { estado: 'CONFIRMADA' },
+        });
+      }
     }
 
     return { received: true };
   }
 
   async findByInscripcion(inscripcionId: string) {
-    const pago = await this.prisma.pago.findFirst({
+    const pagos = await this.prisma.pago.findMany({
       where: { inscripcionId },
       include: {
         inscripcion: {
@@ -160,31 +190,41 @@ export class PagosService {
       },
     });
 
-    if (!pago) {
-      throw new NotFoundException('Pago no encontrado');
+    if (pagos.length === 0) {
+      throw new NotFoundException('Pagos no encontrados');
     }
 
-    return pago;
+    return pagos;
   }
 
   async confirmarPagoPresencial(inscripcionId: string) {
     const inscripcion = await this.prisma.inscripcion.findUnique({
       where: { id: inscripcionId },
-      include: { pago: true },
+      include: { pagos: true },
     });
 
     if (!inscripcion) {
       throw new NotFoundException('Inscripción no encontrada');
     }
 
-    await this.prisma.pago.update({
-      where: { id: inscripcion.pago.id },
-      data: {
-        estado: 'CONFIRMADO',
-        fechaPago: new Date(),
-        fechaConfirm: new Date(),
-      },
-    });
+    const pagos = inscripcion.pagos || [];
+    if (pagos.length === 0) {
+      throw new BadRequestException('No hay pagos para esta inscripción');
+    }
+
+    // Confirm all pending pagos
+    for (const pago of pagos) {
+      if (pago.estado === 'PENDIENTE') {
+        await this.prisma.pago.update({
+          where: { id: pago.id },
+          data: {
+            estado: 'CONFIRMADO',
+            fechaPago: new Date(),
+            fechaConfirm: new Date(),
+          },
+        });
+      }
+    }
 
     return this.prisma.inscripcion.update({
       where: { id: inscripcionId },

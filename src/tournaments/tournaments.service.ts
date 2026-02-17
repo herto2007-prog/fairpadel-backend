@@ -2,9 +2,11 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
-  BadRequestException
+  BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto';
 import * as ExcelJS from 'exceljs';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -12,7 +14,12 @@ const PDFDocument = require('pdfkit');
 
 @Injectable()
 export class TournamentsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(TournamentsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notificacionesService: NotificacionesService,
+  ) {}
 
   /**
    * Genera un slug único a partir del nombre del torneo.
@@ -620,7 +627,7 @@ export class TournamentsService {
     const inscripciones = await this.prisma.inscripcion.findMany({
       where: { tournamentId },
       include: {
-        pago: true,
+        pagos: true,
         category: true,
         comprobantes: true,
       },
@@ -663,17 +670,27 @@ export class TournamentsService {
       }
       porCategoria[catId].totalInscritas++;
 
-      if (insc.pago) {
-        if (insc.pago.estado === 'CONFIRMADO') {
-          const monto = insc.pago.monto.toNumber();
-          const comision = insc.pago.comision.toNumber();
-          totalRecaudado += monto;
-          totalComisiones += comision;
+      const pagos = insc.pagos || [];
+      if (pagos.length > 0) {
+        // Track per-inscription: all confirmed → inscription confirmed
+        const allConfirmed = pagos.every((p) => p.estado === 'CONFIRMADO');
+        const anyRejected = pagos.some((p) => p.estado === 'RECHAZADO');
+
+        for (const pago of pagos) {
+          if (pago.estado === 'CONFIRMADO') {
+            const monto = pago.monto.toNumber();
+            const comision = pago.comision.toNumber();
+            totalRecaudado += monto;
+            totalComisiones += comision;
+            porCategoria[catId].montoRecaudado += monto;
+            porCategoria[catId].montoComisiones += comision;
+          }
+        }
+
+        if (allConfirmed) {
           pagosConfirmados++;
           porCategoria[catId].confirmadas++;
-          porCategoria[catId].montoRecaudado += monto;
-          porCategoria[catId].montoComisiones += comision;
-        } else if (insc.pago.estado === 'RECHAZADO') {
+        } else if (anyRejected) {
           pagosRechazados++;
           porCategoria[catId].rechazadas++;
         } else {
@@ -722,7 +739,7 @@ export class TournamentsService {
       include: {
         pareja: { include: { jugador1: true, jugador2: true } },
         category: true,
-        pago: true,
+        pagos: true,
         comprobantes: true,
       },
       orderBy: [{ category: { nombre: 'asc' } }, { createdAt: 'asc' }],
@@ -765,6 +782,18 @@ export class TournamentsService {
       const j2 = insc.pareja?.jugador2;
       const hasComprobante = insc.comprobantes && insc.comprobantes.length > 0;
 
+      const pagos = insc.pagos || [];
+      const totalMonto = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
+      const totalComision = pagos.reduce((sum, p) => sum + Number(p.comision), 0);
+      const metodos = [...new Set(pagos.map((p) => p.metodoPago))].join(', ') || '—';
+      const estadoPago = pagos.length === 0
+        ? 'GRATIS'
+        : pagos.every((p) => p.estado === 'CONFIRMADO')
+          ? 'CONFIRMADO'
+          : pagos.some((p) => p.estado === 'RECHAZADO')
+            ? 'RECHAZADO'
+            : 'PENDIENTE';
+
       sheet.addRow({
         categoria: insc.category?.nombre || '—',
         modalidad: insc.modalidad,
@@ -773,10 +802,10 @@ export class TournamentsService {
         jugador2: j2 ? `${j2.nombre} ${j2.apellido}` : insc.pareja?.jugador2Documento || '—',
         docJ2: j2?.documento || insc.pareja?.jugador2Documento || '—',
         estado: insc.estado.replace(/_/g, ' '),
-        metodoPago: insc.pago?.metodoPago || '—',
-        monto: insc.pago ? Number(insc.pago.monto) : 0,
-        comision: insc.pago ? Number(insc.pago.comision) : 0,
-        estadoPago: insc.pago?.estado?.replace(/_/g, ' ') || 'GRATIS',
+        metodoPago: metodos,
+        monto: totalMonto,
+        comision: totalComision,
+        estadoPago: estadoPago.replace(/_/g, ' '),
         comprobante: hasComprobante ? 'Sí' : 'No',
         fechaInscripcion: insc.createdAt.toLocaleDateString('es-PY'),
       });
@@ -1353,6 +1382,43 @@ export class TournamentsService {
       where: { id },
       data: { estado: 'CANCELADO' },
     });
+
+    // Notificar jugadores afectados (fire-and-forget)
+    if (inscripcionesActivas.length > 0) {
+      setImmediate(async () => {
+        try {
+          // Get unique player IDs from cancelled inscriptions
+          const inscripcionesConJugadores = await this.prisma.inscripcion.findMany({
+            where: {
+              tournamentId: id,
+              estado: 'CANCELADA',
+            },
+            include: {
+              pareja: { select: { jugador1Id: true, jugador2Id: true } },
+            },
+          });
+
+          const jugadorIds = new Set<string>();
+          for (const insc of inscripcionesConJugadores) {
+            if (insc.pareja?.jugador1Id) jugadorIds.add(insc.pareja.jugador1Id);
+            if (insc.pareja?.jugador2Id) jugadorIds.add(insc.pareja.jugador2Id);
+          }
+
+          for (const jugadorId of jugadorIds) {
+            try {
+              await this.notificacionesService.notificarTorneoCancelado(jugadorId, {
+                torneoNombre: tournament.nombre,
+                motivo,
+              });
+            } catch (e) {
+              this.logger.error(`Error notificando cancelación a ${jugadorId}: ${e.message}`);
+            }
+          }
+        } catch (e) {
+          this.logger.error(`Error notificando cancelación torneo: ${e.message}`);
+        }
+      });
+    }
 
     return {
       message: 'Torneo cancelado exitosamente',

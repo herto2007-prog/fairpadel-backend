@@ -254,4 +254,18 @@ export class AdminController {
   obtenerEstadisticasCupones() {
     return this.adminService.obtenerEstadisticasCupones();
   }
+
+  // ============ COMISION POR TORNEO ============
+  @Put('tournaments/:id/comision')
+  setComisionTorneo(
+    @Param('id') id: string,
+    @Body() body: { comisionPorcentaje: number | null },
+  ) {
+    return this.adminService.setComisionTorneo(id, body.comisionPorcentaje);
+  }
+
+  @Get('tournaments/:id/comision')
+  getComisionTorneo(@Param('id') id: string) {
+    return this.adminService.getComisionTorneo(id);
+  }
 }

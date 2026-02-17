@@ -7,6 +7,9 @@ export class EmailService {
   private readonly fromEmail: string;
   private readonly frontendUrl: string;
 
+  // Logo URL for emails — set EMAIL_LOGO_URL env var or upload to Cloudinary
+  private readonly logoUrl: string;
+
   // Paleta FairPadel (dark + rojo)
   private readonly COLORS = {
     primary: '#e63946',      // Rojo FairPadel
@@ -25,6 +28,8 @@ export class EmailService {
     const apiKey = process.env.RESEND_API_KEY;
     this.fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
     this.frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+    this.logoUrl = process.env.EMAIL_LOGO_URL || '';
 
     if (apiKey && apiKey !== 'dev-mode-no-key') {
       try {
@@ -219,6 +224,89 @@ export class EmailService {
     return this.enviarEmail(email, `Ascendiste a ${data.categoriaNueva}!`, html);
   }
 
+  // ═══════════════════════════════════════
+  // TEMPLATES DE INSCRIPCION / PAGO
+  // ═══════════════════════════════════════
+
+  async enviarInscripcionRegistrada(
+    email: string,
+    nombre: string,
+    data: { torneoNombre: string; categoria: string; companero: string; monto: string; metodoPago: string; estado: string },
+  ) {
+    const html = this.wrapTemplate(`
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Inscripcion Registrada</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Tu inscripcion al torneo <strong>${data.torneoNombre}</strong> fue registrada exitosamente.</p>
+      ${this.infoBox(`
+        <p><strong>Categoria:</strong> ${data.categoria}</p>
+        <p><strong>Companero/a:</strong> ${data.companero}</p>
+        <p><strong>Monto:</strong> ${data.monto}</p>
+        <p><strong>Metodo de pago:</strong> ${data.metodoPago}</p>
+        <p><strong>Estado:</strong> ${data.estado}</p>
+      `)}
+      <p style="color: ${this.COLORS.secondary}; font-size: 13px;">El organizador revisara tu pago y confirmara tu inscripcion.</p>
+      ${this.buttonHtml(`${this.frontendUrl}/inscripciones`, 'Ver Mis Inscripciones')}
+    `);
+    return this.enviarEmail(email, `Inscripcion Registrada - ${data.torneoNombre}`, html);
+  }
+
+  async enviarPagoConfirmado(
+    email: string,
+    nombre: string,
+    data: { torneoNombre: string; categoria: string; monto: string; tournamentId: string },
+  ) {
+    const html = this.wrapTemplate(`
+      <h2 style="color: ${this.COLORS.success}; margin: 0 0 16px 0;">Pago Confirmado</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Tu pago para el torneo <strong>${data.torneoNombre}</strong> ha sido confirmado.</p>
+      ${this.infoBox(`
+        <p><strong>Categoria:</strong> ${data.categoria}</p>
+        <p><strong>Monto:</strong> ${data.monto}</p>
+      `)}
+      <p>Ya estas oficialmente inscripto/a. Preparate para competir!</p>
+      ${this.buttonHtml(`${this.frontendUrl}/tournaments/${data.tournamentId}`, 'Ver Torneo')}
+    `);
+    return this.enviarEmail(email, `Pago Confirmado - ${data.torneoNombre}`, html);
+  }
+
+  async enviarInscripcionRechazada(
+    email: string,
+    nombre: string,
+    data: { torneoNombre: string; categoria: string; motivo: string },
+  ) {
+    const html = this.wrapTemplate(`
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Inscripcion Rechazada</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Tu inscripcion al torneo <strong>${data.torneoNombre}</strong> fue rechazada.</p>
+      ${this.infoBox(`
+        <p><strong>Categoria:</strong> ${data.categoria}</p>
+        <p><strong>Motivo:</strong> ${data.motivo}</p>
+      `)}
+      <p style="color: ${this.COLORS.secondary}; font-size: 13px;">Si crees que es un error, contacta al organizador del torneo.</p>
+      ${this.buttonHtml(`${this.frontendUrl}/inscripciones`, 'Ver Mis Inscripciones')}
+    `);
+    return this.enviarEmail(email, `Inscripcion Rechazada - ${data.torneoNombre}`, html);
+  }
+
+  async enviarTorneoCancelado(
+    email: string,
+    nombre: string,
+    data: { torneoNombre: string; motivo?: string },
+  ) {
+    const motivoText = data.motivo
+      ? `<p><strong>Motivo:</strong> ${data.motivo}</p>`
+      : '';
+    const html = this.wrapTemplate(`
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Torneo Cancelado</h2>
+      <p>Hola <strong>${nombre}</strong>,</p>
+      <p>Lamentamos informarte que el torneo <strong>${data.torneoNombre}</strong> ha sido cancelado.</p>
+      ${motivoText ? this.infoBox(motivoText) : ''}
+      <p style="color: ${this.COLORS.secondary}; font-size: 13px;">Si tenias un pago pendiente o confirmado, contacta al organizador para mas informacion.</p>
+      ${this.buttonHtml(`${this.frontendUrl}/tournaments`, 'Ver Torneos')}
+    `);
+    return this.enviarEmail(email, `Torneo Cancelado - ${data.torneoNombre}`, html);
+  }
+
   async enviarResumenSemanal(email: string, nombre: string, datos: any) {
     // Ranking change indicator
     let rankingChange = '';
@@ -263,7 +351,10 @@ export class EmailService {
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: ${this.COLORS.bg}; color: ${this.COLORS.text}; padding: 32px; border-radius: 12px;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <span style="font-size: 28px; font-weight: bold; color: ${this.COLORS.primary};">FairPadel</span>
+          ${this.logoUrl
+            ? `<img src="${this.logoUrl}" alt="FairPadel" width="180" style="display:block;margin:0 auto;max-width:180px;height:auto;" />`
+            : `<span style="font-size: 28px; font-weight: bold; color: ${this.COLORS.primary};">FairPadel</span>`
+          }
         </div>
         ${body}
         <hr style="border: none; border-top: 1px solid ${this.COLORS.border}; margin: 24px 0;" />

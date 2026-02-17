@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsEnum } from 'class-validator';
+import { IsNotEmpty, IsString, IsEnum, IsOptional, IsIn } from 'class-validator';
 
 export class CreateInscripcionDto {
   @IsNotEmpty()
@@ -20,4 +20,8 @@ export class CreateInscripcionDto {
   @IsNotEmpty()
   @IsEnum(['BANCARD', 'TRANSFERENCIA', 'EFECTIVO'])
   metodoPago: 'BANCARD' | 'TRANSFERENCIA' | 'EFECTIVO';
+
+  @IsOptional()
+  @IsIn(['COMPLETO', 'INDIVIDUAL'])
+  modoPagoInscripcion?: 'COMPLETO' | 'INDIVIDUAL';
 }

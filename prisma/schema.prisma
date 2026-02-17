@@ -73,6 +73,11 @@ enum PagoEstado {
   REEMBOLSADO
 }
 
+enum ModoPagoInscripcion {
+  COMPLETO     // Un jugador paga por ambos
+  INDIVIDUAL   // Cada jugador paga su mitad
+}
+
 enum MatchStatus {
   PROGRAMADO
   EN_JUEGO
@@ -228,6 +233,7 @@ model User {
   likesPublicaciones        LikePublicacion[]
   comentariosPublicaciones  ComentarioPublicacion[]
   alertasPersonalizadas     AlertaPersonalizada[]
+  pagos                     Pago[]              @relation("PagosJugador")
 
   @@map("users")
 }
@@ -498,6 +504,7 @@ model Tournament {
   circuitoId          String?           @map("circuito_id")
   minutosPorPartido   Int               @default(60) @map("minutos_por_partido")
   habilitarBancard    Boolean           @default(false) @map("habilitar_bancard")
+  comisionPorcentaje  Decimal?          @map("comision_porcentaje") @db.Decimal(5, 2)
   slug                String?           @unique
   organizadorId       String            @map("organizador_id")
   createdAt           DateTime          @default(now()) @map("created_at")
@@ -606,19 +613,20 @@ model Pareja {
 }
 
 model Inscripcion {
-  id           String             @id @default(uuid())
-  tournamentId String             @map("tournament_id")
-  parejaId     String             @map("pareja_id")
-  categoryId   String             @map("category_id")
+  id           String                @id @default(uuid())
+  tournamentId String                @map("tournament_id")
+  parejaId     String                @map("pareja_id")
+  categoryId   String                @map("category_id")
   modalidad    Modalidad
-  estado       InscripcionEstado  @default(PENDIENTE_PAGO)
-  createdAt    DateTime           @default(now()) @map("created_at")
-  updatedAt    DateTime           @updatedAt @map("updated_at")
+  estado       InscripcionEstado     @default(PENDIENTE_PAGO)
+  modoPago     ModoPagoInscripcion?  @map("modo_pago")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
 
   tournament   Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   pareja       Pareja            @relation(fields: [parejaId], references: [id], onDelete: Cascade)
   category     Category          @relation(fields: [categoryId], references: [id])
-  pago         Pago?
+  pagos        Pago[]
   comprobantes ComprobantePago[]
 
   @@map("inscripciones")
@@ -626,7 +634,8 @@ model Inscripcion {
 
 model Pago {
   id             String       @id @default(uuid())
-  inscripcionId  String       @unique @map("inscripcion_id")
+  inscripcionId  String       @map("inscripcion_id")
+  jugadorId      String?      @map("jugador_id")
   metodoPago     MetodoPago   @map("metodo_pago")
   monto          Decimal      @db.Decimal(10, 2)
   comision       Decimal      @db.Decimal(10, 2)
@@ -637,6 +646,7 @@ model Pago {
   createdAt      DateTime     @default(now()) @map("created_at")
 
   inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+  jugador     User?       @relation("PagosJugador", fields: [jugadorId], references: [id])
 
   @@map("pagos")
 }

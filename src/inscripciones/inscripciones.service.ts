@@ -24,6 +24,19 @@ export class InscripcionesService {
     private logrosService: LogrosService,
   ) {}
 
+  /**
+   * Get commission percentage: tournament-specific override OR global default.
+   */
+  private async getComisionPorcentaje(tournament: any, tx: any): Promise<number> {
+    if (tournament.comisionPorcentaje != null) {
+      return parseFloat(tournament.comisionPorcentaje.toString()) / 100;
+    }
+    const config = await tx.configuracionSistema.findUnique({
+      where: { clave: 'COMISION_INSCRIPCION' },
+    });
+    return config ? parseFloat(config.valor) / 100 : 0.05;
+  }
+
   async create(createInscripcionDto: CreateInscripcionDto, userId: string) {
     const {
       tournamentId,
@@ -31,6 +44,7 @@ export class InscripcionesService {
       modalidad,
       jugador2Documento,
       metodoPago,
+      modoPagoInscripcion,
     } = createInscripcionDto;
 
     // ── Pre-transaction validations (read-only) ──
@@ -222,37 +236,109 @@ export class InscripcionesService {
         },
       });
 
-      // Crear registro de pago si no es gratis
+      // Crear registro(s) de pago si no es gratis
       if (!esGratis) {
-        const configComision = await tx.configuracionSistema.findUnique({
-          where: { clave: 'COMISION_INSCRIPCION' },
-        });
-        const porcentajeComision = configComision
-          ? parseFloat(configComision.valor) / 100
-          : 0.05;
+        const porcentajeComision = await this.getComisionPorcentaje(tournament, tx);
+        const costoTotal = tournament.costoInscripcion.toNumber();
+        const costoPorJugador = costoTotal / 2;
+        const modo = modoPagoInscripcion || 'COMPLETO';
 
-        const monto = tournament.costoInscripcion.toNumber();
-        const comision = monto * porcentajeComision;
-
-        await tx.pago.create({
-          data: {
-            inscripcionId: inscripcion.id,
-            metodoPago: metodoPago as any,
-            monto,
-            comision,
-            estado: 'PENDIENTE',
-          },
+        // Set modoPago on the inscription
+        await tx.inscripcion.update({
+          where: { id: inscripcion.id },
+          data: { modoPago: modo },
         });
+
+        if (modo === 'INDIVIDUAL') {
+          // 2 pagos: uno por cada jugador
+          const comisionPorJugador = costoPorJugador * porcentajeComision;
+
+          // Pago jugador 1 (el que está inscribiendo)
+          await tx.pago.create({
+            data: {
+              inscripcionId: inscripcion.id,
+              jugadorId: userId,
+              metodoPago: metodoPago as any,
+              monto: costoPorJugador,
+              comision: comisionPorJugador,
+              estado: 'PENDIENTE',
+            },
+          });
+
+          // Pago jugador 2 (pendiente hasta que pague)
+          const jugador2Db = await tx.user.findUnique({ where: { documento: jugador2Documento } });
+          await tx.pago.create({
+            data: {
+              inscripcionId: inscripcion.id,
+              jugadorId: jugador2Db?.id || null,
+              metodoPago: metodoPago as any,
+              monto: costoPorJugador,
+              comision: comisionPorJugador,
+              estado: 'PENDIENTE',
+            },
+          });
+        } else {
+          // COMPLETO: 1 pago con el total, comisión sobre el total
+          const comisionTotal = costoTotal * porcentajeComision;
+          await tx.pago.create({
+            data: {
+              inscripcionId: inscripcion.id,
+              jugadorId: userId,
+              metodoPago: metodoPago as any,
+              monto: costoTotal,
+              comision: comisionTotal,
+              estado: 'PENDIENTE',
+            },
+          });
+        }
       }
 
-      // Notificar si es gratis (fuera del bloque crítico, fire-and-forget)
+      // Fire-and-forget notifications after transaction
+      const formatMonto = (n: number) => `Gs. ${new Intl.NumberFormat('es-PY').format(n)}`;
+      const costoPair = tournament.costoInscripcion.toNumber();
+      const jugador1Nombre = inscripcion.pareja?.jugador1;
+      const jugador2Nombre = inscripcion.pareja?.jugador2;
+      const torneoNombre = inscripcion.tournament?.nombre || 'Torneo';
+      const categoriaNombre = inscripcion.category?.nombre || 'Categoría';
+
       if (esGratis) {
-        // Schedule notification outside transaction
+        // Gratis: send inscription confirmed
         setImmediate(async () => {
           try {
             await this.enviarNotificacionInscripcion(inscripcion);
           } catch (e) {
             this.logger.error(`Error notificando inscripcion gratuita: ${e.message}`);
+          }
+        });
+      } else {
+        // Paid: send inscription registered (pending payment)
+        const estadoLabel = estadoInicial === 'PENDIENTE_PAGO_PRESENCIAL' ? 'Pendiente pago presencial' : 'Pendiente de pago';
+        const metodoLabel = metodoPago === 'EFECTIVO' ? 'Efectivo' : metodoPago;
+
+        setImmediate(async () => {
+          try {
+            const notifData = {
+              torneoNombre,
+              categoria: categoriaNombre,
+              monto: formatMonto(costoPair),
+              metodoPago: metodoLabel,
+              estado: estadoLabel,
+            };
+
+            if (jugador1Nombre) {
+              await this.notificacionesService.notificarInscripcionRegistrada(
+                jugador1Nombre.id,
+                { ...notifData, companero: jugador2Nombre ? `${jugador2Nombre.nombre} ${jugador2Nombre.apellido || ''}`.trim() : 'Por confirmar' },
+              );
+            }
+            if (jugador2Nombre) {
+              await this.notificacionesService.notificarInscripcionRegistrada(
+                jugador2Nombre.id,
+                { ...notifData, companero: jugador1Nombre ? `${jugador1Nombre.nombre} ${jugador1Nombre.apellido || ''}`.trim() : 'Por confirmar' },
+              );
+            }
+          } catch (e) {
+            this.logger.error(`Error notificando inscripcion registrada: ${e.message}`);
           }
         });
       }
@@ -276,7 +362,7 @@ export class InscripcionesService {
         },
         tournament: true,
         category: true,
-        pago: true,
+        pagos: true,
         comprobantes: {
           orderBy: { createdAt: 'desc' },
         },
@@ -327,7 +413,7 @@ export class InscripcionesService {
         },
         tournament: true,
         category: true,
-        pago: true,
+        pagos: true,
         comprobantes: {
           orderBy: { createdAt: 'desc' },
         },
@@ -376,7 +462,7 @@ export class InscripcionesService {
           },
         },
         category: true,
-        pago: true,
+        pagos: true,
         comprobantes: {
           orderBy: { createdAt: 'desc' },
         },
@@ -469,7 +555,7 @@ export class InscripcionesService {
         pareja: { include: { jugador1: true, jugador2: true } },
         tournament: true,
         category: true,
-        pago: true,
+        pagos: true,
         comprobantes: true,
       },
     });
@@ -490,16 +576,20 @@ export class InscripcionesService {
       );
     }
 
-    // Actualizar Pago record si existe
-    if (inscripcion.pago) {
-      await this.prisma.pago.update({
-        where: { id: inscripcion.pago.id },
-        data: {
-          estado: 'CONFIRMADO',
-          fechaPago: inscripcion.pago.fechaPago || new Date(),
-          fechaConfirm: new Date(),
-        },
-      });
+    // Actualizar todos los Pago records
+    if (inscripcion.pagos && inscripcion.pagos.length > 0) {
+      for (const pago of inscripcion.pagos) {
+        if (pago.estado === 'PENDIENTE') {
+          await this.prisma.pago.update({
+            where: { id: pago.id },
+            data: {
+              estado: 'CONFIRMADO',
+              fechaPago: pago.fechaPago || new Date(),
+              fechaConfirm: new Date(),
+            },
+          });
+        }
+      }
     }
 
     // Aprobar comprobantes pendientes
@@ -518,13 +608,27 @@ export class InscripcionesService {
         },
         tournament: true,
         category: true,
-        pago: true,
+        pagos: true,
       },
     });
 
-    // Notificar ambos jugadores
+    // Notificar ambos jugadores (inscripción confirmada + pago confirmado)
     try {
       await this.enviarNotificacionInscripcion(inscripcionConfirmada);
+
+      // Also send "pago confirmado" notification
+      const formatMonto = (n: number) => `Gs. ${new Intl.NumberFormat('es-PY').format(n)}`;
+      const pagoData = {
+        torneoNombre: inscripcionConfirmada.tournament?.nombre || 'Torneo',
+        categoria: inscripcionConfirmada.category?.nombre || 'Categoría',
+        monto: formatMonto(inscripcionConfirmada.tournament?.costoInscripcion?.toNumber() || 0),
+        tournamentId: inscripcionConfirmada.tournament?.id || '',
+      };
+
+      const j1 = inscripcionConfirmada.pareja?.jugador1;
+      const j2 = inscripcionConfirmada.pareja?.jugador2;
+      if (j1) await this.notificacionesService.notificarPagoConfirmado(j1.id, pagoData);
+      if (j2) await this.notificacionesService.notificarPagoConfirmado(j2.id, pagoData);
     } catch (e) {
       this.logger.error(`Error notificando inscripcion confirmada: ${e.message}`);
     }
@@ -557,12 +661,16 @@ export class InscripcionesService {
       );
     }
 
-    // Actualizar Pago record
-    if (inscripcion.pago) {
-      await this.prisma.pago.update({
-        where: { id: inscripcion.pago.id },
-        data: { estado: 'RECHAZADO' },
-      });
+    // Actualizar todos los Pago records
+    if (inscripcion.pagos && inscripcion.pagos.length > 0) {
+      for (const pago of inscripcion.pagos) {
+        if (pago.estado === 'PENDIENTE') {
+          await this.prisma.pago.update({
+            where: { id: pago.id },
+            data: { estado: 'RECHAZADO' },
+          });
+        }
+      }
     }
 
     // Rechazar comprobantes pendientes
@@ -575,17 +683,146 @@ export class InscripcionesService {
     });
 
     // Rechazar inscripción
-    return this.prisma.inscripcion.update({
+    const inscripcionRechazada = await this.prisma.inscripcion.update({
       where: { id: inscripcionId },
       data: { estado: 'RECHAZADA' },
       include: {
         pareja: {
           include: { jugador1: true, jugador2: true },
         },
+        tournament: true,
         category: true,
-        pago: true,
+        pagos: true,
       },
     });
+
+    // Notificar ambos jugadores del rechazo
+    setImmediate(async () => {
+      try {
+        const rechazData = {
+          torneoNombre: inscripcionRechazada.tournament?.nombre || 'Torneo',
+          categoria: inscripcionRechazada.category?.nombre || 'Categoría',
+          motivo: motivo || 'Rechazado por el organizador',
+        };
+        const j1 = inscripcionRechazada.pareja?.jugador1;
+        const j2 = inscripcionRechazada.pareja?.jugador2;
+        if (j1) await this.notificacionesService.notificarInscripcionRechazada(j1.id, rechazData);
+        if (j2) await this.notificacionesService.notificarInscripcionRechazada(j2.id, rechazData);
+      } catch (e) {
+        this.logger.error(`Error notificando inscripcion rechazada: ${e.message}`);
+      }
+    });
+
+    return inscripcionRechazada;
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // INDIVIDUAL PAYMENT METHODS
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Player pays their individual part of an INDIVIDUAL inscription.
+   */
+  async pagarMiParte(inscripcionId: string, userId: string, metodoPago?: string) {
+    const inscripcion = await this.findOne(inscripcionId);
+
+    // Verify user is part of the pareja
+    const isInPareja =
+      inscripcion.pareja.jugador1Id === userId ||
+      inscripcion.pareja.jugador2Id === userId;
+    if (!isInPareja) {
+      throw new ForbiddenException('No eres parte de esta inscripción');
+    }
+
+    if (inscripcion.modoPago !== 'INDIVIDUAL') {
+      throw new BadRequestException('Esta inscripción no es de pago individual');
+    }
+
+    // Find the pending pago for this user
+    const miPago = inscripcion.pagos?.find(
+      (p: any) => p.jugadorId === userId && p.estado === 'PENDIENTE',
+    );
+    if (!miPago) {
+      throw new BadRequestException('No tienes un pago pendiente en esta inscripción');
+    }
+
+    // Update metodo de pago if provided
+    if (metodoPago) {
+      await this.prisma.pago.update({
+        where: { id: miPago.id },
+        data: { metodoPago: metodoPago as any },
+      });
+    }
+
+    return this.findOne(inscripcionId);
+  }
+
+  /**
+   * Confirm a single pago (for individual payment mode).
+   * When all pagos are confirmed, the inscription becomes CONFIRMADA.
+   */
+  async confirmarPagoIndividual(pagoId: string) {
+    const pago = await this.prisma.pago.findUnique({
+      where: { id: pagoId },
+      include: { inscripcion: { include: { pagos: true, pareja: { include: { jugador1: true, jugador2: true } }, tournament: true, category: true } } },
+    });
+
+    if (!pago) throw new NotFoundException('Pago no encontrado');
+    if (pago.estado !== 'PENDIENTE') {
+      throw new BadRequestException(`No se puede confirmar un pago en estado ${pago.estado}`);
+    }
+
+    // Confirm this pago
+    await this.prisma.pago.update({
+      where: { id: pagoId },
+      data: {
+        estado: 'CONFIRMADO',
+        fechaPago: pago.fechaPago || new Date(),
+        fechaConfirm: new Date(),
+      },
+    });
+
+    // Check if ALL pagos for this inscription are now confirmed
+    const allPagos = pago.inscripcion.pagos;
+    const otherPagosConfirmed = allPagos
+      .filter((p: any) => p.id !== pagoId)
+      .every((p: any) => p.estado === 'CONFIRMADO');
+
+    if (otherPagosConfirmed) {
+      // All pagos confirmed → confirm inscription
+      await this.prisma.inscripcion.update({
+        where: { id: pago.inscripcionId },
+        data: { estado: 'CONFIRMADA' },
+      });
+
+      // Approve pending comprobantes
+      await this.prisma.comprobantePago.updateMany({
+        where: { inscripcionId: pago.inscripcionId, estado: 'PENDIENTE' },
+        data: { estado: 'APROBADA' },
+      });
+
+      // Notify players
+      try {
+        const insc = pago.inscripcion;
+        await this.enviarNotificacionInscripcion(insc);
+
+        const formatMonto = (n: number) => `Gs. ${new Intl.NumberFormat('es-PY').format(n)}`;
+        const pagoData = {
+          torneoNombre: insc.tournament?.nombre || 'Torneo',
+          categoria: insc.category?.nombre || 'Categoría',
+          monto: formatMonto(insc.tournament?.costoInscripcion?.toNumber() || 0),
+          tournamentId: insc.tournament?.id || '',
+        };
+        const j1 = insc.pareja?.jugador1;
+        const j2 = insc.pareja?.jugador2;
+        if (j1) await this.notificacionesService.notificarPagoConfirmado(j1.id, pagoData);
+        if (j2) await this.notificacionesService.notificarPagoConfirmado(j2.id, pagoData);
+      } catch (e) {
+        this.logger.error(`Error notificando pago individual confirmado: ${e.message}`);
+      }
+    }
+
+    return this.findOne(pago.inscripcionId);
   }
 
   // ═══════════════════════════════════════════════════════
