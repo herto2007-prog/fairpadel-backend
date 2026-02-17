@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { LogrosService } from '../logros/logros.service';
 import { MensajeDto, SolicitudJugarDto } from './dto';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class SocialService {
   constructor(
     private prisma: PrismaService,
     private notificacionesService: NotificacionesService,
+    private logrosService: LogrosService,
   ) {}
 
   // ============ SEGUIMIENTOS ============
@@ -72,6 +74,13 @@ export class SocialService {
       }
     } catch (e) {
       this.logger.error(`Error notificando follow: ${e.message}`);
+    }
+
+    // Verificar logros del usuario seguido (puede desbloquear "Social"/"Influencer")
+    try {
+      await this.logrosService.verificarLogros(seguidoId);
+    } catch (e) {
+      this.logger.error(`Error verificando logros follow: ${e.message}`);
     }
 
     return { message: 'Ahora sigues a este usuario', seguimiento };
@@ -180,15 +189,6 @@ export class SocialService {
 
   async enviarMensaje(remitenteId: string, dto: MensajeDto) {
     const { destinatarioId, contenido } = dto;
-
-    // Verificar que el remitente es Premium
-    const remitente = await this.prisma.user.findUnique({
-      where: { id: remitenteId },
-    });
-
-    if (!remitente.esPremium) {
-      throw new ForbiddenException('Debes ser Premium para enviar mensajes');
-    }
 
     // Verificar que el destinatario existe
     const destinatario = await this.prisma.user.findUnique({

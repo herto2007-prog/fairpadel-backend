@@ -30,6 +30,7 @@ export class RankingsService {
             genero: true,
             ciudad: true,
             fotoUrl: true,
+            esPremium: true,
           },
         },
       },
@@ -76,6 +77,7 @@ export class RankingsService {
             genero: true,
             ciudad: true,
             fotoUrl: true,
+            esPremium: true,
           },
         },
       },
@@ -100,6 +102,7 @@ export class RankingsService {
             genero: true,
             ciudad: true,
             fotoUrl: true,
+            esPremium: true,
           },
         },
       },
@@ -331,5 +334,81 @@ export class RankingsService {
     console.log('Recalculando rankings globales...');
     // Implementación futura si es necesario
     return { message: 'Rankings recalculados' };
+  }
+
+  /**
+   * Update win/loss stats and streak for a player after a match result.
+   * Called from MatchesService after cargarResultado().
+   */
+  async actualizarEstadisticasPartido(
+    jugadorId: string,
+    esVictoria: boolean,
+    esCampeonato: boolean,
+  ) {
+    const jugador = await this.prisma.user.findUnique({
+      where: { id: jugadorId },
+      select: { id: true, genero: true },
+    });
+
+    if (!jugador) return;
+
+    // Find or create GLOBAL ranking
+    let ranking = await this.prisma.ranking.findFirst({
+      where: {
+        jugadorId,
+        tipoRanking: 'GLOBAL',
+        alcance: 'GLOBAL',
+      },
+    });
+
+    if (!ranking) {
+      ranking = await this.prisma.ranking.create({
+        data: {
+          jugadorId,
+          tipoRanking: 'GLOBAL',
+          alcance: 'GLOBAL',
+          genero: jugador.genero,
+          puntosTotales: 0,
+          posicion: 999999,
+          torneosJugados: 0,
+        },
+      });
+    }
+
+    const updateData: any = {
+      ultimaActualizacion: new Date(),
+    };
+
+    if (esVictoria) {
+      updateData.victorias = { increment: 1 };
+      updateData.rachaActual = ranking.rachaActual >= 0 ? ranking.rachaActual + 1 : 1;
+    } else {
+      updateData.derrotas = { increment: 1 };
+      updateData.rachaActual = 0;
+    }
+
+    if (esCampeonato && esVictoria) {
+      updateData.campeonatos = { increment: 1 };
+    }
+
+    // Update win percentage
+    const newVictorias = (ranking.victorias || 0) + (esVictoria ? 1 : 0);
+    const newDerrotas = (ranking.derrotas || 0) + (esVictoria ? 0 : 1);
+    const totalPartidos = newVictorias + newDerrotas;
+    if (totalPartidos > 0) {
+      updateData.porcentajeVictorias = Number(
+        ((newVictorias / totalPartidos) * 100).toFixed(2),
+      );
+    }
+
+    // Update best position if current is better
+    if (ranking.posicion < (ranking.mejorPosicion || 999999)) {
+      updateData.mejorPosicion = ranking.posicion;
+    }
+
+    await this.prisma.ranking.update({
+      where: { id: ranking.id },
+      data: updateData,
+    });
   }
 }

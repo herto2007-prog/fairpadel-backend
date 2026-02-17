@@ -227,6 +227,7 @@ model User {
   publicacionesFeed         PublicacionFeed[]
   likesPublicaciones        LikePublicacion[]
   comentariosPublicaciones  ComentarioPublicacion[]
+  alertasPersonalizadas     AlertaPersonalizada[]
 
   @@map("users")
 }
@@ -835,12 +836,15 @@ model SolicitudJugar {
 }
 
 model Logro {
-  id          String   @id @default(uuid())
-  nombre      String   @unique
-  descripcion String   @db.Text
-  icono       String
-  condicion   String   @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
+  id              String   @id @default(uuid())
+  nombre          String   @unique
+  descripcion     String   @db.Text
+  icono           String
+  condicion       String   @db.Text
+  categoria       String   @default("general") // "torneo", "social", "racha", "ranking", "premium"
+  requierePremium Boolean  @default(false) @map("requiere_premium")
+  orden           Int      @default(0)
+  createdAt       DateTime @default(now()) @map("created_at")
 
   usuariosQueDesbloquearon UsuarioLogro[]
 
@@ -1222,4 +1226,30 @@ model ComentarioPublicacion {
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("comentarios_publicaciones")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO: ALERTAS PERSONALIZADAS (PREMIUM)
+// ═══════════════════════════════════════════════════════
+
+enum TipoAlertaPersonalizada {
+  TORNEO_EN_MI_CIUDAD
+  TORNEO_MI_CATEGORIA
+  RIVAL_INSCRITO
+  RANKING_CAMBIO
+}
+
+model AlertaPersonalizada {
+  id        String                  @id @default(uuid())
+  userId    String                  @map("user_id")
+  tipo      TipoAlertaPersonalizada
+  activa    Boolean                 @default(true)
+  config    Json?
+  createdAt DateTime                @default(now()) @map("created_at")
+  updatedAt DateTime                @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tipo])
+  @@map("alertas_personalizadas")
 }

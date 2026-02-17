@@ -14,25 +14,12 @@ export class FotosService {
   ) {}
 
   async subirFoto(userId: string, file: Express.Multer.File, data: any) {
-    // Verificar límite de fotos para usuarios no premium
     const usuario = await this.prisma.user.findUnique({
       where: { id: userId },
     });
 
     if (!usuario) {
       throw new NotFoundException('Usuario no encontrado');
-    }
-
-    if (!usuario.esPremium) {
-      const fotosActuales = await this.prisma.foto.count({
-        where: { userId },
-      });
-
-      if (fotosActuales >= 6) {
-        throw new BadRequestException(
-          'Has alcanzado el límite de 6 fotos. Hazte Premium para fotos ilimitadas',
-        );
-      }
     }
 
     // Determinar folder y transformación según tipo
@@ -363,15 +350,11 @@ export class FotosService {
   }
 
   async contarFotosUsuario(userId: string) {
-    const usuario = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { esPremium: true },
-    });
     const count = await this.prisma.foto.count({ where: { userId } });
     return {
       count,
-      limit: usuario?.esPremium ? null : 6,
-      esPremium: usuario?.esPremium || false,
+      limit: null,
+      esPremium: true, // Photos are free for all users now
     };
   }
 

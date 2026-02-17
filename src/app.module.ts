@@ -23,6 +23,8 @@ import { CircuitosModule } from './circuitos/circuitos.module';
 import { CategoriasModule } from './categorias/categorias.module';
 import { PublicidadModule } from './publicidad/publicidad.module';
 import { FeedModule } from './feed/feed.module';
+import { LogrosModule } from './logros/logros.module';
+import { AlertasModule } from './alertas/alertas.module';
 
 @Module({
   imports: [
@@ -61,6 +63,8 @@ import { FeedModule } from './feed/feed.module';
     CategoriasModule,
     PublicidadModule,
     FeedModule,
+    LogrosModule,
+    AlertasModule,
   ],
   controllers: [AppController],
   providers: [

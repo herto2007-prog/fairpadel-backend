@@ -10,6 +10,7 @@ import { RankingsService } from '../rankings/rankings.service';
 import { CategoriasService } from '../categorias/categorias.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { FeedService } from '../feed/feed.service';
+import { LogrosService } from '../logros/logros.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
 import { calcularHoraFin } from './scheduling-utils';
 
@@ -23,6 +24,7 @@ export class MatchesService {
     private categoriasService: CategoriasService,
     private notificacionesService: NotificacionesService,
     private feedService: FeedService,
+    private logrosService: LogrosService,
   ) {}
 
   async findOne(id: string) {
@@ -267,6 +269,43 @@ export class MatchesService {
       }
     } catch (e) {
       this.logger.error(`Error creando publicación feed: ${e.message}`);
+    }
+
+    // Actualizar estadísticas de victoria/derrota y racha
+    const esFinal = match.ronda === 'FINAL';
+    try {
+      const [parejaGan, parejaPerd] = await Promise.all([
+        this.prisma.pareja.findUnique({
+          where: { id: ganadorId },
+          select: { jugador1Id: true, jugador2Id: true },
+        }),
+        this.prisma.pareja.findUnique({
+          where: { id: perdedorId },
+          select: { jugador1Id: true, jugador2Id: true },
+        }),
+      ]);
+
+      // Update winners' stats (victory, streak +1, championship if FINAL)
+      if (parejaGan) {
+        await this.rankingsService.actualizarEstadisticasPartido(parejaGan.jugador1Id, true, esFinal);
+        await this.rankingsService.actualizarEstadisticasPartido(parejaGan.jugador2Id, true, esFinal);
+      }
+
+      // Update losers' stats (loss, streak reset)
+      if (parejaPerd) {
+        await this.rankingsService.actualizarEstadisticasPartido(parejaPerd.jugador1Id, false, false);
+        await this.rankingsService.actualizarEstadisticasPartido(parejaPerd.jugador2Id, false, false);
+      }
+
+      // Verificar logros para todos los jugadores del partido
+      const userIds = new Set<string>();
+      if (parejaGan) { userIds.add(parejaGan.jugador1Id); userIds.add(parejaGan.jugador2Id); }
+      if (parejaPerd) { userIds.add(parejaPerd.jugador1Id); userIds.add(parejaPerd.jugador2Id); }
+      for (const uid of userIds) {
+        await this.logrosService.verificarLogros(uid);
+      }
+    } catch (e) {
+      this.logger.error(`Error actualizando estadísticas/logros: ${e.message}`);
     }
 
     // Verificar si la categoría está completa (todos los matches finalizados)

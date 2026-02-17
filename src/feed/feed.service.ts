@@ -11,14 +11,9 @@ export class FeedService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * Get feed for a premium user: posts from people they follow (who are also premium)
+   * Get feed: posts from people the user follows + own posts
    */
   async obtenerFeed(userId: string, page = 1, limit = 20) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user.esPremium) {
-      throw new ForbiddenException('Necesitas FairPadel Premium para acceder al feed');
-    }
-
     // Get IDs of users I follow
     const seguimientos = await this.prisma.seguimiento.findMany({
       where: { seguidorId: userId },
@@ -27,14 +22,13 @@ export class FeedService {
 
     const seguidosIds = seguimientos.map((s) => s.seguidoId);
 
-    // Include own posts + posts from followed premium users
+    // Include own posts + posts from followed users
     const publicaciones = await this.prisma.publicacionFeed.findMany({
       where: {
         OR: [
           { userId }, // My own posts
           {
             userId: { in: seguidosIds },
-            user: { esPremium: true }, // Only from premium followed users
           },
         ],
       },
@@ -113,11 +107,6 @@ export class FeedService {
    * Create a photo publication (user uploads photo to feed)
    */
   async crearPublicacionFoto(userId: string, contenido?: string, fotoId?: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user.esPremium) {
-      throw new ForbiddenException('Necesitas FairPadel Premium para publicar en el feed');
-    }
-
     if (!fotoId && !contenido) {
       throw new BadRequestException('Debes incluir una foto o contenido');
     }
@@ -200,11 +189,6 @@ export class FeedService {
    * Like/unlike a publication
    */
   async toggleLike(publicacionId: string, userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user.esPremium) {
-      throw new ForbiddenException('Necesitas FairPadel Premium');
-    }
-
     const existingLike = await this.prisma.likePublicacion.findUnique({
       where: {
         publicacionId_userId: { publicacionId, userId },
@@ -236,11 +220,6 @@ export class FeedService {
    * Comment on a publication
    */
   async comentar(publicacionId: string, userId: string, contenido: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user.esPremium) {
-      throw new ForbiddenException('Necesitas FairPadel Premium');
-    }
-
     const publicacion = await this.prisma.publicacionFeed.findUnique({
       where: { id: publicacionId },
     });

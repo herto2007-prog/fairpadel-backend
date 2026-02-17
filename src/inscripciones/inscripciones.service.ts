@@ -10,6 +10,7 @@ import { CreateInscripcionDto } from './dto/create-inscripcion.dto';
 import { ParejasService } from '../parejas/parejas.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { CloudinaryService } from '../fotos/cloudinary.service';
+import { LogrosService } from '../logros/logros.service';
 
 @Injectable()
 export class InscripcionesService {
@@ -20,6 +21,7 @@ export class InscripcionesService {
     private parejasService: ParejasService,
     private notificacionesService: NotificacionesService,
     private cloudinaryService: CloudinaryService,
+    private logrosService: LogrosService,
   ) {}
 
   async create(createInscripcionDto: CreateInscripcionDto, userId: string) {
@@ -525,6 +527,16 @@ export class InscripcionesService {
       await this.enviarNotificacionInscripcion(inscripcionConfirmada);
     } catch (e) {
       this.logger.error(`Error notificando inscripcion confirmada: ${e.message}`);
+    }
+
+    // Verificar logros para ambos jugadores
+    try {
+      if (inscripcionConfirmada.pareja) {
+        await this.logrosService.verificarLogros(inscripcionConfirmada.pareja.jugador1Id);
+        await this.logrosService.verificarLogros(inscripcionConfirmada.pareja.jugador2Id);
+      }
+    } catch (e) {
+      this.logger.error(`Error verificando logros inscripcion: ${e.message}`);
     }
 
     return inscripcionConfirmada;

@@ -220,17 +220,39 @@ export class EmailService {
   }
 
   async enviarResumenSemanal(email: string, nombre: string, datos: any) {
+    // Ranking change indicator
+    let rankingChange = '';
+    if (datos.posicionAnterior && datos.ranking && datos.posicionAnterior !== datos.ranking) {
+      const diff = datos.posicionAnterior - datos.ranking;
+      if (diff > 0) {
+        rankingChange = ` <span style="color: ${this.COLORS.success};">&#9650; ${diff}</span>`;
+      } else {
+        rankingChange = ` <span style="color: ${this.COLORS.primaryLight};">&#9660; ${Math.abs(diff)}</span>`;
+      }
+    }
+
+    const logrosSection = datos.logrosNuevos > 0
+      ? `<p style="margin-top: 12px;">🏅 <strong>${datos.logrosNuevos} logro${datos.logrosNuevos > 1 ? 's' : ''} nuevo${datos.logrosNuevos > 1 ? 's' : ''}</strong> esta semana!</p>`
+      : '';
+
+    const rachaSection = datos.rachaActual >= 3
+      ? `<p style="margin-top: 8px;">🔥 Racha actual: <strong>${datos.rachaActual} victorias consecutivas</strong></p>`
+      : '';
+
     const html = this.wrapTemplate(`
-      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Resumen Semanal</h2>
-      <p>Hola <strong>${nombre}</strong>,</p>
-      <ul style="padding-left: 20px;">
-        <li>Partidos jugados: ${datos.partidosJugados}</li>
-        <li>Victorias: ${datos.victorias}</li>
-        <li>Ranking actual: #${datos.ranking}</li>
-      </ul>
+      <h2 style="color: ${this.COLORS.primary}; margin: 0 0 16px 0;">Tu Resumen Semanal ⭐</h2>
+      <p>Hola <strong>${nombre}</strong>, asi fue tu semana:</p>
+      ${this.infoBox(`
+        <p><strong>Partidos jugados:</strong> ${datos.partidosJugados}</p>
+        <p><strong>Victorias:</strong> ${datos.victorias}</p>
+        <p><strong>Ranking actual:</strong> #${datos.ranking || '-'}${rankingChange}</p>
+      `)}
+      ${logrosSection}
+      ${rachaSection}
       ${this.buttonHtml(`${this.frontendUrl}/rankings`, 'Ver Rankings')}
+      <p style="color: ${this.COLORS.muted}; font-size: 11px; text-align: center;">Este resumen es exclusivo para suscriptores Premium.</p>
     `);
-    return this.enviarEmail(email, 'Resumen Semanal - FairPadel', html);
+    return this.enviarEmail(email, 'Tu Resumen Semanal - FairPadel ⭐', html);
   }
 
   // ═══════════════════════════════════════

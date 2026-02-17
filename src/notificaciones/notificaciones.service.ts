@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 import { SmsService } from './sms.service';
@@ -355,5 +356,101 @@ export class NotificacionesService {
         recibirSms: dto.recibirSms ?? true,
       },
     });
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // RESUMEN SEMANAL (CRON — PREMIUM)
+  // ═══════════════════════════════════════════════════════
+
+  @Cron('0 7 * * 1') // Every Monday at 7:00 AM
+  async enviarResumenesSemanales() {
+    this.logger.log('Iniciando envío de resúmenes semanales premium...');
+
+    try {
+      const premiumUsers = await this.prisma.user.findMany({
+        where: { esPremium: true, estado: 'ACTIVO' },
+        select: {
+          id: true,
+          nombre: true,
+          apellido: true,
+          email: true,
+          ciudad: true,
+        },
+      });
+
+      this.logger.log(`Usuarios premium activos: ${premiumUsers.length}`);
+
+      let enviados = 0;
+      for (const user of premiumUsers) {
+        try {
+          const datos = await this.calcularDatosSemana(user.id);
+
+          // Only send if there's activity or data worth reporting
+          if (datos.partidosJugados > 0 || datos.ranking > 0 || datos.logrosNuevos > 0) {
+            await this.emailService.enviarResumenSemanal(
+              user.email,
+              user.nombre,
+              datos,
+            );
+            enviados++;
+          }
+        } catch (e) {
+          this.logger.error(`Error resumen semanal para ${user.email}: ${e.message}`);
+        }
+      }
+
+      this.logger.log(`Resúmenes semanales enviados: ${enviados}/${premiumUsers.length}`);
+    } catch (e) {
+      this.logger.error(`Error en cron resumen semanal: ${e.message}`);
+    }
+  }
+
+  private async calcularDatosSemana(userId: string) {
+    const haceUnaSemana = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Matches de la última semana where user participated
+    const matchesSemana = await this.prisma.match.findMany({
+      where: {
+        estado: 'FINALIZADO',
+        createdAt: { gte: haceUnaSemana },
+        OR: [
+          { pareja1: { OR: [{ jugador1Id: userId }, { jugador2Id: userId }] } },
+          { pareja2: { OR: [{ jugador1Id: userId }, { jugador2Id: userId }] } },
+        ],
+      },
+      include: {
+        parejaGanadora: { select: { jugador1Id: true, jugador2Id: true } },
+      },
+    });
+
+    const victorias = matchesSemana.filter(
+      (m) =>
+        m.parejaGanadora &&
+        (m.parejaGanadora.jugador1Id === userId ||
+          m.parejaGanadora.jugador2Id === userId),
+    ).length;
+
+    // Current ranking
+    const ranking = await this.prisma.ranking.findFirst({
+      where: { jugadorId: userId, tipoRanking: 'GLOBAL' },
+      select: { posicion: true, posicionAnterior: true, rachaActual: true },
+    });
+
+    // Logros desbloqueados esta semana
+    const logrosNuevos = await this.prisma.usuarioLogro.count({
+      where: {
+        userId,
+        fechaDesbloqueo: { gte: haceUnaSemana },
+      },
+    });
+
+    return {
+      partidosJugados: matchesSemana.length,
+      victorias,
+      ranking: ranking?.posicion || 0,
+      posicionAnterior: ranking?.posicionAnterior || 0,
+      rachaActual: ranking?.rachaActual || 0,
+      logrosNuevos,
+    };
   }
 }

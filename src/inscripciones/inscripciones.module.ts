@@ -7,9 +7,10 @@ import { PagosModule } from '../pagos/pagos.module';
 import { TournamentRoleGuard } from '../auth/guards/tournament-role.guard';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 import { FotosModule } from '../fotos/fotos.module';
+import { LogrosModule } from '../logros/logros.module';
 
 @Module({
-  imports: [PrismaModule, ParejasModule, PagosModule, NotificacionesModule, FotosModule],
+  imports: [PrismaModule, ParejasModule, PagosModule, NotificacionesModule, FotosModule, LogrosModule],
   controllers: [InscripcionesController],
   providers: [InscripcionesService, TournamentRoleGuard],
   exports: [InscripcionesService],
