@@ -186,6 +186,7 @@ export class TournamentsService {
     estado?: string;
     nombre?: string;
     circuitoId?: string;
+    inscripcionesAbiertas?: boolean;
   }) {
     const where: any = {};
 
@@ -205,7 +206,11 @@ export class TournamentsService {
       where.circuitoId = filters.circuitoId;
     }
 
-    if (filters?.estado) {
+    // Special filter: only tournaments with truly open inscriptions
+    if (filters?.inscripcionesAbiertas) {
+      where.estado = 'PUBLICADO';
+      where.fechaLimiteInscr = { gte: new Date() };
+    } else if (filters?.estado) {
       where.estado = filters.estado;
     } else {
       where.estado = {
