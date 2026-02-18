@@ -538,6 +538,7 @@ export class SedesService {
             data: {
               tournamentId,
               sedeCanchaId: canchaConfig.sedeCanchaId,
+              esPrincipal: canchaConfig.esPrincipal === true,
               ...(horariosData.length > 0
                 ? { horarios: { create: horariosData } }
                 : {}),

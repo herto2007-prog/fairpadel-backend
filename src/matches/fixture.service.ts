@@ -10,6 +10,7 @@ import {
   generarTimeSlots,
   slotKey,
   getRondaOrden,
+  parseHoraToMinutes,
 } from './scheduling-utils';
 
 @Injectable()
@@ -484,9 +485,15 @@ export class FixtureService {
     const minutosPorPartido = tournament.minutosPorPartido || 60;
 
     // Generar fixture por cada categoría
+    // Ordenar: categorías de menor nivel primero (8va=orden 8, 1ra=orden 1)
+    // Así las finales de 8va quedan primero en el último día, y las de 1ra al final
+    const sortedCategorias = [...tournament.categorias].sort(
+      (a, b) => (b.category?.orden || 0) - (a.category?.orden || 0),
+    );
+
     const fixtures = [];
 
-    for (const categoriaRelacion of tournament.categorias) {
+    for (const categoriaRelacion of sortedCategorias) {
       const inscripcionesCategoria = tournament.inscripciones.filter(
         (i) => i.categoryId === categoriaRelacion.categoryId,
       );
@@ -889,6 +896,13 @@ export class FixtureService {
     // ════════════════════════════════════════
     const allMatches = [...createdR1, ...createdR2, ...createdBracketByRound.flat()];
 
+    // Obtener orden de la categoría para scheduling inteligente
+    // (8va=8, 1ra=1 — se sortea 8va primero para que sus finales queden antes)
+    const category = await tx.category.findUnique({
+      where: { id: categoryId },
+      select: { orden: true },
+    });
+
     if (torneoCanchas.length > 0) {
       await this.asignarCanchasYHorarios(
         tx,
@@ -896,6 +910,8 @@ export class FixtureService {
         torneoCanchas,
         tournamentId,
         minutosPorPartido,
+        10, // bufferMinutos
+        category?.orden,
       );
     }
 
@@ -1025,12 +1041,20 @@ export class FixtureService {
   }
 
   /**
-   * Motor de asignación de canchas y horarios.
-   * - Cross-categoría: consulta todos los matches existentes del torneo
-   * - Salta matches BYE/WO (no necesitan cancha)
-   * - Genera time slots discretos desde rangos de disponibilidad
-   * - Usa minutosPorPartido configurable (no hardcoded)
-   * - Ordena matches por ronda (primera ronda primero)
+   * Motor de asignación de canchas y horarios (2-pool algorithm).
+   *
+   * Lógica:
+   * 1. Partidos regulares (ACOMODACION_1/2, DIECISEISAVOS, OCTAVOS, CUARTOS)
+   *    → Se asignan con first-fit normal (primer slot libre, fecha ASC → hora ASC)
+   * 2. Partidos finales (SEMIFINAL, FINAL)
+   *    → Se asignan desde pool reverso (último día, última hora primero)
+   *    → FINAL prefiere cancha principal (esPrincipal)
+   *    → Así semis/finales quedan al final del torneo
+   *
+   * Cross-categoría: consulta todos los matches existentes del torneo.
+   * Salta matches BYE/WO/CANCELADO (no necesitan cancha).
+   * categoryOrden: usado para que categorías de menor nivel (8va=orden 8)
+   * se asignen primero, dejando los últimos slots para 1ra (orden 1).
    */
   private async asignarCanchasYHorarios(
     tx: PrismaTx,
@@ -1039,62 +1063,148 @@ export class FixtureService {
     tournamentId: string,
     minutosPorPartido: number,
     bufferMinutos: number = 10,
+    categoryOrden?: number,
   ): Promise<{ asignados: number; sinSlot: number }> {
     // 1. Cargar slots ya ocupados globalmente (cross-categoría)
     const ocupados = await this.obtenerSlotsOcupados(tx, tournamentId);
 
     // 2. Generar todos los time slots posibles desde rangos de disponibilidad
+    // allSlots viene ordenado: fecha ASC → hora ASC → cancha
     const allSlots = generarTimeSlots(torneoCanchas, minutosPorPartido, bufferMinutos);
 
     if (allSlots.length === 0) {
       return { asignados: 0, sinSlot: partidos.length };
     }
 
-    // 3. Filtrar: excluir matches WO/BYE (no necesitan cancha)
+    // 3. Filtrar: excluir matches WO/BYE/CANCELADO (no necesitan cancha)
     const matchesNeedingSlot = partidos.filter(
       (p) => p.estado !== 'WO' && p.estado !== 'CANCELADO',
     );
 
-    // 4. Ordenar matches por ronda (primera ronda primero, final último)
-    matchesNeedingSlot.sort((a, b) => {
+    // 4. Separar en 2 grupos: regulares vs finales
+    const regularMatches: any[] = [];
+    const finalMatches: any[] = [];
+
+    for (const m of matchesNeedingSlot) {
+      const orden = getRondaOrden(m.ronda);
+      if (orden >= 6) {
+        // SEMIFINAL (6) y FINAL (7)
+        finalMatches.push(m);
+      } else {
+        regularMatches.push(m);
+      }
+    }
+
+    // 5. Ordenar regulares: primera ronda primero (first-fit normal)
+    regularMatches.sort((a, b) => {
       const orderA = getRondaOrden(a.ronda);
       const orderB = getRondaOrden(b.ronda);
       if (orderA !== orderB) return orderA - orderB;
       return a.numeroRonda - b.numeroRonda;
     });
 
-    // 5. Asignar primer slot libre a cada match
+    // 6. Ordenar finales: FINAL primero (orden 7), luego SEMIFINAL (orden 6)
+    //    Así la final se asigna al último slot disponible, y las semis justo antes
+    finalMatches.sort((a, b) => {
+      const orderA = getRondaOrden(a.ronda);
+      const orderB = getRondaOrden(b.ronda);
+      if (orderA !== orderB) return orderB - orderA; // DESC: FINAL primero
+      return a.numeroRonda - b.numeroRonda;
+    });
+
+    // 7. Identificar cancha principal (para preferencia en finales)
+    const principalCanchaId = torneoCanchas.find((tc) => tc.esPrincipal)?.id || null;
+
+    // 8. Crear pool reverso para finales: fecha DESC → hora DESC → cancha principal primero
+    const finalSlots = [...allSlots].sort((a, b) => {
+      // Fecha descendente
+      const dateA = a.fecha.getTime();
+      const dateB = b.fecha.getTime();
+      if (dateA !== dateB) return dateB - dateA;
+
+      // Hora descendente
+      const horaA = parseHoraToMinutes(a.horaInicio);
+      const horaB = parseHoraToMinutes(b.horaInicio);
+      if (horaA !== horaB) return horaB - horaA;
+
+      // Cancha principal primero
+      if (principalCanchaId) {
+        const aIsPrincipal = a.torneoCanchaId === principalCanchaId ? 0 : 1;
+        const bIsPrincipal = b.torneoCanchaId === principalCanchaId ? 0 : 1;
+        if (aIsPrincipal !== bIsPrincipal) return aIsPrincipal - bIsPrincipal;
+      }
+
+      return a.torneoCanchaId.localeCompare(b.torneoCanchaId);
+    });
+
     let asignados = 0;
     let sinSlot = 0;
 
-    for (const partido of matchesNeedingSlot) {
+    // Helper: asignar un partido a un slot y marcar como ocupado
+    const assignSlot = async (partido: any, slot: typeof allSlots[0]) => {
+      await tx.match.update({
+        where: { id: partido.id },
+        data: {
+          torneoCanchaId: slot.torneoCanchaId,
+          fechaProgramada: slot.fecha,
+          horaProgramada: slot.horaInicio,
+          horaFinEstimada: calcularHoraFin(slot.horaInicio, minutosPorPartido),
+        },
+      });
+      const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
+      ocupados.add(key);
+      asignados++;
+    };
+
+    // 9. PRIMERO asignar partidos finales desde pool reverso
+    //    (último día, última hora, cancha principal preferida)
+    for (const partido of finalMatches) {
+      let assigned = false;
+      const isFinal = getRondaOrden(partido.ronda) === 7; // FINAL
+
+      if (isFinal && principalCanchaId) {
+        // Para la FINAL: intentar primero solo slots en cancha principal
+        for (const slot of finalSlots) {
+          if (slot.torneoCanchaId !== principalCanchaId) continue;
+          const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
+          if (!ocupados.has(key)) {
+            await assignSlot(partido, slot);
+            assigned = true;
+            break;
+          }
+        }
+      }
+
+      // Si no se asignó en cancha principal (o no es FINAL), usar pool reverso completo
+      if (!assigned) {
+        for (const slot of finalSlots) {
+          const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
+          if (!ocupados.has(key)) {
+            await assignSlot(partido, slot);
+            assigned = true;
+            break;
+          }
+        }
+      }
+
+      if (!assigned) sinSlot++;
+    }
+
+    // 10. DESPUÉS asignar partidos regulares con first-fit normal
+    //     (fecha ASC → hora ASC, ronda temprana primero)
+    for (const partido of regularMatches) {
       let assigned = false;
 
       for (const slot of allSlots) {
         const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
         if (!ocupados.has(key)) {
-          // Slot disponible → asignar
-          await tx.match.update({
-            where: { id: partido.id },
-            data: {
-              torneoCanchaId: slot.torneoCanchaId,
-              fechaProgramada: slot.fecha,
-              horaProgramada: slot.horaInicio,
-              horaFinEstimada: calcularHoraFin(slot.horaInicio, minutosPorPartido),
-            },
-          });
-
-          // Marcar como ocupado
-          ocupados.add(key);
-          asignados++;
+          await assignSlot(partido, slot);
           assigned = true;
           break;
         }
       }
 
-      if (!assigned) {
-        sinSlot++;
-      }
+      if (!assigned) sinSlot++;
     }
 
     return { asignados, sinSlot };

@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsString,
   IsUUID,
   ValidateNested,
@@ -29,6 +30,10 @@ export class HorarioDto {
 export class CanchaConfigDto {
   @IsUUID()
   sedeCanchaId: string;
+
+  @IsBoolean()
+  @IsOptional()
+  esPrincipal?: boolean;
 
   @IsArray()
   @ValidateNested({ each: true })

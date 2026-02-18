@@ -398,6 +398,7 @@ model TorneoCancha {
   id            String      @id @default(uuid())
   tournamentId  String      @map("tournament_id")
   sedeCanchaId  String      @map("sede_cancha_id")
+  esPrincipal   Boolean     @default(false) @map("es_principal")
   createdAt     DateTime    @default(now()) @map("created_at")
 
   tournament    Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
