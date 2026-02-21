@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RankingsService } from '../rankings/rankings.service';
 
@@ -1173,6 +1174,277 @@ export class AdminService {
       comisionPorcentaje: tournament.comisionPorcentaje,
       comisionGlobal: globalConfig ? parseFloat(globalConfig.valor) : 5,
       usandoGlobal: tournament.comisionPorcentaje === null,
+    };
+  }
+
+  // ============ SEED TEST DATA (TEMPORAL) ============
+
+  private readonly NOMBRES_M = [
+    'Carlos','Martin','Diego','Alejandro','Fernando','Gabriel','Sebastian','Nicolas',
+    'Matias','Lucas','Joaquin','Santiago','Andres','Rafael','Daniel','Pablo',
+    'Emiliano','Rodrigo','Tomas','Ignacio','Facundo','Bruno','Maximiliano','Federico',
+    'Agustin','Franco','Leandro','Gonzalo','Ramiro','Cristian','Marcelo','Hugo',
+    'Oscar','Esteban','Victor','Adrian','Julio','Cesar','Fabian','Hernan',
+    'Javier','Mauricio','Ricardo','Eduardo','Luis','Roberto','Alberto','Miguel',
+    'Sergio','Antonio','Manuel','Jorge','Francisco','Raul','Enrique','Alfredo',
+    'Gustavo','Walter','Ruben','Hector','Dario','Ivan','Claudio','Ariel',
+    'Leonardo','Nestor','Armando','Orlando','Ernesto','Angel','Damian','Joel',
+    'Lautaro','Thiago','Bautista','Benicio','Dante','Gael','Noah','Ian',
+    'Elias','Ciro','Valentin','Santino','Lorenzo','Simon','Mateo','Benjamin',
+    'Axel','Dylan','Alan','Kevin','Braian','Jonathan','Christian','Ezequiel',
+    'Mauro','Gerardo','Nelson','Rolando','Osvaldo','Reinaldo','Anibal','Felix',
+    'Pascual','Celestino','Amado','Bernardo','Isidro','Porfirio','Teofilo','Zoilo',
+    'Abundio','Candido','Demetrio','Epifanio','Florentino','Genaro','Hilario','Jacinto',
+    'Ladislao','Macedonio','Nicandro','Onesimo','Pancracio','Quirino','Rosendo','Silvestre',
+    'Telesforo','Ubaldo','Venancio','Wilfrido','Xenon','Yosef','Zenon','Americo',
+    'Baldomero','Calixto','Desiderio','Eusebio','Fulgencio','Gumersindo','Heriberto','Isidoro',
+    'Jeremias','Kleber','Lazaro','Metodio','Nicanor','Olegario','Primitivo','Remigio',
+  ];
+
+  private readonly NOMBRES_F = [
+    'Sofia','Valentina','Camila','Luciana','Maria','Isabella','Martina','Julieta',
+    'Catalina','Florencia','Agustina','Victoria','Natalia','Carolina','Daniela','Paula',
+    'Andrea','Romina','Micaela','Celeste','Antonella','Brenda','Gabriela','Fernanda',
+    'Rocio','Belen','Mariana','Lorena','Carla','Silvana','Claudia','Veronica',
+    'Patricia','Alejandra','Monica','Sandra','Laura','Elena','Teresa','Marta',
+    'Graciela','Noemi','Silvia','Liliana','Julia','Rosa','Ana','Estela',
+    'Alicia','Beatriz','Carmen','Dolores','Elvira','Fatima','Gloria','Herminia',
+    'Irma','Josefina','Karina','Leticia','Magdalena','Nilda','Olga','Pilar',
+    'Ramona','Soledad','Tamara','Ursula','Viviana','Ximena','Yolanda','Zulma',
+    'Aida','Blanca','Concepcion','Delia','Eugenia','Francisca','Gisela','Helena',
+    'Ines','Juana','Lidia','Miriam','Norma','Ofelia','Palmira','Rebeca',
+    'Sara','Tania','Vanesa','Wendy','Yasmin','Zenaida','Amalia','Berta',
+    'Celia','Diana','Emilia','Flavia','Gilda','Hilda','Ivana','Jessica',
+    'Lilian','Milagros','Nelida','Otilia','Priscila','Rafaela','Susana','Tatiana',
+    'Urania','Virginia','Wanda','Xiomara','Yesica','Zoraida','Aurora','Barbara',
+    'Cristina','Dora','Elsa','Felisa','Gladys','Hortensia','Irene','Jimena',
+    'Katia','Lucia','Malena','Nancy','Olivia','Penelope','Rita','Selena',
+    'Teodora','Uliana','Vera','Wilma','Xenia','Yamila','Zaira','Abril',
+    'Brisa','Clara','Debora','Esther','Fabiola','Guadalupe','Heidi','Iliana',
+    'Jazmin','Karen','Lourdes','Mabel','Noelia','Oriana','Paloma','Ruth',
+    'Samanta','Thelma','Uxia','Vilma','Yuliana','Zara','Alma','Bianca',
+    'Claudina','Dalila','Edith','Fiona','Griselda','Haydee','Ileana','Juanita',
+    'Kiara','Luisa','Marina','Nadia','Ornella','Perla','Raquel','Stella',
+    'Trinidad','Uriel','Valeria','Waleska','Yadira','Zunilda','Adela','Benita',
+    'Corina','Dominga',
+  ];
+
+  private readonly APELLIDOS = [
+    'Gonzalez','Lopez','Ramirez','Benitez','Gimenez','Martinez','Rojas','Fernandez',
+    'Acosta','Villalba','Gomez','Diaz','Perez','Torres','Romero','Alvarez',
+    'Ruiz','Mendoza','Ortiz','Silva','Castro','Morales','Vargas','Herrera',
+    'Medina','Flores','Rios','Cabrera','Sanchez','Delgado','Vera','Nunez',
+    'Peralta','Ayala','Cardozo','Espinola','Duarte','Gauto','Riveros','Aquino',
+    'Barrios','Centurion','Franco','Lezcano','Ojeda','Paredes','Rolon','Valenzuela',
+    'Arce','Bogado','Caballero','Dominguez','Escobar','Figueredo','Garcia','Insfran',
+    'Jara','Leguizamon','Maidana','Narvaez','Ocampo','Patino','Quintana','Recalde',
+    'Samudio','Toledo','Urdapilleta','Velazquez','Zacarias','Aguero','Brizuela','Chamorro',
+    'Echague','Fretes','Gamarra','Ibarra','Jimenez','Krivoshein','Laterza','Monges',
+    'Narvaja','Otazu','Pintos','Quinonez','Romagnoli','Sanabria','Torales','Urunaga',
+    'Vazquez','Yegros','Zarate','Almada','Baez','Coronel','Delvalle','Enciso',
+    'Ferreira','Godoy','Huerta','Irala','Jacquet','Klein','Lugo','Maldonado',
+    'Noguera','Ortigoza','Portillo','Ramoa','Saldivar','Talavera','Urbieta','Viveros',
+    'Ybarra','Zaldivar','Amarilla','Britez','Cantero','Davalos','Echeverria','Fleitas',
+    'Garay','Haedo','Insaurralde','Jover','Kallsen','Leiva','Montiel','Olmedo',
+    'Penayo','Samaniego','Taboada','Urrutia','Yaluk','Zarza','Arguello','Bobadilla',
+    'Colman','Dure','Etcheverry','Farina','Guzman','Isasi','Riquelme','Sotelo',
+  ];
+
+  private readonly CIUDADES = [
+    'Asuncion','Luque','San Lorenzo','Lambare','Fernando de la Mora',
+    'Capiata','Nemby','Mariano Roque Alonso','Villa Elisa','Aregua',
+  ];
+
+  async seedTestData(
+    tournamentId: string,
+    parejasPorCategoria: Record<string, number>,
+  ) {
+    // 1. Fetch tournament + categories
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        categorias: { include: { category: true } },
+        modalidades: true,
+      },
+    });
+
+    if (!torneo) throw new NotFoundException('Torneo no encontrado');
+
+    // 2. Separate categories by gender and calculate totals
+    const categoriasMasc: { tcId: string; catId: string; nombre: string; parejas: number }[] = [];
+    const categoriasFem: { tcId: string; catId: string; nombre: string; parejas: number }[] = [];
+
+    for (const tc of torneo.categorias) {
+      const numParejas = parejasPorCategoria[tc.categoryId] || 0;
+      if (numParejas <= 0) continue;
+
+      const entry = { tcId: tc.id, catId: tc.categoryId, nombre: tc.category.nombre, parejas: numParejas };
+      if (tc.category.tipo === 'MASCULINO') {
+        categoriasMasc.push(entry);
+      } else {
+        categoriasFem.push(entry);
+      }
+    }
+
+    const totalPlayersM = categoriasMasc.reduce((sum, c) => sum + c.parejas * 2, 0);
+    const totalPlayersF = categoriasFem.reduce((sum, c) => sum + c.parejas * 2, 0);
+
+    if (totalPlayersM + totalPlayersF === 0) {
+      throw new BadRequestException('No hay parejas para crear');
+    }
+
+    // 3. Get role + hash password
+    const rolJugador = await this.prisma.role.findUnique({ where: { nombre: 'jugador' } });
+    if (!rolJugador) throw new BadRequestException('Rol "jugador" no encontrado');
+    const passwordHash = await bcrypt.hash('test123', 10);
+
+    const modalidad = torneo.modalidades.length > 0 ? torneo.modalidades[0].modalidad : 'TRADICIONAL';
+    const monto = torneo.costoInscripcion ? Number(torneo.costoInscripcion) : 0;
+    const comision = monto * 0.05;
+
+    // 4. Create players
+    let jugadoresCreados = 0;
+
+    const crearJugadores = async (
+      total: number, genero: string, docStart: number, nombres: string[],
+    ): Promise<{ id: string; documento: string }[]> => {
+      const players: { id: string; documento: string }[] = [];
+      for (let i = 0; i < total; i++) {
+        const doc = `${docStart + i}`;
+        const nombre = nombres[i % nombres.length];
+        const apellido = this.APELLIDOS[i % this.APELLIDOS.length];
+        const suffix = i >= nombres.length ? `${Math.floor(i / nombres.length) + 1}` : '';
+        const ciudad = this.CIUDADES[i % this.CIUDADES.length];
+
+        let user = await this.prisma.user.findUnique({ where: { documento: doc } });
+        if (!user) {
+          user = await this.prisma.user.create({
+            data: {
+              documento: doc,
+              nombre: nombre + suffix,
+              apellido,
+              genero: genero as any,
+              email: `test.${genero.toLowerCase().charAt(0)}${doc}@fairpadel-test.com`,
+              telefono: `+595${genero === 'MASCULINO' ? '982' : '983'}${String(i + 1).padStart(6, '0')}`,
+              passwordHash,
+              estado: 'ACTIVO',
+              emailVerificado: true,
+              ciudad,
+            },
+          });
+          await this.prisma.userRole.create({ data: { userId: user.id, roleId: rolJugador.id } });
+          jugadoresCreados++;
+        }
+        players.push({ id: user.id, documento: user.documento });
+      }
+      return players;
+    };
+
+    const hombres = totalPlayersM > 0
+      ? await crearJugadores(totalPlayersM, 'MASCULINO', 4000001, this.NOMBRES_M)
+      : [];
+    const mujeres = totalPlayersF > 0
+      ? await crearJugadores(totalPlayersF, 'FEMENINO', 5000001, this.NOMBRES_F)
+      : [];
+
+    // 5. Create pairs & inscriptions
+    let parejasInscritas = 0;
+    let categoriasCerradas = 0;
+
+    const inscribirCategoria = async (
+      players: { id: string; documento: string }[],
+      startIdx: number,
+      targetPairs: number,
+      categoryId: string,
+    ): Promise<number> => {
+      let created = 0;
+      for (let i = 0; i < targetPairs; i++) {
+        const p1 = players[startIdx + i * 2];
+        const p2 = players[startIdx + i * 2 + 1];
+        if (!p1 || !p2) break;
+
+        // Check duplicate
+        const existing = await this.prisma.inscripcion.findFirst({
+          where: {
+            tournamentId,
+            categoryId,
+            pareja: {
+              OR: [
+                { jugador1Id: p1.id, jugador2Id: p2.id },
+                { jugador1Id: p2.id, jugador2Id: p1.id },
+              ],
+            },
+          },
+        });
+        if (existing) { created++; continue; }
+
+        const pareja = await this.prisma.pareja.create({
+          data: { jugador1Id: p1.id, jugador2Id: p2.id, jugador2Documento: p2.documento },
+        });
+
+        const inscripcion = await this.prisma.inscripcion.create({
+          data: {
+            tournamentId,
+            parejaId: pareja.id,
+            categoryId,
+            modalidad: modalidad as any,
+            estado: 'CONFIRMADA',
+            modoPago: 'COMPLETO',
+          },
+        });
+
+        if (monto > 0) {
+          await this.prisma.pago.create({
+            data: {
+              inscripcionId: inscripcion.id,
+              jugadorId: p1.id,
+              metodoPago: 'EFECTIVO',
+              monto,
+              comision,
+              estado: 'CONFIRMADO',
+              fechaPago: new Date(),
+              fechaConfirm: new Date(),
+            },
+          });
+        }
+        created++;
+      }
+      return created;
+    };
+
+    // Inscribe masculine categories
+    let mIdx = 0;
+    for (const cat of categoriasMasc) {
+      const created = await inscribirCategoria(hombres, mIdx, cat.parejas, cat.catId);
+      mIdx += cat.parejas * 2;
+      parejasInscritas += created;
+    }
+
+    // Inscribe feminine categories
+    let fIdx = 0;
+    for (const cat of categoriasFem) {
+      const created = await inscribirCategoria(mujeres, fIdx, cat.parejas, cat.catId);
+      fIdx += cat.parejas * 2;
+      parejasInscritas += created;
+    }
+
+    // 6. Close inscriptions
+    const allCats = [...categoriasMasc, ...categoriasFem];
+    for (const cat of allCats) {
+      await this.prisma.tournamentCategory.update({
+        where: { id: cat.tcId },
+        data: { estado: 'INSCRIPCIONES_CERRADAS', inscripcionAbierta: false },
+      });
+      categoriasCerradas++;
+    }
+
+    return {
+      jugadoresCreados,
+      parejasInscritas,
+      categoriasCerradas,
+      totalJugadoresM: totalPlayersM,
+      totalJugadoresF: totalPlayersF,
+      loginEjemplo: { documento: '4000001', password: 'test123' },
     };
   }
 }

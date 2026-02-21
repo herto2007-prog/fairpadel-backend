@@ -255,6 +255,15 @@ export class AdminController {
     return this.adminService.obtenerEstadisticasCupones();
   }
 
+  // ============ SEED TEST DATA (TEMPORAL) ============
+  @Post('torneos/:id/seed-test-data')
+  seedTestData(
+    @Param('id') id: string,
+    @Body() body: { parejasPorCategoria: Record<string, number> },
+  ) {
+    return this.adminService.seedTestData(id, body.parejasPorCategoria);
+  }
+
   // ============ COMISION POR TORNEO ============
   @Put('tournaments/:id/comision')
   setComisionTorneo(
