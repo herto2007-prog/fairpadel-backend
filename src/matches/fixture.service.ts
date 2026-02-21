@@ -1086,13 +1086,10 @@ export class FixtureService {
     allSlots: { fecha: Date }[],
     ocupados: Set<string>,
     allSlotsWithKeys: { key: string; fecha: Date }[],
-    totalCategories: number,
-    drawnCategories: number,
   ): Map<string, number> {
     const budgets = new Map<string, number>();
-    const categoriesRemaining = Math.max(1, totalCategories - drawnCategories);
 
-    // Group slots by date
+    // Contar slots totales y ocupados por día
     const slotsByDay = new Map<string, number>();
     const occupiedByDay = new Map<string, number>();
 
@@ -1104,16 +1101,10 @@ export class FixtureService {
       }
     }
 
+    // Budget = todos los slots libres del día (sin reserva para otras categorías)
     for (const [dk, totalOnDay] of slotsByDay) {
       const occupiedOnDay = occupiedByDay.get(dk) || 0;
-      const remaining = totalOnDay - occupiedOnDay;
-
-      if (categoriesRemaining <= 1) {
-        // Last category — no budget limit, take all remaining
-        budgets.set(dk, remaining);
-      } else {
-        budgets.set(dk, Math.max(1, Math.floor(remaining / categoriesRemaining)));
-      }
+      budgets.set(dk, totalOnDay - occupiedOnDay);
     }
 
     return budgets;
@@ -1202,9 +1193,7 @@ export class FixtureService {
     const availableDays = extractUniqueDays(allSlots);
     const roundDayMap = buildRoundDayMap(availableDays);
 
-    // A4. Budget por día por categoría (reserva capacidad para categorías no sorteadas)
-    const totalCats = await this.countTournamentCategories(tx, tournamentId);
-    const drawnCats = await this.countDrawnCategories(tx, tournamentId);
+    // A4. Budget por día (slots libres reales, sin reserva para otras categorías)
     const allSlotsWithKeys = allSlots.map((s) => ({
       ...s,
       key: slotKey(s.torneoCanchaId, s.fecha, s.horaInicio),
@@ -1213,8 +1202,6 @@ export class FixtureService {
       allSlots,
       ocupados,
       allSlotsWithKeys,
-      totalCats,
-      drawnCats,
     );
     const dayBudgetUsed = new Map<string, number>();
 
