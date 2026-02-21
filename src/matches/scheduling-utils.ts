@@ -138,6 +138,7 @@ export function extractUniqueDays(slots: TimeSlot[]): Date[] {
 export interface RoundDayConfig {
   preferredDays: Date[];
   allowedDays: Date[];
+  earliestDay: Date | null; // Hard minimum — never schedule before this date
 }
 
 /**
@@ -200,7 +201,7 @@ export function buildRoundDayMap(availableDays: Date[]): Map<string, RoundDayCon
   if (N === 0) {
     // No days — return empty configs for all rounds
     for (const ronda of ALL_RONDAS) {
-      map.set(ronda, { preferredDays: [], allowedDays: [] });
+      map.set(ronda, { preferredDays: [], allowedDays: [], earliestDay: null });
     }
     return map;
   }
@@ -247,6 +248,7 @@ export function buildRoundDayMap(availableDays: Date[]): Map<string, RoundDayCon
     map.set(ronda, {
       preferredDays: preferred,
       allowedDays: withNeighbors(preferred),
+      earliestDay: preferred.length > 0 ? preferred[0] : null,
     });
   };
 

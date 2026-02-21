@@ -1375,6 +1375,7 @@ export class FixtureService {
       const ronda = partido.ronda;
       const roundConfig = roundDayMap.get(ronda);
       const parejaIds: string[] = [partido.pareja1Id, partido.pareja2Id].filter(Boolean);
+      const earliestDay = roundConfig?.earliestDay || null;
 
       // Helper: check si un slot cumple las condiciones
       const isValidSlot = (
@@ -1386,6 +1387,7 @@ export class FixtureService {
         const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
         const dk = dateKey(slot.fecha);
         if (ocupados.has(key)) return false;
+        if (earliestDay && slot.fecha.getTime() < earliestDay.getTime()) return false;
         if (dayFilter && !dayFilter.some((d) => dateKey(d) === dk)) return false;
         if (budgetExceeded(dk, budgetMult)) return false;
         if (parejaIds.length > 0 && parejaExceedsLimit(parejaIds, dk, parejaLimit)) return false;
@@ -1427,15 +1429,15 @@ export class FixtureService {
         }
       }
 
-      // Nivel 4: Último recurso — cualquier slot libre (safety net)
+      // Nivel 4: Último recurso — cualquier slot libre (safety net), respetando earliestDay
       if (!assigned) {
         for (const slot of allSlots) {
           const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
-          if (!ocupados.has(key)) {
-            await assignSlot(partido, slot);
-            assigned = true;
-            break;
-          }
+          if (ocupados.has(key)) continue;
+          if (earliestDay && slot.fecha.getTime() < earliestDay.getTime()) continue;
+          await assignSlot(partido, slot);
+          assigned = true;
+          break;
         }
       }
 
