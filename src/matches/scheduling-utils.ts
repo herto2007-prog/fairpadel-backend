@@ -81,13 +81,12 @@ export function generarTimeSlots(
 }
 
 /**
- * Genera una key compuesta para identificar un slot único
+ * Genera una key compuesta para identificar un slot único.
  * Formato: "canchaId|YYYY-MM-DD|HH:MM"
+ * Usa dateKey() para consistencia timezone.
  */
 export function slotKey(canchaId: string, fecha: Date | string, hora: string): string {
-  const d = typeof fecha === 'string' ? new Date(fecha) : fecha;
-  const dateStr = d.toISOString().split('T')[0];
-  return `${canchaId}|${dateStr}|${hora}`;
+  return `${canchaId}|${dateKey(fecha)}|${hora}`;
 }
 
 /**
@@ -114,10 +113,14 @@ export function getRondaOrden(ronda: string): number {
 
 /**
  * Convierte una fecha a string "YYYY-MM-DD" para usar como key de Map.
+ * Usa métodos UTC explícitos para evitar problemas de timezone.
  */
 export function dateKey(fecha: Date | string): string {
   const d = typeof fecha === 'string' ? new Date(fecha) : fecha;
-  return d.toISOString().split('T')[0];
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /**
@@ -134,11 +137,10 @@ export function extractUniqueDays(slots: TimeSlot[]): Date[] {
   return [...seen.values()].sort((a, b) => a.getTime() - b.getTime());
 }
 
-/** Configuración de días para una ronda */
+/** Configuración de días para una ronda (preferencias soft, no constraints duros) */
 export interface RoundDayConfig {
   preferredDays: Date[];
   allowedDays: Date[];
-  earliestDay: Date | null; // Hard minimum — never schedule before this date
 }
 
 /**
@@ -167,6 +169,9 @@ const ALL_RONDAS = [
  * - 5+ días: Día 1 = ACOM_1; Día 2 = ACOM_2; Días intermedios = bracket repartido; N-1 = semis; N = finales
  *
  * `allowedDays` incluye ± 1 día adyacente como fallback.
+ *
+ * NOTA: Estas son preferencias SOFT. El orden cronológico estricto entre rondas
+ * se garantiza por el round-floor tracking en fixture.service.ts.
  */
 export function buildRoundDayMap(availableDays: Date[]): Map<string, RoundDayConfig> {
   const N = availableDays.length;
@@ -199,9 +204,8 @@ export function buildRoundDayMap(availableDays: Date[]): Map<string, RoundDayCon
   };
 
   if (N === 0) {
-    // No days — return empty configs for all rounds
     for (const ronda of ALL_RONDAS) {
-      map.set(ronda, { preferredDays: [], allowedDays: [], earliestDay: null });
+      map.set(ronda, { preferredDays: [], allowedDays: [] });
     }
     return map;
   }
@@ -243,12 +247,11 @@ export function buildRoundDayMap(availableDays: Date[]): Map<string, RoundDayCon
     finalPref = [day(N - 1)];
   }
 
-  // Set configs
+  // Set configs (solo preferencias, sin earliestDay)
   const setRound = (ronda: string, preferred: Date[]) => {
     map.set(ronda, {
       preferredDays: preferred,
       allowedDays: withNeighbors(preferred),
-      earliestDay: preferred.length > 0 ? preferred[0] : null,
     });
   };
 
@@ -278,4 +281,29 @@ export function isFinalDay(
   if (semiConfig?.preferredDays.some((d) => dateKey(d) === dk)) return true;
   if (finalConfig?.preferredDays.some((d) => dateKey(d) === dk)) return true;
   return false;
+}
+
+/**
+ * Verifica si un slot es cronológicamente igual o posterior a un punto mínimo.
+ * Usado para garantizar orden estricto entre rondas (round-floor tracking).
+ *
+ * "Igual o posterior" significa: fecha del slot es posterior, O misma fecha y
+ * la hora de inicio del slot es >= la hora fin mínima (fin de la ronda anterior).
+ *
+ * Si minFecha es null, no hay constraint (retorna true).
+ */
+export function slotIsAfterOrEqual(
+  slotFecha: Date,
+  slotHoraInicio: string,
+  minFecha: Date | null,
+  minHoraFin: string | null,
+): boolean {
+  if (!minFecha) return true;
+  const slotMs = slotFecha.getTime();
+  const minMs = minFecha.getTime();
+  if (slotMs > minMs) return true;
+  if (slotMs < minMs) return false;
+  // Mismo día: comparar horas
+  if (!minHoraFin) return true;
+  return parseHoraToMinutes(slotHoraInicio) >= parseHoraToMinutes(minHoraFin);
 }

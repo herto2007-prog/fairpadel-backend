@@ -14,6 +14,7 @@ import {
   dateKey,
   extractUniqueDays,
   buildRoundDayMap,
+  slotIsAfterOrEqual,
 } from './scheduling-utils';
 
 @Injectable()
@@ -1197,7 +1198,7 @@ export class FixtureService {
       return { asignados: 0, sinSlot: partidos.length };
     }
 
-    // A3. Mapeo ronda → días del torneo
+    // A3. Mapeo ronda → días preferidos/permitidos (preferencias soft)
     const availableDays = extractUniqueDays(allSlots);
     const roundDayMap = buildRoundDayMap(availableDays);
 
@@ -1229,47 +1230,94 @@ export class FixtureService {
     );
 
     // A8. Límite dinámico de partidos por pareja por día
-    //     Adapta según proporción matches/días. Tope absoluto: 3
     const maxPorDia = Math.min(
       3,
       Math.max(1, Math.ceil(matchesNeedingSlot.length / Math.max(1, availableDays.length))),
     );
 
-    // A9. Separar en 2 grupos: regulares vs finales
-    const regularMatches: any[] = [];
-    const finalMatches: any[] = [];
-    for (const m of matchesNeedingSlot) {
-      if (getRondaOrden(m.ronda) >= 6) {
-        finalMatches.push(m);
-      } else {
-        regularMatches.push(m);
+    // A9. Pool reverso para finales (fecha DESC → hora DESC → cancha principal primero)
+    const finalSlots = [...allSlots].sort((a, b) => {
+      const dateDiff = b.fecha.getTime() - a.fecha.getTime();
+      if (dateDiff !== 0) return dateDiff;
+      const horaDiff = parseHoraToMinutes(b.horaInicio) - parseHoraToMinutes(a.horaInicio);
+      if (horaDiff !== 0) return horaDiff;
+      if (principalCanchaId) {
+        const aP = a.torneoCanchaId === principalCanchaId ? 0 : 1;
+        const bP = b.torneoCanchaId === principalCanchaId ? 0 : 1;
+        if (aP !== bP) return aP - bP;
       }
-    }
-
-    // Ordenar regulares: primera ronda primero
-    regularMatches.sort((a, b) => {
-      const diff = getRondaOrden(a.ronda) - getRondaOrden(b.ronda);
-      return diff !== 0 ? diff : a.numeroRonda - b.numeroRonda;
-    });
-
-    // Ordenar finales: FINAL primero (para que ocupe el último slot)
-    finalMatches.sort((a, b) => {
-      const diff = getRondaOrden(b.ronda) - getRondaOrden(a.ronda);
-      return diff !== 0 ? diff : a.numeroRonda - b.numeroRonda;
+      return a.torneoCanchaId.localeCompare(b.torneoCanchaId);
     });
 
     let asignados = 0;
     let sinSlot = 0;
 
-    // ── Helper: asignar slot + actualizar tracking ──
+    // ════════════════════════════════════════════════════════════════
+    // FASE B: SCHEDULING UNIFICADO CON ROUND-FLOOR TRACKING
+    // ════════════════════════════════════════════════════════════════
+    //
+    // Garantía: Ronda N SIEMPRE se programa cronológicamente
+    // ANTES que Ronda N+1. El "floor" de cada ronda = el slot más
+    // tardío asignado a rondas previas. Es un constraint DURO.
+
+    // B1. Track del último slot por round-order: { fecha, horaFin }
+    const roundFloor = new Map<number, { fecha: Date; horaFin: string }>();
+
+    // B2. Helper: actualizar roundFloor (mantener el MÁS TARDÍO)
+    const updateRoundFloor = (roundOrden: number, slotFecha: Date, slotHoraFin: string) => {
+      const existing = roundFloor.get(roundOrden);
+      if (!existing) {
+        roundFloor.set(roundOrden, { fecha: slotFecha, horaFin: slotHoraFin });
+        return;
+      }
+      const existingMs = existing.fecha.getTime();
+      const newMs = slotFecha.getTime();
+      if (newMs > existingMs) {
+        roundFloor.set(roundOrden, { fecha: slotFecha, horaFin: slotHoraFin });
+      } else if (newMs === existingMs) {
+        if (parseHoraToMinutes(slotHoraFin) > parseHoraToMinutes(existing.horaFin)) {
+          roundFloor.set(roundOrden, { fecha: slotFecha, horaFin: slotHoraFin });
+        }
+      }
+    };
+
+    // B3. Helper: obtener floor para una ronda = max de todas las rondas con orden < actual
+    const getFloorForRound = (currentOrden: number): { fecha: Date | null; horaFin: string | null } => {
+      let latestFecha: Date | null = null;
+      let latestHoraFin: string | null = null;
+
+      for (const [orden, floor] of roundFloor) {
+        if (orden >= currentOrden) continue;
+        if (!latestFecha) {
+          latestFecha = floor.fecha;
+          latestHoraFin = floor.horaFin;
+          continue;
+        }
+        const existingMs = latestFecha.getTime();
+        const floorMs = floor.fecha.getTime();
+        if (floorMs > existingMs) {
+          latestFecha = floor.fecha;
+          latestHoraFin = floor.horaFin;
+        } else if (floorMs === existingMs) {
+          if (parseHoraToMinutes(floor.horaFin) > parseHoraToMinutes(latestHoraFin!)) {
+            latestHoraFin = floor.horaFin;
+          }
+        }
+      }
+
+      return { fecha: latestFecha, horaFin: latestHoraFin };
+    };
+
+    // B4. Helper: asignar slot + actualizar tracking + actualizar roundFloor
     const assignSlot = async (partido: any, slot: typeof allSlots[0]) => {
+      const horaFin = calcularHoraFin(slot.horaInicio, minutosPorPartido);
       await tx.match.update({
         where: { id: partido.id },
         data: {
           torneoCanchaId: slot.torneoCanchaId,
           fechaProgramada: slot.fecha,
           horaProgramada: slot.horaInicio,
-          horaFinEstimada: calcularHoraFin(slot.horaInicio, minutosPorPartido),
+          horaFinEstimada: horaFin,
         },
       });
 
@@ -1286,10 +1334,14 @@ export class FixtureService {
         dayMap.set(dk, (dayMap.get(dk) || 0) + 1);
       }
 
+      // Actualizar round floor
+      const roundOrden = getRondaOrden(partido.ronda);
+      updateRoundFloor(roundOrden, slot.fecha, horaFin);
+
       asignados++;
     };
 
-    // ── Helper: check si una pareja excede el límite en un día ──
+    // B5. Helpers de validación (sin cambios)
     const parejaExceedsLimit = (parejaIds: string[], dk: string, limit: number): boolean => {
       for (const pid of parejaIds) {
         const sched = parejaSchedule.get(pid);
@@ -1298,150 +1350,149 @@ export class FixtureService {
       return false;
     };
 
-    // ── Helper: check budget ──
     const budgetExceeded = (dk: string, multiplier: number = 1): boolean => {
       const budget = dayBudgets.get(dk) || 0;
       const used = dayBudgetUsed.get(dk) || 0;
       return used >= Math.ceil(budget * multiplier);
     };
 
-    // ════════════════════════════════════════
-    // FASE B: ASIGNAR FINALES (pool reverso)
-    // ════════════════════════════════════════
-
-    const finalSlots = [...allSlots].sort((a, b) => {
-      const dateDiff = b.fecha.getTime() - a.fecha.getTime();
-      if (dateDiff !== 0) return dateDiff;
-      const horaDiff = parseHoraToMinutes(b.horaInicio) - parseHoraToMinutes(a.horaInicio);
-      if (horaDiff !== 0) return horaDiff;
-      if (principalCanchaId) {
-        const aP = a.torneoCanchaId === principalCanchaId ? 0 : 1;
-        const bP = b.torneoCanchaId === principalCanchaId ? 0 : 1;
-        if (aP !== bP) return aP - bP;
-      }
-      return a.torneoCanchaId.localeCompare(b.torneoCanchaId);
-    });
-
-    for (const partido of finalMatches) {
-      let assigned = false;
-      const esFinal = getRondaOrden(partido.ronda) === 7;
-
-      // FINAL: preferir cancha principal
-      if (esFinal && principalCanchaId) {
-        for (const slot of finalSlots) {
-          if (slot.torneoCanchaId !== principalCanchaId) continue;
-          const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
-          if (!ocupados.has(key)) {
-            await assignSlot(partido, slot);
-            assigned = true;
-            break;
-          }
-        }
-      }
-
-      // Fallback: pool reverso completo (con budget check)
-      if (!assigned) {
-        for (const slot of finalSlots) {
-          const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
-          const dk = dateKey(slot.fecha);
-          if (ocupados.has(key)) continue;
-          if (budgetExceeded(dk, 1.5)) continue; // Relajado para finales
-          await assignSlot(partido, slot);
-          assigned = true;
-          break;
-        }
-      }
-
-      // Último recurso: cualquier slot libre
-      if (!assigned) {
-        for (const slot of finalSlots) {
-          const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
-          if (!ocupados.has(key)) {
-            await assignSlot(partido, slot);
-            assigned = true;
-            break;
-          }
-        }
-      }
-
-      if (!assigned) sinSlot++;
+    // B6. Agrupar TODOS los matches por round-order
+    const matchesByRoundOrder = new Map<number, any[]>();
+    for (const m of matchesNeedingSlot) {
+      const orden = getRondaOrden(m.ronda);
+      if (!matchesByRoundOrder.has(orden)) matchesByRoundOrder.set(orden, []);
+      matchesByRoundOrder.get(orden)!.push(m);
     }
 
-    // ════════════════════════════════════════
-    // FASE C: ASIGNAR REGULARES (distribución)
-    // ════════════════════════════════════════
+    // Ordenar matches dentro de cada grupo por numeroRonda
+    for (const [, matches] of matchesByRoundOrder) {
+      matches.sort((a: any, b: any) => a.numeroRonda - b.numeroRonda);
+    }
 
-    for (const partido of regularMatches) {
-      const ronda = partido.ronda;
-      const roundConfig = roundDayMap.get(ronda);
-      const parejaIds: string[] = [partido.pareja1Id, partido.pareja2Id].filter(Boolean);
-      const earliestDay = roundConfig?.earliestDay || null;
+    // B7. Procesar cada round-order en secuencia estricta (1→2→3→4→5→6→7)
+    const roundOrders = [...matchesByRoundOrder.keys()].sort((a, b) => a - b);
 
-      // Helper: check si un slot cumple las condiciones
-      const isValidSlot = (
-        slot: typeof allSlots[0],
-        dayFilter: Date[] | null,
-        budgetMult: number,
-        parejaLimit: number,
-      ): boolean => {
-        const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
-        const dk = dateKey(slot.fecha);
-        if (ocupados.has(key)) return false;
-        if (earliestDay && slot.fecha.getTime() < earliestDay.getTime()) return false;
-        if (dayFilter && !dayFilter.some((d) => dateKey(d) === dk)) return false;
-        if (budgetExceeded(dk, budgetMult)) return false;
-        if (parejaIds.length > 0 && parejaExceedsLimit(parejaIds, dk, parejaLimit)) return false;
-        return true;
-      };
+    for (const currentOrden of roundOrders) {
+      const roundMatches = matchesByRoundOrder.get(currentOrden)!;
+      const isFinals = currentOrden >= 6; // SEMIFINAL=6, FINAL=7
 
-      let assigned = false;
+      // Floor = slot más tardío de CUALQUIER ronda con orden < actual
+      const { fecha: floorFecha, horaFin: floorHoraFin } = getFloorForRound(currentOrden);
 
-      // Nivel 1: Preferred days + budget strict + pareja limit
-      if (!assigned && roundConfig) {
-        for (const slot of allSlots) {
-          if (isValidSlot(slot, roundConfig.preferredDays, 1, maxPorDia)) {
-            await assignSlot(partido, slot);
-            assigned = true;
-            break;
-          }
-        }
-      }
+      for (const partido of roundMatches) {
+        const ronda = partido.ronda;
+        const roundConfig = roundDayMap.get(ronda);
+        const parejaIds: string[] = [partido.pareja1Id, partido.pareja2Id].filter(Boolean);
+        const esFinal = getRondaOrden(ronda) === 7;
 
-      // Nivel 2: Allowed days (±1 adyacente) + budget strict + pareja limit
-      if (!assigned && roundConfig) {
-        for (const slot of allSlots) {
-          if (isValidSlot(slot, roundConfig.allowedDays, 1, maxPorDia)) {
-            await assignSlot(partido, slot);
-            assigned = true;
-            break;
-          }
-        }
-      }
-
-      // Nivel 3: Cualquier día, budget x1.5, pareja limit +1
-      if (!assigned) {
-        for (const slot of allSlots) {
-          if (isValidSlot(slot, null, 1.5, maxPorDia + 1)) {
-            await assignSlot(partido, slot);
-            assigned = true;
-            break;
-          }
-        }
-      }
-
-      // Nivel 4: Último recurso — cualquier slot libre (safety net), respetando earliestDay
-      if (!assigned) {
-        for (const slot of allSlots) {
+        // Validación de slot con round-floor constraint DURO
+        const isValidSlot = (
+          slot: typeof allSlots[0],
+          dayFilter: Date[] | null,
+          budgetMult: number,
+          parejaLimit: number,
+        ): boolean => {
           const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
-          if (ocupados.has(key)) continue;
-          if (earliestDay && slot.fecha.getTime() < earliestDay.getTime()) continue;
-          await assignSlot(partido, slot);
-          assigned = true;
-          break;
-        }
-      }
+          const dk = dateKey(slot.fecha);
+          if (ocupados.has(key)) return false;
+          // CONSTRAINT DURO: slot debe ser >= floor de rondas previas
+          if (!slotIsAfterOrEqual(slot.fecha, slot.horaInicio, floorFecha, floorHoraFin)) return false;
+          if (dayFilter && !dayFilter.some((d) => dateKey(d) === dk)) return false;
+          if (budgetExceeded(dk, budgetMult)) return false;
+          if (parejaIds.length > 0 && parejaExceedsLimit(parejaIds, dk, parejaLimit)) return false;
+          return true;
+        };
 
-      if (!assigned) sinSlot++;
+        let assigned = false;
+
+        if (isFinals) {
+          // ── Finales: preferir últimos slots disponibles (pool reverso) ──
+
+          // FINAL: intentar cancha principal primero
+          if (esFinal && principalCanchaId) {
+            for (const slot of finalSlots) {
+              if (slot.torneoCanchaId !== principalCanchaId) continue;
+              if (isValidSlot(slot, null, 1.5, maxPorDia + 1)) {
+                await assignSlot(partido, slot);
+                assigned = true;
+                break;
+              }
+            }
+          }
+
+          // Fallback: pool reverso con budget relajado
+          if (!assigned) {
+            for (const slot of finalSlots) {
+              if (isValidSlot(slot, null, 1.5, maxPorDia + 1)) {
+                await assignSlot(partido, slot);
+                assigned = true;
+                break;
+              }
+            }
+          }
+
+          // Último recurso: cualquier slot libre respetando floor
+          if (!assigned) {
+            for (const slot of finalSlots) {
+              const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
+              if (ocupados.has(key)) continue;
+              if (!slotIsAfterOrEqual(slot.fecha, slot.horaInicio, floorFecha, floorHoraFin)) continue;
+              await assignSlot(partido, slot);
+              assigned = true;
+              break;
+            }
+          }
+        } else {
+          // ── Regulares: preferir primeros slots disponibles (forward) ──
+
+          // Nivel 1: Preferred days + budget strict + pareja limit
+          if (!assigned && roundConfig) {
+            for (const slot of allSlots) {
+              if (isValidSlot(slot, roundConfig.preferredDays, 1, maxPorDia)) {
+                await assignSlot(partido, slot);
+                assigned = true;
+                break;
+              }
+            }
+          }
+
+          // Nivel 2: Allowed days (±1 adyacente) + budget strict + pareja limit
+          if (!assigned && roundConfig) {
+            for (const slot of allSlots) {
+              if (isValidSlot(slot, roundConfig.allowedDays, 1, maxPorDia)) {
+                await assignSlot(partido, slot);
+                assigned = true;
+                break;
+              }
+            }
+          }
+
+          // Nivel 3: Cualquier día, budget x1.5, pareja limit +1
+          if (!assigned) {
+            for (const slot of allSlots) {
+              if (isValidSlot(slot, null, 1.5, maxPorDia + 1)) {
+                await assignSlot(partido, slot);
+                assigned = true;
+                break;
+              }
+            }
+          }
+
+          // Nivel 4: Último recurso — cualquier slot libre respetando floor
+          if (!assigned) {
+            for (const slot of allSlots) {
+              const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
+              if (ocupados.has(key)) continue;
+              if (!slotIsAfterOrEqual(slot.fecha, slot.horaInicio, floorFecha, floorHoraFin)) continue;
+              await assignSlot(partido, slot);
+              assigned = true;
+              break;
+            }
+          }
+        }
+
+        if (!assigned) sinSlot++;
+      }
     }
 
     return { asignados, sinSlot };
