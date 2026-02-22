@@ -12,6 +12,7 @@ import {
 import { MatchesService } from './matches.service';
 import { FixtureService } from './fixture.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
+import { SortearCategoriaDto } from './dto/sortear-categoria.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { TournamentRoleGuard } from '../auth/guards/tournament-role.guard';
@@ -52,9 +53,10 @@ export class MatchesController {
   sortearCategoria(
     @Param('tournamentId') tournamentId: string,
     @Param('categoryId') categoryId: string,
+    @Body() dto: SortearCategoriaDto,
     @Request() req,
   ) {
-    return this.fixtureService.sortearCategoria(tournamentId, categoryId, req.user.id);
+    return this.fixtureService.sortearCategoria(tournamentId, categoryId, req.user.id, dto.fechaInicio);
   }
 
   @Post('torneo/:tournamentId/categoria/:categoryId/publicar-fixture')

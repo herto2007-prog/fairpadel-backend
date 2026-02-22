@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { SeedTestDataDto } from './dto/seed-test-data.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -259,9 +260,9 @@ export class AdminController {
   @Post('torneos/:id/seed-test-data')
   seedTestData(
     @Param('id') id: string,
-    @Body() body: { parejasPorCategoria: Record<string, number> },
+    @Body() dto: SeedTestDataDto,
   ) {
-    return this.adminService.seedTestData(id, body.parejasPorCategoria);
+    return this.adminService.seedTestData(id, dto.parejasPorCategoria);
   }
 
   // ============ COMISION POR TORNEO ============

@@ -7,3 +7,5 @@ export class RechazarTorneoDto {
   torneoId: string;
   motivo: string;
 }
+
+export * from './seed-test-data.dto';

@@ -150,7 +150,7 @@ export class FixtureService {
   // SORTEO POR CATEGORÍA
   // ═══════════════════════════════════════════════════════
 
-  async sortearCategoria(tournamentId: string, categoryId: string, userId?: string) {
+  async sortearCategoria(tournamentId: string, categoryId: string, userId?: string, fechaInicio?: string) {
     // ── Validaciones previas (fuera de transacción para fail-fast) ──
     const tournament = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
@@ -262,6 +262,7 @@ export class FixtureService {
           inscripciones,
           tournament.torneoCanchas,
           minutosPorPartido,
+          fechaInicio,
         );
 
         // Categoría va a FIXTURE_BORRADOR (no a SORTEO_REALIZADO)
@@ -546,6 +547,7 @@ export class FixtureService {
     inscripciones: any[],
     torneoCanchas: any[],
     minutosPorPartido: number = 60,
+    fechaInicio?: string,
   ) {
     const N = inscripciones.length;
 
@@ -914,6 +916,7 @@ export class FixtureService {
         minutosPorPartido,
         10, // bufferMinutos
         category?.orden,
+        fechaInicio,
       );
     }
 
@@ -1173,6 +1176,7 @@ export class FixtureService {
     minutosPorPartido: number,
     bufferMinutos: number = 10,
     categoryOrden?: number,
+    fechaInicio?: string,
   ): Promise<{ asignados: number; sinSlot: number }> {
     // ════════════════════════════════════════
     // FASE A: PREPARACIÓN
@@ -1182,7 +1186,13 @@ export class FixtureService {
     const ocupados = await this.obtenerSlotsOcupados(tx, tournamentId);
 
     // A2. Generar todos los time slots (fecha ASC → hora ASC → cancha)
-    const allSlots = generarTimeSlots(torneoCanchas, minutosPorPartido, bufferMinutos);
+    const allSlotsRaw = generarTimeSlots(torneoCanchas, minutosPorPartido, bufferMinutos);
+
+    // A2b. Filtrar por fechaInicio si se proporcionó (solo usar slots en/después de esa fecha)
+    const allSlots = fechaInicio
+      ? allSlotsRaw.filter((s) => dateKey(s.fecha) >= fechaInicio)
+      : allSlotsRaw;
+
     if (allSlots.length === 0) {
       return { asignados: 0, sinSlot: partidos.length };
     }

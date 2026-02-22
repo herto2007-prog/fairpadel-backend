@@ -1,3 +1,5 @@
+process.env.TZ = 'America/Asuncion';
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
