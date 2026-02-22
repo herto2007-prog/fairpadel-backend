@@ -1175,6 +1175,203 @@ export class TournamentsService {
     return Buffer.from(buffer);
   }
 
+  /**
+   * 7.4 — Match schedule report: Excel with all scheduled matches grouped by sede,
+   * ordered chronologically. For printing and handing to tournament assistants.
+   */
+  async reportePartidosExcel(tournamentId: string, userId: string): Promise<Buffer> {
+    const tournament = await this.verifyReportAccess(tournamentId, userId);
+
+    // Fetch all matches with cancha assigned + full relationships
+    const matches = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        torneoCanchaId: { not: null },
+      },
+      include: {
+        category: true,
+        pareja1: { include: { jugador1: true, jugador2: true } },
+        pareja2: { include: { jugador1: true, jugador2: true } },
+        torneoCancha: {
+          include: {
+            sedeCancha: { include: { sede: true } },
+          },
+        },
+      },
+      orderBy: [
+        { fechaProgramada: 'asc' },
+        { horaProgramada: 'asc' },
+      ],
+    });
+
+    // Group by sede
+    const matchesBySede = new Map<string, { sedeName: string; matches: typeof matches }>();
+    for (const match of matches) {
+      const sede = match.torneoCancha?.sedeCancha?.sede;
+      const sedeId = sede?.id || 'sin-sede';
+      const sedeName = sede?.nombre || 'Sin Sede';
+      if (!matchesBySede.has(sedeId)) {
+        matchesBySede.set(sedeId, { sedeName, matches: [] });
+      }
+      matchesBySede.get(sedeId)!.matches.push(match);
+    }
+
+    // Helpers
+    const pairName = (pareja: any): string => {
+      if (!pareja) return 'BYE';
+      const j1 = pareja.jugador1;
+      const j2 = pareja.jugador2;
+      return `${j1?.apellido || '?'} / ${j2?.apellido || '?'}`;
+    };
+
+    const rondaLabel: Record<string, string> = {
+      ACOMODACION_1: 'Acomodación 1',
+      ACOMODACION_2: 'Acomodación 2',
+      DIECISEISAVOS: 'Dieciseisavos',
+      OCTAVOS: 'Octavos',
+      CUARTOS: 'Cuartos',
+      SEMIFINAL: 'Semifinal',
+      FINAL: 'Final',
+    };
+
+    const estadoLabel: Record<string, string> = {
+      PROGRAMADO: 'Programado',
+      EN_JUEGO: 'En Juego',
+      FINALIZADO: 'Finalizado',
+      SUSPENDIDO: 'Suspendido',
+      WO: 'Walk Over',
+      CANCELADO: 'Cancelado',
+    };
+
+    // Build workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'FairPadel';
+    workbook.created = new Date();
+
+    const totalColumns = 9;
+
+    if (matchesBySede.size === 0) {
+      const sheet = workbook.addWorksheet('Sin Partidos');
+      sheet.getCell('A1').value = 'No hay partidos programados con cancha asignada en este torneo.';
+      sheet.getCell('A1').font = { size: 12 };
+    }
+
+    for (const [, sedeData] of matchesBySede) {
+      const sheetName = sedeData.sedeName.replace(/[*?:/\\[\]]/g, '').substring(0, 31);
+      const sheet = workbook.addWorksheet(sheetName);
+
+      // Title rows
+      sheet.mergeCells(1, 1, 1, totalColumns);
+      sheet.getCell('A1').value = tournament.nombre;
+      sheet.getCell('A1').font = { bold: true, size: 14 };
+
+      sheet.mergeCells(2, 1, 2, totalColumns);
+      sheet.getCell('A2').value = `Sede: ${sedeData.sedeName}`;
+      sheet.getCell('A2').font = { bold: true, size: 11, color: { argb: 'FF4F46E5' } };
+
+      sheet.mergeCells(3, 1, 3, totalColumns);
+      const fechaInicio = tournament.fechaInicio
+        ? new Date(tournament.fechaInicio).toLocaleDateString('es-PY')
+        : '—';
+      const fechaFin = tournament.fechaFin
+        ? new Date(tournament.fechaFin).toLocaleDateString('es-PY')
+        : '—';
+      sheet.getCell('A3').value = `${tournament.ciudad || ''} | ${fechaInicio} al ${fechaFin} | Generado: ${new Date().toLocaleDateString('es-PY')}`;
+      sheet.getCell('A3').font = { size: 9, color: { argb: 'FF666666' } };
+
+      // Header row at row 5
+      const headerRow = 5;
+      const headers = ['Cancha', 'Fecha', 'Hora', 'Hora Fin', 'Categoría', 'Ronda', 'Pareja 1', 'Pareja 2', 'Estado'];
+      sheet.getRow(headerRow).values = headers;
+      sheet.getRow(headerRow).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      sheet.getRow(headerRow).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4F46E5' },
+      };
+
+      // Column widths
+      sheet.getColumn(1).width = 20;
+      sheet.getColumn(2).width = 14;
+      sheet.getColumn(3).width = 10;
+      sheet.getColumn(4).width = 10;
+      sheet.getColumn(5).width = 22;
+      sheet.getColumn(6).width = 18;
+      sheet.getColumn(7).width = 28;
+      sheet.getColumn(8).width = 28;
+      sheet.getColumn(9).width = 14;
+
+      // Data rows
+      let currentRow = headerRow + 1;
+      for (const match of sedeData.matches) {
+        const canchaName = match.torneoCancha?.sedeCancha?.nombre || '—';
+        const fecha = match.fechaProgramada
+          ? new Date(match.fechaProgramada).toLocaleDateString('es-PY', {
+              weekday: 'short',
+              day: '2-digit',
+              month: '2-digit',
+            })
+          : '—';
+        const hora = match.horaProgramada || '—';
+        const horaFin = match.horaFinEstimada || '—';
+        const categoria = match.category?.nombre || '—';
+        const ronda = rondaLabel[match.ronda] || match.ronda;
+        const p1 = pairName(match.pareja1);
+        const p2 = pairName(match.pareja2);
+        const estado = estadoLabel[match.estado] || match.estado;
+
+        const row = sheet.getRow(currentRow);
+        row.values = [canchaName, fecha, hora, horaFin, categoria, ronda, p1, p2, estado];
+
+        // Color-code estado
+        if (match.estado === 'FINALIZADO') {
+          row.getCell(9).font = { color: { argb: 'FF16a34a' } };
+        } else if (match.estado === 'WO' || match.estado === 'CANCELADO') {
+          row.getCell(9).font = { color: { argb: 'FFdc2626' } };
+        } else if (match.estado === 'EN_JUEGO') {
+          row.getCell(9).font = { color: { argb: 'FFea580c' } };
+        }
+
+        // Alternate row shading
+        if (currentRow % 2 === 0) {
+          row.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF3F4F6' },
+          };
+        }
+
+        currentRow++;
+      }
+
+      // Auto-filter
+      if (sedeData.matches.length > 0) {
+        sheet.autoFilter = {
+          from: { row: headerRow, column: 1 },
+          to: { row: currentRow - 1, column: totalColumns },
+        };
+      }
+
+      // Print setup: landscape A4, fit to page width
+      sheet.pageSetup = {
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        paperSize: 9,
+      };
+
+      // Footer with match count
+      currentRow += 1;
+      sheet.mergeCells(currentRow, 1, currentRow, totalColumns);
+      sheet.getCell(`A${currentRow}`).value = `Total: ${sedeData.matches.length} partidos en ${sedeData.sedeName}`;
+      sheet.getCell(`A${currentRow}`).font = { bold: true, size: 10, italic: true, color: { argb: 'FF666666' } };
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
   async getPelotasRonda(tournamentId: string, userId: string) {
     const tournament = await this.findOne(tournamentId);
 

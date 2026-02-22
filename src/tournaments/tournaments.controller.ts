@@ -276,6 +276,26 @@ export class TournamentsController {
     return new StreamableFile(buffer);
   }
 
+  @Get(':id/reporte/partidos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async reportePartidosExcel(
+    @Param('id') id: string,
+    @Request() req,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const buffer = await this.tournamentsService.reportePartidosExcel(id, req.user.id);
+    const tournament = await this.tournamentsService.findOne(id);
+    const filename = `partidos-${tournament.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`;
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
+  }
+
   @Get(':id/pelotas-ronda')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('organizador')
