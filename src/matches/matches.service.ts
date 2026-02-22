@@ -12,7 +12,15 @@ import { NotificacionesService } from '../notificaciones/notificaciones.service'
 import { FeedService } from '../feed/feed.service';
 import { LogrosService } from '../logros/logros.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
-import { calcularHoraFin } from './scheduling-utils';
+import {
+  calcularHoraFin,
+  generarTimeSlots,
+  slotKey,
+  slotIsAfterOrEqual,
+  parseHoraToMinutes,
+  minutesToHora,
+  dateKey,
+} from './scheduling-utils';
 
 @Injectable()
 export class MatchesService {
@@ -181,6 +189,12 @@ export class MatchesService {
     // Avanzar ganador al siguiente partido (usa posicionEnSiguiente)
     if (match.partidoSiguienteId) {
       await this.avanzarGanador(match.partidoSiguienteId, ganadorId, match.id);
+      // Auto-schedule: si el siguiente partido tiene ambas parejas → asignar cancha
+      try {
+        await this.autoScheduleNextMatch(match.partidoSiguienteId, match.tournamentId);
+      } catch (e) {
+        this.logger.error(`[AutoSchedule] Error scheduling winner's next match: ${e.message}`);
+      }
     }
 
     // Avanzar perdedor al partido de acomodación R2 (si aplica)
@@ -196,7 +210,12 @@ export class MatchesService {
         where: { id: match.partidoPerdedorSiguienteId },
       });
       if (r2Match && r2Match.pareja1Id && r2Match.pareja2Id) {
-        // Ambos slots llenos → match R2 listo para jugar (no es BYE)
+        // Ambos slots llenos → auto-schedule R2 match si no tiene cancha
+        try {
+          await this.autoScheduleNextMatch(r2Match.id, match.tournamentId);
+        } catch (e) {
+          this.logger.error(`[AutoSchedule] Error scheduling R2 match: ${e.message}`);
+        }
       } else if (r2Match) {
         // Verificar si hay otro feeder pendiente para el slot vacío
         const otherPos = match.posicionEnPerdedor === 1 ? 2 : 1;
@@ -504,7 +523,128 @@ export class MatchesService {
         where: { id: match.partidoSiguienteId },
         data: { [campo]: winnerId },
       });
+
+      // Auto-schedule el siguiente partido si ambas parejas listas
+      try {
+        await this.autoScheduleNextMatch(match.partidoSiguienteId, match.tournamentId);
+      } catch (e) {
+        this.logger.error(`[AutoSchedule] Error scheduling post-R2-BYE: ${e.message}`);
+      }
     }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // AUTO-SCHEDULE — Asignación dinámica de cancha/horario
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Auto-asigna cancha/horario al partido indicado si tiene ambas parejas
+   * y aún no tiene cancha. Respeta 2h30m de descanso mínimo entre partidos
+   * para la misma pareja (2h reglamentario + 30min buffer por retrasos).
+   * Cross-categoría: revisa slots ocupados de todo el torneo.
+   */
+  private async autoScheduleNextMatch(matchId: string, tournamentId: string): Promise<void> {
+    // 1. Obtener el partido que necesita cancha
+    const match = await this.prisma.match.findUnique({ where: { id: matchId } });
+    if (!match || !match.pareja1Id || !match.pareja2Id) return;
+    if (match.torneoCanchaId) return; // ya tiene cancha asignada
+
+    // 2. Obtener torneoCanchas con horarios
+    const torneoCanchas = await this.prisma.torneoCancha.findMany({
+      where: { tournamentId },
+      include: { horarios: true },
+    });
+    if (torneoCanchas.length === 0) return;
+
+    // 3. Obtener duración del partido
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { minutosPorPartido: true },
+    });
+    const minutosPorPartido = tournament?.minutosPorPartido || 60;
+    const bufferMinutos = 10;
+
+    // 4. Generar todos los slots disponibles (fecha ASC → hora ASC → cancha)
+    const allSlots = generarTimeSlots(torneoCanchas, minutosPorPartido, bufferMinutos);
+    if (allSlots.length === 0) return;
+
+    // 5. Obtener slots ocupados (cross-categoría)
+    const occupiedMatches = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        estado: { notIn: ['WO', 'CANCELADO'] },
+        torneoCanchaId: { not: null },
+      },
+      select: { torneoCanchaId: true, fechaProgramada: true, horaProgramada: true },
+    });
+    const ocupados = new Set<string>();
+    for (const m of occupiedMatches) {
+      if (m.torneoCanchaId && m.fechaProgramada && m.horaProgramada) {
+        ocupados.add(slotKey(m.torneoCanchaId, m.fechaProgramada, m.horaProgramada));
+      }
+    }
+
+    // 6. Descanso: 2h30m después del último partido de CADA pareja
+    //    (2h reglamentario + 30min buffer por posibles retrasos)
+    const DESCANSO_MINUTOS = 150; // 2h30m
+    const parejaIds = [match.pareja1Id, match.pareja2Id];
+
+    // Buscar el partido MÁS TARDÍO finalizado de cualquiera de las 2 parejas
+    const lastMatches = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        OR: [
+          { pareja1Id: { in: parejaIds } },
+          { pareja2Id: { in: parejaIds } },
+        ],
+        estado: { in: ['FINALIZADO', 'WO'] },
+        horaFinEstimada: { not: null },
+        fechaProgramada: { not: null },
+      },
+      select: { fechaProgramada: true, horaFinEstimada: true },
+      orderBy: [{ fechaProgramada: 'desc' }, { horaFinEstimada: 'desc' }],
+      take: 1,
+    });
+
+    let minFecha: Date | null = null;
+    let minHora: string | null = null;
+    if (lastMatches.length > 0) {
+      const last = lastMatches[0];
+      minFecha = last.fechaProgramada;
+      const finMinutos = parseHoraToMinutes(last.horaFinEstimada!) + DESCANSO_MINUTOS;
+      minHora = minutesToHora(finMinutos % (24 * 60));
+      // Si pasa de medianoche, avanzar al día siguiente
+      if (finMinutos >= 24 * 60) {
+        minFecha = new Date(minFecha!.getTime() + 86400000);
+      }
+    }
+
+    // 7. Buscar primer slot libre que respete descanso
+    for (const slot of allSlots) {
+      const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
+      if (ocupados.has(key)) continue;
+      if (!slotIsAfterOrEqual(slot.fecha, slot.horaInicio, minFecha, minHora)) continue;
+
+      // 8. Asignar cancha/horario
+      const horaFin = calcularHoraFin(slot.horaInicio, minutosPorPartido);
+      await this.prisma.match.update({
+        where: { id: matchId },
+        data: {
+          torneoCanchaId: slot.torneoCanchaId,
+          fechaProgramada: slot.fecha,
+          horaProgramada: slot.horaInicio,
+          horaFinEstimada: horaFin,
+        },
+      });
+
+      this.logger.log(
+        `[AutoSchedule] Match ${matchId} (${match.ronda}) → ${slot.horaInicio} ${dateKey(slot.fecha)}`,
+      );
+      return;
+    }
+
+    // Sin slot disponible — queda sin cancha (el organizador lo verá)
+    this.logger.warn(`[AutoSchedule] No slot found for match ${matchId} (${match.ronda})`);
   }
 
   // ═══════════════════════════════════════════════════════

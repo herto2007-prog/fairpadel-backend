@@ -898,6 +898,9 @@ export class FixtureService {
     // ════════════════════════════════════════
     // FASE 6: ASIGNAR CANCHAS Y HORARIOS
     // ════════════════════════════════════════
+    // Solo schedulear R1 + R2 upfront. Las rondas de bracket (Octavos+)
+    // se auto-programan al cargar resultados (autoScheduleNextMatch).
+    const matchesToSchedule = [...createdR1, ...createdR2];
     const allMatches = [...createdR1, ...createdR2, ...createdBracketByRound.flat()];
 
     // Obtener orden de la categoría para scheduling inteligente
@@ -910,7 +913,7 @@ export class FixtureService {
     if (torneoCanchas.length > 0) {
       await this.asignarCanchasYHorarios(
         tx,
-        allMatches,
+        matchesToSchedule,  // solo R1 + R2 (bracket se asigna dinamicamente)
         torneoCanchas,
         tournamentId,
         minutosPorPartido,
