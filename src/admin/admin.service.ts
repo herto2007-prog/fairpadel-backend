@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -1259,7 +1260,7 @@ export class AdminService {
     tournamentId: string,
     parejasPorCategoria: Record<string, number>,
   ) {
-    // 1. Fetch tournament + categories
+    // Pre-flight checks outside transaction
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: {
@@ -1267,17 +1268,18 @@ export class AdminService {
         modalidades: true,
       },
     });
-
     if (!torneo) throw new NotFoundException('Torneo no encontrado');
 
-    // 2. Separate categories by gender and calculate totals
+    const rolJugador = await this.prisma.role.findUnique({ where: { nombre: 'jugador' } });
+    if (!rolJugador) throw new BadRequestException('Rol "jugador" no encontrado');
+
+    // Separate categories by gender
     const categoriasMasc: { tcId: string; catId: string; nombre: string; parejas: number }[] = [];
     const categoriasFem: { tcId: string; catId: string; nombre: string; parejas: number }[] = [];
 
     for (const tc of torneo.categorias) {
       const numParejas = parejasPorCategoria[tc.categoryId] || 0;
       if (numParejas <= 0) continue;
-
       const entry = { tcId: tc.id, catId: tc.categoryId, nombre: tc.category.nombre, parejas: numParejas };
       if (tc.category.tipo === 'MASCULINO') {
         categoriasMasc.push(entry);
@@ -1288,38 +1290,33 @@ export class AdminService {
 
     const totalPlayersM = categoriasMasc.reduce((sum, c) => sum + c.parejas * 2, 0);
     const totalPlayersF = categoriasFem.reduce((sum, c) => sum + c.parejas * 2, 0);
-
     if (totalPlayersM + totalPlayersF === 0) {
       throw new BadRequestException('No hay parejas para crear');
     }
 
-    // 3. Get role + hash password
-    const rolJugador = await this.prisma.role.findUnique({ where: { nombre: 'jugador' } });
-    if (!rolJugador) throw new BadRequestException('Rol "jugador" no encontrado');
     const passwordHash = await bcrypt.hash('test123', 10);
-
     const modalidad = torneo.modalidades.length > 0 ? torneo.modalidades[0].modalidad : 'TRADICIONAL';
     const monto = torneo.costoInscripcion ? Number(torneo.costoInscripcion) : 0;
     const comision = monto * 0.05;
 
-    // 4. Create players
-    let jugadoresCreados = 0;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // ── BATCH CREATE PLAYERS ──────────────────────────────────
+        let jugadoresCreados = 0;
 
-    const crearJugadores = async (
-      total: number, genero: string, docStart: number, nombres: string[],
-    ): Promise<{ id: string; documento: string }[]> => {
-      const players: { id: string; documento: string }[] = [];
-      for (let i = 0; i < total; i++) {
-        const doc = `${docStart + i}`;
-        const nombre = nombres[i % nombres.length];
-        const apellido = this.APELLIDOS[i % this.APELLIDOS.length];
-        const suffix = i >= nombres.length ? `${Math.floor(i / nombres.length) + 1}` : '';
-        const ciudad = this.CIUDADES[i % this.CIUDADES.length];
-
-        let user = await this.prisma.user.findUnique({ where: { documento: doc } });
-        if (!user) {
-          user = await this.prisma.user.create({
-            data: {
+        const preparePlayerData = (
+          total: number, genero: string, docStart: number, nombres: string[],
+        ) => {
+          const docs: string[] = [];
+          const dataMap = new Map<string, any>();
+          for (let i = 0; i < total; i++) {
+            const doc = `${docStart + i}`;
+            docs.push(doc);
+            const nombre = nombres[i % nombres.length];
+            const apellido = this.APELLIDOS[i % this.APELLIDOS.length];
+            const suffix = i >= nombres.length ? `${Math.floor(i / nombres.length) + 1}` : '';
+            const ciudad = this.CIUDADES[i % this.CIUDADES.length];
+            dataMap.set(doc, {
               documento: doc,
               nombre: nombre + suffix,
               apellido,
@@ -1327,124 +1324,167 @@ export class AdminService {
               email: `test.${genero.toLowerCase().charAt(0)}${doc}@fairpadel-test.com`,
               telefono: `+595${genero === 'MASCULINO' ? '982' : '983'}${String(i + 1).padStart(6, '0')}`,
               passwordHash,
-              estado: 'ACTIVO',
+              estado: 'ACTIVO' as any,
               emailVerificado: true,
               ciudad,
-            },
+            });
+          }
+          return { docs, dataMap };
+        };
+
+        const batchCreatePlayers = async (
+          total: number, genero: string, docStart: number, nombres: string[],
+        ): Promise<{ id: string; documento: string }[]> => {
+          if (total === 0) return [];
+          const { docs, dataMap } = preparePlayerData(total, genero, docStart, nombres);
+
+          // Find existing users
+          const existing = await tx.user.findMany({
+            where: { documento: { in: docs } },
+            select: { id: true, documento: true },
           });
-          await this.prisma.userRole.create({ data: { userId: user.id, roleId: rolJugador.id } });
-          jugadoresCreados++;
-        }
-        players.push({ id: user.id, documento: user.documento });
-      }
-      return players;
-    };
+          const existingDocs = new Set(existing.map(u => u.documento));
 
-    const hombres = totalPlayersM > 0
-      ? await crearJugadores(totalPlayersM, 'MASCULINO', 4000001, this.NOMBRES_M)
-      : [];
-    const mujeres = totalPlayersF > 0
-      ? await crearJugadores(totalPlayersF, 'FEMENINO', 5000001, this.NOMBRES_F)
-      : [];
+          // Batch create new users
+          const newUsersData = docs
+            .filter(d => !existingDocs.has(d))
+            .map(d => dataMap.get(d)!);
 
-    // 5. Create pairs & inscriptions
-    let parejasInscritas = 0;
-    let categoriasCerradas = 0;
+          if (newUsersData.length > 0) {
+            await tx.user.createMany({ data: newUsersData, skipDuplicates: true });
+            jugadoresCreados += newUsersData.length;
+          }
 
-    const inscribirCategoria = async (
-      players: { id: string; documento: string }[],
-      startIdx: number,
-      targetPairs: number,
-      categoryId: string,
-    ): Promise<number> => {
-      let created = 0;
-      for (let i = 0; i < targetPairs; i++) {
-        const p1 = players[startIdx + i * 2];
-        const p2 = players[startIdx + i * 2 + 1];
-        if (!p1 || !p2) break;
-
-        // Check duplicate
-        const existing = await this.prisma.inscripcion.findFirst({
-          where: {
-            tournamentId,
-            categoryId,
-            pareja: {
-              OR: [
-                { jugador1Id: p1.id, jugador2Id: p2.id },
-                { jugador1Id: p2.id, jugador2Id: p1.id },
-              ],
-            },
-          },
-        });
-        if (existing) { created++; continue; }
-
-        const pareja = await this.prisma.pareja.create({
-          data: { jugador1Id: p1.id, jugador2Id: p2.id, jugador2Documento: p2.documento },
-        });
-
-        const inscripcion = await this.prisma.inscripcion.create({
-          data: {
-            tournamentId,
-            parejaId: pareja.id,
-            categoryId,
-            modalidad: modalidad as any,
-            estado: 'CONFIRMADA',
-            modoPago: 'COMPLETO',
-          },
-        });
-
-        if (monto > 0) {
-          await this.prisma.pago.create({
-            data: {
-              inscripcionId: inscripcion.id,
-              jugadorId: p1.id,
-              metodoPago: 'EFECTIVO',
-              monto,
-              comision,
-              estado: 'CONFIRMADO',
-              fechaPago: new Date(),
-              fechaConfirm: new Date(),
-            },
+          // Fetch all users (existing + newly created)
+          const allUsers = await tx.user.findMany({
+            where: { documento: { in: docs } },
+            select: { id: true, documento: true },
+            orderBy: { documento: 'asc' },
           });
+
+          // Batch create roles for new users only
+          const newRoles = allUsers
+            .filter(u => !existingDocs.has(u.documento))
+            .map(u => ({ userId: u.id, roleId: rolJugador.id }));
+          if (newRoles.length > 0) {
+            await tx.userRole.createMany({ data: newRoles, skipDuplicates: true });
+          }
+
+          // Return ordered by documento to match original index mapping
+          const userMap = new Map(allUsers.map(u => [u.documento, u]));
+          return docs.map(d => userMap.get(d)!);
+        };
+
+        const hombres = await batchCreatePlayers(totalPlayersM, 'MASCULINO', 4000001, this.NOMBRES_M);
+        const mujeres = await batchCreatePlayers(totalPlayersF, 'FEMENINO', 5000001, this.NOMBRES_F);
+
+        // ── CREATE PAIRS & INSCRIPTIONS ──────────────────────────
+        let parejasInscritas = 0;
+        let categoriasCerradas = 0;
+
+        const inscribirCategoria = async (
+          players: { id: string; documento: string }[],
+          startIdx: number,
+          targetPairs: number,
+          categoryId: string,
+        ): Promise<number> => {
+          let created = 0;
+          for (let i = 0; i < targetPairs; i++) {
+            const p1 = players[startIdx + i * 2];
+            const p2 = players[startIdx + i * 2 + 1];
+            if (!p1 || !p2) break;
+
+            // Check duplicate inscription
+            const existing = await tx.inscripcion.findFirst({
+              where: {
+                tournamentId,
+                categoryId,
+                pareja: {
+                  OR: [
+                    { jugador1Id: p1.id, jugador2Id: p2.id },
+                    { jugador1Id: p2.id, jugador2Id: p1.id },
+                  ],
+                },
+              },
+            });
+            if (existing) { created++; continue; }
+
+            const pareja = await tx.pareja.create({
+              data: { jugador1Id: p1.id, jugador2Id: p2.id, jugador2Documento: p2.documento },
+            });
+
+            const inscripcion = await tx.inscripcion.create({
+              data: {
+                tournamentId,
+                parejaId: pareja.id,
+                categoryId,
+                modalidad: modalidad as any,
+                estado: 'CONFIRMADA',
+                modoPago: 'COMPLETO',
+              },
+            });
+
+            if (monto > 0) {
+              await tx.pago.create({
+                data: {
+                  inscripcionId: inscripcion.id,
+                  jugadorId: p1.id,
+                  metodoPago: 'EFECTIVO',
+                  monto,
+                  comision,
+                  estado: 'CONFIRMADO',
+                  fechaPago: new Date(),
+                  fechaConfirm: new Date(),
+                },
+              });
+            }
+            created++;
+          }
+          return created;
+        };
+
+        // Inscribe masculine categories
+        let mIdx = 0;
+        for (const cat of categoriasMasc) {
+          const created = await inscribirCategoria(hombres, mIdx, cat.parejas, cat.catId);
+          mIdx += cat.parejas * 2;
+          parejasInscritas += created;
         }
-        created++;
+
+        // Inscribe feminine categories
+        let fIdx = 0;
+        for (const cat of categoriasFem) {
+          const created = await inscribirCategoria(mujeres, fIdx, cat.parejas, cat.catId);
+          fIdx += cat.parejas * 2;
+          parejasInscritas += created;
+        }
+
+        // Close inscriptions
+        const allCats = [...categoriasMasc, ...categoriasFem];
+        for (const cat of allCats) {
+          await tx.tournamentCategory.update({
+            where: { id: cat.tcId },
+            data: { estado: 'INSCRIPCIONES_CERRADAS', inscripcionAbierta: false },
+          });
+          categoriasCerradas++;
+        }
+
+        return {
+          jugadoresCreados,
+          parejasInscritas,
+          categoriasCerradas,
+          totalJugadoresM: totalPlayersM,
+          totalJugadoresF: totalPlayersF,
+          loginEjemplo: { documento: '4000001', password: 'test123' },
+        };
+      }, { timeout: 120000 }); // 2 min timeout for bulk operations
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
       }
-      return created;
-    };
-
-    // Inscribe masculine categories
-    let mIdx = 0;
-    for (const cat of categoriasMasc) {
-      const created = await inscribirCategoria(hombres, mIdx, cat.parejas, cat.catId);
-      mIdx += cat.parejas * 2;
-      parejasInscritas += created;
+      throw new InternalServerErrorException(
+        `Error al crear datos de prueba: ${error.message}`,
+      );
     }
-
-    // Inscribe feminine categories
-    let fIdx = 0;
-    for (const cat of categoriasFem) {
-      const created = await inscribirCategoria(mujeres, fIdx, cat.parejas, cat.catId);
-      fIdx += cat.parejas * 2;
-      parejasInscritas += created;
-    }
-
-    // 6. Close inscriptions
-    const allCats = [...categoriasMasc, ...categoriasFem];
-    for (const cat of allCats) {
-      await this.prisma.tournamentCategory.update({
-        where: { id: cat.tcId },
-        data: { estado: 'INSCRIPCIONES_CERRADAS', inscripcionAbierta: false },
-      });
-      categoriasCerradas++;
-    }
-
-    return {
-      jugadoresCreados,
-      parejasInscritas,
-      categoriasCerradas,
-      totalJugadoresM: totalPlayersM,
-      totalJugadoresF: totalPlayersF,
-      loginEjemplo: { documento: '4000001', password: 'test123' },
-    };
   }
 }

@@ -576,7 +576,7 @@ export class FixtureService {
     // ════════════════════════════════════════
     // Emparejamiento serpentina: seed 1 vs seed N, seed 2 vs seed N-1...
     const r1Matches: Array<{ pareja1: any; pareja2: any; matchIndex: number }> = [];
-    const r1ByePairs: any[] = []; // Parejas con BYE en R1 (van directo a R2)
+    const r1ByePairs: any[] = []; // Parejas con BYE en R1 (van directo al bracket)
 
     const numR1Matches = Math.floor(N / 2);
     for (let i = 0; i < numR1Matches; i++) {
@@ -615,13 +615,12 @@ export class FixtureService {
     // ════════════════════════════════════════
     // FASE 2: ACOMODACIÓN 2 (R2)
     // ════════════════════════════════════════
-    // R2 recibe: perdedores de R1 + BYEs de R1
+    // R2 recibe SOLO perdedores de R1 (BYEs de R1 van directo al bracket)
     // Los perdedores se llenan dinámicamente (cuando se carga resultado de R1)
-    // Pero necesitamos crear los matches de R2 ahora con slots vacíos
-    // y pre-asignar las parejas con BYE de R1
+    // Necesitamos crear los matches de R2 ahora con slots vacíos
 
     const numR1Losers = numR1Matches; // cada match R1 produce 1 perdedor
-    const totalR2Entrants = numR1Losers + r1ByePairs.length;
+    const totalR2Entrants = numR1Losers; // Solo perdedores, BYEs de R1 van al bracket
     const numR2Matches = Math.floor(totalR2Entrants / 2);
     const r2ByeCount = totalR2Entrants % 2; // 0 o 1
 
@@ -644,31 +643,13 @@ export class FixtureService {
     }
 
     // Enlazar R1 → R2 (perdedores): cada match R1 envía su perdedor a un match R2
-    // IMPORTANTE: Los BYEs de R1 van PRIMERO a R2 para que no reciban otro BYE en R2
-    // (si totalR2Entrants es impar, un perdedor de R1 —que ya jugó 1 match— recibe
-    // el BYE de R2 y va directo al bracket, NO la pareja con BYE de R1)
+    // BYEs de R1 NO entran a R2 — van directo al bracket (FASE 4)
 
     let r2SlotCounter = 0;
     // Índice del R1 match cuyo perdedor recibirá BYE en R2 (va directo al bracket)
     let r2ByeR1MatchIdx = -1;
 
-    // PRIMERO: Pre-asignar BYEs de R1 a los primeros slots de R2
-    for (const byePair of r1ByePairs) {
-      const r2MatchIdx = Math.floor(r2SlotCounter / 2);
-      const r2Pos: 1 | 2 = (r2SlotCounter % 2 === 0) ? 1 : 2;
-
-      if (r2MatchIdx < createdR2.length) {
-        const campo = r2Pos === 1 ? 'pareja1Id' : 'pareja2Id';
-        await tx.match.update({
-          where: { id: createdR2[r2MatchIdx].id },
-          data: { [campo]: byePair.id },
-        });
-        createdR2[r2MatchIdx][campo] = byePair.id;
-      }
-      r2SlotCounter++;
-    }
-
-    // LUEGO: Enlazar perdedores de R1 a los slots restantes de R2
+    // Enlazar perdedores de R1 a slots de R2
     for (let i = 0; i < createdR1.length; i++) {
       const r2MatchIdx = Math.floor(r2SlotCounter / 2);
       const r2Pos: 1 | 2 = (r2SlotCounter % 2 === 0) ? 1 : 2;
@@ -692,12 +673,12 @@ export class FixtureService {
     // ════════════════════════════════════════
     // FASE 3: BRACKET PRINCIPAL
     // ════════════════════════════════════════
-    // Entran: ganadores R1 + ganadores R2 (+ BYEs R2 si hay)
+    // Entran: ganadores R1 + BYEs R1 (directo) + ganadores R2 + BYEs R2 (si hay)
     const ganadoresR1 = numR1Matches; // cada match R1 produce 1 ganador
     const ganadoresR2 = numR2Matches; // cada match R2 produce 1 ganador
     const byesR2Direct = r2ByeCount; // si totalR2Entrants es impar, 1 pareja pasa directo
 
-    const totalBracketEntrants = ganadoresR1 + ganadoresR2 + byesR2Direct;
+    const totalBracketEntrants = ganadoresR1 + r1ByePairs.length + ganadoresR2 + byesR2Direct;
     const bracketSize = this.nextPowerOf2(totalBracketEntrants);
     const numBracketRondas = Math.ceil(Math.log2(bracketSize));
 
@@ -772,9 +753,7 @@ export class FixtureService {
     // ════════════════════════════════════════
     // FASE 4: ENLAZAR R1/R2 → BRACKET
     // ════════════════════════════════════════
-    // Los ganadores de R1 ocupan los primeros slots del bracket (mejores seeds)
-    // Los ganadores de R2 ocupan los slots restantes
-    // El perdedor de R1 con BYE en R2 (si hay) ocupa un slot extra
+    // Orden de slots: ganadores R1, BYEs R1 (directo), ganadores R2, BYE R2 (si hay)
     const bracketFirstRound = createdBracketByRound[0];
 
     let bracketSlotCounter = 0;
@@ -792,6 +771,22 @@ export class FixtureService {
             posicionEnSiguiente: bracketPos,
           },
         });
+      }
+      bracketSlotCounter++;
+    }
+
+    // Enlazar BYEs de R1 → bracket directo (seed medio, mejor que R2 winners)
+    for (const byePair of r1ByePairs) {
+      const bracketMatchIdx = Math.floor(bracketSlotCounter / 2);
+      const bracketPos: 1 | 2 = (bracketSlotCounter % 2 === 0) ? 1 : 2;
+
+      if (bracketMatchIdx < bracketFirstRound.length) {
+        const campo = bracketPos === 1 ? 'pareja1Id' : 'pareja2Id';
+        await tx.match.update({
+          where: { id: bracketFirstRound[bracketMatchIdx].id },
+          data: { [campo]: byePair.id },
+        });
+        bracketFirstRound[bracketMatchIdx][campo] = byePair.id;
       }
       bracketSlotCounter++;
     }
