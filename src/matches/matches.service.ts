@@ -195,6 +195,12 @@ export class MatchesService {
       } catch (e) {
         this.logger.error(`[AutoSchedule] Error scheduling winner's next match: ${e.message}`);
       }
+      // Verificar si el match destino es ahora un BYE (1 pareja + slot vacío sin feeders)
+      try {
+        await this.checkAndAutoAdvanceBracketBye(match.partidoSiguienteId, match.tournamentId);
+      } catch (e) {
+        this.logger.error(`[BracketBYE] Error checking bracket BYE: ${e.message}`);
+      }
     }
 
     // Avanzar perdedor al partido de acomodación R2 (si aplica)
@@ -530,6 +536,95 @@ export class MatchesService {
       } catch (e) {
         this.logger.error(`[AutoSchedule] Error scheduling post-R2-BYE: ${e.message}`);
       }
+
+      // Verificar si el bracket match destino es ahora un BYE (cascade)
+      try {
+        await this.checkAndAutoAdvanceBracketBye(match.partidoSiguienteId, match.tournamentId);
+      } catch (e) {
+        this.logger.error(`[BracketBYE] Error checking bracket BYE post-R2: ${e.message}`);
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // AUTO-ADVANCE BRACKET BYE — Detección y cascade en bracket
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Verifica si un match del bracket tiene condición de BYE después de recibir
+   * una pareja (1 pareja + 1 null sin feeders pendientes).
+   * Si es BYE → auto-avanza y verifica recursivamente el siguiente match.
+   */
+  private async checkAndAutoAdvanceBracketBye(
+    matchId: string,
+    tournamentId: string,
+  ): Promise<void> {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+    });
+    if (!match || match.estado !== 'PROGRAMADO') return;
+
+    const hasP1 = match.pareja1Id !== null;
+    const hasP2 = match.pareja2Id !== null;
+
+    if (hasP1 && hasP2) return; // Match real, se juega normalmente
+    if (!hasP1 && !hasP2) return; // Ambos vacíos, esperando feeders
+
+    // Tiene exactamente 1 pareja — verificar si la otra llega
+    const emptyPos = hasP1 ? 2 : 1;
+    const winnerId = hasP1 ? match.pareja1Id : match.pareja2Id;
+
+    // Contar feeders activos para la posición vacía
+    // (excluir feeders WO sin ganador = phantoms que nunca enviarán pareja)
+    const feeders = await this.prisma.match.findMany({
+      where: {
+        OR: [
+          { partidoSiguienteId: matchId, posicionEnSiguiente: emptyPos },
+          { partidoPerdedorSiguienteId: matchId, posicionEnPerdedor: emptyPos },
+        ],
+      },
+      select: { estado: true, parejaGanadoraId: true },
+    });
+
+    // Feeders pendientes = NO finalizados/WO/cancelados (podrían aún enviar)
+    // + WO CON ganador (ya enviaron, pero el slot debería estar lleno)
+    const pendingFeeders = feeders.filter(f => {
+      if (f.estado === 'WO' && !f.parejaGanadoraId) return false; // phantom → muerto
+      if (['FINALIZADO', 'WO', 'CANCELADO'].includes(f.estado)) return false; // ya resuelto
+      return true; // PROGRAMADO o EN_JUEGO → aún puede enviar
+    });
+
+    if (pendingFeeders.length > 0) return; // Hay feeders pendientes, esperar
+
+    // BYE confirmado → auto-avanzar
+    this.logger.log(`[BracketBYE] Match ${matchId} es BYE — avanzando ${winnerId}`);
+
+    await this.prisma.match.update({
+      where: { id: matchId },
+      data: {
+        estado: 'WO',
+        parejaGanadoraId: winnerId,
+        observaciones: 'BYE - Avance automático (Bracket)',
+      },
+    });
+
+    // Propagar al siguiente match
+    if (match.partidoSiguienteId && match.posicionEnSiguiente) {
+      const campo = match.posicionEnSiguiente === 1 ? 'pareja1Id' : 'pareja2Id';
+      await this.prisma.match.update({
+        where: { id: match.partidoSiguienteId },
+        data: { [campo]: winnerId },
+      });
+
+      // Auto-schedule si ambas parejas listas
+      try {
+        await this.autoScheduleNextMatch(match.partidoSiguienteId, tournamentId);
+      } catch (e) {
+        this.logger.error(`[AutoSchedule] Error scheduling post-bracket-BYE: ${e.message}`);
+      }
+
+      // CASCADE: verificar si el siguiente match ahora también es BYE
+      await this.checkAndAutoAdvanceBracketBye(match.partidoSiguienteId, tournamentId);
     }
   }
 
