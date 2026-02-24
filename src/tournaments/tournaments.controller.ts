@@ -20,6 +20,12 @@ import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto';
+import {
+  CreateMovimientoDto,
+  UpdateMovimientoDto,
+  CreateAuspicianteEspecieDto,
+  UpdateAuspicianteEspecieDto,
+} from './dto/finanzas.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -403,5 +409,95 @@ export class TournamentsController {
     @Request() req,
   ) {
     return this.tournamentsService.deleteCuentaBancaria(id, cuentaId, req.user.id);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // FINANZAS: Movimientos (Ingresos/Egresos)
+  // ═══════════════════════════════════════════════════════
+
+  @Get(':id/movimientos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  getMovimientos(@Param('id') id: string, @Request() req) {
+    return this.tournamentsService.getMovimientos(id, req.user.id);
+  }
+
+  @Post(':id/movimientos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  createMovimiento(
+    @Param('id') id: string,
+    @Body() dto: CreateMovimientoDto,
+    @Request() req,
+  ) {
+    return this.tournamentsService.createMovimiento(id, req.user.id, dto);
+  }
+
+  @Patch(':id/movimientos/:mid')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  updateMovimiento(
+    @Param('id') id: string,
+    @Param('mid') mid: string,
+    @Body() dto: UpdateMovimientoDto,
+    @Request() req,
+  ) {
+    return this.tournamentsService.updateMovimiento(id, mid, req.user.id, dto);
+  }
+
+  @Delete(':id/movimientos/:mid')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  deleteMovimiento(
+    @Param('id') id: string,
+    @Param('mid') mid: string,
+    @Request() req,
+  ) {
+    return this.tournamentsService.deleteMovimiento(id, mid, req.user.id);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // FINANZAS: Auspiciantes en Especie
+  // ═══════════════════════════════════════════════════════
+
+  @Get(':id/auspiciantes-especie')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  getAuspiciantesEspecie(@Param('id') id: string, @Request() req) {
+    return this.tournamentsService.getAuspiciantesEspecie(id, req.user.id);
+  }
+
+  @Post(':id/auspiciantes-especie')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  createAuspicianteEspecie(
+    @Param('id') id: string,
+    @Body() dto: CreateAuspicianteEspecieDto,
+    @Request() req,
+  ) {
+    return this.tournamentsService.createAuspicianteEspecie(id, req.user.id, dto);
+  }
+
+  @Patch(':id/auspiciantes-especie/:aid')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  updateAuspicianteEspecie(
+    @Param('id') id: string,
+    @Param('aid') aid: string,
+    @Body() dto: UpdateAuspicianteEspecieDto,
+    @Request() req,
+  ) {
+    return this.tournamentsService.updateAuspicianteEspecie(id, aid, req.user.id, dto);
+  }
+
+  @Delete(':id/auspiciantes-especie/:aid')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  deleteAuspicianteEspecie(
+    @Param('id') id: string,
+    @Param('aid') aid: string,
+    @Request() req,
+  ) {
+    return this.tournamentsService.deleteAuspicianteEspecie(id, aid, req.user.id);
   }
 }

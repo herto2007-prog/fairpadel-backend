@@ -171,6 +171,23 @@ enum BannerZona {
   TORNEO_DETALLE
 }
 
+enum TipoMovimiento {
+  INGRESO
+  EGRESO
+}
+
+enum CategoriaMovimiento {
+  PREMIO
+  ARBITRAJE
+  ALQUILER_CANCHA
+  PELOTAS
+  PUBLICIDAD
+  LOGISTICA
+  ALIMENTACION
+  AUSPICIO_EFECTIVO
+  OTRO
+}
+
 // ═══════════════════════════════════════════════════════
 // MÓDULO 1: AUTENTICACIÓN Y USUARIOS
 // ═══════════════════════════════════════════════════════
@@ -234,6 +251,8 @@ model User {
   comentariosPublicaciones  ComentarioPublicacion[]
   alertasPersonalizadas     AlertaPersonalizada[]
   pagos                     Pago[]              @relation("PagosJugador")
+  movimientosCreados        MovimientoFinanciero[] @relation("MovimientosCreados")
+  auspiciosCreados          AuspicianteEspecie[]   @relation("AuspiciosCreados")
 
   @@map("users")
 }
@@ -528,8 +547,10 @@ model Tournament {
   premios           TournamentPremio[]
   historialPuntos   HistorialPuntos[]
   cuentasBancarias  CuentaBancaria[]
-  banners           Banner[]
-  publicacionesFeed PublicacionFeed[] @relation("FeedTournament")
+  banners              Banner[]
+  publicacionesFeed    PublicacionFeed[] @relation("FeedTournament")
+  movimientos          MovimientoFinanciero[]
+  auspiciantesEspecie  AuspicianteEspecie[]
 
   @@map("tournaments")
 }
@@ -570,7 +591,8 @@ model TournamentSponsor {
   orden        Int        @default(0)
   createdAt    DateTime   @default(now()) @map("created_at")
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament       Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  auspiciosEspecie AuspicianteEspecie[]
 
   @@map("tournament_sponsors")
 }
@@ -1263,4 +1285,49 @@ model AlertaPersonalizada {
 
   @@unique([userId, tipo])
   @@map("alertas_personalizadas")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO: FINANZAS (Movimientos e Ingresos/Egresos)
+// ═══════════════════════════════════════════════════════
+
+model MovimientoFinanciero {
+  id              String              @id @default(uuid())
+  tournamentId    String              @map("tournament_id")
+  tipo            TipoMovimiento
+  categoria       CategoriaMovimiento
+  concepto        String              @db.VarChar(300)
+  monto           Decimal             @db.Decimal(10, 2)
+  fecha           DateTime            @default(now())
+  observaciones   String?             @db.Text
+  creadoPor       String              @map("creado_por")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  tournament      Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  creador         User                @relation("MovimientosCreados", fields: [creadoPor], references: [id])
+
+  @@index([tournamentId, tipo])
+  @@map("movimientos_financieros")
+}
+
+model AuspicianteEspecie {
+  id              String      @id @default(uuid())
+  tournamentId    String      @map("tournament_id")
+  sponsorId       String?     @map("sponsor_id")
+  nombre          String
+  descripcion     String      @db.Text
+  valorEstimado   Decimal     @map("valor_estimado") @db.Decimal(10, 2)
+  fecha           DateTime    @default(now())
+  observaciones   String?     @db.Text
+  creadoPor       String      @map("creado_por")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  tournament      Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  sponsor         TournamentSponsor?  @relation(fields: [sponsorId], references: [id], onDelete: SetNull)
+  creador         User                @relation("AuspiciosCreados", fields: [creadoPor], references: [id])
+
+  @@index([tournamentId])
+  @@map("auspiciantes_especie")
 }

@@ -8,6 +8,12 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { CreateTournamentDto, UpdateTournamentDto } from './dto';
+import {
+  CreateMovimientoDto,
+  UpdateMovimientoDto,
+  CreateAuspicianteEspecieDto,
+  UpdateAuspicianteEspecieDto,
+} from './dto/finanzas.dto';
 import * as ExcelJS from 'exceljs';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PDFDocument = require('pdfkit');
@@ -706,6 +712,41 @@ export class TournamentsService {
 
     const totalNeto = totalRecaudado - totalComisiones;
 
+    // --- Movimientos financieros manuales ---
+    const movimientos = await this.prisma.movimientoFinanciero.findMany({
+      where: { tournamentId },
+    });
+
+    let totalIngresos = 0;
+    let totalEgresos = 0;
+    const movPorCategoria: Record<string, { categoria: string; tipo: string; total: number; count: number }> = {};
+
+    for (const mov of movimientos) {
+      const monto = mov.monto.toNumber();
+      if (mov.tipo === 'INGRESO') {
+        totalIngresos += monto;
+      } else {
+        totalEgresos += monto;
+      }
+      const key = `${mov.tipo}_${mov.categoria}`;
+      if (!movPorCategoria[key]) {
+        movPorCategoria[key] = { categoria: mov.categoria, tipo: mov.tipo, total: 0, count: 0 };
+      }
+      movPorCategoria[key].total += monto;
+      movPorCategoria[key].count++;
+    }
+
+    // --- Auspiciantes en especie ---
+    const auspiciosEspecie = await this.prisma.auspicianteEspecie.findMany({
+      where: { tournamentId },
+    });
+    const totalEstimadoEspecie = auspiciosEspecie.reduce((sum, a) => sum + a.valorEstimado.toNumber(), 0);
+
+    // --- Resumen general ---
+    const ingresosEfectivo = totalRecaudado + totalIngresos;
+    const egresosEfectivo = totalEgresos;
+    const balanceEfectivo = ingresosEfectivo - egresosEfectivo;
+
     return {
       costoInscripcion,
       totalInscripciones: inscripciones.length,
@@ -717,6 +758,21 @@ export class TournamentsService {
       pagosRechazados,
       inscripcionesGratis,
       porCategoria: Object.values(porCategoria),
+      movimientos: {
+        totalIngresos,
+        totalEgresos,
+        porCategoria: Object.values(movPorCategoria),
+      },
+      auspiciosEspecie: {
+        totalEstimado: totalEstimadoEspecie,
+        count: auspiciosEspecie.length,
+      },
+      resumenGeneral: {
+        ingresosEfectivo,
+        egresosEfectivo,
+        balanceEfectivo,
+        valorEspecie: totalEstimadoEspecie,
+      },
     };
   }
 
@@ -1770,6 +1826,160 @@ export class TournamentsService {
       where: { id: cuentaId },
     });
 
+    return { deleted: true };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // FINANZAS: Movimientos (Ingresos/Egresos)
+  // ═══════════════════════════════════════════════════════
+
+  private async verifyFinanzasAccess(tournamentId: string, userId: string) {
+    const tournament = await this.findOne(tournamentId);
+    if (tournament.organizadorId !== userId) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      const isAdmin = userRoles.some((ur) => ur.role.nombre === 'admin');
+      if (!isAdmin) {
+        throw new ForbiddenException('No tienes permiso para gestionar las finanzas de este torneo');
+      }
+    }
+    return tournament;
+  }
+
+  async getMovimientos(tournamentId: string, userId: string) {
+    await this.verifyFinanzasAccess(tournamentId, userId);
+    return this.prisma.movimientoFinanciero.findMany({
+      where: { tournamentId },
+      include: { creador: { select: { nombre: true, apellido: true } } },
+      orderBy: { fecha: 'desc' },
+    });
+  }
+
+  async createMovimiento(tournamentId: string, userId: string, dto: CreateMovimientoDto) {
+    await this.verifyFinanzasAccess(tournamentId, userId);
+    return this.prisma.movimientoFinanciero.create({
+      data: {
+        tournamentId,
+        tipo: dto.tipo,
+        categoria: dto.categoria,
+        concepto: dto.concepto,
+        monto: dto.monto,
+        fecha: dto.fecha ? new Date(dto.fecha) : new Date(),
+        observaciones: dto.observaciones,
+        creadoPor: userId,
+      },
+      include: { creador: { select: { nombre: true, apellido: true } } },
+    });
+  }
+
+  async updateMovimiento(tournamentId: string, movimientoId: string, userId: string, dto: UpdateMovimientoDto) {
+    await this.verifyFinanzasAccess(tournamentId, userId);
+    const mov = await this.prisma.movimientoFinanciero.findFirst({
+      where: { id: movimientoId, tournamentId },
+    });
+    if (!mov) throw new NotFoundException('Movimiento no encontrado');
+
+    return this.prisma.movimientoFinanciero.update({
+      where: { id: movimientoId },
+      data: {
+        ...(dto.tipo !== undefined && { tipo: dto.tipo }),
+        ...(dto.categoria !== undefined && { categoria: dto.categoria }),
+        ...(dto.concepto !== undefined && { concepto: dto.concepto }),
+        ...(dto.monto !== undefined && { monto: dto.monto }),
+        ...(dto.fecha !== undefined && { fecha: new Date(dto.fecha) }),
+        ...(dto.observaciones !== undefined && { observaciones: dto.observaciones }),
+      },
+      include: { creador: { select: { nombre: true, apellido: true } } },
+    });
+  }
+
+  async deleteMovimiento(tournamentId: string, movimientoId: string, userId: string) {
+    await this.verifyFinanzasAccess(tournamentId, userId);
+    const mov = await this.prisma.movimientoFinanciero.findFirst({
+      where: { id: movimientoId, tournamentId },
+    });
+    if (!mov) throw new NotFoundException('Movimiento no encontrado');
+
+    await this.prisma.movimientoFinanciero.delete({ where: { id: movimientoId } });
+    return { deleted: true };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // FINANZAS: Auspiciantes en Especie
+  // ═══════════════════════════════════════════════════════
+
+  async getAuspiciantesEspecie(tournamentId: string, userId: string) {
+    await this.verifyFinanzasAccess(tournamentId, userId);
+    return this.prisma.auspicianteEspecie.findMany({
+      where: { tournamentId },
+      include: {
+        sponsor: { select: { id: true, nombre: true, logoUrl: true } },
+        creador: { select: { nombre: true, apellido: true } },
+      },
+      orderBy: { fecha: 'desc' },
+    });
+  }
+
+  async createAuspicianteEspecie(tournamentId: string, userId: string, dto: CreateAuspicianteEspecieDto) {
+    await this.verifyFinanzasAccess(tournamentId, userId);
+    if (dto.sponsorId) {
+      const sponsor = await this.prisma.tournamentSponsor.findFirst({
+        where: { id: dto.sponsorId, tournamentId },
+      });
+      if (!sponsor) throw new NotFoundException('Auspiciante no encontrado en este torneo');
+    }
+    return this.prisma.auspicianteEspecie.create({
+      data: {
+        tournamentId,
+        sponsorId: dto.sponsorId || null,
+        nombre: dto.nombre,
+        descripcion: dto.descripcion,
+        valorEstimado: dto.valorEstimado,
+        fecha: dto.fecha ? new Date(dto.fecha) : new Date(),
+        observaciones: dto.observaciones,
+        creadoPor: userId,
+      },
+      include: {
+        sponsor: { select: { id: true, nombre: true, logoUrl: true } },
+        creador: { select: { nombre: true, apellido: true } },
+      },
+    });
+  }
+
+  async updateAuspicianteEspecie(tournamentId: string, auspicioId: string, userId: string, dto: UpdateAuspicianteEspecieDto) {
+    await this.verifyFinanzasAccess(tournamentId, userId);
+    const ausp = await this.prisma.auspicianteEspecie.findFirst({
+      where: { id: auspicioId, tournamentId },
+    });
+    if (!ausp) throw new NotFoundException('Auspicio en especie no encontrado');
+
+    return this.prisma.auspicianteEspecie.update({
+      where: { id: auspicioId },
+      data: {
+        ...(dto.sponsorId !== undefined && { sponsorId: dto.sponsorId || null }),
+        ...(dto.nombre !== undefined && { nombre: dto.nombre }),
+        ...(dto.descripcion !== undefined && { descripcion: dto.descripcion }),
+        ...(dto.valorEstimado !== undefined && { valorEstimado: dto.valorEstimado }),
+        ...(dto.fecha !== undefined && { fecha: new Date(dto.fecha) }),
+        ...(dto.observaciones !== undefined && { observaciones: dto.observaciones }),
+      },
+      include: {
+        sponsor: { select: { id: true, nombre: true, logoUrl: true } },
+        creador: { select: { nombre: true, apellido: true } },
+      },
+    });
+  }
+
+  async deleteAuspicianteEspecie(tournamentId: string, auspicioId: string, userId: string) {
+    await this.verifyFinanzasAccess(tournamentId, userId);
+    const ausp = await this.prisma.auspicianteEspecie.findFirst({
+      where: { id: auspicioId, tournamentId },
+    });
+    if (!ausp) throw new NotFoundException('Auspicio en especie no encontrado');
+
+    await this.prisma.auspicianteEspecie.delete({ where: { id: auspicioId } });
     return { deleted: true };
   }
 }
