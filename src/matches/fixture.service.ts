@@ -252,11 +252,13 @@ export class FixtureService {
         );
 
         // Categoría va a FIXTURE_BORRADOR (no a SORTEO_REALIZADO)
+        // Guardar fechaInicioPartidos para usarla en armarZona2() (R2 scheduling)
         await tx.tournamentCategory.update({
           where: { id: tournamentCategory.id },
           data: {
             estado: 'FIXTURE_BORRADOR',
             inscripcionAbierta: false,
+            fechaInicioPartidos: fechaInicio || null,
           },
         });
 
@@ -808,10 +810,23 @@ export class FixtureService {
       }
     } else if (numR1Matches > 0) {
       // Caso B: N es potencia de 2 — no hay R2, R1 losers van directo al bracket
-      // Anti-reencuentro: losers en orden inverso para ir al cuadrante opuesto del winner
-      for (let i = createdR1.length - 1; i >= 0; i--) {
-        await assignToBracket(seedCounter, null, createdR1[i].id, 'loser');
-        seedCounter++;
+      // Anti-reencuentro: loser va a la posición ESPEJO del winner en el bracket
+      // Esto garantiza que winner y loser del mismo R1 NUNCA caigan en el mismo bracket match.
+      // Ej bracket 8: winner pos 0 (match 0) → loser pos 7 (match 3, mitad opuesta) ✓
+      for (let i = 0; i < createdR1.length; i++) {
+        const winnerPos = seedPositions[i]; // posición donde fue el winner de R1[i]
+        const loserPos = bracketSize - 1 - winnerPos; // posición espejo
+        const bracketMatchIdx = Math.floor(loserPos / 2);
+        const bracketPos: 1 | 2 = (loserPos % 2 === 0) ? 1 : 2;
+        if (bracketMatchIdx < bracketFirstRound.length) {
+          await tx.match.update({
+            where: { id: createdR1[i].id },
+            data: {
+              partidoPerdedorSiguienteId: bracketFirstRound[bracketMatchIdx].id,
+              posicionEnPerdedor: bracketPos,
+            },
+          });
+        }
       }
     }
     const r2BracketSeedStart = seedCounter;
@@ -1155,6 +1170,14 @@ export class FixtureService {
       });
       const minutosPorPartido = tournament?.minutosPorPartido || 60;
 
+      // Obtener fechaInicioPartidos guardada durante el sorteo
+      const tournamentCat = await tx.tournamentCategory.findFirst({
+        where: { tournamentId, categoryId },
+        select: { fechaInicioPartidos: true },
+      });
+      const fechaInicioR2 = tournamentCat?.fechaInicioPartidos || undefined;
+      this.logger.log(`[ArmarZ2] R2 scheduling con fechaInicio=${fechaInicioR2 || 'none'}`);
+
       // Refetch R2 matches with actual pairs
       const r2ToSchedule = await tx.match.findMany({
         where: {
@@ -1176,6 +1199,8 @@ export class FixtureService {
           tournamentId,
           minutosPorPartido,
           10,
+          undefined, // categoryOrden
+          fechaInicioR2, // usar fecha guardada durante sorteo
         );
       }
     }, { maxWait: 10000, timeout: 30000 });
@@ -1435,6 +1460,10 @@ export class FixtureService {
     const allSlots = fechaInicio
       ? allSlotsRaw.filter((s) => dateKey(s.fecha) >= fechaInicio)
       : allSlotsRaw;
+
+    this.logger.log(
+      `[Scheduling] fechaInicio=${fechaInicio || 'none'}, slotsRaw=${allSlotsRaw.length}, slotsFiltered=${allSlots.length}, partidos=${partidos.length}`
+    );
 
     if (allSlots.length === 0) {
       return { asignados: 0, sinSlot: partidos.length };

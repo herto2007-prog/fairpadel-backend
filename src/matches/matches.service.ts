@@ -188,16 +188,33 @@ export class MatchesService {
       });
     }
 
-    // Avanzar ganador al siguiente partido (usa posicionEnSiguiente)
+    // ── PASO 1: Propagar AMBOS (winner + loser) ANTES de BYE checks ──
+    // Orden crítico: si winner y loser van al MISMO bracket match (Caso B),
+    // el BYE check debe ejecutarse DESPUÉS de que ambos estén colocados.
+
+    // 1a. Avanzar ganador al siguiente partido (usa posicionEnSiguiente)
     if (match.partidoSiguienteId) {
       await this.avanzarGanador(match.partidoSiguienteId, ganadorId, match.id);
-      // Auto-schedule: si el siguiente partido tiene ambas parejas → asignar cancha
+    }
+
+    // 1b. Avanzar perdedor al partido de R2/bracket (usa posicionEnPerdedor)
+    if (match.partidoPerdedorSiguienteId && match.posicionEnPerdedor) {
+      const campoP = match.posicionEnPerdedor === 1 ? 'pareja1Id' : 'pareja2Id';
+      await this.prisma.match.update({
+        where: { id: match.partidoPerdedorSiguienteId },
+        data: { [campoP]: perdedorId },
+      });
+    }
+
+    // ── PASO 2: Auto-schedule y BYE checks (DESPUÉS de ambas propagaciones) ──
+
+    // 2a. Auto-schedule + BYE check del winner's next match
+    if (match.partidoSiguienteId) {
       try {
         await this.autoScheduleNextMatch(match.partidoSiguienteId, match.tournamentId);
       } catch (e) {
         this.logger.error(`[AutoSchedule] Error scheduling winner's next match: ${e.message}`);
       }
-      // Verificar si el match destino es ahora un BYE (1 pareja + slot vacío sin feeders)
       try {
         await this.checkAndAutoAdvanceBracketBye(match.partidoSiguienteId, match.tournamentId);
       } catch (e) {
@@ -205,46 +222,42 @@ export class MatchesService {
       }
     }
 
-    // Avanzar perdedor al partido de acomodación R2 (si aplica)
+    // 2b. Auto-schedule + BYE check del loser's next match
     if (match.partidoPerdedorSiguienteId && match.posicionEnPerdedor) {
       const campoP = match.posicionEnPerdedor === 1 ? 'pareja1Id' : 'pareja2Id';
-      await this.prisma.match.update({
-        where: { id: match.partidoPerdedorSiguienteId },
-        data: { [campoP]: perdedorId },
-      });
-
-      // Verificar si el match R2 destino ya tiene ambas parejas → auto-check BYE
-      const r2Match = await this.prisma.match.findUnique({
+      const loserMatch = await this.prisma.match.findUnique({
         where: { id: match.partidoPerdedorSiguienteId },
       });
-      if (r2Match && r2Match.pareja1Id && r2Match.pareja2Id) {
-        // Ambos slots llenos → auto-schedule R2 match si no tiene cancha
+      if (loserMatch && loserMatch.pareja1Id && loserMatch.pareja2Id) {
+        // Ambos slots llenos → auto-schedule
         try {
-          await this.autoScheduleNextMatch(r2Match.id, match.tournamentId);
+          await this.autoScheduleNextMatch(loserMatch.id, match.tournamentId);
         } catch (e) {
-          this.logger.error(`[AutoSchedule] Error scheduling R2 match: ${e.message}`);
+          this.logger.error(`[AutoSchedule] Error scheduling loser's next match: ${e.message}`);
         }
-      } else if (r2Match) {
+      } else if (loserMatch) {
         // Verificar si hay otro feeder pendiente para el slot vacío
         const otherPos = match.posicionEnPerdedor === 1 ? 2 : 1;
         const otherSlotField = otherPos === 1 ? 'pareja1Id' : 'pareja2Id';
-        if (r2Match[otherSlotField]) {
-          // Ambos slots llenos ahora → nada que hacer
-        } else {
-          // Slot vacío — verificar si hay feeders pendientes
+        if (!loserMatch[otherSlotField]) {
           const pendingFeeders = await this.prisma.match.count({
             where: {
               OR: [
-                { partidoPerdedorSiguienteId: r2Match.id, posicionEnPerdedor: otherPos },
+                { partidoPerdedorSiguienteId: loserMatch.id, posicionEnPerdedor: otherPos },
               ],
               estado: { notIn: ['FINALIZADO', 'WO', 'CANCELADO'] },
             },
           });
-          if (pendingFeeders === 0 && r2Match[campoP]) {
-            // No hay feeders pendientes y ya tiene 1 pareja → BYE en R2
-            await this.autoAdvanceR2Bye(r2Match.id, r2Match[campoP]);
+          if (pendingFeeders === 0 && loserMatch[campoP]) {
+            await this.autoAdvanceR2Bye(loserMatch.id, loserMatch[campoP]);
           }
         }
+      }
+      // BYE check para bracket matches (loser puede ir a bracket en Caso B)
+      try {
+        await this.checkAndAutoAdvanceBracketBye(match.partidoPerdedorSiguienteId, match.tournamentId);
+      } catch (e) {
+        this.logger.error(`[BracketBYE] Error checking loser bracket BYE: ${e.message}`);
       }
     }
 

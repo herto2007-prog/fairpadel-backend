@@ -556,12 +556,13 @@ model Tournament {
 }
 
 model TournamentCategory {
-  id                 String           @id @default(uuid())
-  tournamentId       String           @map("tournament_id")
-  categoryId         String           @map("category_id")
-  inscripcionAbierta Boolean          @default(true) @map("inscripcion_abierta")
-  estado             CategoriaEstado  @default(INSCRIPCIONES_ABIERTAS)
-  createdAt          DateTime         @default(now()) @map("created_at")
+  id                    String           @id @default(uuid())
+  tournamentId          String           @map("tournament_id")
+  categoryId            String           @map("category_id")
+  inscripcionAbierta    Boolean          @default(true) @map("inscripcion_abierta")
+  estado                CategoriaEstado  @default(INSCRIPCIONES_ABIERTAS)
+  fechaInicioPartidos   String?          @map("fecha_inicio_partidos")
+  createdAt             DateTime         @default(now()) @map("created_at")
 
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   category   Category   @relation(fields: [categoryId], references: [id])
