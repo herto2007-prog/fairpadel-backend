@@ -274,6 +274,7 @@ export class FixtureService {
       tournamentId,
       categoryId,
       fixture,
+      scheduling: fixture?.scheduling || { asignados: 0, sinSlot: 0 },
       message: 'Sorteo realizado exitosamente. Revisa el fixture y publícalo cuando esté listo.',
     };
   }
@@ -613,11 +614,11 @@ export class FixtureService {
     }
 
     // ════════════════════════════════════════
-    // FASE 2: CÁLCULO DE R2 (NO crear aún — se arma post-R1)
+    // FASE 2: CÁLCULO DE R2 + PLACEHOLDERS
     // ════════════════════════════════════════
-    // R2 se crea DESPUÉS de que todos los R1 terminen, porque necesitamos
-    // ranking por games para decidir quién es el mejor perdedor (salta R2)
-    // y cómo emparejar los restantes (serpentina por games).
+    // Crear R2 placeholders (sin parejas) durante el sorteo para que la columna
+    // "Acomodación 2" sea visible en el fixture. Las parejas reales se asignan
+    // en armarZona2() después de que todos los R1 terminen (ranking por games).
 
     const numR1Losers = numR1Matches;
     const R2_entrants = numR1Losers;
@@ -627,18 +628,39 @@ export class FixtureService {
 
     const numR2Matches = feasible ? R2_needed : Math.floor(R2_entrants / 2);
     const bracketSize = feasible ? B_target : this.nextPowerOf2(N - numR2Matches);
-    // +1 porque el mejor perdedor salta R2 y va directo al bracket
     const numR2ByeSlots = numR1Losers - (2 * numR2Matches);
-    // Total de entradas al bracket: R1 winners + R1 BYEs + R2 winners + R2 BYEs (losers) + mejor perdedor
     const totalBracketEntrants = createdR1.length + r1ByePairs.length + numR2Matches + numR2ByeSlots;
+    // Cuando numR2Matches > 0, R2 existe → crear placeholders
+    // Cuando numR2Matches == 0, N es potencia de 2 → no R2, losers van directo al bracket
+    const numR2Total = numR2Matches + numR2ByeSlots;
 
     this.logger.log(
       `[Sorteo] N=${N}, B_target=${B_target}, R2_needed=${R2_needed}, feasible=${feasible}, ` +
-      `numR2Matches=${numR2Matches}, bracketSize=${bracketSize}, R2 se arma post-R1`
+      `numR2Matches=${numR2Matches}, numR2ByeSlots=${numR2ByeSlots}, bracketSize=${bracketSize}, ` +
+      `numR2Total=${numR2Total} (${numR2Matches > 0 ? 'con R2 placeholders' : 'sin R2, losers directo'})`
     );
 
-    // NO crear R2 matches aquí — se crean en armarZona2() después de R1
-    const createdR2: any[] = []; // vacío por ahora
+    // Crear R2 placeholders (matches vacíos) para que el fixture muestre la columna R2
+    const createdR2: any[] = [];
+    if (numR2Matches > 0) {
+      for (let i = 0; i < numR2Total; i++) {
+        const isBye = i >= numR2Matches; // primeros = partidos reales, últimos = BYE mejor perdedor
+        const match = await tx.match.create({
+          data: {
+            tournamentId,
+            categoryId,
+            ronda: 'ACOMODACION_2',
+            numeroRonda: globalMatchNumber,
+            pareja1Id: null,
+            pareja2Id: null,
+            estado: 'PROGRAMADO',
+            observaciones: isBye ? 'PLACEHOLDER_BYE' : 'PLACEHOLDER_R2',
+          },
+        });
+        createdR2.push({ ...match, matchIndex: i });
+        globalMatchNumber++;
+      }
+    }
 
     // ════════════════════════════════════════
     // FASE 3: BRACKET PRINCIPAL
@@ -780,15 +802,22 @@ export class FixtureService {
       seedCounter++;
     }
 
-    // 3-4. R2 winners + R2 BYEs: NO asignar aún.
-    // Se asignan en armarZona2() después de que R1 termine.
-    // Los seed slots (seedCounter .. seedCounter + numR2Matches + numR2ByeSlots - 1)
-    // quedan vacíos en el bracket — armarZona2 los llenará.
-    // Guardar el seedCounter de inicio para que armarZona2 sepa dónde empezar.
+    // 3-4. R2 placeholders → bracket (Caso A) o R1 losers → bracket (Caso B)
+    if (createdR2.length > 0) {
+      // Caso A: R2 existe — enlazar placeholders como feeders al bracket
+      for (const r2Match of createdR2) {
+        await assignToBracket(seedCounter, null, r2Match.id, 'winner');
+        seedCounter++;
+      }
+    } else if (numR1Matches > 0) {
+      // Caso B: N es potencia de 2 — no hay R2, R1 losers van directo al bracket
+      // Anti-reencuentro: losers en orden inverso para ir al cuadrante opuesto del winner
+      for (let i = createdR1.length - 1; i >= 0; i--) {
+        await assignToBracket(seedCounter, null, createdR1[i].id, 'loser');
+        seedCounter++;
+      }
+    }
     const r2BracketSeedStart = seedCounter;
-
-    // Slots restantes (todos los R2 + phantom BYEs) quedan vacíos
-    // Se resuelven parcialmente en FASE 5 y el resto en armarZona2
 
     // ════════════════════════════════════════
     // FASE 5: AUTO-AVANZAR BYEs DEL BRACKET (con cascade ronda a ronda)
@@ -856,18 +885,21 @@ export class FixtureService {
     // ════════════════════════════════════════
     // FASE 6: ASIGNAR CANCHAS Y HORARIOS
     // ════════════════════════════════════════
-    // Solo schedulear R1 upfront. R2 se crea/schedula en armarZona2().
+    // Solo schedulear R1 upfront. R2 se schedula en armarZona2().
     // Las rondas de bracket (Octavos+) se auto-programan al cargar resultados.
     const matchesToSchedule = createdR1.filter(m => m.estado !== 'WO');
-    const allMatches = [...createdR1, ...createdBracketByRound.flat()];
+    const allMatches = [...createdR1, ...createdR2, ...createdBracketByRound.flat()];
 
     const category = await tx.category.findUnique({
       where: { id: categoryId },
       select: { orden: true },
     });
 
+    // Propagar resultado de scheduling
+    let schedulingResult = { asignados: 0, sinSlot: 0 };
+
     if (torneoCanchas.length > 0) {
-      await this.asignarCanchasYHorarios(
+      schedulingResult = await this.asignarCanchasYHorarios(
         tx,
         matchesToSchedule,  // solo R1 (R2 y bracket se asignan dinámicamente)
         torneoCanchas,
@@ -882,8 +914,10 @@ export class FixtureService {
     // Construir resumen de rondas para retorno
     const rondas = [
       { nombre: 'ACOMODACION_1', numPartidos: createdR1.length },
-      { nombre: 'ACOMODACION_2 (pendiente)', numPartidos: numR2Matches },
     ];
+    if (createdR2.length > 0) {
+      rondas.push({ nombre: 'ACOMODACION_2', numPartidos: createdR2.length });
+    }
     for (let roundIdx = 0; roundIdx < createdBracketByRound.length; roundIdx++) {
       rondas.push({
         nombre: this.getNombreRonda(numBracketRondas - roundIdx),
@@ -900,6 +934,7 @@ export class FixtureService {
       bracketSize,
       rondas,
       partidos: allMatches,
+      scheduling: schedulingResult,
     };
   }
 
@@ -908,15 +943,37 @@ export class FixtureService {
   // ═══════════════════════════════════════════════════════
 
   /**
-   * Crea y arma Zona 2 después de que todos los R1 de una categoría están finalizados.
+   * Arma Zona 2 después de que todos los R1 de una categoría están finalizados.
+   * ACTUALIZA los R2 placeholders creados durante el sorteo (no crea nuevos).
    * 1. Rankea perdedores de R1 por games ganados (total de los 2-3 sets)
-   * 2. Mejor perdedor → directo al bracket (salta R2)
-   * 3. Restantes → emparejados serpentina → R2 matches
-   * 4. Aplica anti-reencuentro al asignar posiciones de bracket
-   * 5. Schedula R2 matches
+   * 2. Mejor perdedor → directo al bracket (su R2 placeholder se convierte en BYE)
+   * 3. Restantes → emparejados serpentina → actualizan R2 placeholder matches
+   * 4. Schedula R2 matches
+   * 5. Cascade BYEs en bracket
    */
   async armarZona2(tournamentId: string, categoryId: string) {
-    // 1. Obtener todos los R1 matches finalizados de esta categoría
+    // 1. Obtener R2 placeholders (creados durante el sorteo)
+    const r2Placeholders = await this.prisma.match.findMany({
+      where: { tournamentId, categoryId, ronda: 'ACOMODACION_2' },
+      orderBy: { numeroRonda: 'asc' },
+    });
+
+    if (r2Placeholders.length === 0) {
+      // Caso B: N es potencia de 2 — no hay R2, losers ya enlazados via partidoPerdedorSiguienteId
+      this.logger.log(`[ArmarZ2] Sin R2 placeholders para categoría ${categoryId} (N=potencia de 2)`);
+      return;
+    }
+
+    // Verificar que no estén ya procesados (tienen parejas asignadas)
+    const alreadyProcessed = r2Placeholders.some(m =>
+      m.pareja1Id !== null && m.observaciones !== 'PLACEHOLDER_BYE' && m.observaciones !== 'PLACEHOLDER_R2'
+    );
+    if (alreadyProcessed) {
+      this.logger.warn(`[ArmarZ2] R2 ya procesado para categoría ${categoryId}, ignorando`);
+      return;
+    }
+
+    // 2. Obtener R1 matches finalizados
     const r1Matches = await this.prisma.match.findMany({
       where: {
         tournamentId,
@@ -927,30 +984,19 @@ export class FixtureService {
       orderBy: { numeroRonda: 'asc' },
     });
 
-    // Verificar que hay R1 matches (si no, nada que hacer)
     if (r1Matches.length === 0) return;
 
-    // Verificar que no hay R2 ya creados (evitar duplicados)
-    const existingR2 = await this.prisma.match.count({
-      where: { tournamentId, categoryId, ronda: 'ACOMODACION_2' },
-    });
-    if (existingR2 > 0) {
-      this.logger.warn(`[ArmarZ2] R2 ya existe para categoría ${categoryId}, ignorando`);
-      return;
-    }
-
-    // 2. Recolectar perdedores con sus games ganados
+    // 3. Recolectar perdedores con sus games ganados
     const losers: Array<{
       parejaId: string;
       gamesGanados: number;
       r1MatchId: string;
-      r1WinnerId: string; // para anti-reencuentro
+      r1WinnerId: string;
     }> = [];
 
     for (const m of r1Matches) {
       if (!m.parejaPerdedoraId || !m.parejaGanadoraId) continue;
 
-      // Calcular games ganados por el perdedor
       let games = 0;
       const isP1Loser = m.parejaPerdedoraId === m.pareja1Id;
       if (m.set1Pareja1 != null && m.set1Pareja2 != null) {
@@ -974,209 +1020,78 @@ export class FixtureService {
     // Ordenar por games ganados DESC (mejor perdedor primero)
     losers.sort((a, b) => b.gamesGanados - a.gamesGanados);
 
-    // 3. Calcular dimensiones (misma fórmula que en sorteo)
-    const N = r1Matches.length * 2 + await this.prisma.match.count({
-      where: { tournamentId, categoryId, ronda: 'ACOMODACION_1', estado: 'WO', observaciones: { contains: 'BYE' } },
-    }); // Approximate N — but we need to recalculate properly
-
-    // Better: count total inscripciones confirmadas for this category
-    const totalInscripciones = await this.prisma.inscripcion.count({
-      where: { tournamentId, categoryId, estado: 'CONFIRMADA' },
-    });
-
-    const numR1Losers = losers.length;
-    const B_target = this.largestPowerOf2(totalInscripciones);
-    const R2_needed = totalInscripciones - B_target;
-    const feasible = (2 * R2_needed <= numR1Losers);
-    const numR2Matches = feasible ? R2_needed : Math.floor(numR1Losers / 2);
-    const bracketSize = feasible ? B_target : this.nextPowerOf2(totalInscripciones - numR2Matches);
+    // 4. Separar placeholders reales vs BYE
+    const realR2 = r2Placeholders.filter(m => m.observaciones === 'PLACEHOLDER_R2');
+    const byeR2 = r2Placeholders.filter(m => m.observaciones === 'PLACEHOLDER_BYE');
 
     this.logger.log(
-      `[ArmarZ2] losers=${numR1Losers}, numR2Matches=${numR2Matches}, bracketSize=${bracketSize}`
+      `[ArmarZ2] losers=${losers.length}, realR2=${realR2.length}, byeR2=${byeR2.length}`
     );
 
-    // 4. Mejor perdedor salta R2 → directo al bracket
-    // Si numR2ByeSlots > 0, los primeros N losers con más games van directo
-    const numR2ByeSlots = numR1Losers - (2 * numR2Matches);
-    const bestLosers = losers.slice(0, numR2ByeSlots); // mejores → directo al bracket
-    const r2Losers = losers.slice(numR2ByeSlots); // el resto → juegan R2
+    // 5. Best losers → asignar a byeR2 placeholders → BYE avance al bracket
+    const bestLosers = losers.slice(0, byeR2.length);
+    const r2Losers = losers.slice(byeR2.length);
 
-    // 5. Emparejar R2 en serpentina (mejor vs peor de los que van a R2)
-    const numR2Actual = Math.floor(r2Losers.length / 2);
+    // 6. Emparejar R2 en serpentina
+    const numR2Actual = Math.min(Math.floor(r2Losers.length / 2), realR2.length);
 
-    // Obtener bracket first round matches para asignar feeders
-    const bracketFirstRound = await this.prisma.match.findMany({
-      where: {
-        tournamentId,
-        categoryId,
-        ronda: { notIn: ['ACOMODACION_1', 'ACOMODACION_2'] },
-      },
-      orderBy: { numeroRonda: 'asc' },
-    });
-
-    // Identificar primera ronda del bracket (la que tiene más matches)
-    const bracketRounds = new Map<string, any[]>();
-    for (const m of bracketFirstRound) {
-      if (!bracketRounds.has(m.ronda)) bracketRounds.set(m.ronda, []);
-      bracketRounds.get(m.ronda)!.push(m);
-    }
-
-    // Primera ronda del bracket = ronda con más matches
-    let firstBracketRoundName = '';
-    let firstBracketMatches: any[] = [];
-    for (const [ronda, matches] of bracketRounds) {
-      if (matches.length > firstBracketMatches.length) {
-        firstBracketRoundName = ronda;
-        firstBracketMatches = matches;
-      }
-    }
-
-    // Sort by matchIndex (from creation order = numeroRonda)
-    firstBracketMatches.sort((a, b) => a.numeroRonda - b.numeroRonda);
-
-    // Calcular seed positions para asignar a bracket
-    const seedPositions = this.getSeedPositions(bracketSize);
-
-    // Encontrar qué seed slots están vacíos (no tienen R1 feeders)
-    // R1 winners occupy seed positions 0..(numR1Matches-1)
-    // R1 BYEs occupy seed positions numR1Matches..(numR1Matches + numR1Byes - 1)
-    const numR1Byes = await this.prisma.match.count({
-      where: { tournamentId, categoryId, ronda: { notIn: ['ACOMODACION_1', 'ACOMODACION_2'] } },
-    }); // Approximate
-
-    // Find empty bracket slots (positions where pareja1Id or pareja2Id is still null
-    // and no active feeder is pointing there)
-    const emptyBracketSlots: Array<{ matchId: string; position: 1 | 2; seedIdx: number }> = [];
-
-    // Calculate which seed indices are for R2 (after R1 winners + R1 BYEs)
-    const r1MatchCount = r1Matches.length;
-    const r1ByeCount = totalInscripciones - (r1MatchCount * 2); // N impar → 1 BYE
-    const r2SeedStart = r1MatchCount + (r1ByeCount > 0 ? r1ByeCount : 0);
-
-    for (let seedIdx = r2SeedStart; seedIdx < bracketSize; seedIdx++) {
-      const position = seedPositions[seedIdx];
-      if (position === undefined) continue;
-      const bracketMatchIdx = Math.floor(position / 2);
-      const bracketPos: 1 | 2 = (position % 2 === 0) ? 1 : 2;
-      if (bracketMatchIdx >= firstBracketMatches.length) continue;
-
-      emptyBracketSlots.push({
-        matchId: firstBracketMatches[bracketMatchIdx].id,
-        position: bracketPos,
-        seedIdx,
-      });
-    }
-
-    // 6. Anti-reencuentro: construir mapa de R1 winner → cuadrante del bracket
-    const winnerQuadrant = new Map<string, number>(); // winnerId → quadrant (0-3)
-    const quadrantSize = Math.ceil(firstBracketMatches.length / 4);
-    for (let i = 0; i < firstBracketMatches.length; i++) {
-      const m = firstBracketMatches[i];
-      const quadrant = Math.floor(i / Math.max(1, quadrantSize));
-      if (m.pareja1Id) winnerQuadrant.set(m.pareja1Id, quadrant);
-      if (m.pareja2Id) winnerQuadrant.set(m.pareja2Id, quadrant);
-      // Also check feeders pointing to this match
-      const feeders = await this.prisma.match.findMany({
-        where: {
-          OR: [
-            { partidoSiguienteId: m.id },
-          ],
-          ronda: 'ACOMODACION_1',
-        },
-        select: { pareja1Id: true, pareja2Id: true, parejaGanadoraId: true },
-      });
-      for (const f of feeders) {
-        if (f.parejaGanadoraId) winnerQuadrant.set(f.parejaGanadoraId, quadrant);
-      }
-    }
-
-    // 7. Create R2 matches and assign to bracket within a transaction
+    // 7. Actualizar placeholders dentro de una transacción
     await this.prisma.$transaction(async (tx) => {
-      let globalMatchNumber = await tx.match.count({
-        where: { tournamentId, categoryId },
-      }) + 1;
-
-      const createdR2: any[] = [];
-
-      // Create R2 matches with serpentine pairing
-      for (let i = 0; i < numR2Actual; i++) {
-        const p1 = r2Losers[i]; // strongest
-        const p2 = r2Losers[r2Losers.length - 1 - i]; // weakest
-
-        if (!p1 || !p2 || p1.parejaId === p2.parejaId) continue;
-
-        const match = await tx.match.create({
+      // 7a. Best losers → BYE R2 placeholders → avance directo al bracket
+      for (let i = 0; i < bestLosers.length && i < byeR2.length; i++) {
+        const placeholder = byeR2[i];
+        await tx.match.update({
+          where: { id: placeholder.id },
           data: {
-            tournamentId,
-            categoryId,
-            ronda: 'ACOMODACION_2',
-            numeroRonda: globalMatchNumber++,
-            pareja1Id: p1.parejaId,
-            pareja2Id: p2.parejaId,
-            estado: 'PROGRAMADO',
+            pareja1Id: bestLosers[i].parejaId,
+            estado: 'WO',
+            parejaGanadoraId: bestLosers[i].parejaId,
+            observaciones: 'BYE - Mejor perdedor R1',
           },
         });
-        createdR2.push(match);
-      }
-
-      // 8. Assign R2 winners → bracket (feeder links)
-      let slotIdx = 0;
-
-      // Helper: find best empty slot, preferring opposite quadrant of R1 winner
-      const findSlotForLoser = (r1WinnerId: string): typeof emptyBracketSlots[0] | null => {
-        const wQuad = winnerQuadrant.get(r1WinnerId);
-        if (wQuad !== undefined) {
-          // Try opposite quadrant first
-          const oppositeQuad = (wQuad + 2) % 4;
-          const preferred = emptyBracketSlots.find(s => {
-            const matchIdx = firstBracketMatches.findIndex(m => m.id === s.matchId);
-            const sQuad = Math.floor(matchIdx / Math.max(1, quadrantSize));
-            return sQuad === oppositeQuad;
-          });
-          if (preferred) {
-            const idx = emptyBracketSlots.indexOf(preferred);
-            return emptyBracketSlots.splice(idx, 1)[0];
-          }
-        }
-        // Fallback: any available slot
-        return emptyBracketSlots.length > 0 ? emptyBracketSlots.shift()! : null;
-      };
-
-      // R2 match winners → bracket
-      for (const r2Match of createdR2) {
-        const slot = emptyBracketSlots.length > 0 ? emptyBracketSlots.shift()! : null;
-        if (slot) {
+        // Auto-advance al bracket via partidoSiguienteId (ya enlazado en el sorteo)
+        if (placeholder.partidoSiguienteId && placeholder.posicionEnSiguiente) {
+          const campo = placeholder.posicionEnSiguiente === 1 ? 'pareja1Id' : 'pareja2Id';
           await tx.match.update({
-            where: { id: r2Match.id },
-            data: {
-              partidoSiguienteId: slot.matchId,
-              posicionEnSiguiente: slot.position,
-            },
+            where: { id: placeholder.partidoSiguienteId },
+            data: { [campo]: bestLosers[i].parejaId },
           });
         }
       }
 
-      // Best losers (skip R2) → bracket directo with anti-reencuentro
-      for (const loser of bestLosers) {
-        const slot = findSlotForLoser(loser.r1WinnerId);
-        if (slot) {
-          const campo = slot.position === 1 ? 'pareja1Id' : 'pareja2Id';
-          await tx.match.update({
-            where: { id: slot.matchId },
-            data: { [campo]: loser.parejaId },
-          });
-        }
+      // 7b. Remaining losers → emparejar serpentina → actualizar R2 reales
+      for (let i = 0; i < numR2Actual; i++) {
+        const p1 = r2Losers[i]; // más fuerte
+        const p2 = r2Losers[r2Losers.length - 1 - i]; // más débil
+        if (!p1 || !p2 || p1.parejaId === p2.parejaId) continue;
+
+        await tx.match.update({
+          where: { id: realR2[i].id },
+          data: {
+            pareja1Id: p1.parejaId,
+            pareja2Id: p2.parejaId,
+            observaciones: null, // limpiar PLACEHOLDER_R2
+          },
+        });
       }
 
-      // 9. Auto-advance BYEs in bracket (newly filled positions may trigger BYEs)
-      for (const bm of firstBracketMatches) {
+      // 8. Cascade BYEs en bracket (posiciones nuevas pueden generar BYEs)
+      const bracketMatches = await tx.match.findMany({
+        where: {
+          tournamentId,
+          categoryId,
+          ronda: { notIn: ['ACOMODACION_1', 'ACOMODACION_2'] },
+        },
+        orderBy: { numeroRonda: 'asc' },
+      });
+
+      for (const bm of bracketMatches) {
         const freshMatch = await tx.match.findUnique({ where: { id: bm.id } });
         if (!freshMatch || freshMatch.estado !== 'PROGRAMADO') continue;
         const hasP1 = freshMatch.pareja1Id !== null;
         const hasP2 = freshMatch.pareja2Id !== null;
         if (hasP1 && hasP2) continue;
         if (!hasP1 && !hasP2) {
-          // Check if both sides have no feeders → phantom
           const feedersP1 = await tx.match.count({
             where: { OR: [
               { partidoSiguienteId: freshMatch.id, posicionEnSiguiente: 1 },
@@ -1210,7 +1125,7 @@ export class FixtureService {
         }
       }
 
-      // 10. Schedule R2 matches
+      // 9. Schedule R2 matches (solo los que tienen parejas, no los BYE)
       const torneoCanchas = await tx.torneoCancha.findMany({
         where: { tournamentId },
         include: { horarios: true },
@@ -1221,9 +1136,19 @@ export class FixtureService {
       });
       const minutosPorPartido = tournament?.minutosPorPartido || 60;
 
-      if (torneoCanchas.length > 0 && createdR2.length > 0) {
-        const r2ToSchedule = createdR2.filter(m => m.estado !== 'WO');
-        // Add ronda field for scheduling
+      // Refetch R2 matches with actual pairs
+      const r2ToSchedule = await tx.match.findMany({
+        where: {
+          tournamentId,
+          categoryId,
+          ronda: 'ACOMODACION_2',
+          estado: 'PROGRAMADO',
+          pareja1Id: { not: null },
+          pareja2Id: { not: null },
+        },
+      });
+
+      if (torneoCanchas.length > 0 && r2ToSchedule.length > 0) {
         const r2WithRonda = r2ToSchedule.map(m => ({ ...m, ronda: 'ACOMODACION_2' }));
         await this.asignarCanchasYHorarios(
           tx,
@@ -1236,7 +1161,7 @@ export class FixtureService {
       }
     }, { maxWait: 10000, timeout: 30000 });
 
-    this.logger.log(`[ArmarZ2] Zona 2 armada para categoría ${categoryId}: ${numR2Actual} matches`);
+    this.logger.log(`[ArmarZ2] Zona 2 armada para categoría ${categoryId}: ${numR2Actual} matches reales, ${bestLosers.length} mejores perdedores`);
   }
 
   // ═══════════════════════════════════════════════════════
