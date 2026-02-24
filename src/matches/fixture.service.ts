@@ -620,29 +620,29 @@ export class FixtureService {
     // "Acomodación 2" sea visible en el fixture. Las parejas reales se asignan
     // en armarZona2() después de que todos los R1 terminen (ranking por games).
 
-    const numR1Losers = numR1Matches;
-    const R2_entrants = numR1Losers;
-    const B_target = this.largestPowerOf2(N);
-    const R2_needed = N - B_target;
-    const feasible = (2 * R2_needed <= R2_entrants);
-
-    const numR2Matches = feasible ? R2_needed : Math.floor(R2_entrants / 2);
-    const bracketSize = feasible ? B_target : this.nextPowerOf2(N - numR2Matches);
-    const numR2ByeSlots = numR1Losers - (2 * numR2Matches);
-    const totalBracketEntrants = createdR1.length + r1ByePairs.length + numR2Matches + numR2ByeSlots;
-    // Cuando numR2Matches > 0, R2 existe → crear placeholders
-    // Cuando numR2Matches == 0, N es potencia de 2 → no R2, losers van directo al bracket
-    const numR2Total = numR2Matches + numR2ByeSlots;
+    // ── Dimensiones correctas: CERO bracket BYEs para cualquier N ──
+    // W = R1 winners, B = bracket size (pot de 2), S = slots desde R2, E = entrants R2
+    // M = R2 matches reales, BL = best losers (skip R2, BYE al bracket)
+    const W = numR1Matches;
+    const B = this.largestPowerOf2(N);
+    const S = B - W;                                              // slots del bracket que llena R2
+    const E = N - W;                                              // entrants a R2 (losers + BYE pairs)
+    const numR2Matches = Math.min(S, E - S, Math.floor(E / 2));  // R2 matches reales
+    const numBestLosers = S - numR2Matches;                       // skip R2, BYE al bracket
+    const bracketSize = B;                                        // SIEMPRE = largestPowerOf2(N)
+    const numR2Total = numR2Matches + numBestLosers;              // = S (total R2 placeholders)
+    const totalBracketEntrants = bracketSize;                     // siempre = B, sin BYEs
 
     this.logger.log(
-      `[Sorteo] N=${N}, B_target=${B_target}, R2_needed=${R2_needed}, feasible=${feasible}, ` +
-      `numR2Matches=${numR2Matches}, numR2ByeSlots=${numR2ByeSlots}, bracketSize=${bracketSize}, ` +
-      `numR2Total=${numR2Total} (${numR2Matches > 0 ? 'con R2 placeholders' : 'sin R2, losers directo'})`
+      `[Sorteo] N=${N}, W=${W}, B=${B}, S=${S}, E=${E}, ` +
+      `numR2Matches=${numR2Matches}, numBestLosers=${numBestLosers}, bracketSize=${bracketSize}, ` +
+      `numR2Total=${numR2Total} (${N !== B ? 'con R2 placeholders' : 'sin R2, losers directo'})`
     );
 
     // Crear R2 placeholders (matches vacíos) para que el fixture muestre la columna R2
+    // Cuando N=B (potencia de 2), no crear R2 → Caso B (losers directo al bracket)
     const createdR2: any[] = [];
-    if (numR2Matches > 0) {
+    if (numR2Total > 0 && N !== B) {
       for (let i = 0; i < numR2Total; i++) {
         const isBye = i >= numR2Matches; // primeros = partidos reales, últimos = BYE mejor perdedor
         const match = await tx.match.create({
@@ -665,7 +665,7 @@ export class FixtureService {
     // ════════════════════════════════════════
     // FASE 3: BRACKET PRINCIPAL
     // ════════════════════════════════════════
-    // bracketSize ya calculado arriba (potencia de 2, perfecto o con BYEs)
+    // bracketSize = B = largestPowerOf2(N), siempre perfecto (CERO BYEs)
     const numBracketRondas = Math.ceil(Math.log2(bracketSize));
 
     // Generar bracket principal (igual que antes, pero con slots vacíos)
@@ -796,13 +796,10 @@ export class FixtureService {
       seedCounter++;
     }
 
-    // 2. BYEs de R1 → bracket directo (pareja conocida)
-    for (const byePair of r1ByePairs) {
-      await assignToBracket(seedCounter, byePair.id, null, 'winner');
-      seedCounter++;
-    }
+    // 2. R1 BYE pairs (N impar) NO van al bracket directo — jugarán en R2 via armarZona2()
+    // (se omite asignación directa para garantizar que toda pareja juegue al menos 1 partido)
 
-    // 3-4. R2 placeholders → bracket (Caso A) o R1 losers → bracket (Caso B)
+    // 3. R2 placeholders → bracket (Caso A) o R1 losers → bracket (Caso B)
     if (createdR2.length > 0) {
       // Caso A: R2 existe — enlazar placeholders como feeders al bracket
       for (const r2Match of createdR2) {
@@ -929,7 +926,7 @@ export class FixtureService {
       categoryId,
       numParejas: N,
       numR2Matches,
-      numR2ByeSlots,
+      numBestLosers,
       r2BracketSeedStart,
       bracketSize,
       rondas,
@@ -1017,7 +1014,29 @@ export class FixtureService {
       });
     }
 
-    // Ordenar por games ganados DESC (mejor perdedor primero)
+    // 3b. Incluir R1 BYE pairs (N impar — pareja sin oponente en R1, DEBE jugar R2)
+    const allR1ParejaIds = new Set<string>();
+    for (const m of r1Matches) {
+      if (m.pareja1Id) allR1ParejaIds.add(m.pareja1Id);
+      if (m.pareja2Id) allR1ParejaIds.add(m.pareja2Id);
+    }
+    const inscripcionesR2 = await this.prisma.inscripcion.findMany({
+      where: { tournamentId, categoryId, estado: 'CONFIRMADA' },
+      select: { parejaId: true },
+    });
+    for (const insc of inscripcionesR2) {
+      if (!allR1ParejaIds.has(insc.parejaId) && !losers.some(l => l.parejaId === insc.parejaId)) {
+        losers.push({
+          parejaId: insc.parejaId,
+          gamesGanados: -1, // Forzar último ranking — DEBE jugar R2, no ser best loser
+          r1MatchId: '',
+          r1WinnerId: '',
+        });
+        this.logger.log(`[ArmarZ2] R1 BYE pair ${insc.parejaId} agregada a losers con -1 games`);
+      }
+    }
+
+    // Ordenar por games ganados DESC (mejor perdedor primero, BYE pair al final)
     losers.sort((a, b) => b.gamesGanados - a.gamesGanados);
 
     // 4. Separar placeholders reales vs BYE
