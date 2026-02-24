@@ -12,6 +12,7 @@ import { NotificacionesService } from '../notificaciones/notificaciones.service'
 import { FeedService } from '../feed/feed.service';
 import { LogrosService } from '../logros/logros.service';
 import { CargarResultadoDto } from './dto/cargar-resultado.dto';
+import { FixtureService } from './fixture.service';
 import {
   calcularHoraFin,
   generarTimeSlots,
@@ -33,6 +34,7 @@ export class MatchesService {
     private notificacionesService: NotificacionesService,
     private feedService: FeedService,
     private logrosService: LogrosService,
+    private fixtureService: FixtureService,
   ) {}
 
   async findOne(id: string) {
@@ -243,6 +245,26 @@ export class MatchesService {
             await this.autoAdvanceR2Bye(r2Match.id, r2Match[campoP]);
           }
         }
+      }
+    }
+
+    // ── Verificar si TODOS los R1 de esta categoría terminaron → armar Zona 2 ──
+    if (match.ronda === 'ACOMODACION_1') {
+      try {
+        const pendingR1 = await this.prisma.match.count({
+          where: {
+            tournamentId: match.tournamentId,
+            categoryId: match.categoryId,
+            ronda: 'ACOMODACION_1',
+            estado: { notIn: ['FINALIZADO', 'WO', 'CANCELADO'] },
+          },
+        });
+        if (pendingR1 === 0) {
+          this.logger.log(`[R1 Complete] Todos los R1 de categoría ${match.categoryId} finalizados → armando Zona 2`);
+          await this.fixtureService.armarZona2(match.tournamentId, match.categoryId);
+        }
+      } catch (e) {
+        this.logger.error(`[ArmarZ2] Error armando Zona 2: ${e.message}`);
       }
     }
 
@@ -679,13 +701,17 @@ export class MatchesService {
       }
     }
 
-    // 6. Descanso: 2h30m después del último partido de CADA pareja
-    //    (2h reglamentario + 30min buffer por posibles retrasos)
-    const DESCANSO_MINUTOS = 150; // 2h30m
+    // 6. Descanso: al menos 2 partidos del torneo entre partidos de la misma pareja.
+    //    Buscamos el último partido finalizado de cada pareja y luego
+    //    verificamos que al menos 2 otros partidos del torneo se hayan jugado después.
+    //    Implementado como: el slot mínimo es el horaFin del 2do partido posterior
+    //    al último match de la pareja, o 60min después si no hay 2 partidos intermedios aún.
+    const DESCANSO_FALLBACK_MINUTOS = 60; // fallback mínimo si no hay 2 partidos intermedios
+    const DESCANSO_PARTIDOS = 2; // partidos intermedios requeridos
     const parejaIds = [match.pareja1Id, match.pareja2Id];
 
     // Buscar el partido MÁS TARDÍO finalizado de cualquiera de las 2 parejas
-    const lastMatches = await this.prisma.match.findMany({
+    const lastParejaMatches = await this.prisma.match.findMany({
       where: {
         tournamentId,
         OR: [
@@ -696,21 +722,51 @@ export class MatchesService {
         horaFinEstimada: { not: null },
         fechaProgramada: { not: null },
       },
-      select: { fechaProgramada: true, horaFinEstimada: true },
+      select: { id: true, fechaProgramada: true, horaFinEstimada: true },
       orderBy: [{ fechaProgramada: 'desc' }, { horaFinEstimada: 'desc' }],
       take: 1,
     });
 
     let minFecha: Date | null = null;
     let minHora: string | null = null;
-    if (lastMatches.length > 0) {
-      const last = lastMatches[0];
-      minFecha = last.fechaProgramada;
-      const finMinutos = parseHoraToMinutes(last.horaFinEstimada!) + DESCANSO_MINUTOS;
-      minHora = minutesToHora(finMinutos % (24 * 60));
-      // Si pasa de medianoche, avanzar al día siguiente
-      if (finMinutos >= 24 * 60) {
-        minFecha = new Date(minFecha!.getTime() + 86400000);
+    if (lastParejaMatches.length > 0) {
+      const lastParejaMatch = lastParejaMatches[0];
+
+      // Contar partidos del torneo finalizados DESPUÉS de este match
+      const matchesAfter = await this.prisma.match.findMany({
+        where: {
+          tournamentId,
+          id: { not: lastParejaMatch.id },
+          estado: { in: ['FINALIZADO', 'WO'] },
+          horaFinEstimada: { not: null },
+          fechaProgramada: { not: null },
+        },
+        select: { fechaProgramada: true, horaFinEstimada: true },
+        orderBy: [{ fechaProgramada: 'asc' }, { horaFinEstimada: 'asc' }],
+      });
+
+      // Filtrar solo los que terminaron DESPUÉS del último partido de la pareja
+      const afterParejaEnd = matchesAfter.filter(m => {
+        const mMs = m.fechaProgramada!.getTime();
+        const pMs = lastParejaMatch.fechaProgramada!.getTime();
+        if (mMs > pMs) return true;
+        if (mMs === pMs) return parseHoraToMinutes(m.horaFinEstimada!) > parseHoraToMinutes(lastParejaMatch.horaFinEstimada!);
+        return false;
+      });
+
+      if (afterParejaEnd.length >= DESCANSO_PARTIDOS) {
+        // Ya hay suficientes partidos intermedios — minFecha = fin del Nth partido intermedio
+        const nthMatch = afterParejaEnd[DESCANSO_PARTIDOS - 1];
+        minFecha = nthMatch.fechaProgramada;
+        minHora = nthMatch.horaFinEstimada;
+      } else {
+        // No hay suficientes partidos intermedios — usar fallback temporal
+        minFecha = lastParejaMatch.fechaProgramada;
+        const finMinutos = parseHoraToMinutes(lastParejaMatch.horaFinEstimada!) + DESCANSO_FALLBACK_MINUTOS;
+        minHora = minutesToHora(finMinutos % (24 * 60));
+        if (finMinutos >= 24 * 60) {
+          minFecha = new Date(minFecha!.getTime() + 86400000);
+        }
       }
     }
 
