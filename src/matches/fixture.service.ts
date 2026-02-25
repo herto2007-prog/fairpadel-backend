@@ -615,6 +615,24 @@ export class FixtureService {
       globalMatchNumber++;
     }
 
+    // Crear matches R1 BYE para parejas que no juegan R1 (visibilidad en fixture)
+    for (const byePair of r1ByePairs) {
+      await tx.match.create({
+        data: {
+          tournamentId,
+          categoryId,
+          ronda: 'ACOMODACION_1',
+          numeroRonda: globalMatchNumber,
+          pareja1Id: byePair.id,
+          pareja2Id: null,
+          estado: 'WO',
+          parejaGanadoraId: byePair.id,
+          observaciones: 'BYE',
+        },
+      });
+      globalMatchNumber++;
+    }
+
     // ════════════════════════════════════════
     // FASE 2: CÁLCULO DE R2 + PLACEHOLDERS
     // ════════════════════════════════════════
@@ -1029,25 +1047,18 @@ export class FixtureService {
       });
     }
 
-    // 3b. Incluir R1 BYE pairs (N impar — pareja sin oponente en R1, DEBE jugar R2)
-    const allR1ParejaIds = new Set<string>();
+    // 3b. Incluir R1 BYE pairs (matches WO con observaciones 'BYE' — pareja sin oponente)
     for (const m of r1Matches) {
-      if (m.pareja1Id) allR1ParejaIds.add(m.pareja1Id);
-      if (m.pareja2Id) allR1ParejaIds.add(m.pareja2Id);
-    }
-    const inscripcionesR2 = await this.prisma.inscripcion.findMany({
-      where: { tournamentId, categoryId, estado: 'CONFIRMADA' },
-      select: { parejaId: true },
-    });
-    for (const insc of inscripcionesR2) {
-      if (!allR1ParejaIds.has(insc.parejaId) && !losers.some(l => l.parejaId === insc.parejaId)) {
-        losers.push({
-          parejaId: insc.parejaId,
-          gamesGanados: -1, // Forzar último ranking — DEBE jugar R2, no ser best loser
-          r1MatchId: '',
-          r1WinnerId: '',
-        });
-        this.logger.log(`[ArmarZ2] R1 BYE pair ${insc.parejaId} agregada a losers con -1 games`);
+      if (m.estado === 'WO' && m.observaciones?.includes('BYE') && m.pareja1Id && !m.pareja2Id) {
+        if (!losers.some(l => l.parejaId === m.pareja1Id)) {
+          losers.push({
+            parejaId: m.pareja1Id,
+            gamesGanados: -1, // Forzar último ranking — DEBE jugar R2, no ser best loser
+            r1MatchId: m.id,
+            r1WinnerId: m.pareja1Id,
+          });
+          this.logger.log(`[ArmarZ2] R1 BYE pair ${m.pareja1Id} agregada a losers con -1 games`);
+        }
       }
     }
 
