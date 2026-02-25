@@ -379,6 +379,7 @@ export class TournamentsService {
       ciudad: updateTournamentDto.ciudad,
       sedeId: updateTournamentDto.sedeId,
       minutosPorPartido: updateTournamentDto.minutosPorPartido,
+      precioPelota: updateTournamentDto.precioPelota,
       sede: updateTournamentDto.sede,
       direccion: updateTournamentDto.direccion,
       mapsUrl: updateTournamentDto.mapsUrl,

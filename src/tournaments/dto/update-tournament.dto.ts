@@ -50,6 +50,11 @@ export class UpdateTournamentDto {
   @Min(15)
   minutosPorPartido?: number;
 
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  precioPelota?: number;
+
   @IsString()
   @IsOptional()
   sede?: string;

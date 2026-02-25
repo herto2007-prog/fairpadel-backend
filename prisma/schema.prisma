@@ -523,6 +523,7 @@ model Tournament {
   // Circuito / Liga
   circuitoId          String?           @map("circuito_id")
   minutosPorPartido   Int               @default(60) @map("minutos_por_partido")
+  precioPelota        Decimal?          @map("precio_pelota") @db.Decimal(10, 2)
   habilitarBancard    Boolean           @default(false) @map("habilitar_bancard")
   comisionPorcentaje  Decimal?          @map("comision_porcentaje") @db.Decimal(5, 2)
   slug                String?           @unique
