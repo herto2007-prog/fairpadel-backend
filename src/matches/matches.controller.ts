@@ -117,6 +117,16 @@ export class MatchesController {
     return this.matchesService.obtenerPartidosPendientes(tournamentId);
   }
 
+  @Post('torneo/:tournamentId/categoria/:categoryId/reagendar-sin-cancha')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  reagendarSinCancha(
+    @Param('tournamentId') tournamentId: string,
+    @Param('categoryId') categoryId: string,
+  ) {
+    return this.matchesService.reagendarSinCancha(tournamentId, categoryId);
+  }
+
   // ── Generic :id endpoints (must be LAST to avoid catching specific routes) ──
 
   @Get(':id')

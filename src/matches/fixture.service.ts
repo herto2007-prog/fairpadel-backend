@@ -1476,7 +1476,7 @@ export class FixtureService {
    * - Distribución ronda→día (ACOM_1 día 1, ACOM_2 día 2, finales último día)
    * - Cross-categoría (slots ocupados compartidos)
    */
-  private async asignarCanchasYHorarios(
+  public async asignarCanchasYHorarios(
     tx: PrismaTx,
     partidos: any[],
     torneoCanchas: any[],
@@ -1753,16 +1753,13 @@ export class FixtureService {
             }
           }
 
-          // Fallback: si no hay slots en último día, usar pool reverso completo
+          // SIN FALLBACK — Semis y finales SOLO en último día
           if (!assigned) {
-            for (const slot of finalSlots) {
-              const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
-              if (ocupados.has(key)) continue;
-              if (!slotIsAfterOrEqual(slot.fecha, slot.horaInicio, floorFecha, floorHoraFin)) continue;
-              await assignSlot(partido, slot);
-              assigned = true;
-              break;
-            }
+            sinSlot++;
+            this.logger.warn(
+              `[Scheduling] ⚠️ ${partido.ronda} #${partido.numeroRonda} sin slot en último día (${lastDayStr}). Agregue horarios.`
+            );
+            continue;
           }
         } else {
           // ── Regulares: preferir primeros slots disponibles (forward) ──

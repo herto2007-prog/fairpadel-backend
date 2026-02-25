@@ -21,6 +21,7 @@ import {
   parseHoraToMinutes,
   minutesToHora,
   dateKey,
+  extractUniqueDays,
 } from './scheduling-utils';
 
 @Injectable()
@@ -96,6 +97,7 @@ export class MatchesService {
       set3Pareja2,
       esWalkOver,
       esRetiro,
+      esDescalificacion,
       parejaGanadoraId,
       observaciones,
     } = dto;
@@ -138,6 +140,32 @@ export class MatchesService {
           parejaGanadoraId: ganadorId,
           parejaPerdedoraId: perdedorId,
           observaciones: observaciones || 'Retiro',
+        },
+      });
+    } else if (esDescalificacion) {
+      // Descalificación en pleno match — motivo obligatorio, scores parciales opcionales
+      if (!parejaGanadoraId) {
+        throw new BadRequestException('Debe indicar la pareja ganadora (no descalificada)');
+      }
+      if (!observaciones) {
+        throw new BadRequestException('Debe indicar el motivo de la descalificación');
+      }
+      ganadorId = parejaGanadoraId;
+      perdedorId = ganadorId === match.pareja1Id ? match.pareja2Id : match.pareja1Id;
+
+      await this.prisma.match.update({
+        where: { id },
+        data: {
+          set1Pareja1: set1Pareja1 ?? null,
+          set1Pareja2: set1Pareja2 ?? null,
+          set2Pareja1: set2Pareja1 ?? null,
+          set2Pareja2: set2Pareja2 ?? null,
+          set3Pareja1: set3Pareja1 ?? null,
+          set3Pareja2: set3Pareja2 ?? null,
+          estado: 'WO',
+          parejaGanadoraId: ganadorId,
+          parejaPerdedoraId: perdedorId,
+          observaciones: `Descalificación: ${observaciones}`,
         },
       });
     } else {
@@ -783,8 +811,19 @@ export class MatchesService {
       }
     }
 
-    // 7. Buscar primer slot libre que respete descanso
-    for (const slot of allSlots) {
+    // 7. Semis y finales: SOLO último día disponible
+    const isSemiOrFinal = ['SEMIFINAL', 'FINAL'].includes(match.ronda);
+    let slotsToSearch = allSlots;
+    if (isSemiOrFinal) {
+      const uniqueDays = extractUniqueDays(allSlots);
+      if (uniqueDays.length > 0) {
+        const lastDay = dateKey(uniqueDays[uniqueDays.length - 1]);
+        slotsToSearch = allSlots.filter(s => dateKey(s.fecha) === lastDay);
+      }
+    }
+
+    // 8. Buscar primer slot libre que respete descanso
+    for (const slot of slotsToSearch) {
       const key = slotKey(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
       if (ocupados.has(key)) continue;
       if (!slotIsAfterOrEqual(slot.fecha, slot.horaInicio, minFecha, minHora)) continue;
@@ -809,6 +848,48 @@ export class MatchesService {
 
     // Sin slot disponible — queda sin cancha (el organizador lo verá)
     this.logger.warn(`[AutoSchedule] No slot found for match ${matchId} (${match.ronda})`);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // REAGENDAR PARTIDOS SIN CANCHA
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * Re-asigna canchas/horarios a partidos que quedaron sin slot.
+   * El organizador lo llama después de agregar nuevos horarios.
+   */
+  async reagendarSinCancha(tournamentId: string, categoryId: string): Promise<{ asignados: number; sinSlot: number }> {
+    const matchesSinCancha = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        categoryId,
+        torneoCanchaId: null,
+        estado: { notIn: ['WO', 'CANCELADO'] },
+      },
+      orderBy: { numeroRonda: 'asc' },
+    });
+
+    if (matchesSinCancha.length === 0) {
+      return { asignados: 0, sinSlot: 0 };
+    }
+
+    const torneoCanchas = await this.prisma.torneoCancha.findMany({
+      where: { tournamentId },
+      include: { horarios: true },
+    });
+
+    if (torneoCanchas.length === 0) {
+      return { asignados: 0, sinSlot: matchesSinCancha.length };
+    }
+
+    return this.fixtureService.asignarCanchasYHorarios(
+      this.prisma,
+      matchesSinCancha,
+      torneoCanchas,
+      tournamentId,
+      60,
+      10,
+    );
   }
 
   // ═══════════════════════════════════════════════════════

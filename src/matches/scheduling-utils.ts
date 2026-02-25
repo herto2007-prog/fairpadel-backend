@@ -262,8 +262,10 @@ export function buildRoundDayMap(availableDays: Date[]): Map<string, RoundDayCon
   setRound('RONDA_5', bracketPref);
   setRound('OCTAVOS', bracketPref);
   setRound('CUARTOS', bracketPref);
-  setRound('SEMIFINAL', semiPref);
-  setRound('FINAL', finalPref);
+  // SEMIFINAL y FINAL: allowedDays = SOLO último día (hard constraint, sin neighbors)
+  const lastDay = [day(N - 1)];
+  map.set('SEMIFINAL', { preferredDays: semiPref, allowedDays: lastDay });
+  map.set('FINAL', { preferredDays: finalPref, allowedDays: lastDay });
 
   return map;
 }

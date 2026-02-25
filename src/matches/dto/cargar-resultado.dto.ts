@@ -46,6 +46,10 @@ export class CargarResultadoDto {
   esRetiro?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  esDescalificacion?: boolean;
+
+  @IsOptional()
   @IsString()
   parejaGanadoraId?: string;
 
