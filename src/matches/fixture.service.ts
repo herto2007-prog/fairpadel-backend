@@ -1047,23 +1047,45 @@ export class FixtureService {
       });
     }
 
-    // 3b. Incluir R1 BYE pairs (matches WO con observaciones 'BYE' — pareja sin oponente)
+    // 3b. Método 1: R1 BYE matches (sorteos nuevos con match WO+BYE creado)
     for (const m of r1Matches) {
       if (m.estado === 'WO' && m.observaciones?.includes('BYE') && m.pareja1Id && !m.pareja2Id) {
         if (!losers.some(l => l.parejaId === m.pareja1Id)) {
           losers.push({
             parejaId: m.pareja1Id,
-            gamesGanados: -1, // Forzar último ranking — DEBE jugar R2, no ser best loser
+            gamesGanados: -1,
             r1MatchId: m.id,
             r1WinnerId: m.pareja1Id,
           });
-          this.logger.log(`[ArmarZ2] R1 BYE pair ${m.pareja1Id} agregada a losers con -1 games`);
+          this.logger.log(`[ArmarZ2] R1 BYE pair ${m.pareja1Id} (via match)`);
         }
       }
     }
 
-    // Ordenar por games ganados DESC (mejor perdedor primero, BYE pair al final)
-    losers.sort((a, b) => b.gamesGanados - a.gamesGanados);
+    // 3c. Método 2 (fallback): inscripciones no presentes en R1 (sorteos viejos sin match BYE)
+    const allR1ParejaIds = new Set<string>();
+    for (const m of r1Matches) {
+      if (m.pareja1Id) allR1ParejaIds.add(m.pareja1Id);
+      if (m.pareja2Id) allR1ParejaIds.add(m.pareja2Id);
+    }
+    const inscripcionesConfirmadas = await this.prisma.inscripcion.findMany({
+      where: { tournamentId, categoryId, estado: 'CONFIRMADA' },
+      select: { parejaId: true },
+    });
+    for (const insc of inscripcionesConfirmadas) {
+      if (!allR1ParejaIds.has(insc.parejaId) && !losers.some(l => l.parejaId === insc.parejaId)) {
+        losers.push({
+          parejaId: insc.parejaId,
+          gamesGanados: -1,
+          r1MatchId: '',
+          r1WinnerId: '',
+        });
+        this.logger.log(`[ArmarZ2] R1 BYE pair ${insc.parejaId} (via inscripción fallback)`);
+      }
+    }
+
+    // Ordenar: primario games DESC, secundario parejaId para desempate determinístico
+    losers.sort((a, b) => b.gamesGanados - a.gamesGanados || a.parejaId.localeCompare(b.parejaId));
 
     // 4. Separar placeholders reales vs BYE
     const realR2 = r2Placeholders.filter(m => m.observaciones === 'PLACEHOLDER_R2');
@@ -1079,6 +1101,13 @@ export class FixtureService {
 
     // 6. Emparejar R2 en serpentina
     const numR2Actual = Math.min(Math.floor(r2Losers.length / 2), realR2.length);
+
+    if (r2Losers.length < 2 * numR2Actual) {
+      this.logger.warn(
+        `[ArmarZ2] ⚠️ r2Losers(${r2Losers.length}) < 2*numR2Actual(${2 * numR2Actual}). ` +
+        `Puede haber parejas faltantes. losers total=${losers.length}, bestLosers=${bestLosers.length}`
+      );
+    }
 
     // 7. Actualizar placeholders dentro de una transacción
     await this.prisma.$transaction(async (tx) => {
