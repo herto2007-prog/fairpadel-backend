@@ -500,4 +500,14 @@ export class TournamentsController {
   ) {
     return this.tournamentsService.deleteAuspicianteEspecie(id, aid, req.user.id);
   }
+
+  @Get(':id/insights-premium')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  getPremiumInsights(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    return this.tournamentsService.getPremiumInsights(id, req.user.id);
+  }
 }

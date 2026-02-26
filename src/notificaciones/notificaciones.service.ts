@@ -474,6 +474,16 @@ export class NotificacionesService {
       let enviados = 0;
       for (const user of premiumUsers) {
         try {
+          // Check email preference for SISTEMA — user can opt out of digest
+          const preferencia = await this.prisma.preferenciaNotificacion.findUnique({
+            where: {
+              userId_tipoNotificacion: { userId: user.id, tipoNotificacion: 'SISTEMA' },
+            },
+          });
+          if (preferencia && !preferencia.recibirEmail) {
+            continue; // user opted out of system emails
+          }
+
           const datos = await this.calcularDatosSemana(user.id);
 
           // Only send if there's activity or data worth reporting

@@ -3,8 +3,11 @@ import {
   Get,
   Query,
   Param,
+  Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { RankingsService } from './rankings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -65,5 +68,29 @@ export class RankingsController {
   @UseGuards(JwtAuthGuard)
   obtenerHistorialPuntos(@Param('jugadorId') jugadorId: string) {
     return this.rankingsService.obtenerHistorialPuntos(jugadorId);
+  }
+
+  @Get('me/export-pdf')
+  @UseGuards(JwtAuthGuard)
+  async exportCareerPdf(@Req() req: any, @Res() res: Response) {
+    const buffer = await this.rankingsService.exportCareerPdf(req.user.id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="FairPadel_Carrera_${Date.now()}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('me/export-excel')
+  @UseGuards(JwtAuthGuard)
+  async exportHistoryExcel(@Req() req: any, @Res() res: Response) {
+    const buffer = await this.rankingsService.exportHistoryExcel(req.user.id);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="FairPadel_Historial_${Date.now()}.xlsx"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 }

@@ -11,6 +11,7 @@ import { ParejasService } from '../parejas/parejas.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { CloudinaryService } from '../fotos/cloudinary.service';
 import { LogrosService } from '../logros/logros.service';
+import { AlertasService } from '../alertas/alertas.service';
 
 @Injectable()
 export class InscripcionesService {
@@ -22,6 +23,7 @@ export class InscripcionesService {
     private notificacionesService: NotificacionesService,
     private cloudinaryService: CloudinaryService,
     private logrosService: LogrosService,
+    private alertasService: AlertasService,
   ) {}
 
   /**
@@ -641,6 +643,18 @@ export class InscripcionesService {
       this.logger.error(`Error verificando logros inscripcion: ${e.message}`);
     }
 
+    // Alertar rivales premium (fire-and-forget)
+    try {
+      const tournamentName = inscripcionConfirmada.tournament?.nombre || 'Torneo';
+      const tournamentId = inscripcionConfirmada.tournament?.id || '';
+      if (inscripcionConfirmada.pareja) {
+        this.alertasService.notificarRivalInscrito(inscripcionConfirmada.pareja.jugador1Id, tournamentId, tournamentName).catch(() => {});
+        this.alertasService.notificarRivalInscrito(inscripcionConfirmada.pareja.jugador2Id, tournamentId, tournamentName).catch(() => {});
+      }
+    } catch (e) {
+      this.logger.error(`Error alertando rivales inscripcion: ${e.message}`);
+    }
+
     return inscripcionConfirmada;
   }
 
@@ -817,6 +831,19 @@ export class InscripcionesService {
         if (j2) await this.notificacionesService.notificarPagoConfirmado(j2.id, pagoData);
       } catch (e) {
         this.logger.error(`Error notificando pago individual confirmado: ${e.message}`);
+      }
+
+      // Alertar rivales premium (fire-and-forget)
+      try {
+        const insc = pago.inscripcion;
+        const tournamentName = insc.tournament?.nombre || 'Torneo';
+        const tournamentId = insc.tournament?.id || '';
+        if (insc.pareja) {
+          this.alertasService.notificarRivalInscrito(insc.pareja.jugador1Id, tournamentId, tournamentName).catch(() => {});
+          this.alertasService.notificarRivalInscrito(insc.pareja.jugador2Id, tournamentId, tournamentName).catch(() => {});
+        }
+      } catch (e) {
+        this.logger.error(`Error alertando rivales pago individual: ${e.message}`);
       }
     }
 

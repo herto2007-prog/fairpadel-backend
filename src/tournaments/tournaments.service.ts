@@ -1072,6 +1072,13 @@ export class TournamentsService {
    */
   async reporteFinancieroExcel(tournamentId: string, userId: string): Promise<Buffer> {
     const tournament = await this.verifyReportAccess(tournamentId, userId);
+
+    // Premium gate for financial report
+    const orgUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!orgUser?.esPremium) {
+      throw new ForbiddenException('Necesitas FairPadel Premium para descargar el reporte financiero');
+    }
+
     const dashboard = await this.getDashboardFinanciero(tournamentId, userId);
 
     const workbook = new ExcelJS.Workbook();
@@ -1158,6 +1165,12 @@ export class TournamentsService {
    */
   async reporteAsistenciaExcel(tournamentId: string, userId: string): Promise<Buffer> {
     const tournament = await this.verifyReportAccess(tournamentId, userId);
+
+    // Premium gate for attendance report
+    const orgUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!orgUser?.esPremium) {
+      throw new ForbiddenException('Necesitas FairPadel Premium para descargar el reporte de asistencia');
+    }
 
     const inscripciones = await this.prisma.inscripcion.findMany({
       where: { tournamentId, estado: 'CONFIRMADA' },
@@ -1982,5 +1995,111 @@ export class TournamentsService {
 
     await this.prisma.auspicianteEspecie.delete({ where: { id: auspicioId } });
     return { deleted: true };
+  }
+
+  // ═══════════════════════════════════════
+  // PREMIUM INSIGHTS (Organizer)
+  // ═══════════════════════════════════════
+
+  async getPremiumInsights(tournamentId: string, userId: string) {
+    const tournament = await this.verifyReportAccess(tournamentId, userId);
+
+    const orgUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!orgUser?.esPremium) {
+      throw new ForbiddenException('Necesitas FairPadel Premium para ver insights');
+    }
+
+    // 1. Recurring players — inscribed in previous tournaments by same organizer
+    const previousTournaments = await this.prisma.tournament.findMany({
+      where: { organizadorId: tournament.organizadorId, id: { not: tournamentId } },
+      select: { id: true },
+    });
+    const prevTournamentIds = previousTournaments.map(t => t.id);
+
+    let jugadoresRecurrentes = 0;
+    let totalJugadores = 0;
+
+    if (prevTournamentIds.length > 0) {
+      const currentInscripciones = await this.prisma.inscripcion.findMany({
+        where: { tournamentId, estado: 'CONFIRMADA' },
+        include: { pareja: { select: { jugador1Id: true, jugador2Id: true } } },
+      });
+
+      const currentPlayerIds = new Set<string>();
+      for (const ins of currentInscripciones) {
+        if (ins.pareja?.jugador1Id) currentPlayerIds.add(ins.pareja.jugador1Id);
+        if (ins.pareja?.jugador2Id) currentPlayerIds.add(ins.pareja.jugador2Id);
+      }
+      totalJugadores = currentPlayerIds.size;
+
+      if (currentPlayerIds.size > 0) {
+        const prevInscripciones = await this.prisma.inscripcion.findMany({
+          where: {
+            tournamentId: { in: prevTournamentIds },
+            estado: 'CONFIRMADA',
+            pareja: {
+              OR: [
+                { jugador1Id: { in: Array.from(currentPlayerIds) } },
+                { jugador2Id: { in: Array.from(currentPlayerIds) } },
+              ],
+            },
+          },
+          include: { pareja: { select: { jugador1Id: true, jugador2Id: true } } },
+        });
+
+        const prevPlayerIds = new Set<string>();
+        for (const ins of prevInscripciones) {
+          if (ins.pareja?.jugador1Id && currentPlayerIds.has(ins.pareja.jugador1Id)) prevPlayerIds.add(ins.pareja.jugador1Id);
+          if (ins.pareja?.jugador2Id && currentPlayerIds.has(ins.pareja.jugador2Id)) prevPlayerIds.add(ins.pareja.jugador2Id);
+        }
+        jugadoresRecurrentes = prevPlayerIds.size;
+      }
+    }
+
+    const tasaRetencion = totalJugadores > 0 ? Math.round((jugadoresRecurrentes / totalJugadores) * 100) : 0;
+
+    // 2. Most popular category
+    const categoriaPopular = await this.prisma.inscripcion.groupBy({
+      by: ['categoryId'],
+      where: { tournamentId, estado: 'CONFIRMADA' },
+      _count: true,
+      orderBy: { _count: { categoryId: 'desc' } },
+      take: 1,
+    });
+
+    let categoriaMasPopular = '-';
+    if (categoriaPopular.length > 0 && categoriaPopular[0].categoryId) {
+      const cat = await this.prisma.tournamentCategory.findUnique({
+        where: { id: categoriaPopular[0].categoryId },
+        include: { category: { select: { nombre: true } } },
+      });
+      categoriaMasPopular = cat?.category?.nombre || '-';
+    }
+
+    // 3. Average inscriptions per day
+    const firstInscripcion = await this.prisma.inscripcion.findFirst({
+      where: { tournamentId },
+      orderBy: { createdAt: 'asc' },
+      select: { createdAt: true },
+    });
+    const totalInscripciones = await this.prisma.inscripcion.count({
+      where: { tournamentId, estado: 'CONFIRMADA' },
+    });
+
+    let promedioInscripcionesDia = 0;
+    if (firstInscripcion) {
+      const days = Math.max(1, Math.ceil((Date.now() - firstInscripcion.createdAt.getTime()) / (1000 * 60 * 60 * 24)));
+      promedioInscripcionesDia = Math.round((totalInscripciones / days) * 10) / 10;
+    }
+
+    return {
+      jugadoresRecurrentes,
+      totalJugadores,
+      tasaRetencion,
+      categoriaMasPopular,
+      totalInscripciones,
+      promedioInscripcionesDia,
+      torneosAnteriores: prevTournamentIds.length,
+    };
   }
 }

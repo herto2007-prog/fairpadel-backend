@@ -207,6 +207,78 @@ export class AlertasService {
     }
   }
 
+  /**
+   * When an inscription is confirmed, notify premium users with RIVAL_INSCRITO alert
+   * if the inscribed player is someone they've played against.
+   */
+  async notificarRivalInscrito(
+    inscripcionUserId: string,
+    tournamentId: string,
+    tournamentName: string,
+  ) {
+    try {
+      const alertasActivas = await this.prisma.alertaPersonalizada.findMany({
+        where: {
+          tipo: TipoAlertaPersonalizada.RIVAL_INSCRITO,
+          activa: true,
+          user: { esPremium: true, estado: 'ACTIVO' },
+        },
+        select: { userId: true },
+      });
+
+      if (alertasActivas.length === 0) return;
+
+      // Get the inscribed player's parejas
+      const susParejas = await this.prisma.pareja.findMany({
+        where: { OR: [{ jugador1Id: inscripcionUserId }, { jugador2Id: inscripcionUserId }] },
+        select: { id: true },
+      });
+      const susParejaIds = susParejas.map(p => p.id);
+      if (susParejaIds.length === 0) return;
+
+      for (const alerta of alertasActivas) {
+        if (alerta.userId === inscripcionUserId) continue;
+
+        // Check if this user has faced the inscribed player
+        const misParejas = await this.prisma.pareja.findMany({
+          where: { OR: [{ jugador1Id: alerta.userId }, { jugador2Id: alerta.userId }] },
+          select: { id: true },
+        });
+        const misParejaIds = misParejas.map(p => p.id);
+        if (misParejaIds.length === 0) continue;
+
+        const enfrentamiento = await this.prisma.match.findFirst({
+          where: {
+            estado: { in: ['FINALIZADO', 'WO'] },
+            OR: [
+              { pareja1Id: { in: misParejaIds }, pareja2Id: { in: susParejaIds } },
+              { pareja1Id: { in: susParejaIds }, pareja2Id: { in: misParejaIds } },
+            ],
+          },
+        });
+
+        if (enfrentamiento) {
+          const rival = await this.prisma.user.findUnique({
+            where: { id: inscripcionUserId },
+            select: { nombre: true, apellido: true },
+          });
+
+          await this.notificacionesService.crearNotificacion(
+            alerta.userId,
+            'TORNEO',
+            `Tu rival ${rival?.nombre} ${rival?.apellido} se inscribió en "${tournamentName}"`,
+            true,
+            false,
+          );
+        }
+      }
+
+      this.logger.log(`Alertas rival inscrito procesadas para ${alertasActivas.length} usuarios`);
+    } catch (e) {
+      this.logger.error(`Error notificando rival inscrito: ${e.message}`);
+    }
+  }
+
   // ═══════════════════════════════════════
   // HELPERS
   // ═══════════════════════════════════════

@@ -529,14 +529,14 @@ export class UsersService {
         category: { select: { id: true, nombre: true } },
         pareja1: {
           include: {
-            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
-            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true, esPremium: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true, esPremium: true } },
           },
         },
         pareja2: {
           include: {
-            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
-            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true, esPremium: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true, esPremium: true } },
           },
         },
       },
@@ -585,5 +585,146 @@ export class UsersService {
         esWO: m.estado === 'WO',
       };
     });
+  }
+
+  // ═══════════════════════════════════════
+  // ESTADÍSTICAS AVANZADAS (Premium)
+  // ═══════════════════════════════════════
+
+  async calcularEstadisticasAvanzadas(userId: string) {
+    // Get all completed matches for this user
+    const matches = await this.prisma.match.findMany({
+      where: {
+        estado: { in: ['FINALIZADO', 'WO'] },
+        OR: [
+          { pareja1: { OR: [{ jugador1Id: userId }, { jugador2Id: userId }] } },
+          { pareja2: { OR: [{ jugador1Id: userId }, { jugador2Id: userId }] } },
+        ],
+      },
+      include: {
+        pareja1: {
+          include: {
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+          },
+        },
+        pareja2: {
+          include: {
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // H2H: Group by opponent
+    const h2hMap = new Map<string, { opponent: any; wins: number; losses: number; matches: number }>();
+
+    // Sinergia: Group by partner
+    const sinergiaMap = new Map<string, { partner: any; wins: number; matches: number }>();
+
+    for (const m of matches) {
+      const isP1 = m.pareja1?.jugador1Id === userId || m.pareja1?.jugador2Id === userId;
+      const myPareja = isP1 ? m.pareja1 : m.pareja2;
+      const opPareja = isP1 ? m.pareja2 : m.pareja1;
+      const myParejaId = isP1 ? m.pareja1Id : m.pareja2Id;
+      const victoria = m.parejaGanadoraId === myParejaId;
+
+      // Partner (sinergia)
+      if (myPareja) {
+        const partner = myPareja.jugador1Id === userId ? myPareja.jugador2 : myPareja.jugador1;
+        if (partner) {
+          const existing = sinergiaMap.get(partner.id) || { partner, wins: 0, matches: 0 };
+          existing.matches++;
+          if (victoria) existing.wins++;
+          sinergiaMap.set(partner.id, existing);
+        }
+      }
+
+      // Opponents (H2H)
+      if (opPareja) {
+        const opponents = [opPareja.jugador1, opPareja.jugador2].filter(Boolean);
+        for (const opp of opponents) {
+          if (!opp) continue;
+          const existing = h2hMap.get(opp.id) || { opponent: opp, wins: 0, losses: 0, matches: 0 };
+          existing.matches++;
+          if (victoria) existing.wins++;
+          else existing.losses++;
+          h2hMap.set(opp.id, existing);
+        }
+      }
+    }
+
+    // Sort H2H by most encounters, take top 10
+    const h2h = Array.from(h2hMap.values())
+      .sort((a, b) => b.matches - a.matches)
+      .slice(0, 10)
+      .map(h => ({
+        opponent: h.opponent,
+        partidos: h.matches,
+        victorias: h.wins,
+        derrotas: h.losses,
+        winRate: h.matches > 0 ? Math.round((h.wins / h.matches) * 100) : 0,
+      }));
+
+    // Sort sinergia by matches, include win rate
+    const sinergia = Array.from(sinergiaMap.values())
+      .sort((a, b) => b.matches - a.matches)
+      .slice(0, 10)
+      .map(s => ({
+        partner: s.partner,
+        partidos: s.matches,
+        victorias: s.wins,
+        winRate: s.matches > 0 ? Math.round((s.wins / s.matches) * 100) : 0,
+      }));
+
+    // Tendencia: Points + W/L by month (last 12 months)
+    const now = new Date();
+    const hace12Meses = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+
+    const historialPuntos = await this.prisma.historialPuntos.findMany({
+      where: {
+        jugadorId: userId,
+        fechaTorneo: { gte: hace12Meses },
+      },
+      orderBy: { fechaTorneo: 'asc' },
+    });
+
+    const tendenciaMap = new Map<string, { mes: string; puntos: number; victorias: number; derrotas: number }>();
+    // Initialize 12 months
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('es-PY', { month: 'short', year: '2-digit' });
+      tendenciaMap.set(key, { mes: label, puntos: 0, victorias: 0, derrotas: 0 });
+    }
+
+    for (const h of historialPuntos) {
+      const d = new Date(h.fechaTorneo);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const entry = tendenciaMap.get(key);
+      if (entry) {
+        entry.puntos += h.puntosGanados || 0;
+      }
+    }
+
+    // Add W/L by month from matches
+    for (const m of matches) {
+      const d = new Date(m.createdAt);
+      if (d < hace12Meses) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const entry = tendenciaMap.get(key);
+      if (!entry) continue;
+
+      const isP1 = m.pareja1?.jugador1Id === userId || m.pareja1?.jugador2Id === userId;
+      const myParejaId = isP1 ? m.pareja1Id : m.pareja2Id;
+      if (m.parejaGanadoraId === myParejaId) entry.victorias++;
+      else entry.derrotas++;
+    }
+
+    const tendencia = Array.from(tendenciaMap.values());
+
+    return { h2h, sinergia, tendencia };
   }
 }

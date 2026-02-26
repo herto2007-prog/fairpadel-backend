@@ -12,6 +12,7 @@ import {
   Request,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
@@ -104,6 +105,13 @@ export class UsersController {
     const page = Math.max(1, parseInt(fotosPage || '1', 10) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(fotosLimit || '24', 10) || 24));
     return this.usersService.obtenerPerfilCompleto(id, viewerId, page, limit);
+  }
+
+  @Get(':id/estadisticas-avanzadas')
+  @UseGuards(JwtAuthGuard)
+  async obtenerEstadisticasAvanzadas(@Param('id') id: string, @Request() req: any) {
+    // Premium gate handled inside the service
+    return this.usersService.calcularEstadisticasAvanzadas(id);
   }
 
   @Get(':id')
