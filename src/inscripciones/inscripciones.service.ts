@@ -25,16 +25,15 @@ export class InscripcionesService {
   ) {}
 
   /**
-   * Get commission percentage: tournament-specific override OR global default.
+   * Get fixed commission per player in Guaraníes.
+   * Reads COMISION_FIJA_POR_JUGADOR from ConfiguracionSistema.
+   * Default: Gs. 5000 per player.
    */
-  private async getComisionPorcentaje(tournament: any, tx: any): Promise<number> {
-    if (tournament.comisionPorcentaje != null) {
-      return parseFloat(tournament.comisionPorcentaje.toString()) / 100;
-    }
+  private async getComisionFijaPorJugador(tx: any): Promise<number> {
     const config = await tx.configuracionSistema.findUnique({
-      where: { clave: 'COMISION_INSCRIPCION' },
+      where: { clave: 'COMISION_FIJA_POR_JUGADOR' },
     });
-    return config ? parseFloat(config.valor) / 100 : 0.05;
+    return config ? parseFloat(config.valor) : 5000;
   }
 
   async create(createInscripcionDto: CreateInscripcionDto, userId: string) {
@@ -238,7 +237,8 @@ export class InscripcionesService {
 
       // Crear registro(s) de pago si no es gratis
       if (!esGratis) {
-        const porcentajeComision = await this.getComisionPorcentaje(tournament, tx);
+        // Comisión fija por jugador (Gs.)
+        const comisionFija = await this.getComisionFijaPorJugador(tx);
         const costoTotal = tournament.costoInscripcion.toNumber();
         const costoPorJugador = costoTotal / 2;
         const modo = modoPagoInscripcion || 'COMPLETO';
@@ -250,9 +250,7 @@ export class InscripcionesService {
         });
 
         if (modo === 'INDIVIDUAL') {
-          // 2 pagos: uno por cada jugador
-          const comisionPorJugador = costoPorJugador * porcentajeComision;
-
+          // 2 pagos: uno por cada jugador, comisión fija por cada uno
           // Pago jugador 1 (el que está inscribiendo)
           await tx.pago.create({
             data: {
@@ -260,7 +258,7 @@ export class InscripcionesService {
               jugadorId: userId,
               metodoPago: metodoPago as any,
               monto: costoPorJugador,
-              comision: comisionPorJugador,
+              comision: comisionFija,
               estado: 'PENDIENTE',
             },
           });
@@ -273,13 +271,13 @@ export class InscripcionesService {
               jugadorId: jugador2Db?.id || null,
               metodoPago: metodoPago as any,
               monto: costoPorJugador,
-              comision: comisionPorJugador,
+              comision: comisionFija,
               estado: 'PENDIENTE',
             },
           });
         } else {
-          // COMPLETO: 1 pago con el total, comisión sobre el total
-          const comisionTotal = costoTotal * porcentajeComision;
+          // COMPLETO: 1 pago con el total, comisión fija × 2 jugadores
+          const comisionTotal = comisionFija * 2;
           await tx.pago.create({
             data: {
               inscripcionId: inscripcion.id,

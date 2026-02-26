@@ -352,7 +352,12 @@ async function main() {
     {
       clave: 'COMISION_INSCRIPCION',
       valor: '5',
-      descripcion: 'Porcentaje de comisión que cobra la plataforma por cada inscripción a un torneo',
+      descripcion: 'Porcentaje de comisión que cobra la plataforma por cada inscripción a un torneo (legacy)',
+    },
+    {
+      clave: 'COMISION_FIJA_POR_JUGADOR',
+      valor: '5000',
+      descripcion: 'Monto fijo en Guaraníes que cobra la plataforma por cada jugador inscrito a un torneo',
     },
   ];
 

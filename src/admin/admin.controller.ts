@@ -256,6 +256,22 @@ export class AdminController {
     return this.adminService.obtenerEstadisticasCupones();
   }
 
+  // ============ FINANZAS DE LA PLATAFORMA ============
+  @Get('finanzas/dashboard')
+  obtenerFinanzasDashboard() {
+    return this.adminService.obtenerFinanzasDashboard();
+  }
+
+  @Get('finanzas/torneos')
+  obtenerFinanzasTorneos(@Query('estado') estado?: string) {
+    return this.adminService.obtenerFinanzasTorneos(estado);
+  }
+
+  @Put('finanzas/comision')
+  actualizarComisionFija(@Body() body: { montoFijo: number }) {
+    return this.adminService.actualizarComisionFija(body.montoFijo);
+  }
+
   // ============ SEED TEST DATA (TEMPORAL) ============
   @Post('torneos/:id/seed-test-data')
   seedTestData(

@@ -1178,6 +1178,158 @@ export class AdminService {
     };
   }
 
+  // ═══════════════════════════════════════════
+  // FINANZAS DE LA PLATAFORMA
+  // ═══════════════════════════════════════════
+
+  async obtenerFinanzasDashboard() {
+    // Comisión fija actual
+    const configComision = await this.prisma.configuracionSistema.findUnique({
+      where: { clave: 'COMISION_FIJA_POR_JUGADOR' },
+    });
+    const comisionFijaPorJugador = configComision ? parseFloat(configComision.valor) : 5000;
+
+    // Total comisiones de pagos confirmados
+    const pagosConfirmados = await this.prisma.pago.findMany({
+      where: { estado: 'CONFIRMADO' },
+      select: { comision: true, inscripcionId: true },
+    });
+
+    const totalIngresosComisiones = pagosConfirmados.reduce(
+      (acc, p) => acc + p.comision.toNumber(), 0,
+    );
+
+    // Pagos confirmados del mes actual
+    const now = new Date();
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    const pagosMes = await this.prisma.pago.findMany({
+      where: {
+        estado: 'CONFIRMADO',
+        fechaConfirm: { gte: inicioMes },
+      },
+      select: { comision: true },
+    });
+    const comisionesMes = pagosMes.reduce((acc, p) => acc + p.comision.toNumber(), 0);
+
+    // Suscripciones activas (MRR)
+    const suscripciones = await this.prisma.suscripcion.findMany({
+      where: { estado: 'ACTIVA' },
+    });
+    const mrrSuscripciones = suscripciones.reduce((acc, sub) => {
+      return acc + sub.precio.toNumber();
+    }, 0);
+
+    // Torneos con al menos 1 pago confirmado
+    const torneosConIngresos = await this.prisma.tournament.count({
+      where: {
+        inscripciones: {
+          some: {
+            pagos: { some: { estado: 'CONFIRMADO', comision: { gt: 0 } } },
+          },
+        },
+      },
+    });
+
+    // Total jugadores únicos con pago confirmado
+    const jugadoresConPago = await this.prisma.pago.groupBy({
+      by: ['jugadorId'],
+      where: { estado: 'CONFIRMADO', jugadorId: { not: null } },
+    });
+
+    return {
+      comisionFijaPorJugador,
+      totalIngresosComisiones,
+      comisionesMes,
+      mrrSuscripciones,
+      suscripcionesActivas: suscripciones.length,
+      totalIngresos: totalIngresosComisiones + mrrSuscripciones,
+      ingresosMes: comisionesMes + mrrSuscripciones,
+      totalJugadoresInscriptos: jugadoresConPago.length,
+      totalTorneosConIngresos: torneosConIngresos,
+    };
+  }
+
+  async obtenerFinanzasTorneos(estado?: string) {
+    const where: any = {};
+    if (estado) {
+      where.estado = estado;
+    }
+
+    const torneos = await this.prisma.tournament.findMany({
+      where,
+      select: {
+        id: true,
+        nombre: true,
+        flyerUrl: true,
+        estado: true,
+        fechaInicio: true,
+        fechaFin: true,
+        costoInscripcion: true,
+        createdAt: true,
+        inscripciones: {
+          select: {
+            id: true,
+            estado: true,
+            pagos: {
+              where: { estado: 'CONFIRMADO' },
+              select: { comision: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return torneos.map((t) => {
+      let inscripcionesConfirmadas = 0;
+      let comisionesGeneradas = 0;
+
+      for (const insc of t.inscripciones) {
+        if (insc.estado === 'CONFIRMADA') {
+          inscripcionesConfirmadas++;
+        }
+        for (const pago of insc.pagos) {
+          comisionesGeneradas += pago.comision.toNumber();
+        }
+      }
+
+      return {
+        id: t.id,
+        nombre: t.nombre,
+        flyerUrl: t.flyerUrl,
+        estado: t.estado,
+        fechaInicio: t.fechaInicio,
+        fechaFin: t.fechaFin,
+        costoInscripcion: t.costoInscripcion ? Number(t.costoInscripcion) : 0,
+        inscripcionesTotal: t.inscripciones.length,
+        inscripcionesConfirmadas,
+        jugadoresInscriptos: inscripcionesConfirmadas * 2,
+        comisionesGeneradas,
+      };
+    });
+  }
+
+  async actualizarComisionFija(montoFijo: number) {
+    if (montoFijo < 0) {
+      throw new BadRequestException('El monto de comisión no puede ser negativo');
+    }
+
+    await this.prisma.configuracionSistema.upsert({
+      where: { clave: 'COMISION_FIJA_POR_JUGADOR' },
+      update: { valor: String(montoFijo) },
+      create: {
+        clave: 'COMISION_FIJA_POR_JUGADOR',
+        valor: String(montoFijo),
+        descripcion: 'Monto fijo en Guaraníes que cobra la plataforma por cada jugador inscrito a un torneo',
+      },
+    });
+
+    return {
+      message: `Comisión fija actualizada a Gs. ${new Intl.NumberFormat('es-PY').format(montoFijo)}`,
+      montoFijo,
+    };
+  }
+
   // ============ SEED TEST DATA (TEMPORAL) ============
 
   private readonly NOMBRES_M = [
@@ -1297,7 +1449,12 @@ export class AdminService {
     const passwordHash = await bcrypt.hash('test123', 10);
     const modalidad = torneo.modalidades.length > 0 ? torneo.modalidades[0].modalidad : 'TRADICIONAL';
     const monto = torneo.costoInscripcion ? Number(torneo.costoInscripcion) : 0;
-    const comision = monto * 0.05;
+    // Read fixed commission per player from ConfiguracionSistema
+    const configComision = await this.prisma.configuracionSistema.findUnique({
+      where: { clave: 'COMISION_FIJA_POR_JUGADOR' },
+    });
+    const comisionPorJugador = configComision ? parseFloat(configComision.valor) : 5000;
+    const comision = comisionPorJugador * 2; // 2 jugadores por pareja
 
     try {
       return await this.prisma.$transaction(async (tx) => {
