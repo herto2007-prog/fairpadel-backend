@@ -294,4 +294,29 @@ export class AdminController {
   getComisionTorneo(@Param('id') id: string) {
     return this.adminService.getComisionTorneo(id);
   }
+
+  // ============ SMS DASHBOARD ============
+  @Get('sms/dashboard')
+  obtenerSmsDashboard() {
+    return this.adminService.obtenerSmsDashboard();
+  }
+
+  @Get('sms/logs')
+  obtenerSmsLogs(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('tipo') tipo?: string,
+    @Query('exitoso') exitoso?: string,
+    @Query('fechaDesde') fechaDesde?: string,
+    @Query('fechaHasta') fechaHasta?: string,
+  ) {
+    return this.adminService.obtenerSmsLogs({
+      page: page ? parseInt(page) : undefined,
+      limit: limit ? parseInt(limit) : undefined,
+      tipo,
+      exitoso: exitoso === 'true' ? true : exitoso === 'false' ? false : undefined,
+      fechaDesde,
+      fechaHasta,
+    });
+  }
 }

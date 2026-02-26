@@ -400,7 +400,7 @@ export class SocialService {
         titulo: 'Invitación a jugar',
         contenido: `${emisor.nombre} ${emisor.apellido} te invita a jugar el ${fechaStr} a las ${hora} en ${lugar}`,
         enlace: '/solicitudes',
-        smsTexto: `${emisor.nombre} te invita a jugar el ${fechaStr} ${hora} en ${lugar}. Revisá en FairPadel.`,
+        smsTexto: `${emisor.nombre} te invita a jugar el ${fechaStr} ${hora} en ${lugar}. Revisa en FairPadel.`,
       });
     } catch (e) {
       this.logger.error(`Error notificando solicitud de jugar: ${e.message}`);

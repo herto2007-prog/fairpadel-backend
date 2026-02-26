@@ -1644,4 +1644,102 @@ export class AdminService {
       );
     }
   }
+
+  // ============ SMS DASHBOARD ============
+
+  async obtenerSmsDashboard() {
+    const now = new Date();
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Totales del mes actual
+    const [totalMes, exitososMes, fallidosMes, costoMes] = await Promise.all([
+      this.prisma.smsLog.count({ where: { createdAt: { gte: inicioMes } } }),
+      this.prisma.smsLog.count({ where: { createdAt: { gte: inicioMes }, exitoso: true } }),
+      this.prisma.smsLog.count({ where: { createdAt: { gte: inicioMes }, exitoso: false } }),
+      this.prisma.smsLog.aggregate({
+        where: { createdAt: { gte: inicioMes }, exitoso: true },
+        _sum: { costoEstimado: true },
+      }),
+    ]);
+
+    // Resumen ultimos 6 meses
+    const resumenMensual = [];
+    for (let i = 0; i < 6; i++) {
+      const mesInicio = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mesFin = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+
+      const [total, exitosos, costo] = await Promise.all([
+        this.prisma.smsLog.count({ where: { createdAt: { gte: mesInicio, lt: mesFin } } }),
+        this.prisma.smsLog.count({ where: { createdAt: { gte: mesInicio, lt: mesFin }, exitoso: true } }),
+        this.prisma.smsLog.aggregate({
+          where: { createdAt: { gte: mesInicio, lt: mesFin }, exitoso: true },
+          _sum: { costoEstimado: true },
+        }),
+      ]);
+
+      resumenMensual.push({
+        mes: mesInicio.toISOString().substring(0, 7),
+        total,
+        exitosos,
+        fallidos: total - exitosos,
+        costo: costo._sum.costoEstimado || 0,
+      });
+    }
+
+    // Desglose por tipo este mes
+    const porTipo = await this.prisma.smsLog.groupBy({
+      by: ['tipo'],
+      where: { createdAt: { gte: inicioMes } },
+      _count: true,
+    });
+
+    return {
+      totalMes,
+      exitososMes,
+      fallidosMes,
+      costoEstimadoMes: costoMes._sum.costoEstimado || 0,
+      resumenMensual,
+      porTipo: porTipo.map((g) => ({ tipo: g.tipo, count: g._count })),
+    };
+  }
+
+  async obtenerSmsLogs(params: {
+    page?: number;
+    limit?: number;
+    tipo?: string;
+    exitoso?: boolean;
+    fechaDesde?: string;
+    fechaHasta?: string;
+  }) {
+    const { page = 1, limit = 20, tipo, exitoso, fechaDesde, fechaHasta } = params;
+
+    const where: any = {};
+    if (tipo) where.tipo = tipo;
+    if (exitoso !== undefined) where.exitoso = exitoso;
+    if (fechaDesde || fechaHasta) {
+      where.createdAt = {};
+      if (fechaDesde) where.createdAt.gte = new Date(fechaDesde);
+      if (fechaHasta) where.createdAt.lte = new Date(fechaHasta);
+    }
+
+    const [logs, total] = await Promise.all([
+      this.prisma.smsLog.findMany({
+        where,
+        include: {
+          user: { select: { id: true, nombre: true, apellido: true, documento: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: Math.min(limit, 50),
+      }),
+      this.prisma.smsLog.count({ where }),
+    ]);
+
+    return {
+      logs,
+      total,
+      page,
+      totalPages: Math.ceil(total / Math.min(limit, 50)),
+    };
+  }
 }

@@ -253,6 +253,7 @@ model User {
   pagos                     Pago[]              @relation("PagosJugador")
   movimientosCreados        MovimientoFinanciero[] @relation("MovimientosCreados")
   auspiciosCreados          AuspicianteEspecie[]   @relation("AuspiciosCreados")
+  smsLogs                   SmsLog[]
 
   @@map("users")
 }
@@ -1137,6 +1138,24 @@ model PreferenciaNotificacion {
 
   @@unique([userId, tipoNotificacion])
   @@map("preferencias_notificacion")
+}
+
+model SmsLog {
+  id               String            @id @default(uuid())
+  userId           String?           @map("user_id")
+  telefono         String
+  mensaje          String            @db.VarChar(320)
+  tipo             TipoNotificacion?
+  exitoso          Boolean           @default(true)
+  providerResponse String?           @map("provider_response") @db.Text
+  costoEstimado    Float             @default(0) @map("costo_estimado")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId])
+  @@map("sms_logs")
 }
 
 // ═══════════════════════════════════════════════════════

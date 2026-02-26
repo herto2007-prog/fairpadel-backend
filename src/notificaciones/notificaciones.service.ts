@@ -90,6 +90,7 @@ export class NotificacionesService {
         const result = await this.smsService.enviarNotificacion(
           usuario.telefono,
           smsTexto,
+          { userId, tipo },
         );
         smsEnviado = result.success;
       } catch (e) {
