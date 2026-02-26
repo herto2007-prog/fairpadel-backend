@@ -48,7 +48,7 @@ export class AdminService {
     return torneos;
   }
 
-  async aprobarTorneo(id: string) {
+  async aprobarTorneo(id: string, circuitoId?: string) {
     const torneo = await this.prisma.tournament.findUnique({
       where: { id },
     });
@@ -57,16 +57,31 @@ export class AdminService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
+    const data: any = { estado: 'PUBLICADO' };
+
+    if (circuitoId) {
+      const circuito = await this.prisma.circuito.findUnique({
+        where: { id: circuitoId },
+      });
+      if (!circuito) {
+        throw new NotFoundException('Circuito no encontrado');
+      }
+      if (circuito.estado !== 'ACTIVO') {
+        throw new BadRequestException('El circuito no esta activo');
+      }
+      data.circuitoId = circuitoId;
+    }
+
     await this.prisma.tournament.update({
       where: { id },
-      data: {
-        estado: 'PUBLICADO',
-      },
+      data,
     });
 
-    // TODO: Notificar al organizador
-
-    return { message: 'Torneo aprobado' };
+    return {
+      message: circuitoId
+        ? 'Torneo aprobado y asignado a circuito'
+        : 'Torneo aprobado',
+    };
   }
 
   async rechazarTorneo(id: string, motivo: string) {

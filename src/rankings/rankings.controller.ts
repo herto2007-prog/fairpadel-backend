@@ -15,13 +15,19 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class RankingsController {
   constructor(private readonly rankingsService: RankingsService) {}
 
+  @Get('temporadas')
+  async getTemporadas() {
+    return this.rankingsService.getTemporadasDisponibles();
+  }
+
   @Get()
   obtenerRankings(
     @Query('tipo') tipo?: string,
     @Query('alcance') alcance?: string,
     @Query('genero') genero?: string,
+    @Query('temporada') temporada?: string,
   ) {
-    return this.rankingsService.obtenerRankings(tipo, alcance, genero);
+    return this.rankingsService.obtenerRankings(tipo, alcance, genero, temporada);
   }
 
   @Get('global')
@@ -54,8 +60,11 @@ export class RankingsController {
   }
 
   @Get('top10')
-  obtenerTop10(@Query('genero') genero?: string) {
-    return this.rankingsService.obtenerTop10(genero);
+  obtenerTop10(
+    @Query('genero') genero?: string,
+    @Query('temporada') temporada?: string,
+  ) {
+    return this.rankingsService.obtenerTop10(genero, temporada);
   }
 
   @Get('jugador/:jugadorId')

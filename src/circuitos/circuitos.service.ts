@@ -195,7 +195,7 @@ export class CircuitosService {
     return this.prisma.tournament.findMany({
       where: {
         circuitoId: null,
-        estado: { in: ['PUBLICADO', 'EN_CURSO', 'FINALIZADO'] },
+        estado: { in: ['PENDIENTE_APROBACION', 'PUBLICADO', 'EN_CURSO', 'FINALIZADO'] },
       },
       select: {
         id: true,
@@ -330,14 +330,17 @@ export class CircuitosService {
     const standingsMasc = await this.getStandings(id, 'MASCULINO');
     const standingsFem = await this.getStandings(id, 'FEMENINO');
 
-    // Persistir rankings LIGA
+    // Persistir rankings LIGA (temporada = año de la temporada del circuito, o año actual)
+    const temporada = circuito.temporada || new Date().getFullYear().toString();
+
     for (const standing of [...standingsMasc, ...standingsFem]) {
       await this.prisma.ranking.upsert({
         where: {
-          jugadorId_tipoRanking_alcance: {
+          jugadorId_tipoRanking_alcance_temporada: {
             jugadorId: standing.jugador.id,
             tipoRanking: 'LIGA',
             alcance: id,
+            temporada,
           },
         },
         update: {
@@ -351,6 +354,7 @@ export class CircuitosService {
           tipoRanking: 'LIGA',
           alcance: id,
           genero: standing.jugador.genero,
+          temporada,
           puntosTotales: standing.puntosTotales,
           posicion: standing.posicion,
           torneosJugados: standing.torneosJugados,

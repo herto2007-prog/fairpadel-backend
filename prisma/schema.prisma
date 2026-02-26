@@ -775,11 +775,12 @@ model Ranking {
   rachaActual         Int          @default(0) @map("racha_actual")
   mejorPosicion       Int?         @map("mejor_posicion")
   campeonatos         Int          @default(0)
+  temporada           String       @default("2026")
   ultimaActualizacion DateTime     @default(now()) @map("ultima_actualizacion")
 
   jugador User @relation(fields: [jugadorId], references: [id], onDelete: Cascade)
 
-  @@unique([jugadorId, tipoRanking, alcance])
+  @@unique([jugadorId, tipoRanking, alcance, temporada])
   @@map("rankings")
 }
 

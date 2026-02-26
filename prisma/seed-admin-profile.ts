@@ -353,12 +353,14 @@ async function main() {
   const totalLosses = PARTIDOS_POR_TORNEO.flat().filter((m) => !m.adminGana).length;
   const campeonatos = TORNEOS.filter((t) => t.posicion === 'CAMPEON').length;
 
+  const temporada = new Date().getFullYear().toString();
   await prisma.ranking.upsert({
     where: {
-      jugadorId_tipoRanking_alcance: {
+      jugadorId_tipoRanking_alcance_temporada: {
         jugadorId: admin.id,
         tipoRanking: 'GLOBAL',
         alcance: 'GLOBAL',
+        temporada,
       },
     },
     update: {
@@ -378,6 +380,7 @@ async function main() {
       tipoRanking: 'GLOBAL',
       alcance: 'GLOBAL',
       genero: 'MASCULINO',
+      temporada,
       puntosTotales: totalPuntos,
       posicion: 3,
       posicionAnterior: 5,

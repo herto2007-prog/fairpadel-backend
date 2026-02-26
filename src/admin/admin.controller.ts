@@ -28,8 +28,11 @@ export class AdminController {
   }
 
   @Put('torneos/:id/aprobar')
-  aprobarTorneo(@Param('id') id: string) {
-    return this.adminService.aprobarTorneo(id);
+  aprobarTorneo(
+    @Param('id') id: string,
+    @Body() body?: { circuitoId?: string },
+  ) {
+    return this.adminService.aprobarTorneo(id, body?.circuitoId);
   }
 
   @Put('torneos/:id/rechazar')

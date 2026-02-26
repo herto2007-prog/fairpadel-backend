@@ -7,7 +7,11 @@ const PDFDocument = require('pdfkit');
 export class RankingsService {
   constructor(private prisma: PrismaService) {}
 
-  async obtenerRankings(tipo?: string, alcance?: string, genero?: string) {
+  private getTemporadaActual(): string {
+    return new Date().getFullYear().toString();
+  }
+
+  async obtenerRankings(tipo?: string, alcance?: string, genero?: string, temporada?: string) {
     const where: any = {};
 
     if (tipo) {
@@ -19,6 +23,7 @@ export class RankingsService {
     if (genero) {
       where.genero = genero;
     }
+    where.temporada = temporada || this.getTemporadaActual();
 
     const rankings = await this.prisma.ranking.findMany({
       where,
@@ -44,6 +49,22 @@ export class RankingsService {
     return rankings;
   }
 
+  async getTemporadasDisponibles(): Promise<string[]> {
+    const result = await this.prisma.ranking.findMany({
+      where: { tipoRanking: 'GLOBAL' },
+      select: { temporada: true },
+      distinct: ['temporada'],
+      orderBy: { temporada: 'desc' },
+    });
+    const temporadas = result.map((r) => r.temporada);
+    // Always include current year even if no rankings yet
+    const currentYear = this.getTemporadaActual();
+    if (!temporadas.includes(currentYear)) {
+      temporadas.unshift(currentYear);
+    }
+    return temporadas;
+  }
+
   async obtenerRankingGlobal(genero?: string) {
     return this.obtenerRankings('GLOBAL', undefined, genero);
   }
@@ -60,8 +81,11 @@ export class RankingsService {
     return this.obtenerRankings('CATEGORIA', categoria, genero);
   }
 
-  async obtenerTop10(genero?: string) {
-    const where: any = { tipoRanking: 'GLOBAL' };
+  async obtenerTop10(genero?: string, temporada?: string) {
+    const where: any = {
+      tipoRanking: 'GLOBAL',
+      temporada: temporada || this.getTemporadaActual(),
+    };
     if (genero) {
       where.genero = genero;
     }
@@ -268,6 +292,7 @@ export class RankingsService {
   }
 
   async actualizarRankingJugador(jugadorId: string, puntosNuevos: number) {
+    const temporada = this.getTemporadaActual();
     const jugador = await this.prisma.user.findUnique({
       where: { id: jugadorId },
     });
@@ -276,58 +301,54 @@ export class RankingsService {
       return;
     }
 
-    // Buscar ranking global existente
-    let ranking = await this.prisma.ranking.findFirst({
+    await this.prisma.ranking.upsert({
       where: {
-        jugadorId,
-        tipoRanking: 'GLOBAL',
-        alcance: 'GLOBAL',
-      },
-    });
-
-    if (ranking) {
-      // Actualizar puntos
-      await this.prisma.ranking.update({
-        where: { id: ranking.id },
-        data: {
-          puntosTotales: ranking.puntosTotales + puntosNuevos,
-          torneosJugados: ranking.torneosJugados + 1,
-          ultimaActualizacion: new Date(),
-        },
-      });
-    } else {
-      // Crear ranking
-      await this.prisma.ranking.create({
-        data: {
+        jugadorId_tipoRanking_alcance_temporada: {
           jugadorId,
           tipoRanking: 'GLOBAL',
           alcance: 'GLOBAL',
-          genero: jugador.genero,
-          puntosTotales: puntosNuevos,
-          posicion: 999999, // Se recalculará
-          torneosJugados: 1,
+          temporada,
         },
-      });
-    }
+      },
+      update: {
+        puntosTotales: { increment: puntosNuevos },
+        torneosJugados: { increment: 1 },
+        ultimaActualizacion: new Date(),
+      },
+      create: {
+        jugadorId,
+        tipoRanking: 'GLOBAL',
+        alcance: 'GLOBAL',
+        genero: jugador.genero,
+        temporada,
+        puntosTotales: puntosNuevos,
+        posicion: 999999,
+        torneosJugados: 1,
+      },
+    });
   }
 
   async recalcularPosiciones() {
-    // Recalcular posiciones globales
-    const rankingsGlobales = await this.prisma.ranking.findMany({
-      where: { tipoRanking: 'GLOBAL' },
-      orderBy: { puntosTotales: 'desc' },
-    });
+    const temporada = this.getTemporadaActual();
 
-    let posicion = 1;
-    for (const ranking of rankingsGlobales) {
-      await this.prisma.ranking.update({
-        where: { id: ranking.id },
-        data: {
-          posicionAnterior: ranking.posicion,
-          posicion,
-        },
+    // Recalcular posiciones separadas por genero
+    for (const genero of ['MASCULINO', 'FEMENINO']) {
+      const rankings = await this.prisma.ranking.findMany({
+        where: { tipoRanking: 'GLOBAL', temporada, genero: genero as any },
+        orderBy: { puntosTotales: 'desc' },
       });
-      posicion++;
+
+      let posicion = 1;
+      for (const ranking of rankings) {
+        await this.prisma.ranking.update({
+          where: { id: ranking.id },
+          data: {
+            posicionAnterior: ranking.posicion,
+            posicion,
+          },
+        });
+        posicion++;
+      }
     }
   }
   async recalcularRankings() {
@@ -347,6 +368,7 @@ export class RankingsService {
     esVictoria: boolean,
     esCampeonato: boolean,
   ) {
+    const temporada = this.getTemporadaActual();
     const jugador = await this.prisma.user.findUnique({
       where: { id: jugadorId },
       select: { id: true, genero: true },
@@ -354,12 +376,15 @@ export class RankingsService {
 
     if (!jugador) return;
 
-    // Find or create GLOBAL ranking
-    let ranking = await this.prisma.ranking.findFirst({
+    // Find or create GLOBAL ranking for current season
+    let ranking = await this.prisma.ranking.findUnique({
       where: {
-        jugadorId,
-        tipoRanking: 'GLOBAL',
-        alcance: 'GLOBAL',
+        jugadorId_tipoRanking_alcance_temporada: {
+          jugadorId,
+          tipoRanking: 'GLOBAL',
+          alcance: 'GLOBAL',
+          temporada,
+        },
       },
     });
 
@@ -370,6 +395,7 @@ export class RankingsService {
           tipoRanking: 'GLOBAL',
           alcance: 'GLOBAL',
           genero: jugador.genero,
+          temporada,
           puntosTotales: 0,
           posicion: 999999,
           torneosJugados: 0,
@@ -429,8 +455,15 @@ export class RankingsService {
     if (!user) throw new NotFoundException('Jugador no encontrado');
     if (!user.esPremium) throw new ForbiddenException('Necesitas FairPadel Premium para exportar estadísticas');
 
-    const ranking = await this.prisma.ranking.findFirst({
-      where: { jugadorId, tipoRanking: 'GLOBAL', alcance: 'GLOBAL' },
+    const ranking = await this.prisma.ranking.findUnique({
+      where: {
+        jugadorId_tipoRanking_alcance_temporada: {
+          jugadorId,
+          tipoRanking: 'GLOBAL',
+          alcance: 'GLOBAL',
+          temporada: this.getTemporadaActual(),
+        },
+      },
     });
 
     const historial = await this.prisma.historialPuntos.findMany({
