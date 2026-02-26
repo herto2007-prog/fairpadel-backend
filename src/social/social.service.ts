@@ -391,7 +391,20 @@ export class SocialService {
       },
     });
 
-    // TODO: Enviar notificación SMS al receptor (si es Premium)
+    // Notificar al receptor (campanita + email/SMS si tiene habilitado)
+    try {
+      const fechaStr = new Date(fechaPropuesta).toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
+      await this.notificacionesService.notificar({
+        userId: receptorId,
+        tipo: 'SOCIAL',
+        titulo: 'Invitación a jugar',
+        contenido: `${emisor.nombre} ${emisor.apellido} te invita a jugar el ${fechaStr} a las ${hora} en ${lugar}`,
+        enlace: '/solicitudes',
+        smsTexto: `${emisor.nombre} te invita a jugar el ${fechaStr} ${hora} en ${lugar}. Revisá en FairPadel.`,
+      });
+    } catch (e) {
+      this.logger.error(`Error notificando solicitud de jugar: ${e.message}`);
+    }
 
     return solicitud;
   }
@@ -440,6 +453,9 @@ export class SocialService {
   async aceptarSolicitud(solicitudId: string, userId: string) {
     const solicitud = await this.prisma.solicitudJugar.findUnique({
       where: { id: solicitudId },
+      include: {
+        receptor: { select: { nombre: true, apellido: true } },
+      },
     });
 
     if (!solicitud) {
@@ -450,15 +466,33 @@ export class SocialService {
       throw new ForbiddenException('No puedes aceptar esta solicitud');
     }
 
-    return this.prisma.solicitudJugar.update({
+    const updated = await this.prisma.solicitudJugar.update({
       where: { id: solicitudId },
       data: { estado: 'APROBADA' },
     });
+
+    // Notificar al emisor que su solicitud fue aceptada
+    try {
+      await this.notificacionesService.notificar({
+        userId: solicitud.emisorId,
+        tipo: 'SOCIAL',
+        titulo: '¡Solicitud aceptada!',
+        contenido: `${solicitud.receptor.nombre} ${solicitud.receptor.apellido} aceptó tu invitación a jugar`,
+        enlace: '/solicitudes',
+      });
+    } catch (e) {
+      this.logger.error(`Error notificando aceptación solicitud: ${e.message}`);
+    }
+
+    return updated;
   }
 
   async rechazarSolicitud(solicitudId: string, userId: string) {
     const solicitud = await this.prisma.solicitudJugar.findUnique({
       where: { id: solicitudId },
+      include: {
+        receptor: { select: { nombre: true, apellido: true } },
+      },
     });
 
     if (!solicitud) {
@@ -469,10 +503,25 @@ export class SocialService {
       throw new ForbiddenException('No puedes rechazar esta solicitud');
     }
 
-    return this.prisma.solicitudJugar.update({
+    const updated = await this.prisma.solicitudJugar.update({
       where: { id: solicitudId },
       data: { estado: 'RECHAZADA' },
     });
+
+    // Notificar al emisor que su solicitud fue rechazada
+    try {
+      await this.notificacionesService.notificar({
+        userId: solicitud.emisorId,
+        tipo: 'SOCIAL',
+        titulo: 'Solicitud rechazada',
+        contenido: `${solicitud.receptor.nombre} ${solicitud.receptor.apellido} no puede jugar en este momento`,
+        enlace: '/solicitudes',
+      });
+    } catch (e) {
+      this.logger.error(`Error notificando rechazo solicitud: ${e.message}`);
+    }
+
+    return updated;
   }
 
   // ============ BLOQUEOS ============
