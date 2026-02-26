@@ -1137,21 +1137,25 @@ export class MatchesService {
       },
     });
 
-    return this.calcularStandings(matches);
+    return await this.calcularStandings(matches);
   }
 
   /**
    * Calcula standings a partir de los matches de una categoría.
+   * Lee puntos base desde ConfiguracionPuntos (DB) con fallbacks hardcodeados.
    */
-  private calcularStandings(matches: any[]) {
-    // Tabla de puntos por posición
+  private async calcularStandings(matches: any[]) {
+    // Leer tabla de puntos desde la DB
+    const configs = await this.prisma.configuracionPuntos.findMany();
+    const configMap = new Map(configs.map((c) => [c.posicion, c.puntosBase]));
+
     const puntosPorRonda: Record<string, { posicion: string; puntos: number }> = {
-      CAMPEON: { posicion: 'Campeón', puntos: 100 },
-      FINALISTA: { posicion: 'Finalista', puntos: 60 },
-      SEMIFINALISTA: { posicion: 'Semifinalista', puntos: 35 },
-      CUARTOS: { posicion: 'Cuartos de Final', puntos: 15 },
-      OCTAVOS: { posicion: 'Octavos de Final', puntos: 8 },
-      PRIMERA_RONDA: { posicion: 'Primera Ronda', puntos: 3 },
+      CAMPEON: { posicion: 'Campeon', puntos: configMap.get('CAMPEON') ?? 100 },
+      FINALISTA: { posicion: 'Finalista', puntos: configMap.get('FINALISTA') ?? 60 },
+      SEMIFINALISTA: { posicion: 'Semifinalista', puntos: configMap.get('SEMIFINALISTA') ?? 35 },
+      CUARTOS: { posicion: 'Cuartos de Final', puntos: configMap.get('CUARTOS') ?? 15 },
+      OCTAVOS: { posicion: 'Octavos de Final', puntos: configMap.get('OCTAVOS') ?? 8 },
+      PRIMERA_RONDA: { posicion: 'Primera Ronda', puntos: configMap.get('PRIMERA_RONDA') ?? 3 },
     };
 
     const standings: Array<{
@@ -1270,25 +1274,33 @@ export class MatchesService {
     // 3. Obtener standings
     const { standings } = await this.obtenerStandings(tournamentId, categoryId);
 
-    // 4. Registrar puntos en rankings para cada jugador
+    // 4. Obtener multiplicador del circuito (si el torneo pertenece a uno)
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { circuitoId: true, circuito: { select: { multiplicador: true } } },
+    });
+    const multiplicador = torneo?.circuito?.multiplicador ?? 1.0;
+
+    // 5. Registrar puntos en rankings para cada jugador
     for (const entry of standings) {
       if (!entry.pareja) continue;
+      const puntosConMultiplicador = Math.round(entry.puntos * multiplicador);
       const jugadores = [entry.pareja.jugador1, entry.pareja.jugador2].filter(Boolean);
       for (const jugador of jugadores) {
-        // Registrar en historial de puntos
+        // Registrar en historial de puntos (con multiplicador aplicado)
         await this.prisma.historialPuntos.create({
           data: {
             jugadorId: jugador.id,
             tournamentId,
             categoryId,
             posicionFinal: entry.posicion,
-            puntosGanados: entry.puntos,
+            puntosGanados: puntosConMultiplicador,
             fechaTorneo: new Date(),
           },
         });
 
         // Actualizar ranking global
-        await this.rankingsService.actualizarRankingJugador(jugador.id, entry.puntos);
+        await this.rankingsService.actualizarRankingJugador(jugador.id, puntosConMultiplicador);
       }
     }
 

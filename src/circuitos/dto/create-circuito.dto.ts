@@ -3,6 +3,9 @@ import {
   IsOptional,
   IsDateString,
   IsUrl,
+  IsNumber,
+  Min,
+  Max,
   MinLength,
   MaxLength,
 } from 'class-validator';
@@ -43,4 +46,10 @@ export class CreateCircuitoDto {
   @IsOptional()
   @IsUrl()
   logoUrl?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.5)
+  @Max(5.0)
+  multiplicador?: number;
 }

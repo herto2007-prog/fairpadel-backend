@@ -479,19 +479,20 @@ model TorneoAyudante {
 // ═══════════════════════════════════════════════════════
 
 model Circuito {
-  id          String          @id @default(uuid())
-  nombre      String          @unique
-  descripcion String?         @db.Text
-  pais        String
-  region      String?
-  ciudad      String?
-  temporada   String
-  fechaInicio DateTime        @map("fecha_inicio")
-  fechaFin    DateTime        @map("fecha_fin")
-  estado      CircuitoEstado  @default(ACTIVO)
-  logoUrl     String?         @map("logo_url")
-  createdAt   DateTime        @default(now()) @map("created_at")
-  updatedAt   DateTime        @updatedAt @map("updated_at")
+  id            String          @id @default(uuid())
+  nombre        String          @unique
+  descripcion   String?         @db.Text
+  pais          String
+  region        String?
+  ciudad        String?
+  temporada     String
+  fechaInicio   DateTime        @map("fecha_inicio")
+  fechaFin      DateTime        @map("fecha_fin")
+  estado        CircuitoEstado  @default(ACTIVO)
+  logoUrl       String?         @map("logo_url")
+  multiplicador Float           @default(1.0) @map("multiplicador_puntos")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
 
   torneos     Tournament[]
 

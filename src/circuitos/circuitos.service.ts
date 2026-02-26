@@ -33,6 +33,7 @@ export class CircuitosService {
         fechaInicio: new Date(dto.fechaInicio),
         fechaFin: new Date(dto.fechaFin),
         logoUrl: dto.logoUrl,
+        multiplicador: dto.multiplicador ?? 1.0,
       },
       include: {
         _count: { select: { torneos: true } },
