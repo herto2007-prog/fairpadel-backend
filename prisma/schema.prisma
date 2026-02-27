@@ -118,6 +118,19 @@ enum InstructorEstado {
   SUSPENDIDO
 }
 
+enum TipoClase {
+  INDIVIDUAL
+  GRUPAL
+}
+
+enum ReservaEstado {
+  PENDIENTE
+  CONFIRMADA
+  RECHAZADA
+  CANCELADA
+  COMPLETADA
+}
+
 enum ModerationStatus {
   PENDIENTE
   APROBADA
@@ -268,6 +281,7 @@ model User {
   smsLogs                   SmsLog[]
   solicitudesInstructor     SolicitudInstructor[] @relation("InstructorSolicitudes")
   instructor                Instructor?           @relation("InstructorProfile")
+  reservasComoAlumno        ReservaInstructor[]   @relation("ReservasComoAlumno")
 
   @@map("users")
 }
@@ -1433,8 +1447,11 @@ model Instructor {
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 
-  user        User                   @relation("InstructorProfile", fields: [userId], references: [id], onDelete: Cascade)
-  ubicaciones InstructorUbicacion[]
+  user             User                        @relation("InstructorProfile", fields: [userId], references: [id], onDelete: Cascade)
+  ubicaciones      InstructorUbicacion[]
+  disponibilidades InstructorDisponibilidad[]
+  bloqueos         InstructorBloqueo[]
+  reservas         ReservaInstructor[]
 
   @@map("instructores")
 }
@@ -1453,4 +1470,53 @@ model InstructorUbicacion {
   sede       Sede?      @relation("InstructorSedes", fields: [sedeId], references: [id])
 
   @@map("instructor_ubicaciones")
+}
+
+model InstructorDisponibilidad {
+  id            String   @id @default(uuid())
+  instructorId  String   @map("instructor_id")
+  diaSemana     Int      @map("dia_semana")
+  horaInicio    String   @map("hora_inicio")
+  horaFin       String   @map("hora_fin")
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  instructor Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  @@map("instructor_disponibilidad")
+}
+
+model InstructorBloqueo {
+  id            String   @id @default(uuid())
+  instructorId  String   @map("instructor_id")
+  fechaInicio   DateTime @map("fecha_inicio") @db.Date
+  fechaFin      DateTime @map("fecha_fin") @db.Date
+  motivo        String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  instructor Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  @@map("instructor_bloqueos")
+}
+
+model ReservaInstructor {
+  id              String        @id @default(uuid())
+  instructorId    String        @map("instructor_id")
+  solicitanteId   String        @map("solicitante_id")
+  tipo            TipoClase
+  fecha           DateTime      @db.Date
+  horaInicio      String        @map("hora_inicio")
+  horaFin         String        @map("hora_fin")
+  duracionMinutos Int           @map("duracion_minutos") @default(60)
+  precio          Int
+  estado          ReservaEstado @default(PENDIENTE)
+  mensaje         String?       @db.Text
+  respuesta       String?       @db.Text
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  instructor  Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  solicitante User       @relation("ReservasComoAlumno", fields: [solicitanteId], references: [id], onDelete: Cascade)
+
+  @@map("reservas_instructor")
 }
