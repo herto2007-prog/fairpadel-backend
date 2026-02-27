@@ -491,7 +491,7 @@ export class CategoriasService {
     }
 
     // Auto-post ascenso to feed
-    if (tipo.includes('ASCENSO') && user.esPremium) {
+    if (tipo.includes('ASCENSO')) {
       try {
         const categoriaAnterior = user.categoriaActual?.nombre || 'Sin categoría';
         await this.feedService.crearPublicacionAscenso(

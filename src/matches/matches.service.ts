@@ -332,8 +332,8 @@ export class MatchesService {
       const ganadorPair = await this.prisma.pareja.findUnique({
         where: { id: ganadorId },
         include: {
-          jugador1: { select: { id: true, esPremium: true, nombre: true, apellido: true } },
-          jugador2: { select: { id: true, esPremium: true, nombre: true, apellido: true } },
+          jugador1: { select: { id: true, nombre: true, apellido: true } },
+          jugador2: { select: { id: true, nombre: true, apellido: true } },
         },
       });
       if (ganadorPair) {
@@ -344,15 +344,13 @@ export class MatchesService {
         const rondaLabel = match.ronda || 'Ronda';
         const contenido = `${ganadorPair.jugador1.nombre} ${ganadorPair.jugador1.apellido} y ${ganadorPair.jugador2.nombre} ${ganadorPair.jugador2.apellido} ganaron en ${rondaLabel} - ${tournament?.nombre || ''}`;
         for (const jugador of [ganadorPair.jugador1, ganadorPair.jugador2]) {
-          if (jugador.esPremium) {
-            await this.feedService.crearPublicacionResultado(
-              jugador.id,
-              id,
-              match.tournamentId,
-              match.categoryId,
-              contenido,
-            );
-          }
+          await this.feedService.crearPublicacionResultado(
+            jugador.id,
+            id,
+            match.tournamentId,
+            match.categoryId,
+            contenido,
+          );
         }
       }
     } catch (e) {
