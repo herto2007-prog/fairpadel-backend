@@ -359,6 +359,11 @@ async function main() {
       valor: '5000',
       descripcion: 'Monto fijo en Guaraníes que cobra la plataforma por cada jugador inscrito a un torneo',
     },
+    {
+      clave: 'ASCENSOS_REQUIEREN_APROBACION',
+      valor: 'true',
+      descripcion: 'Cuando está activo, los ascensos automáticos requieren aprobación de un administrador antes de hacerse efectivos',
+    },
   ];
 
   for (const config of configuraciones) {

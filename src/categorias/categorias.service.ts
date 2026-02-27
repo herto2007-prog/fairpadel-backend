@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { CreateReglaAscensoDto } from './dto/create-regla-ascenso.dto';
@@ -8,6 +8,8 @@ import { FeedService } from '../feed/feed.service';
 
 @Injectable()
 export class CategoriasService {
+  private readonly logger = new Logger(CategoriasService.name);
+
   constructor(
     private prisma: PrismaService,
     private notificacionesService: NotificacionesService,
@@ -436,9 +438,86 @@ export class CategoriasService {
   }
 
   /**
-   * Ejecuta la promoción: actualiza categoría del usuario, crea historial, envía notificación.
+   * Ejecuta la promoción o la encola para aprobación admin según config.
+   * Los ascensos manuales/descensos siempre se ejecutan directo.
    */
   async ejecutarPromocion(
+    userId: string,
+    nuevaCategoriaId: string,
+    tipo: 'ASCENSO_AUTOMATICO' | 'ASCENSO_POR_DEMOSTRACION' | 'ASCENSO_MANUAL' | 'DESCENSO_MANUAL',
+    motivo: string,
+    tournamentId?: string,
+    realizadoPor?: string,
+  ) {
+    // Ascensos manuales y descensos siempre se ejecutan directo
+    const esAutomatico = tipo === 'ASCENSO_AUTOMATICO' || tipo === 'ASCENSO_POR_DEMOSTRACION';
+
+    if (esAutomatico) {
+      const config = await this.prisma.configuracionSistema.findUnique({
+        where: { clave: 'ASCENSOS_REQUIEREN_APROBACION' },
+      });
+      const requiereAprobacion = config?.valor === 'true';
+
+      if (requiereAprobacion) {
+        return this.crearAscensoPendiente(userId, nuevaCategoriaId, tipo, motivo, tournamentId);
+      }
+    }
+
+    return this.ejecutarPromocionDirecta(userId, nuevaCategoriaId, tipo, motivo, tournamentId, realizadoPor);
+  }
+
+  /**
+   * Crea un ascenso pendiente de aprobación y notifica a todos los admins.
+   */
+  private async crearAscensoPendiente(
+    userId: string,
+    nuevaCategoriaId: string,
+    tipo: 'ASCENSO_AUTOMATICO' | 'ASCENSO_POR_DEMOSTRACION',
+    motivo: string,
+    tournamentId?: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { categoriaActual: true },
+    });
+    if (!user) return;
+
+    const nuevaCategoria = await this.prisma.category.findUnique({ where: { id: nuevaCategoriaId } });
+    if (!nuevaCategoria) return;
+
+    // Evitar duplicados: no crear si ya hay uno pendiente para el mismo user+categoria
+    const existing = await this.prisma.ascensoPendiente.findFirst({
+      where: { userId, categoriaNuevaId: nuevaCategoriaId, estado: 'PENDIENTE' },
+    });
+    if (existing) return { pendienteAprobacion: true, id: existing.id };
+
+    const pendiente = await this.prisma.ascensoPendiente.create({
+      data: {
+        userId,
+        categoriaAnteriorId: user.categoriaActualId,
+        categoriaNuevaId: nuevaCategoriaId,
+        tipo,
+        motivo,
+        tournamentId: tournamentId || null,
+      },
+    });
+
+    // Notificar a todos los admins
+    const catAnterior = user.categoriaActual?.nombre || 'Sin categoría';
+    await this.notificarAdminsAscensoPendiente(
+      `${user.nombre} ${user.apellido}`,
+      catAnterior,
+      nuevaCategoria.nombre,
+    );
+
+    return { pendienteAprobacion: true, id: pendiente.id };
+  }
+
+  /**
+   * Ejecuta la promoción directamente: actualiza categoría, crea historial, notifica, publica en feed.
+   * Usada por aprobación admin y cuando ascensos automáticos están desactivados.
+   */
+  async ejecutarPromocionDirecta(
     userId: string,
     nuevaCategoriaId: string,
     tipo: 'ASCENSO_AUTOMATICO' | 'ASCENSO_POR_DEMOSTRACION' | 'ASCENSO_MANUAL' | 'DESCENSO_MANUAL',
@@ -474,7 +553,7 @@ export class CategoriasService {
       },
     });
 
-    // 3. Send notification (use specialized method for ascensos, fallback for descensos)
+    // 3. Send notification
     if (tipo.includes('ASCENSO')) {
       const categoriaAnterior = user.categoriaActual?.nombre || 'Sin categoría';
       await this.notificacionesService.notificarAscensoCategoria(
@@ -490,7 +569,7 @@ export class CategoriasService {
       );
     }
 
-    // Auto-post ascenso to feed
+    // 4. Auto-post ascenso to feed
     if (tipo.includes('ASCENSO')) {
       try {
         const categoriaAnterior = user.categoriaActual?.nombre || 'Sin categoría';
@@ -501,8 +580,44 @@ export class CategoriasService {
           JSON.stringify({ anterior: categoriaAnterior, nueva: nuevaCategoria.nombre, tipo }),
         );
       } catch (e) {
-        // Non-critical, don't fail promotion
+        // Non-critical
       }
+    }
+  }
+
+  /**
+   * Notifica a TODOS los admins que hay ascensos pendientes de revisión.
+   * Envía campanita + email + SMS (sin restricción premium para admins).
+   */
+  private async notificarAdminsAscensoPendiente(
+    jugadorNombre: string,
+    catAnterior: string,
+    catNueva: string,
+  ) {
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: {
+          roles: { some: { role: { nombre: 'admin' } } },
+          estado: 'ACTIVO',
+        },
+        select: { id: true },
+      });
+
+      const titulo = 'Ascensos pendientes de revisión';
+      const contenido = `${jugadorNombre} cumple los requisitos para ascender de ${catAnterior} a ${catNueva}. Revisá los ascensos pendientes.`;
+
+      for (const admin of admins) {
+        await this.notificacionesService.notificar({
+          userId: admin.id,
+          tipo: 'SISTEMA',
+          titulo,
+          contenido,
+          enlace: '/admin/categorias',
+          smsTexto: `FairPadel: Ascenso pendiente - ${jugadorNombre} (${catAnterior} a ${catNueva})`,
+        });
+      }
+    } catch (e) {
+      this.logger.error(`Error notificando admins de ascenso pendiente: ${e.message}`);
     }
   }
 }

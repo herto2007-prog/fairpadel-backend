@@ -8,12 +8,14 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RankingsService } from '../rankings/rankings.service';
+import { CategoriasService } from '../categorias/categorias.service';
 
 @Injectable()
 export class AdminService {
   constructor(
     private prisma: PrismaService,
     private rankingsService: RankingsService,
+    private categoriasService: CategoriasService,
   ) {}
 
   // ============ TORNEOS ============
@@ -1809,6 +1811,95 @@ export class AdminService {
       total,
       page,
       totalPages: Math.ceil(total / Math.min(limit, 50)),
+    };
+  }
+
+  // ============ ASCENSOS PENDIENTES ============
+
+  async obtenerAscensosPendientes() {
+    return this.prisma.ascensoPendiente.findMany({
+      where: { estado: 'PENDIENTE' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            documento: true,
+            email: true,
+            genero: true,
+            categoriaActual: { select: { id: true, nombre: true } },
+          },
+        },
+        categoriaNueva: { select: { id: true, nombre: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async contarAscensosPendientes() {
+    const count = await this.prisma.ascensoPendiente.count({
+      where: { estado: 'PENDIENTE' },
+    });
+    return { count };
+  }
+
+  async aprobarAscenso(id: string, adminId: string) {
+    const pendiente = await this.prisma.ascensoPendiente.findUnique({
+      where: { id },
+      include: {
+        user: { include: { categoriaActual: true } },
+        categoriaNueva: true,
+      },
+    });
+    if (!pendiente) throw new NotFoundException('Ascenso pendiente no encontrado');
+    if (pendiente.estado !== 'PENDIENTE') throw new BadRequestException('Este ascenso ya fue procesado');
+
+    // Ejecutar la promoción real
+    await this.categoriasService.ejecutarPromocionDirecta(
+      pendiente.userId,
+      pendiente.categoriaNuevaId,
+      pendiente.tipo as any,
+      pendiente.motivo,
+      pendiente.tournamentId || undefined,
+      adminId,
+    );
+
+    // Marcar como aprobado
+    await this.prisma.ascensoPendiente.update({
+      where: { id },
+      data: {
+        estado: 'APROBADO',
+        revisadoPor: adminId,
+        revisadoEn: new Date(),
+      },
+    });
+
+    return {
+      message: `Ascenso aprobado: ${pendiente.user.nombre} ${pendiente.user.apellido} → ${pendiente.categoriaNueva.nombre}`,
+    };
+  }
+
+  async rechazarAscenso(id: string, motivo: string, adminId: string) {
+    const pendiente = await this.prisma.ascensoPendiente.findUnique({
+      where: { id },
+      include: { user: true, categoriaNueva: true },
+    });
+    if (!pendiente) throw new NotFoundException('Ascenso pendiente no encontrado');
+    if (pendiente.estado !== 'PENDIENTE') throw new BadRequestException('Este ascenso ya fue procesado');
+
+    await this.prisma.ascensoPendiente.update({
+      where: { id },
+      data: {
+        estado: 'RECHAZADO',
+        motivoRechazo: motivo,
+        revisadoPor: adminId,
+        revisadoEn: new Date(),
+      },
+    });
+
+    return {
+      message: `Ascenso rechazado para ${pendiente.user.nombre} ${pendiente.user.apellido}`,
     };
   }
 }

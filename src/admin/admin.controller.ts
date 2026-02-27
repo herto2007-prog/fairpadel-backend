@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { SeedTestDataDto } from './dto/seed-test-data.dto';
@@ -326,5 +327,30 @@ export class AdminController {
       fechaDesde,
       fechaHasta,
     });
+  }
+
+  // ============ ASCENSOS PENDIENTES ============
+  @Get('ascensos-pendientes')
+  obtenerAscensosPendientes() {
+    return this.adminService.obtenerAscensosPendientes();
+  }
+
+  @Get('ascensos-pendientes/count')
+  contarAscensosPendientes() {
+    return this.adminService.contarAscensosPendientes();
+  }
+
+  @Put('ascensos-pendientes/:id/aprobar')
+  aprobarAscenso(@Param('id') id: string, @Request() req) {
+    return this.adminService.aprobarAscenso(id, req.user.id);
+  }
+
+  @Put('ascensos-pendientes/:id/rechazar')
+  rechazarAscenso(
+    @Param('id') id: string,
+    @Body() body: { motivo: string },
+    @Request() req,
+  ) {
+    return this.adminService.rechazarAscenso(id, body.motivo, req.user.id);
   }
 }

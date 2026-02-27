@@ -161,6 +161,12 @@ enum TipoCambioCategoria {
   ASIGNACION_INICIAL
 }
 
+enum EstadoAscenso {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
+
 enum BannerZona {
   HEADER
   SIDEBAR
@@ -216,6 +222,7 @@ model User {
   // Relaciones
   categoriaActual           Category?               @relation("CategoriaActualUsuarios", fields: [categoriaActualId], references: [id])
   historialCategorias       HistorialCategoria[]
+  ascensosPendientes        AscensoPendiente[]
   roles                     UserRole[]
   solicitudesOrganizador    SolicitudOrganizador[]
   verificacionesEmail       EmailVerification[]
@@ -342,6 +349,7 @@ model Category {
   usuariosActuales  User[]              @relation("CategoriaActualUsuarios")
   reglasOrigen      ReglaAscenso[]      @relation("CategoriaOrigen")
   reglasDestino     ReglaAscenso[]      @relation("CategoriaDestino")
+  ascensosPendientes AscensoPendiente[] @relation("AscensoPendienteNueva")
 
   @@map("categories")
 }
@@ -1196,6 +1204,27 @@ model HistorialCategoria {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("historial_categorias")
+}
+
+model AscensoPendiente {
+  id                  String              @id @default(uuid())
+  userId              String              @map("user_id")
+  categoriaAnteriorId String?             @map("categoria_anterior_id")
+  categoriaNuevaId    String              @map("categoria_nueva_id")
+  tipo                TipoCambioCategoria
+  motivo              String              @db.Text
+  tournamentId        String?             @map("tournament_id")
+  estado              EstadoAscenso       @default(PENDIENTE)
+  motivoRechazo       String?             @map("motivo_rechazo") @db.Text
+  revisadoPor         String?             @map("revisado_por")
+  revisadoEn          DateTime?           @map("revisado_en")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoriaNueva Category @relation("AscensoPendienteNueva", fields: [categoriaNuevaId], references: [id])
+
+  @@map("ascensos_pendientes")
 }
 
 // ═══════════════════════════════════════════════════════

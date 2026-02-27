@@ -391,15 +391,55 @@ export class NotificacionesService {
     const notificacion = await this.prisma.notificacion.findUnique({ where: { id } });
     if (!notificacion) throw new NotFoundException('Notificacion no encontrada');
     if (notificacion.userId !== userId) throw new ForbiddenException('No tienes permiso');
+
+    // Notificaciones de ascensos pendientes no se pueden marcar como leídas mientras haya pendientes
+    if (await this.esNotificacionAscensoPersistente(notificacion)) {
+      return notificacion; // No marcar, retornar tal cual
+    }
+
     return this.prisma.notificacion.update({ where: { id }, data: { leida: true } });
   }
 
   async marcarTodasComoLeidas(userId: string) {
-    await this.prisma.notificacion.updateMany({
-      where: { userId, leida: false },
-      data: { leida: true },
-    });
+    const hayPendientes = await this.hayAscensosPendientes();
+
+    if (hayPendientes) {
+      // Marcar todas EXCEPTO las de ascensos pendientes
+      await this.prisma.notificacion.updateMany({
+        where: {
+          userId,
+          leida: false,
+          NOT: {
+            AND: [
+              { tipo: 'SISTEMA' },
+              { titulo: 'Ascensos pendientes de revisión' },
+            ],
+          },
+        },
+        data: { leida: true },
+      });
+    } else {
+      await this.prisma.notificacion.updateMany({
+        where: { userId, leida: false },
+        data: { leida: true },
+      });
+    }
+
     return { message: 'Todas las notificaciones marcadas como leidas' };
+  }
+
+  private async esNotificacionAscensoPersistente(notificacion: { tipo: string; titulo: string | null }): Promise<boolean> {
+    if (notificacion.tipo !== 'SISTEMA' || notificacion.titulo !== 'Ascensos pendientes de revisión') {
+      return false;
+    }
+    return this.hayAscensosPendientes();
+  }
+
+  async hayAscensosPendientes(): Promise<boolean> {
+    const count = await this.prisma.ascensoPendiente.count({
+      where: { estado: 'PENDIENTE' },
+    });
+    return count > 0;
   }
 
   // ═══════════════════════════════════════════════════════
