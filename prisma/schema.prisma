@@ -1502,7 +1502,7 @@ model InstructorBloqueo {
 model ReservaInstructor {
   id              String        @id @default(uuid())
   instructorId    String        @map("instructor_id")
-  solicitanteId   String        @map("solicitante_id")
+  solicitanteId   String?       @map("solicitante_id")
   tipo            TipoClase
   fecha           DateTime      @db.Date
   horaInicio      String        @map("hora_inicio")
@@ -1515,8 +1515,17 @@ model ReservaInstructor {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
+  // ── Fase 3: Gestión de instructor ──
+  alumnoExternoNombre   String?   @map("alumno_externo_nombre")
+  alumnoExternoTelefono String?   @map("alumno_externo_telefono")
+  asistio               Boolean?  @map("asistio")
+  pagado                Boolean   @default(false)
+  metodoPago            String?   @map("metodo_pago")
+  notas                 String?   @db.Text
+  creadoPorInstructor   Boolean   @default(false) @map("creado_por_instructor")
+
   instructor  Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
-  solicitante User       @relation("ReservasComoAlumno", fields: [solicitanteId], references: [id], onDelete: Cascade)
+  solicitante User?      @relation("ReservasComoAlumno", fields: [solicitanteId], references: [id], onDelete: Cascade)
 
   @@map("reservas_instructor")
 }

@@ -14,7 +14,14 @@ import { InstructoresService } from './instructores.service';
 import { SolicitarInstructorDto } from './dto/solicitar-instructor.dto';
 import { ActualizarInstructorDto, ActualizarUbicacionesDto } from './dto/actualizar-instructor.dto';
 import { ActualizarDisponibilidadDto, CrearBloqueoDto } from './dto/disponibilidad.dto';
-import { CrearReservaDto, RechazarReservaDto } from './dto/reserva.dto';
+import {
+  CrearReservaDto,
+  RechazarReservaDto,
+  CrearClaseManualDto,
+  MarcarAsistenciaDto,
+  MarcarPagoDto,
+  GuardarNotasDto,
+} from './dto/reserva.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -163,6 +170,100 @@ export class InstructoresController {
   @Roles('instructor')
   completarReserva(@Request() req, @Param('id') id: string) {
     return this.instructoresService.completarReserva(id, req.user.id);
+  }
+
+  @Put('reservas/:id/asistencia')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  marcarAsistencia(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: MarcarAsistenciaDto,
+  ) {
+    return this.instructoresService.marcarAsistencia(id, req.user.id, dto);
+  }
+
+  @Put('reservas/:id/pago')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  marcarPago(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: MarcarPagoDto,
+  ) {
+    return this.instructoresService.marcarPago(id, req.user.id, dto);
+  }
+
+  @Put('reservas/:id/notas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  guardarNotas(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: GuardarNotasDto,
+  ) {
+    return this.instructoresService.guardarNotas(id, req.user.id, dto);
+  }
+
+  // ── Clases manuales (instructor role) ────────────────
+
+  @Post('clases')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  crearClaseManual(@Request() req, @Body() dto: CrearClaseManualDto) {
+    return this.instructoresService.crearClaseManual(req.user.id, dto);
+  }
+
+  // ── Alumnos (instructor role) ────────────────────────
+
+  @Get('alumnos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  obtenerAlumnos(@Request() req) {
+    return this.instructoresService.obtenerAlumnos(req.user.id);
+  }
+
+  @Get('alumnos/:alumnoId/historial')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  obtenerHistorialAlumno(
+    @Request() req,
+    @Param('alumnoId') alumnoId: string,
+    @Query('externoNombre') externoNombre?: string,
+  ) {
+    // If alumnoId is 'externo', use externoNombre query param
+    if (alumnoId === 'externo') {
+      return this.instructoresService.obtenerHistorialAlumno(req.user.id, undefined, externoNombre);
+    }
+    return this.instructoresService.obtenerHistorialAlumno(req.user.id, alumnoId);
+  }
+
+  // ── Finanzas (instructor role) ──────────────────────
+
+  @Get('finanzas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  obtenerFinanzas(
+    @Request() req,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+  ) {
+    return this.instructoresService.obtenerFinanzas(req.user.id, desde, hasta);
+  }
+
+  @Get('finanzas/mensual')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  obtenerFinanzasMensual(
+    @Request() req,
+    @Query('anio') anio: string,
+    @Query('mes') mes: string,
+  ) {
+    return this.instructoresService.obtenerFinanzasMensual(
+      req.user.id,
+      parseInt(anio),
+      parseInt(mes),
+    );
   }
 
   // ── Agenda (instructor role) ────────────────────────

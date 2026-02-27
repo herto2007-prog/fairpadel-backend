@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, Matches, IsEnum, IsInt, Min } from 'class-validator';
+import { IsString, IsOptional, IsDateString, Matches, IsEnum, IsInt, Min, IsBoolean } from 'class-validator';
 
 export enum TipoClaseEnum {
   INDIVIDUAL = 'INDIVIDUAL',
@@ -30,4 +30,63 @@ export class RechazarReservaDto {
   @IsOptional()
   @IsString()
   motivo?: string;
+}
+
+// ── Fase 3: Gestión de instructor ──────────────────────
+
+export class CrearClaseManualDto {
+  @IsEnum(TipoClaseEnum)
+  tipo: TipoClaseEnum;
+
+  @IsDateString()
+  fecha: string;
+
+  @IsString()
+  @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+  horaInicio: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  duracionMinutos?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  precio?: number;
+
+  @IsOptional()
+  @IsString()
+  solicitanteId?: string;
+
+  @IsOptional()
+  @IsString()
+  alumnoExternoNombre?: string;
+
+  @IsOptional()
+  @IsString()
+  alumnoExternoTelefono?: string;
+
+  @IsOptional()
+  @IsString()
+  notas?: string;
+}
+
+export class MarcarAsistenciaDto {
+  @IsBoolean()
+  asistio: boolean;
+}
+
+export class MarcarPagoDto {
+  @IsBoolean()
+  pagado: boolean;
+
+  @IsOptional()
+  @IsString()
+  metodoPago?: string;
+}
+
+export class GuardarNotasDto {
+  @IsString()
+  notas: string;
 }
