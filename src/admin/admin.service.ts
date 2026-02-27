@@ -197,6 +197,160 @@ export class AdminService {
     return { message: 'Solicitud rechazada' };
   }
 
+  // ============ SOLICITUDES INSTRUCTOR ============
+
+  async obtenerSolicitudesInstructor(estado?: string) {
+    const where: any = {};
+    if (estado) {
+      where.estado = estado;
+    }
+
+    const solicitudes = await this.prisma.solicitudInstructor.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            email: true,
+            telefono: true,
+            ciudad: true,
+            fotoUrl: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return solicitudes;
+  }
+
+  async aprobarSolicitudInstructor(id: string) {
+    const solicitud = await this.prisma.solicitudInstructor.findUnique({
+      where: { id },
+      include: { user: true },
+    });
+
+    if (!solicitud) {
+      throw new NotFoundException('Solicitud no encontrada');
+    }
+
+    if (solicitud.estado !== 'PENDIENTE') {
+      throw new BadRequestException('Esta solicitud ya fue procesada');
+    }
+
+    const rolInstructor = await this.prisma.role.findUnique({
+      where: { nombre: 'instructor' },
+    });
+
+    if (!rolInstructor) {
+      throw new NotFoundException('Rol instructor no encontrado. Ejecutá el seed.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitudInstructor.update({
+        where: { id },
+        data: { estado: 'APROBADA' },
+      });
+
+      await tx.instructor.create({
+        data: {
+          userId: solicitud.userId,
+          experienciaAnios: solicitud.experienciaAnios,
+          certificaciones: solicitud.certificaciones,
+          especialidades: solicitud.especialidades,
+          nivelesEnsenanza: solicitud.nivelesEnsenanza,
+          descripcion: solicitud.descripcion,
+          precioIndividual: solicitud.precioIndividual,
+          precioGrupal: solicitud.precioGrupal,
+        },
+      });
+
+      const existingRole = await tx.userRole.findFirst({
+        where: { userId: solicitud.userId, roleId: rolInstructor.id },
+      });
+      if (!existingRole) {
+        await tx.userRole.create({
+          data: {
+            userId: solicitud.userId,
+            roleId: rolInstructor.id,
+          },
+        });
+      }
+    });
+
+    return { message: 'Solicitud aprobada. El usuario ahora es instructor.' };
+  }
+
+  async rechazarSolicitudInstructor(id: string, motivo: string) {
+    const solicitud = await this.prisma.solicitudInstructor.findUnique({
+      where: { id },
+    });
+
+    if (!solicitud) {
+      throw new NotFoundException('Solicitud no encontrada');
+    }
+
+    if (solicitud.estado !== 'PENDIENTE') {
+      throw new BadRequestException('Esta solicitud ya fue procesada');
+    }
+
+    await this.prisma.solicitudInstructor.update({
+      where: { id },
+      data: { estado: 'RECHAZADA', motivo },
+    });
+
+    return { message: 'Solicitud rechazada' };
+  }
+
+  async promoverInstructorPorDocumento(documento: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { documento },
+      include: { roles: { include: { role: true } }, instructor: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado con ese documento');
+    }
+
+    if (user.instructor) {
+      throw new BadRequestException('Este usuario ya es instructor');
+    }
+
+    const rolInstructor = await this.prisma.role.findUnique({
+      where: { nombre: 'instructor' },
+    });
+
+    if (!rolInstructor) {
+      throw new NotFoundException('Rol instructor no encontrado. Ejecutá el seed.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.instructor.create({
+        data: {
+          userId: user.id,
+          experienciaAnios: 0,
+        },
+      });
+
+      const existingRole = user.roles.find((r) => r.role.nombre === 'instructor');
+      if (!existingRole) {
+        await tx.userRole.create({
+          data: {
+            userId: user.id,
+            roleId: rolInstructor.id,
+          },
+        });
+      }
+    });
+
+    return {
+      message: 'Usuario promovido a instructor',
+      usuario: { id: user.id, nombre: user.nombre, apellido: user.apellido },
+    };
+  }
+
   // ============ MODERACIÓN FOTOS ============
 
   async obtenerFotosModeracion() {

@@ -25,6 +25,7 @@ import { PublicidadModule } from './publicidad/publicidad.module';
 import { FeedModule } from './feed/feed.module';
 import { LogrosModule } from './logros/logros.module';
 import { AlertasModule } from './alertas/alertas.module';
+import { InstructoresModule } from './instructores/instructores.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { AlertasModule } from './alertas/alertas.module';
     FeedModule,
     LogrosModule,
     AlertasModule,
+    InstructoresModule,
   ],
   controllers: [AppController],
   providers: [

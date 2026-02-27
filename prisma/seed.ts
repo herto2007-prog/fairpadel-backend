@@ -35,6 +35,15 @@ async function main() {
     },
   });
 
+  const roleInstructor = await prisma.role.upsert({
+    where: { nombre: 'instructor' },
+    update: {},
+    create: {
+      nombre: 'instructor',
+      descripcion: 'Instructor de pádel',
+    },
+  });
+
   console.log('✅ Roles creados');
 
   // 2. Crear categorías

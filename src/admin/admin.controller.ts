@@ -73,6 +73,31 @@ export class AdminController {
     return this.adminService.promoverAdminPorDocumento(body.documento);
   }
 
+  // ============ SOLICITUDES INSTRUCTOR ============
+
+  @Get('solicitudes-instructor')
+  obtenerSolicitudesInstructor(@Query('estado') estado?: string) {
+    return this.adminService.obtenerSolicitudesInstructor(estado);
+  }
+
+  @Put('solicitudes-instructor/:id/aprobar')
+  aprobarSolicitudInstructor(@Param('id') id: string) {
+    return this.adminService.aprobarSolicitudInstructor(id);
+  }
+
+  @Put('solicitudes-instructor/:id/rechazar')
+  rechazarSolicitudInstructor(
+    @Param('id') id: string,
+    @Body() body: { motivo: string },
+  ) {
+    return this.adminService.rechazarSolicitudInstructor(id, body.motivo);
+  }
+
+  @Post('promover-instructor')
+  promoverInstructor(@Body() body: { documento: string }) {
+    return this.adminService.promoverInstructorPorDocumento(body.documento);
+  }
+
   // ============ MODERACIÓN FOTOS ============
   @Get('fotos-moderacion')
   obtenerFotosModeracion() {

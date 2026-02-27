@@ -113,6 +113,11 @@ enum SolicitudEstado {
   RECHAZADA
 }
 
+enum InstructorEstado {
+  APROBADO
+  SUSPENDIDO
+}
+
 enum ModerationStatus {
   PENDIENTE
   APROBADA
@@ -261,6 +266,8 @@ model User {
   movimientosCreados        MovimientoFinanciero[] @relation("MovimientosCreados")
   auspiciosCreados          AuspicianteEspecie[]   @relation("AuspiciosCreados")
   smsLogs                   SmsLog[]
+  solicitudesInstructor     SolicitudInstructor[] @relation("InstructorSolicitudes")
+  instructor                Instructor?           @relation("InstructorProfile")
 
   @@map("users")
 }
@@ -378,8 +385,9 @@ model Sede {
 
   // Relaciones
   canchas           SedeCancha[]
-  torneosPrincipal  Tournament[]      @relation("SedePrincipal")
-  torneoSedes       TorneoSede[]
+  torneosPrincipal       Tournament[]          @relation("SedePrincipal")
+  torneoSedes            TorneoSede[]
+  instructorUbicaciones  InstructorUbicacion[] @relation("InstructorSedes")
 
   @@map("sedes")
 }
@@ -1382,4 +1390,67 @@ model AuspicianteEspecie {
 
   @@index([tournamentId])
   @@map("auspiciantes_especie")
+}
+
+// ═══════════════════════════════════════════════════════
+// INSTRUCTORES
+// ═══════════════════════════════════════════════════════
+
+model SolicitudInstructor {
+  id                String          @id @default(uuid())
+  userId            String          @map("user_id")
+  experienciaAnios  Int             @map("experiencia_anios")
+  certificaciones   String?         @db.Text
+  especialidades    String?         @db.Text
+  nivelesEnsenanza  String?         @map("niveles_ensenanza") @db.Text
+  descripcion       String?         @db.Text
+  precioIndividual  Int?            @map("precio_individual")
+  precioGrupal      Int?            @map("precio_grupal")
+  ciudades          String?         @db.Text
+  estado            SolicitudEstado @default(PENDIENTE)
+  motivo            String?         @db.Text
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  user User @relation("InstructorSolicitudes", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("solicitudes_instructor")
+}
+
+model Instructor {
+  id                String            @id @default(uuid())
+  userId            String            @unique @map("user_id")
+  estado            InstructorEstado  @default(APROBADO)
+  experienciaAnios  Int               @map("experiencia_anios")
+  certificaciones   String?           @db.Text
+  especialidades    String?           @db.Text
+  nivelesEnsenanza  String?           @map("niveles_ensenanza") @db.Text
+  descripcion       String?           @db.Text
+  precioIndividual  Int?              @map("precio_individual")
+  precioGrupal      Int?              @map("precio_grupal")
+  aceptaDomicilio   Boolean           @default(false) @map("acepta_domicilio")
+  verificado        Boolean           @default(false)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  user        User                   @relation("InstructorProfile", fields: [userId], references: [id], onDelete: Cascade)
+  ubicaciones InstructorUbicacion[]
+
+  @@map("instructores")
+}
+
+model InstructorUbicacion {
+  id            String   @id @default(uuid())
+  instructorId  String   @map("instructor_id")
+  sedeId        String?  @map("sede_id")
+  nombreCustom  String?  @map("nombre_custom")
+  ciudad        String
+  esPrincipal   Boolean  @default(false) @map("es_principal")
+  activa        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  instructor Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  sede       Sede?      @relation("InstructorSedes", fields: [sedeId], references: [id])
+
+  @@map("instructor_ubicaciones")
 }
