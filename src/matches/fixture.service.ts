@@ -83,7 +83,10 @@ export class FixtureService {
     });
 
     // 6. Ordenar descendente (más fuerte = seed 1)
-    seededPairs.sort((a, b) => b.pairStrength - a.pairStrength);
+    // Desempate determinístico por ID de pareja para que re-sorteos sean consistentes
+    seededPairs.sort((a, b) =>
+      b.pairStrength - a.pairStrength || a.pareja.id.localeCompare(b.pareja.id),
+    );
 
     // 7. Asignar número de seed
     return seededPairs.map((sp, index) => ({
@@ -205,6 +208,18 @@ export class FixtureService {
       }
     }
 
+    // Validar que fechaInicio no sea en el pasado
+    if (fechaInicio) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const inicio = new Date(fechaInicio + 'T00:00:00');
+      if (inicio < today) {
+        throw new BadRequestException(
+          'La fecha de inicio no puede ser anterior a hoy.',
+        );
+      }
+    }
+
     const inscripciones = tournament.inscripciones;
 
     if (inscripciones.length < 8) {
@@ -311,19 +326,30 @@ export class FixtureService {
       );
     }
 
-    // Transicionar categoría a SORTEO_REALIZADO
-    await this.prisma.tournamentCategory.update({
-      where: { id: tournamentCategory.id },
-      data: { estado: 'SORTEO_REALIZADO' },
+    // Verificar que existan matches generados
+    const matchCount = await this.prisma.match.count({
+      where: { tournamentId, categoryId },
     });
-
-    // Si torneo estaba PUBLICADO → transicionar a EN_CURSO
-    if (tournament.estado === 'PUBLICADO') {
-      await this.prisma.tournament.update({
-        where: { id: tournamentId },
-        data: { estado: 'EN_CURSO' },
-      });
+    if (matchCount === 0) {
+      throw new BadRequestException(
+        'No hay partidos generados para esta categoría. Realizá el sorteo primero.',
+      );
     }
+
+    // Transición atómica: categoría + torneo en una sola transacción
+    await this.prisma.$transaction(async (tx) => {
+      await tx.tournamentCategory.update({
+        where: { id: tournamentCategory.id },
+        data: { estado: 'SORTEO_REALIZADO' },
+      });
+
+      if (tournament.estado === 'PUBLICADO') {
+        await tx.tournament.update({
+          where: { id: tournamentId },
+          data: { estado: 'EN_CURSO' },
+        });
+      }
+    });
 
     // Notificar a todos los jugadores de la primera ronda con partidos programados
     try {
@@ -982,135 +1008,134 @@ export class FixtureService {
    * 5. Cascade BYEs en bracket
    */
   async armarZona2(tournamentId: string, categoryId: string) {
-    // 1. Obtener R2 placeholders (creados durante el sorteo)
-    const r2Placeholders = await this.prisma.match.findMany({
-      where: { tournamentId, categoryId, ronda: 'ACOMODACION_2' },
-      orderBy: { numeroRonda: 'asc' },
-    });
-
-    if (r2Placeholders.length === 0) {
-      // Caso B: N es potencia de 2 — no hay R2, losers ya enlazados via partidoPerdedorSiguienteId
-      this.logger.log(`[ArmarZ2] Sin R2 placeholders para categoría ${categoryId} (N=potencia de 2)`);
-      return;
-    }
-
-    // Verificar que no estén ya procesados (tienen parejas asignadas)
-    const alreadyProcessed = r2Placeholders.some(m =>
-      m.pareja1Id !== null && m.observaciones !== 'PLACEHOLDER_BYE' && m.observaciones !== 'PLACEHOLDER_R2'
-    );
-    if (alreadyProcessed) {
-      this.logger.warn(`[ArmarZ2] R2 ya procesado para categoría ${categoryId}, ignorando`);
-      return;
-    }
-
-    // 2. Obtener R1 matches finalizados
-    const r1Matches = await this.prisma.match.findMany({
-      where: {
-        tournamentId,
-        categoryId,
-        ronda: 'ACOMODACION_1',
-        estado: { in: ['FINALIZADO', 'WO'] },
-      },
-      orderBy: { numeroRonda: 'asc' },
-    });
-
-    if (r1Matches.length === 0) return;
-
-    // 3. Recolectar perdedores con sus games ganados
-    const losers: Array<{
-      parejaId: string;
-      gamesGanados: number;
-      r1MatchId: string;
-      r1WinnerId: string;
-    }> = [];
-
-    for (const m of r1Matches) {
-      if (!m.parejaPerdedoraId || !m.parejaGanadoraId) continue;
-
-      let games = 0;
-      const isP1Loser = m.parejaPerdedoraId === m.pareja1Id;
-      if (m.set1Pareja1 != null && m.set1Pareja2 != null) {
-        games += isP1Loser ? m.set1Pareja1 : m.set1Pareja2;
-      }
-      if (m.set2Pareja1 != null && m.set2Pareja2 != null) {
-        games += isP1Loser ? m.set2Pareja1 : m.set2Pareja2;
-      }
-      if (m.set3Pareja1 != null && m.set3Pareja2 != null) {
-        games += isP1Loser ? m.set3Pareja1 : m.set3Pareja2;
-      }
-
-      losers.push({
-        parejaId: m.parejaPerdedoraId,
-        gamesGanados: games,
-        r1MatchId: m.id,
-        r1WinnerId: m.parejaGanadoraId,
+    // Todo dentro de una transacción para consistencia de lecturas + escrituras
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Obtener R2 placeholders (creados durante el sorteo)
+      const r2Placeholders = await tx.match.findMany({
+        where: { tournamentId, categoryId, ronda: 'ACOMODACION_2' },
+        orderBy: { numeroRonda: 'asc' },
       });
-    }
 
-    // 3b. Método 1: R1 BYE matches (sorteos nuevos con match WO+BYE creado)
-    for (const m of r1Matches) {
-      if (m.estado === 'WO' && m.observaciones?.includes('BYE') && m.pareja1Id && !m.pareja2Id) {
-        if (!losers.some(l => l.parejaId === m.pareja1Id)) {
-          losers.push({
-            parejaId: m.pareja1Id,
-            gamesGanados: -1,
-            r1MatchId: m.id,
-            r1WinnerId: m.pareja1Id,
-          });
-          this.logger.log(`[ArmarZ2] R1 BYE pair ${m.pareja1Id} (via match)`);
+      if (r2Placeholders.length === 0) {
+        this.logger.log(`[ArmarZ2] Sin R2 placeholders para categoría ${categoryId} (N=potencia de 2)`);
+        return;
+      }
+
+      // Verificar que no estén ya procesados (tienen parejas asignadas)
+      const alreadyProcessed = r2Placeholders.some(m =>
+        m.pareja1Id !== null && m.observaciones !== 'PLACEHOLDER_BYE' && m.observaciones !== 'PLACEHOLDER_R2'
+      );
+      if (alreadyProcessed) {
+        this.logger.warn(`[ArmarZ2] R2 ya procesado para categoría ${categoryId}, ignorando`);
+        return;
+      }
+
+      // 2. Obtener R1 matches finalizados
+      const r1Matches = await tx.match.findMany({
+        where: {
+          tournamentId,
+          categoryId,
+          ronda: 'ACOMODACION_1',
+          estado: { in: ['FINALIZADO', 'WO'] },
+        },
+        orderBy: { numeroRonda: 'asc' },
+      });
+
+      if (r1Matches.length === 0) return;
+
+      // 3. Recolectar perdedores con sus games ganados
+      const losers: Array<{
+        parejaId: string;
+        gamesGanados: number;
+        r1MatchId: string;
+        r1WinnerId: string;
+      }> = [];
+
+      for (const m of r1Matches) {
+        if (!m.parejaPerdedoraId || !m.parejaGanadoraId) continue;
+
+        let games = 0;
+        const isP1Loser = m.parejaPerdedoraId === m.pareja1Id;
+        if (m.set1Pareja1 != null && m.set1Pareja2 != null) {
+          games += isP1Loser ? m.set1Pareja1 : m.set1Pareja2;
+        }
+        if (m.set2Pareja1 != null && m.set2Pareja2 != null) {
+          games += isP1Loser ? m.set2Pareja1 : m.set2Pareja2;
+        }
+        if (m.set3Pareja1 != null && m.set3Pareja2 != null) {
+          games += isP1Loser ? m.set3Pareja1 : m.set3Pareja2;
+        }
+
+        losers.push({
+          parejaId: m.parejaPerdedoraId,
+          gamesGanados: games,
+          r1MatchId: m.id,
+          r1WinnerId: m.parejaGanadoraId,
+        });
+      }
+
+      // 3b. Método 1: R1 BYE matches (sorteos nuevos con match WO+BYE creado)
+      for (const m of r1Matches) {
+        if (m.estado === 'WO' && m.observaciones?.includes('BYE') && m.pareja1Id && !m.pareja2Id) {
+          if (!losers.some(l => l.parejaId === m.pareja1Id)) {
+            losers.push({
+              parejaId: m.pareja1Id,
+              gamesGanados: -1,
+              r1MatchId: m.id,
+              r1WinnerId: m.pareja1Id,
+            });
+            this.logger.log(`[ArmarZ2] R1 BYE pair ${m.pareja1Id} (via match)`);
+          }
         }
       }
-    }
 
-    // 3c. Método 2 (fallback): inscripciones no presentes en R1 (sorteos viejos sin match BYE)
-    const allR1ParejaIds = new Set<string>();
-    for (const m of r1Matches) {
-      if (m.pareja1Id) allR1ParejaIds.add(m.pareja1Id);
-      if (m.pareja2Id) allR1ParejaIds.add(m.pareja2Id);
-    }
-    const inscripcionesConfirmadas = await this.prisma.inscripcion.findMany({
-      where: { tournamentId, categoryId, estado: 'CONFIRMADA' },
-      select: { parejaId: true },
-    });
-    for (const insc of inscripcionesConfirmadas) {
-      if (!allR1ParejaIds.has(insc.parejaId) && !losers.some(l => l.parejaId === insc.parejaId)) {
-        losers.push({
-          parejaId: insc.parejaId,
-          gamesGanados: -1,
-          r1MatchId: '',
-          r1WinnerId: '',
-        });
-        this.logger.log(`[ArmarZ2] R1 BYE pair ${insc.parejaId} (via inscripción fallback)`);
+      // 3c. Método 2 (fallback): inscripciones no presentes en R1 (sorteos viejos sin match BYE)
+      const allR1ParejaIds = new Set<string>();
+      for (const m of r1Matches) {
+        if (m.pareja1Id) allR1ParejaIds.add(m.pareja1Id);
+        if (m.pareja2Id) allR1ParejaIds.add(m.pareja2Id);
       }
-    }
+      const inscripcionesConfirmadas = await tx.inscripcion.findMany({
+        where: { tournamentId, categoryId, estado: 'CONFIRMADA' },
+        select: { parejaId: true },
+      });
+      for (const insc of inscripcionesConfirmadas) {
+        if (!allR1ParejaIds.has(insc.parejaId) && !losers.some(l => l.parejaId === insc.parejaId)) {
+          losers.push({
+            parejaId: insc.parejaId,
+            gamesGanados: -1,
+            r1MatchId: '',
+            r1WinnerId: '',
+          });
+          this.logger.log(`[ArmarZ2] R1 BYE pair ${insc.parejaId} (via inscripción fallback)`);
+        }
+      }
 
-    // Ordenar: primario games DESC, secundario parejaId para desempate determinístico
-    losers.sort((a, b) => b.gamesGanados - a.gamesGanados || a.parejaId.localeCompare(b.parejaId));
+      // Ordenar: primario games DESC, secundario parejaId para desempate determinístico
+      losers.sort((a, b) => b.gamesGanados - a.gamesGanados || a.parejaId.localeCompare(b.parejaId));
 
-    // 4. Separar placeholders reales vs BYE
-    const realR2 = r2Placeholders.filter(m => m.observaciones === 'PLACEHOLDER_R2');
-    const byeR2 = r2Placeholders.filter(m => m.observaciones === 'PLACEHOLDER_BYE');
+      // 4. Separar placeholders reales vs BYE
+      const realR2 = r2Placeholders.filter(m => m.observaciones === 'PLACEHOLDER_R2');
+      const byeR2 = r2Placeholders.filter(m => m.observaciones === 'PLACEHOLDER_BYE');
 
-    this.logger.log(
-      `[ArmarZ2] losers=${losers.length}, realR2=${realR2.length}, byeR2=${byeR2.length}`
-    );
-
-    // 5. Best losers → asignar a byeR2 placeholders → BYE avance al bracket
-    const bestLosers = losers.slice(0, byeR2.length);
-    const r2Losers = losers.slice(byeR2.length);
-
-    // 6. Emparejar R2 en serpentina
-    const numR2Actual = Math.min(Math.floor(r2Losers.length / 2), realR2.length);
-
-    if (r2Losers.length < 2 * numR2Actual) {
-      this.logger.warn(
-        `[ArmarZ2] ⚠️ r2Losers(${r2Losers.length}) < 2*numR2Actual(${2 * numR2Actual}). ` +
-        `Puede haber parejas faltantes. losers total=${losers.length}, bestLosers=${bestLosers.length}`
+      this.logger.log(
+        `[ArmarZ2] losers=${losers.length}, realR2=${realR2.length}, byeR2=${byeR2.length}`
       );
-    }
 
-    // 7. Actualizar placeholders dentro de una transacción
-    await this.prisma.$transaction(async (tx) => {
+      // 5. Best losers → asignar a byeR2 placeholders → BYE avance al bracket
+      const bestLosers = losers.slice(0, byeR2.length);
+      const r2Losers = losers.slice(byeR2.length);
+
+      // 6. Emparejar R2 en serpentina
+      const numR2Actual = Math.min(Math.floor(r2Losers.length / 2), realR2.length);
+
+      if (r2Losers.length < 2 * numR2Actual) {
+        this.logger.warn(
+          `[ArmarZ2] ⚠️ r2Losers(${r2Losers.length}) < 2*numR2Actual(${2 * numR2Actual}). ` +
+          `Puede haber parejas faltantes. losers total=${losers.length}, bestLosers=${bestLosers.length}`
+        );
+      }
+
       // 7a. Best losers → BYE R2 placeholders → avance directo al bracket
       for (let i = 0; i < bestLosers.length && i < byeR2.length; i++) {
         const placeholder = byeR2[i];
@@ -1243,9 +1268,9 @@ export class FixtureService {
           fechaInicioR2, // usar fecha guardada durante sorteo
         );
       }
-    }, { maxWait: 10000, timeout: 30000 });
 
-    this.logger.log(`[ArmarZ2] Zona 2 armada para categoría ${categoryId}: ${numR2Actual} matches reales, ${bestLosers.length} mejores perdedores`);
+      this.logger.log(`[ArmarZ2] Zona 2 armada para categoría ${categoryId}: ${numR2Actual} matches reales, ${bestLosers.length} mejores perdedores`);
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   // ═══════════════════════════════════════════════════════

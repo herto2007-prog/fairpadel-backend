@@ -35,11 +35,10 @@ export class MatchesController {
     return this.fixtureService.obtenerFixturePublico(tournamentId, categoryId);
   }
 
-  // ── Protected endpoints ──────────────────────────────────
+  // ── Protected endpoints (owner/admin/ayudante via TournamentRoleGuard) ──
 
   @Get('torneo/:tournamentId/fixture-interno')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   obtenerFixtureInterno(
     @Param('tournamentId') tournamentId: string,
     @Query('categoryId') categoryId?: string,
@@ -48,8 +47,7 @@ export class MatchesController {
   }
 
   @Post('torneo/:tournamentId/categoria/:categoryId/sortear')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   sortearCategoria(
     @Param('tournamentId') tournamentId: string,
     @Param('categoryId') categoryId: string,
@@ -60,8 +58,7 @@ export class MatchesController {
   }
 
   @Post('torneo/:tournamentId/categoria/:categoryId/publicar-fixture')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   publicarFixture(
     @Param('tournamentId') tournamentId: string,
     @Param('categoryId') categoryId: string,
@@ -70,8 +67,7 @@ export class MatchesController {
   }
 
   @Post('torneo/:tournamentId/generar-fixture')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   generarFixture(@Param('tournamentId') tournamentId: string) {
     return this.fixtureService.generarFixtureCompleto(tournamentId);
   }
@@ -91,8 +87,7 @@ export class MatchesController {
   }
 
   @Get('torneo/:tournamentId/categoria/:categoryId/standings')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   obtenerStandings(
     @Param('tournamentId') tournamentId: string,
     @Param('categoryId') categoryId: string,
@@ -101,8 +96,7 @@ export class MatchesController {
   }
 
   @Post('torneo/:tournamentId/categoria/:categoryId/finalizar')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   finalizarCategoria(
     @Param('tournamentId') tournamentId: string,
     @Param('categoryId') categoryId: string,
@@ -111,15 +105,13 @@ export class MatchesController {
   }
 
   @Get('torneo/:tournamentId/pendientes')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   obtenerPendientes(@Param('tournamentId') tournamentId: string) {
     return this.matchesService.obtenerPartidosPendientes(tournamentId);
   }
 
   @Post('torneo/:tournamentId/categoria/:categoryId/reagendar-sin-cancha')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   reagendarSinCancha(
     @Param('tournamentId') tournamentId: string,
     @Param('categoryId') categoryId: string,
@@ -145,8 +137,7 @@ export class MatchesController {
   }
 
   @Put(':id/editar-resultado')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   editarResultado(
     @Param('id') id: string,
     @Body() dto: CargarResultadoDto,
@@ -155,8 +146,7 @@ export class MatchesController {
   }
 
   @Put(':id/reprogramar')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('organizador', 'admin')
+  @UseGuards(JwtAuthGuard, TournamentRoleGuard)
   reprogramar(
     @Param('id') id: string,
     @Body() body: { fechaProgramada: string; horaProgramada: string; torneoCanchaId?: string },

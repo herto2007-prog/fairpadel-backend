@@ -107,6 +107,12 @@ export class MatchesService {
 
     if (esWalkOver) {
       // Walk Over — sin puntaje, solo ganador
+      if (!parejaGanadoraId) {
+        throw new BadRequestException('Debe indicar la pareja ganadora en caso de Walk Over');
+      }
+      if (parejaGanadoraId !== match.pareja1Id && parejaGanadoraId !== match.pareja2Id) {
+        throw new BadRequestException('La pareja ganadora debe ser una de las parejas del partido');
+      }
       ganadorId = parejaGanadoraId;
       perdedorId = ganadorId === match.pareja1Id ? match.pareja2Id : match.pareja1Id;
 
@@ -123,6 +129,9 @@ export class MatchesService {
       // Retiro por lesión — se requiere parejaGanadoraId, sets parciales opcionales
       if (!parejaGanadoraId) {
         throw new BadRequestException('Debe indicar la pareja ganadora en caso de retiro');
+      }
+      if (parejaGanadoraId !== match.pareja1Id && parejaGanadoraId !== match.pareja2Id) {
+        throw new BadRequestException('La pareja ganadora debe ser una de las parejas del partido');
       }
       ganadorId = parejaGanadoraId;
       perdedorId = ganadorId === match.pareja1Id ? match.pareja2Id : match.pareja1Id;
@@ -146,6 +155,9 @@ export class MatchesService {
       // Descalificación en pleno match — motivo obligatorio, scores parciales opcionales
       if (!parejaGanadoraId) {
         throw new BadRequestException('Debe indicar la pareja ganadora (no descalificada)');
+      }
+      if (parejaGanadoraId !== match.pareja1Id && parejaGanadoraId !== match.pareja2Id) {
+        throw new BadRequestException('La pareja ganadora debe ser una de las parejas del partido');
       }
       if (!observaciones) {
         throw new BadRequestException('Debe indicar el motivo de la descalificación');
