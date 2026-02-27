@@ -1100,6 +1100,60 @@ export class AdminService {
     };
   }
 
+  // ============ PROMOVER ADMIN POR DOCUMENTO ============
+
+  async promoverAdminPorDocumento(documento: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { documento },
+      include: {
+        roles: {
+          include: { role: true },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(
+        `No se encontró usuario con documento: ${documento}`,
+      );
+    }
+
+    const yaEsAdmin = user.roles.some(
+      (ur) => ur.role.nombre === 'admin',
+    );
+    if (yaEsAdmin) {
+      throw new ConflictException(
+        `${user.nombre} ${user.apellido} ya tiene rol de admin`,
+      );
+    }
+
+    const rolAdmin = await this.prisma.role.findUnique({
+      where: { nombre: 'admin' },
+    });
+
+    if (!rolAdmin) {
+      throw new NotFoundException('Rol admin no encontrado');
+    }
+
+    await this.prisma.userRole.create({
+      data: {
+        userId: user.id,
+        roleId: rolAdmin.id,
+      },
+    });
+
+    return {
+      message: `${user.nombre} ${user.apellido} ahora es admin`,
+      usuario: {
+        id: user.id,
+        nombre: user.nombre,
+        apellido: user.apellido,
+        email: user.email,
+        documento: user.documento,
+      },
+    };
+  }
+
   // ============ CONFIGURACIÓN DEL SISTEMA ============
 
   async obtenerConfiguracionSistema() {

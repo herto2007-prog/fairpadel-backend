@@ -67,6 +67,11 @@ export class AdminController {
     return this.adminService.promoverOrganizadorPorDocumento(body.documento);
   }
 
+  @Post('promover-admin')
+  promoverAdmin(@Body() body: { documento: string }) {
+    return this.adminService.promoverAdminPorDocumento(body.documento);
+  }
+
   // ============ MODERACIÓN FOTOS ============
   @Get('fotos-moderacion')
   obtenerFotosModeracion() {
