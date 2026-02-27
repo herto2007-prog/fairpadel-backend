@@ -1,7 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
+import { PrismaService } from './prisma/prisma.service';
 
 @Controller()
 export class AppController {
+  constructor(private readonly prisma: PrismaService) {}
+
   @Get()
   getHello() {
     return {
@@ -24,5 +27,17 @@ export class AppController {
       timestamp: new Date().toISOString(),
       database: 'connected',
     };
+  }
+
+  @Get('stats')
+  async getPublicStats() {
+    const [torneos, jugadores, partidos, categorias] = await Promise.all([
+      this.prisma.tournament.count(),
+      this.prisma.user.count(),
+      this.prisma.match.count({ where: { estado: 'FINALIZADO' } }),
+      this.prisma.category.count(),
+    ]);
+
+    return { torneos, jugadores, partidos, categorias };
   }
 }
