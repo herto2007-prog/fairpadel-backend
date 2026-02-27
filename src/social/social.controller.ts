@@ -55,6 +55,12 @@ export class SocialController {
     return this.socialService.enviarMensaje(req.user.id, dto);
   }
 
+  @Get('mensajes/no-leidos')
+  @UseGuards(JwtAuthGuard)
+  contarMensajesNoLeidos(@Request() req) {
+    return this.socialService.contarMensajesNoLeidos(req.user.id);
+  }
+
   @Get('mensajes/conversaciones')
   @UseGuards(JwtAuthGuard)
   obtenerConversaciones(@Request() req) {
@@ -70,10 +76,25 @@ export class SocialController {
     return this.socialService.obtenerMensajes(req.user.id, otroUserId);
   }
 
+  @Post('mensajes/conversacion/:otroUserId/leer')
+  @UseGuards(JwtAuthGuard)
+  marcarConversacionComoLeida(
+    @Param('otroUserId') otroUserId: string,
+    @Request() req,
+  ) {
+    return this.socialService.marcarConversacionComoLeida(req.user.id, otroUserId);
+  }
+
   @Post('mensajes/:mensajeId/leer')
   @UseGuards(JwtAuthGuard)
   marcarComoLeido(@Param('mensajeId') mensajeId: string, @Request() req) {
     return this.socialService.marcarComoLeido(mensajeId, req.user.id);
+  }
+
+  @Delete('mensajes/:mensajeId')
+  @UseGuards(JwtAuthGuard)
+  eliminarMensaje(@Param('mensajeId') mensajeId: string, @Request() req) {
+    return this.socialService.eliminarMensaje(mensajeId, req.user.id);
   }
 
   // ============ SOLICITUDES JUGAR ============

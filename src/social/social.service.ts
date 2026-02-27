@@ -190,13 +190,32 @@ export class SocialService {
   async enviarMensaje(remitenteId: string, dto: MensajeDto) {
     const { destinatarioId, contenido } = dto;
 
+    if (remitenteId === destinatarioId) {
+      throw new BadRequestException('No puedes enviarte mensajes a ti mismo');
+    }
+
     // Verificar que el destinatario existe
     const destinatario = await this.prisma.user.findUnique({
       where: { id: destinatarioId },
+      select: { id: true, nombre: true, apellido: true },
     });
 
     if (!destinatario) {
       throw new NotFoundException('Destinatario no encontrado');
+    }
+
+    // Verificar bloqueos en ambas direcciones
+    const bloqueo = await this.prisma.bloqueo.findFirst({
+      where: {
+        OR: [
+          { bloqueadorId: remitenteId, bloqueadoId: destinatarioId },
+          { bloqueadorId: destinatarioId, bloqueadoId: remitenteId },
+        ],
+      },
+    });
+
+    if (bloqueo) {
+      throw new ForbiddenException('No puedes enviar mensajes a este usuario');
     }
 
     // Crear mensaje
@@ -226,7 +245,19 @@ export class SocialService {
       },
     });
 
-    // TODO: Enviar notificación al destinatario
+    // Notificar al destinatario
+    try {
+      const remitente = mensaje.remitente;
+      await this.notificacionesService.notificar({
+        userId: destinatarioId,
+        tipo: 'SOCIAL',
+        titulo: 'Nuevo mensaje',
+        contenido: `${remitente.nombre} ${remitente.apellido} te envió un mensaje`,
+        enlace: `/mensajes/${remitenteId}`,
+      });
+    } catch (e) {
+      this.logger.warn(`Error notificando mensaje: ${e.message}`);
+    }
 
     return mensaje;
   }
@@ -264,7 +295,7 @@ export class SocialService {
     });
 
     // Agrupar por conversación (con el otro usuario)
-    const conversacionesMap = new Map();
+    const conversacionesMap = new Map<string, { usuario: any; ultimoMensaje: any; noLeidos: number }>();
 
     for (const mensaje of mensajes) {
       const otroUsuarioId = mensaje.remitenteId === userId
@@ -279,7 +310,14 @@ export class SocialService {
         conversacionesMap.set(otroUsuarioId, {
           usuario: otroUsuario,
           ultimoMensaje: mensaje,
+          noLeidos: 0,
         });
+      }
+
+      // Contar mensajes no leídos recibidos de este usuario
+      if (mensaje.destinatarioId === userId && !mensaje.leido && mensaje.remitenteId === otroUsuarioId) {
+        const conv = conversacionesMap.get(otroUsuarioId);
+        if (conv) conv.noLeidos++;
       }
     }
 
@@ -337,6 +375,45 @@ export class SocialService {
       where: { id: mensajeId },
       data: { leido: true },
     });
+  }
+
+  async contarMensajesNoLeidos(userId: string) {
+    const count = await this.prisma.mensajePrivado.count({
+      where: { destinatarioId: userId, leido: false },
+    });
+    return { count };
+  }
+
+  async marcarConversacionComoLeida(userId: string, otroUserId: string) {
+    const result = await this.prisma.mensajePrivado.updateMany({
+      where: {
+        destinatarioId: userId,
+        remitenteId: otroUserId,
+        leido: false,
+      },
+      data: { leido: true },
+    });
+    return { marcados: result.count };
+  }
+
+  async eliminarMensaje(mensajeId: string, userId: string) {
+    const mensaje = await this.prisma.mensajePrivado.findUnique({
+      where: { id: mensajeId },
+    });
+
+    if (!mensaje) {
+      throw new NotFoundException('Mensaje no encontrado');
+    }
+
+    if (mensaje.remitenteId !== userId) {
+      throw new ForbiddenException('Solo puedes eliminar tus propios mensajes');
+    }
+
+    await this.prisma.mensajePrivado.delete({
+      where: { id: mensajeId },
+    });
+
+    return { message: 'Mensaje eliminado' };
   }
 
   // ============ SOLICITUDES JUGAR ============
