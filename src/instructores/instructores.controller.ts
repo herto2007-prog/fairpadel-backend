@@ -295,6 +295,14 @@ export class InstructoresController {
     return this.instructoresService.cancelarMiReserva(id, req.user.id);
   }
 
+  // ── Probar módulo (any auth user) ─────────────────────
+
+  @Post('probar-modulo')
+  @UseGuards(JwtAuthGuard)
+  probarModulo(@Request() req) {
+    return this.instructoresService.probarModulo(req.user.id);
+  }
+
   // ── Public: detail + horarios (MUST be LAST — :id catches everything) ──
 
   @Get(':id/horarios-disponibles')

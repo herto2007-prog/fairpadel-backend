@@ -951,4 +951,50 @@ export class InstructoresService {
 
     return instructor;
   }
+
+  // ── Probar Módulo ──────────────────────────────────────
+
+  async probarModulo(userId: string) {
+    // Check if user is already an instructor
+    const existingInstructor = await this.prisma.instructor.findUnique({
+      where: { userId },
+    });
+    if (existingInstructor) {
+      throw new ConflictException('Ya sos instructor');
+    }
+
+    // Get user info
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { nombre: true, apellido: true, documento: true },
+    });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Find all admin users
+    const adminRole = await this.prisma.role.findUnique({ where: { nombre: 'admin' } });
+    if (!adminRole) {
+      throw new BadRequestException('Rol admin no configurado');
+    }
+    const adminUsers = await this.prisma.userRole.findMany({
+      where: { roleId: adminRole.id },
+      select: { userId: true },
+    });
+
+    // Create notification for each admin
+    if (adminUsers.length > 0) {
+      await this.prisma.notificacion.createMany({
+        data: adminUsers.map((au) => ({
+          userId: au.userId,
+          tipo: 'SISTEMA',
+          titulo: 'Solicitud: Probar Módulo Instructor',
+          contenido: `El usuario ${user.nombre} ${user.apellido} (CI: ${user.documento}) quiere probar el módulo de instructor. Podés asignarle el rol desde Admin → Roles → Instructores.`,
+          enlace: '/admin/roles',
+        })),
+      });
+    }
+
+    return { message: 'Solicitud enviada. Un administrador revisará tu pedido.' };
+  }
 }
