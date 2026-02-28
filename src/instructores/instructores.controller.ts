@@ -22,6 +22,7 @@ import {
   MarcarPagoDto,
   GuardarNotasDto,
 } from './dto/reserva.dto';
+import { RegistrarPagoDto } from './dto/pago-instructor.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -276,6 +277,53 @@ export class InstructoresController {
     @Query('fechaInicio') fechaInicio: string,
   ) {
     return this.instructoresService.obtenerAgendaSemana(req.user.id, fechaInicio);
+  }
+
+  // ── Pagos independientes (instructor role) ─────────────
+
+  @Post('pagos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  registrarPago(@Request() req, @Body() dto: RegistrarPagoDto) {
+    return this.instructoresService.registrarPago(req.user.id, dto);
+  }
+
+  @Get('pagos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  listarPagos(
+    @Request() req,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+    @Query('alumnoId') alumnoId?: string,
+    @Query('metodoPago') metodoPago?: string,
+  ) {
+    return this.instructoresService.listarPagos(req.user.id, { desde, hasta, alumnoId, metodoPago });
+  }
+
+  @Get('pagos/:pagoId/recibo')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  obtenerRecibo(@Request() req, @Param('pagoId') pagoId: string) {
+    return this.instructoresService.obtenerRecibo(pagoId, req.user.id);
+  }
+
+  // ── Deudas (instructor role) ──────────────────────────
+
+  @Get('deudas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  obtenerDeudas(@Request() req) {
+    return this.instructoresService.obtenerDeudas(req.user.id);
+  }
+
+  // ── Métricas (instructor role) ────────────────────────
+
+  @Get('metricas/retencion')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('instructor')
+  obtenerRetencion(@Request() req) {
+    return this.instructoresService.obtenerRetencion(req.user.id);
   }
 
   // ── Reservas: lado alumno (cualquier user autenticado) ──

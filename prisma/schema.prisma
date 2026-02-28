@@ -131,6 +131,21 @@ enum ReservaEstado {
   COMPLETADA
 }
 
+enum MetodoPagoInstructor {
+  EFECTIVO
+  TRANSFERENCIA
+  QR
+  OTRO
+}
+
+enum ConceptoPago {
+  CLASE
+  PAQUETE
+  DEUDA
+  ADELANTO
+  OTRO
+}
+
 enum ModerationStatus {
   PENDIENTE
   APROBADA
@@ -282,6 +297,7 @@ model User {
   solicitudesInstructor     SolicitudInstructor[] @relation("InstructorSolicitudes")
   instructor                Instructor?           @relation("InstructorProfile")
   reservasComoAlumno        ReservaInstructor[]   @relation("ReservasComoAlumno")
+  pagosComoAlumno           PagoInstructor[]      @relation("PagosComoAlumno")
 
   @@map("users")
 }
@@ -1452,6 +1468,7 @@ model Instructor {
   disponibilidades InstructorDisponibilidad[]
   bloqueos         InstructorBloqueo[]
   reservas         ReservaInstructor[]
+  pagos            PagoInstructor[]
 
   @@map("instructores")
 }
@@ -1523,9 +1540,34 @@ model ReservaInstructor {
   metodoPago            String?   @map("metodo_pago")
   notas                 String?   @db.Text
   creadoPorInstructor   Boolean   @default(false) @map("creado_por_instructor")
+  montoCobrado          Int?      @map("monto_cobrado")
 
   instructor  Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
   solicitante User?      @relation("ReservasComoAlumno", fields: [solicitanteId], references: [id], onDelete: Cascade)
+  pagos       PagoInstructor[]
 
   @@map("reservas_instructor")
+}
+
+model PagoInstructor {
+  id                    String               @id @default(uuid())
+  instructorId          String               @map("instructor_id")
+  alumnoId              String?              @map("alumno_id")
+  alumnoExternoNombre   String?              @map("alumno_externo_nombre")
+  alumnoExternoTelefono String?              @map("alumno_externo_telefono")
+  reservaId             String?              @map("reserva_id")
+  monto                 Int
+  metodoPago            MetodoPagoInstructor @map("metodo_pago")
+  concepto              ConceptoPago         @default(CLASE)
+  descripcion           String?              @db.Text
+  fecha                 DateTime             @db.Date
+  numeroRecibo          Int?                 @map("numero_recibo")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+
+  instructor Instructor         @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  alumno     User?              @relation("PagosComoAlumno", fields: [alumnoId], references: [id], onDelete: SetNull)
+  reserva    ReservaInstructor? @relation(fields: [reservaId], references: [id], onDelete: SetNull)
+
+  @@map("pagos_instructor")
 }

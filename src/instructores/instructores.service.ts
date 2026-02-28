@@ -18,6 +18,7 @@ import {
   GuardarNotasDto,
 } from './dto/reserva.dto';
 import { ForbiddenException } from '@nestjs/common';
+import { RegistrarPagoDto } from './dto/pago-instructor.dto';
 
 @Injectable()
 export class InstructoresService {
@@ -1087,5 +1088,285 @@ export class InstructoresService {
     }
 
     return { message: 'Solicitud enviada. Un administrador revisará tu pedido.' };
+  }
+
+  // ── Fase D: Pagos independientes ─────────────────────
+
+  async registrarPago(userId: string, dto: RegistrarPagoDto) {
+    const instructor = await this.prisma.instructor.findUnique({ where: { userId } });
+    if (!instructor) throw new NotFoundException('Instructor no encontrado');
+
+    if (!dto.alumnoId && !dto.alumnoExternoNombre) {
+      throw new BadRequestException('Debe indicar un alumno (registrado o externo)');
+    }
+
+    if (dto.reservaId) {
+      const reserva = await this.prisma.reservaInstructor.findUnique({ where: { id: dto.reservaId } });
+      if (!reserva || reserva.instructorId !== instructor.id) {
+        throw new BadRequestException('Reserva no encontrada o no pertenece a este instructor');
+      }
+    }
+
+    // Auto-increment numeroRecibo per instructor
+    const lastPago = await this.prisma.pagoInstructor.findFirst({
+      where: { instructorId: instructor.id, numeroRecibo: { not: null } },
+      orderBy: { numeroRecibo: 'desc' },
+      select: { numeroRecibo: true },
+    });
+    const numeroRecibo = (lastPago?.numeroRecibo || 0) + 1;
+
+    const pago = await this.prisma.pagoInstructor.create({
+      data: {
+        instructorId: instructor.id,
+        alumnoId: dto.alumnoId || null,
+        alumnoExternoNombre: dto.alumnoExternoNombre || null,
+        alumnoExternoTelefono: dto.alumnoExternoTelefono || null,
+        reservaId: dto.reservaId || null,
+        monto: dto.monto,
+        metodoPago: dto.metodoPago as any,
+        concepto: (dto.concepto as any) || 'CLASE',
+        descripcion: dto.descripcion || null,
+        fecha: new Date(dto.fecha + 'T00:00:00'),
+        numeroRecibo,
+      },
+      include: {
+        alumno: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+        reserva: { select: { id: true, fecha: true, horaInicio: true, horaFin: true } },
+      },
+    });
+
+    // If linked to a reserva, also mark it as paid
+    if (dto.reservaId) {
+      await this.prisma.reservaInstructor.update({
+        where: { id: dto.reservaId },
+        data: {
+          pagado: true,
+          montoCobrado: dto.monto,
+          metodoPago: dto.metodoPago,
+        },
+      });
+    }
+
+    return pago;
+  }
+
+  async listarPagos(userId: string, filters: { desde?: string; hasta?: string; alumnoId?: string; metodoPago?: string }) {
+    const instructor = await this.prisma.instructor.findUnique({ where: { userId } });
+    if (!instructor) throw new NotFoundException('Instructor no encontrado');
+
+    const where: any = { instructorId: instructor.id };
+
+    if (filters.desde || filters.hasta) {
+      where.fecha = {};
+      if (filters.desde) where.fecha.gte = new Date(filters.desde + 'T00:00:00');
+      if (filters.hasta) where.fecha.lte = new Date(filters.hasta + 'T23:59:59');
+    }
+    if (filters.alumnoId) where.alumnoId = filters.alumnoId;
+    if (filters.metodoPago) where.metodoPago = filters.metodoPago;
+
+    return this.prisma.pagoInstructor.findMany({
+      where,
+      include: {
+        alumno: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+        reserva: { select: { id: true, fecha: true, horaInicio: true, horaFin: true } },
+      },
+      orderBy: [{ fecha: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async obtenerDeudas(userId: string) {
+    const instructor = await this.prisma.instructor.findUnique({ where: { userId } });
+    if (!instructor) throw new NotFoundException('Instructor no encontrado');
+
+    // Get all unpaid completed/confirmed reservas
+    const reservasImpagas = await this.prisma.reservaInstructor.findMany({
+      where: {
+        instructorId: instructor.id,
+        pagado: false,
+        estado: { in: ['CONFIRMADA', 'COMPLETADA'] },
+      },
+      include: {
+        solicitante: { select: { id: true, nombre: true, apellido: true, telefono: true, fotoUrl: true } },
+      },
+      orderBy: { fecha: 'desc' },
+    });
+
+    // Group by student
+    const deudaMap = new Map<string, {
+      tipo: 'registrado' | 'externo';
+      id?: string;
+      nombre: string;
+      apellido?: string;
+      telefono?: string;
+      fotoUrl?: string | null;
+      deudaPendiente: number;
+      reservasPendientes: { id: string; fecha: string; precio: number }[];
+    }>();
+
+    for (const r of reservasImpagas) {
+      const key = r.solicitanteId || `externo_${r.alumnoExternoNombre}`;
+      if (!deudaMap.has(key)) {
+        deudaMap.set(key, {
+          tipo: r.solicitanteId ? 'registrado' : 'externo',
+          id: r.solicitanteId || undefined,
+          nombre: r.solicitante?.nombre || r.alumnoExternoNombre || 'Sin nombre',
+          apellido: r.solicitante?.apellido || undefined,
+          telefono: r.solicitante?.telefono || r.alumnoExternoTelefono || undefined,
+          fotoUrl: r.solicitante?.fotoUrl || null,
+          deudaPendiente: 0,
+          reservasPendientes: [],
+        });
+      }
+      const entry = deudaMap.get(key)!;
+      entry.deudaPendiente += r.precio;
+      entry.reservasPendientes.push({
+        id: r.id,
+        fecha: r.fecha instanceof Date ? r.fecha.toISOString().split('T')[0] : String(r.fecha).split('T')[0],
+        precio: r.precio,
+      });
+    }
+
+    // Sort by debt descending
+    return Array.from(deudaMap.values()).sort((a, b) => b.deudaPendiente - a.deudaPendiente);
+  }
+
+  async obtenerRecibo(pagoId: string, userId: string) {
+    const instructor = await this.prisma.instructor.findUnique({
+      where: { userId },
+      include: {
+        user: { select: { nombre: true, apellido: true, telefono: true, email: true } },
+      },
+    });
+    if (!instructor) throw new NotFoundException('Instructor no encontrado');
+
+    const pago = await this.prisma.pagoInstructor.findUnique({
+      where: { id: pagoId },
+      include: {
+        alumno: { select: { id: true, nombre: true, apellido: true, telefono: true, fotoUrl: true } },
+        reserva: { select: { id: true, fecha: true, horaInicio: true, horaFin: true, tipo: true } },
+      },
+    });
+
+    if (!pago || pago.instructorId !== instructor.id) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+
+    const alumnoNombre = pago.alumno
+      ? `${pago.alumno.nombre} ${pago.alumno.apellido || ''}`.trim()
+      : pago.alumnoExternoNombre || 'Sin nombre';
+    const alumnoTelefono = pago.alumno?.telefono || pago.alumnoExternoTelefono || null;
+
+    return {
+      pago,
+      instructor: { id: instructor.id, user: instructor.user },
+      alumnoNombre,
+      alumnoTelefono,
+    };
+  }
+
+  async obtenerRetencion(userId: string) {
+    const instructor = await this.prisma.instructor.findUnique({ where: { userId } });
+    if (!instructor) throw new NotFoundException('Instructor no encontrado');
+
+    const reservas = await this.prisma.reservaInstructor.findMany({
+      where: {
+        instructorId: instructor.id,
+        estado: { notIn: ['CANCELADA', 'RECHAZADA'] },
+      },
+      include: {
+        solicitante: { select: { id: true, nombre: true, apellido: true, fotoUrl: true, telefono: true } },
+      },
+      orderBy: { fecha: 'asc' },
+    });
+
+    // Group by student
+    const alumnoMap = new Map<string, {
+      tipo: 'registrado' | 'externo';
+      id?: string;
+      nombre: string;
+      apellido?: string;
+      fotoUrl?: string | null;
+      telefono?: string;
+      fechas: Date[];
+    }>();
+
+    for (const r of reservas) {
+      const key = r.solicitanteId || `externo_${r.alumnoExternoNombre}`;
+      if (!alumnoMap.has(key)) {
+        alumnoMap.set(key, {
+          tipo: r.solicitanteId ? 'registrado' : 'externo',
+          id: r.solicitanteId || undefined,
+          nombre: r.solicitante?.nombre || r.alumnoExternoNombre || 'Sin nombre',
+          apellido: r.solicitante?.apellido || undefined,
+          fotoUrl: r.solicitante?.fotoUrl || null,
+          telefono: r.solicitante?.telefono || r.alumnoExternoTelefono || undefined,
+          fechas: [],
+        });
+      }
+      const fecha = r.fecha instanceof Date ? r.fecha : new Date(r.fecha);
+      alumnoMap.get(key)!.fechas.push(fecha);
+    }
+
+    const now = new Date();
+    const hace30 = new Date(now);
+    hace30.setDate(hace30.getDate() - 30);
+    const hace60 = new Date(now);
+    hace60.setDate(hace60.getDate() - 60);
+
+    let activos = 0;
+    let enRiesgo = 0;
+    let perdidos = 0;
+    const alumnosEnRiesgo: any[] = [];
+
+    for (const [, alumno] of alumnoMap) {
+      const ultimaClase = alumno.fechas[alumno.fechas.length - 1];
+      if (ultimaClase >= hace30) {
+        activos++;
+      } else if (ultimaClase >= hace60) {
+        enRiesgo++;
+        alumnosEnRiesgo.push({
+          tipo: alumno.tipo,
+          id: alumno.id,
+          nombre: alumno.nombre,
+          apellido: alumno.apellido,
+          fotoUrl: alumno.fotoUrl,
+          telefono: alumno.telefono,
+          totalClases: alumno.fechas.length,
+          ultimaClase: ultimaClase.toISOString().split('T')[0],
+          deudaPendiente: 0,
+        });
+      } else {
+        perdidos++;
+      }
+    }
+
+    const totalAlumnos = alumnoMap.size;
+    const tasaRetencion = totalAlumnos > 0 ? Math.round((activos / totalAlumnos) * 100) : 0;
+
+    // Monthly class counts for last 6 months
+    const clasesUltimos6Meses: { mes: string; clases: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mesStr = d.toLocaleDateString('es-PY', { month: 'short', year: '2-digit' });
+      const mesInicio = new Date(d.getFullYear(), d.getMonth(), 1);
+      const mesFin = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+
+      const clases = reservas.filter((r) => {
+        const f = r.fecha instanceof Date ? r.fecha : new Date(r.fecha);
+        return f >= mesInicio && f <= mesFin;
+      }).length;
+
+      clasesUltimos6Meses.push({ mes: mesStr, clases });
+    }
+
+    return {
+      activos,
+      enRiesgo,
+      perdidos,
+      totalAlumnos,
+      tasaRetencion,
+      alumnosEnRiesgo,
+      clasesUltimos6Meses,
+    };
   }
 }
