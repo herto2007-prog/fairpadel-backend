@@ -19,12 +19,16 @@ import {
 } from './dto/reserva.dto';
 import { ForbiddenException } from '@nestjs/common';
 import { RegistrarPagoDto } from './dto/pago-instructor.dto';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 
 @Injectable()
 export class InstructoresService {
   private readonly logger = new Logger(InstructoresService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificacionesService: NotificacionesService,
+  ) {}
 
   // ── Solicitud ──────────────────────────────────────────
 
@@ -493,6 +497,29 @@ export class InstructoresService {
     });
 
     this.logger.log(`Reserva creada: ${reserva.id} por usuario ${userId} con instructor ${instructorId}`);
+
+    // Notify instructor: nueva solicitud de clase
+    try {
+      const alumno = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { nombre: true, apellido: true },
+      });
+      const alumnoName = alumno ? `${alumno.nombre} ${alumno.apellido}` : 'Un alumno';
+      const fechaStr = fechaDate.toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
+
+      await this.notificacionesService.notificar({
+        userId: instructor.userId,
+        tipo: 'SISTEMA',
+        titulo: 'Nueva solicitud de clase',
+        contenido: `${alumnoName} te solicitó una clase ${dto.tipo.toLowerCase()} para el ${fechaStr} a las ${dto.horaInicio}.`,
+        enlace: '/instructor',
+        smsTexto: `FairPadel: ${alumnoName} solicitó clase el ${fechaStr} ${dto.horaInicio}. Revisá tu panel.`,
+        forzarSms: true,
+      });
+    } catch (e) {
+      this.logger.error(`Error al notificar instructor: ${e.message}`);
+    }
+
     return reserva;
   }
 
@@ -522,10 +549,41 @@ export class InstructoresService {
       throw new BadRequestException('Solo se pueden cancelar reservas pendientes o confirmadas');
     }
 
-    return this.prisma.reservaInstructor.update({
+    const updated = await this.prisma.reservaInstructor.update({
       where: { id: reservaId },
       data: { estado: 'CANCELADA' },
     });
+
+    // Notify instructor: alumno canceló reserva
+    try {
+      const reservaFull = await this.prisma.reservaInstructor.findUnique({
+        where: { id: reservaId },
+        include: {
+          instructor: true,
+          solicitante: { select: { nombre: true, apellido: true } },
+        },
+      });
+      if (reservaFull) {
+        const alumnoName = reservaFull.solicitante
+          ? `${reservaFull.solicitante.nombre} ${reservaFull.solicitante.apellido}`
+          : 'Un alumno';
+        const fechaStr = reservaFull.fecha.toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
+
+        await this.notificacionesService.notificar({
+          userId: reservaFull.instructor.userId,
+          tipo: 'SISTEMA',
+          titulo: 'Reserva cancelada',
+          contenido: `${alumnoName} canceló su clase del ${fechaStr} a las ${reservaFull.horaInicio}.`,
+          enlace: '/instructor',
+          smsTexto: `FairPadel: ${alumnoName} canceló la clase del ${fechaStr} ${reservaFull.horaInicio}.`,
+          forzarSms: true,
+        });
+      }
+    } catch (e) {
+      this.logger.error(`Error al notificar cancelación: ${e.message}`);
+    }
+
+    return updated;
   }
 
   // ── Reservas — lado instructor ──────────────────────
@@ -560,10 +618,37 @@ export class InstructoresService {
       throw new BadRequestException('Solo se pueden confirmar reservas pendientes');
     }
 
-    return this.prisma.reservaInstructor.update({
+    const updated = await this.prisma.reservaInstructor.update({
       where: { id: reservaId },
       data: { estado: 'CONFIRMADA' },
     });
+
+    // Notify alumno: clase confirmada
+    try {
+      if (reserva.solicitanteId) {
+        const instructorUser = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { nombre: true, apellido: true },
+        });
+        const instructorName = instructorUser
+          ? `${instructorUser.nombre} ${instructorUser.apellido}`
+          : 'Tu instructor';
+        const fechaStr = reserva.fecha.toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
+
+        await this.notificacionesService.notificar({
+          userId: reserva.solicitanteId,
+          tipo: 'SISTEMA',
+          titulo: 'Clase confirmada',
+          contenido: `${instructorName} confirmó tu clase del ${fechaStr} a las ${reserva.horaInicio}.`,
+          enlace: '/mis-clases',
+          smsTexto: `FairPadel: Tu clase con ${instructorName} el ${fechaStr} ${reserva.horaInicio} fue confirmada.`,
+        });
+      }
+    } catch (e) {
+      this.logger.error(`Error al notificar confirmación: ${e.message}`);
+    }
+
+    return updated;
   }
 
   async rechazarReserva(reservaId: string, userId: string, dto: RechazarReservaDto) {
@@ -578,10 +663,38 @@ export class InstructoresService {
       throw new BadRequestException('Solo se pueden rechazar reservas pendientes');
     }
 
-    return this.prisma.reservaInstructor.update({
+    const updated = await this.prisma.reservaInstructor.update({
       where: { id: reservaId },
       data: { estado: 'RECHAZADA', respuesta: dto.motivo || null },
     });
+
+    // Notify alumno: solicitud rechazada
+    try {
+      if (reserva.solicitanteId) {
+        const instructorUser = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { nombre: true, apellido: true },
+        });
+        const instructorName = instructorUser
+          ? `${instructorUser.nombre} ${instructorUser.apellido}`
+          : 'El instructor';
+        const fechaStr = reserva.fecha.toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
+        const motivo = dto.motivo ? ` Motivo: ${dto.motivo}` : '';
+
+        await this.notificacionesService.notificar({
+          userId: reserva.solicitanteId,
+          tipo: 'SISTEMA',
+          titulo: 'Solicitud de clase rechazada',
+          contenido: `${instructorName} no pudo confirmar tu clase del ${fechaStr} a las ${reserva.horaInicio}.${motivo}`,
+          enlace: '/mis-clases',
+          smsTexto: `FairPadel: Tu solicitud con ${instructorName} el ${fechaStr} fue rechazada.${motivo}`,
+        });
+      }
+    } catch (e) {
+      this.logger.error(`Error al notificar rechazo: ${e.message}`);
+    }
+
+    return updated;
   }
 
   async completarReserva(reservaId: string, userId: string) {
@@ -1074,17 +1187,20 @@ export class InstructoresService {
       select: { userId: true },
     });
 
-    // Create notification for each admin
-    if (adminUsers.length > 0) {
-      await this.prisma.notificacion.createMany({
-        data: adminUsers.map((au) => ({
+    // Notify each admin via notificaciones service
+    const contenido = `El usuario ${user.nombre} ${user.apellido} (CI: ${user.documento}) quiere probar el módulo de instructor. Podés asignarle el rol desde Admin → Roles → Instructores.`;
+    for (const au of adminUsers) {
+      try {
+        await this.notificacionesService.notificar({
           userId: au.userId,
           tipo: 'SISTEMA',
           titulo: 'Solicitud: Probar Módulo Instructor',
-          contenido: `El usuario ${user.nombre} ${user.apellido} (CI: ${user.documento}) quiere probar el módulo de instructor. Podés asignarle el rol desde Admin → Roles → Instructores.`,
+          contenido,
           enlace: '/admin/roles',
-        })),
-      });
+        });
+      } catch (e) {
+        this.logger.error(`Error al notificar admin ${au.userId}: ${e.message}`);
+      }
     }
 
     return { message: 'Solicitud enviada. Un administrador revisará tu pedido.' };

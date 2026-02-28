@@ -38,8 +38,9 @@ export class NotificacionesService {
     enlace?: string;
     emailTemplate?: () => Promise<{ success: boolean }>;
     smsTexto?: string;
+    forzarSms?: boolean;
   }) {
-    const { userId, tipo, titulo, contenido, enlace, emailTemplate, smsTexto } =
+    const { userId, tipo, titulo, contenido, enlace, emailTemplate, smsTexto, forzarSms } =
       params;
 
     // 1. Siempre crear notificacion in-app
@@ -83,9 +84,9 @@ export class NotificacionesService {
       }
     }
 
-    // 4. Enviar SMS (SOLO premium + habilitado + texto proporcionado)
+    // 4. Enviar SMS (premium O forzarSms + habilitado + texto proporcionado)
     let smsEnviado = false;
-    if (usuario.esPremium && smsEnabled && smsTexto && usuario.telefono) {
+    if ((usuario.esPremium || forzarSms) && smsEnabled && smsTexto && usuario.telefono) {
       try {
         const result = await this.smsService.enviarNotificacion(
           usuario.telefono,
