@@ -305,6 +305,14 @@ export class InstructoresController {
 
   // ── Public: detail + horarios (MUST be LAST — :id catches everything) ──
 
+  @Get(':id/horarios-semana')
+  getHorariosSemana(
+    @Param('id') id: string,
+    @Query('fechaInicio') fechaInicio: string,
+  ) {
+    return this.instructoresService.getHorariosSemana(id, fechaInicio);
+  }
+
   @Get(':id/horarios-disponibles')
   getHorariosDisponibles(
     @Param('id') id: string,

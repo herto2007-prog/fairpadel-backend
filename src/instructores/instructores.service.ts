@@ -245,6 +245,97 @@ export class InstructoresService {
 
   // ── Horarios disponibles (público) ──────────────────
 
+  async getHorariosSemana(instructorId: string, fechaInicio: string) {
+    const instructor = await this.prisma.instructor.findUnique({ where: { id: instructorId } });
+    if (!instructor || instructor.estado !== 'APROBADO') {
+      throw new NotFoundException('Instructor no encontrado');
+    }
+
+    const startDate = new Date(fechaInicio + 'T00:00:00');
+    const semana: { fecha: string; slots: { horaInicio: string; horaFin: string; disponible: boolean }[] }[] = [];
+
+    // Fetch all data once for the week
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 6);
+
+    const [disponibilidades, bloqueos, reservas] = await Promise.all([
+      this.prisma.instructorDisponibilidad.findMany({
+        where: { instructorId, activo: true },
+        orderBy: { horaInicio: 'asc' },
+      }),
+      this.prisma.instructorBloqueo.findMany({
+        where: {
+          instructorId,
+          fechaInicio: { lte: endDate },
+          fechaFin: { gte: startDate },
+        },
+      }),
+      this.prisma.reservaInstructor.findMany({
+        where: {
+          instructorId,
+          fecha: { gte: startDate, lte: endDate },
+          estado: { in: ['CONFIRMADA', 'PENDIENTE'] },
+        },
+      }),
+    ]);
+
+    const duracion = 60;
+
+    for (let d = 0; d < 7; d++) {
+      const current = new Date(startDate);
+      current.setDate(current.getDate() + d);
+      const fechaStr = current.toISOString().split('T')[0];
+      const diaSemana = current.getDay();
+
+      // Check if blocked
+      const isBloqueado = bloqueos.some(
+        (b) => b.fechaInicio <= current && b.fechaFin >= current,
+      );
+
+      if (isBloqueado) {
+        semana.push({ fecha: fechaStr, slots: [] });
+        continue;
+      }
+
+      // Get disponibilidades for this weekday
+      const dispDia = disponibilidades.filter((dd) => dd.diaSemana === diaSemana);
+      if (dispDia.length === 0) {
+        semana.push({ fecha: fechaStr, slots: [] });
+        continue;
+      }
+
+      // Get reservas for this date
+      const reservasDia = reservas.filter((r) => {
+        const rFecha = r.fecha instanceof Date ? r.fecha : new Date(r.fecha);
+        return rFecha.toISOString().split('T')[0] === fechaStr;
+      });
+
+      const daySlots: { horaInicio: string; horaFin: string; disponible: boolean }[] = [];
+
+      for (const disp of dispDia) {
+        const startMin = this.parseHoraToMinutes(disp.horaInicio);
+        const endMin = this.parseHoraToMinutes(disp.horaFin);
+
+        for (let m = startMin; m + duracion <= endMin; m += duracion) {
+          const slotInicio = this.minutesToHora(m);
+          const slotFin = this.minutesToHora(m + duracion);
+
+          const ocupado = reservasDia.some((r) => {
+            const rStart = this.parseHoraToMinutes(r.horaInicio);
+            const rEnd = this.parseHoraToMinutes(r.horaFin);
+            return m < rEnd && m + duracion > rStart;
+          });
+
+          daySlots.push({ horaInicio: slotInicio, horaFin: slotFin, disponible: !ocupado });
+        }
+      }
+
+      semana.push({ fecha: fechaStr, slots: daySlots });
+    }
+
+    return { instructorId, fechaInicio, semana };
+  }
+
   async getHorariosDisponibles(instructorId: string, fecha: string) {
     const instructor = await this.prisma.instructor.findUnique({ where: { id: instructorId } });
     if (!instructor || instructor.estado !== 'APROBADO') {
