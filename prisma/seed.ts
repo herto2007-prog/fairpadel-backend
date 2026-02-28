@@ -373,6 +373,11 @@ async function main() {
       valor: 'true',
       descripcion: 'Cuando está activo, los ascensos automáticos requieren aprobación de un administrador antes de hacerse efectivos',
     },
+    {
+      clave: 'SMS_COSTO_UNITARIO',
+      valor: '250',
+      descripcion: 'Costo estimado por SMS en Guaranies (Tigo Business)',
+    },
   ];
 
   for (const config of configuraciones) {

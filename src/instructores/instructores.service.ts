@@ -513,7 +513,7 @@ export class InstructoresService {
         titulo: 'Nueva solicitud de clase',
         contenido: `${alumnoName} te solicitó una clase ${dto.tipo.toLowerCase()} para el ${fechaStr} a las ${dto.horaInicio}.`,
         enlace: '/instructor',
-        smsTexto: `FairPadel: ${alumnoName} solicitó clase el ${fechaStr} ${dto.horaInicio}. Revisá tu panel.`,
+        smsTexto: `FairPadel: ${alumnoName} solicito clase el ${fechaStr} ${dto.horaInicio}. Revisa tu panel.`,
         forzarSms: true,
       });
     } catch (e) {
@@ -575,7 +575,7 @@ export class InstructoresService {
           titulo: 'Reserva cancelada',
           contenido: `${alumnoName} canceló su clase del ${fechaStr} a las ${reservaFull.horaInicio}.`,
           enlace: '/instructor',
-          smsTexto: `FairPadel: ${alumnoName} canceló la clase del ${fechaStr} ${reservaFull.horaInicio}.`,
+          smsTexto: `FairPadel: ${alumnoName} cancelo la clase del ${fechaStr} ${reservaFull.horaInicio}.`,
           forzarSms: true,
         });
       }
@@ -642,6 +642,7 @@ export class InstructoresService {
           contenido: `${instructorName} confirmó tu clase del ${fechaStr} a las ${reserva.horaInicio}.`,
           enlace: '/mis-clases',
           smsTexto: `FairPadel: Tu clase con ${instructorName} el ${fechaStr} ${reserva.horaInicio} fue confirmada.`,
+          forzarSms: true,
         });
       }
     } catch (e) {
@@ -687,7 +688,8 @@ export class InstructoresService {
           titulo: 'Solicitud de clase rechazada',
           contenido: `${instructorName} no pudo confirmar tu clase del ${fechaStr} a las ${reserva.horaInicio}.${motivo}`,
           enlace: '/mis-clases',
-          smsTexto: `FairPadel: Tu solicitud con ${instructorName} el ${fechaStr} fue rechazada.${motivo}`,
+          smsTexto: `FairPadel: Tu solicitud con ${instructorName} el ${fechaStr} fue rechazada.`,
+          forzarSms: true,
         });
       }
     } catch (e) {
