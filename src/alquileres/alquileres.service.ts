@@ -552,17 +552,11 @@ export class AlquileresService {
     });
     if (!cancha) throw new BadRequestException('Cancha no encontrada o inactiva');
 
-    // Validar fecha dentro de anticipacion
+    // Validar fecha no pasada
     const fecha = new Date(dto.fecha + 'T00:00:00');
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
     if (fecha < hoy) throw new BadRequestException('No se puede reservar en fecha pasada');
-
-    const maxFecha = new Date(hoy);
-    maxFecha.setDate(maxFecha.getDate() + config.anticipacionMaxDias);
-    if (fecha > maxFecha) {
-      throw new BadRequestException(`Solo se puede reservar hasta ${config.anticipacionMaxDias} dias de anticipacion`);
-    }
 
     // Calcular horaFin
     const inicioMins = this.parseHoraToMinutes(dto.horaInicio);
