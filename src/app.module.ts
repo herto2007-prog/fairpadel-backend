@@ -26,6 +26,7 @@ import { FeedModule } from './feed/feed.module';
 import { LogrosModule } from './logros/logros.module';
 import { AlertasModule } from './alertas/alertas.module';
 import { InstructoresModule } from './instructores/instructores.module';
+import { AlquileresModule } from './alquileres/alquileres.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { InstructoresModule } from './instructores/instructores.module';
     LogrosModule,
     AlertasModule,
     InstructoresModule,
+    AlquileresModule,
   ],
   controllers: [AppController],
   providers: [

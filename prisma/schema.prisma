@@ -227,6 +227,35 @@ enum CategoriaMovimiento {
   OTRO
 }
 
+// ── Alquileres de Canchas ──
+
+enum ReservaCanchaEstado {
+  PENDIENTE
+  CONFIRMADA
+  RECHAZADA
+  CANCELADA
+  COMPLETADA
+  NO_SHOW
+}
+
+enum FranjaHoraria {
+  MANANA
+  TARDE
+  NOCHE
+}
+
+enum TipoDia {
+  SEMANA
+  FIN_DE_SEMANA
+}
+
+enum MetodoPagoAlquiler {
+  EFECTIVO
+  TRANSFERENCIA
+  QR
+  OTRO
+}
+
 // ═══════════════════════════════════════════════════════
 // MÓDULO 1: AUTENTICACIÓN Y USUARIOS
 // ═══════════════════════════════════════════════════════
@@ -298,6 +327,8 @@ model User {
   instructor                Instructor?           @relation("InstructorProfile")
   reservasComoAlumno        ReservaInstructor[]   @relation("ReservasComoAlumno")
   pagosComoAlumno           PagoInstructor[]      @relation("PagosComoAlumno")
+  sedesEncargado            AlquilerConfig[]      @relation("EncargadoAlquiler")
+  reservasCanchas           ReservaCancha[]       @relation("ReservasCanchaUsuario")
 
   @@map("users")
 }
@@ -418,6 +449,9 @@ model Sede {
   torneosPrincipal       Tournament[]          @relation("SedePrincipal")
   torneoSedes            TorneoSede[]
   instructorUbicaciones  InstructorUbicacion[] @relation("InstructorSedes")
+  alquilerConfig         AlquilerConfig?
+  alquilerPrecios        AlquilerPrecio[]      @relation("AlquilerPrecios")
+  alquilerBloqueos       AlquilerBloqueo[]     @relation("AlquilerBloqueos")
 
   @@map("sedes")
 }
@@ -441,6 +475,9 @@ model SedeCancha {
   // Relaciones
   sede            Sede              @relation(fields: [sedeId], references: [id], onDelete: Cascade)
   torneoCanchas   TorneoCancha[]
+  alquilerDisponibilidades  AlquilerDisponibilidad[] @relation("AlquilerDisponibilidades")
+  alquilerBloqueos          AlquilerBloqueo[]        @relation("AlquilerBloqueosCancha")
+  reservasCanchas           ReservaCancha[]          @relation("ReservasCanchas")
 
   @@map("sede_canchas")
 }
@@ -1570,4 +1607,104 @@ model PagoInstructor {
   reserva    ReservaInstructor? @relation(fields: [reservaId], references: [id], onDelete: SetNull)
 
   @@map("pagos_instructor")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO: ALQUILERES Y RESERVAS DE CANCHAS
+// ═══════════════════════════════════════════════════════
+
+// Configuración de alquiler por sede (1:1 con Sede)
+model AlquilerConfig {
+  id                    String   @id @default(uuid())
+  sedeId                String   @unique @map("sede_id")
+  encargadoId           String?  @map("encargado_id")
+  habilitado            Boolean  @default(false)
+  requiereAprobacion    Boolean  @default(true) @map("requiere_aprobacion")
+  duracionSlotMinutos   Int      @default(90) @map("duracion_slot_minutos")
+  anticipacionMaxDias   Int      @default(14) @map("anticipacion_max_dias")
+  cancelacionMinHoras   Int      @default(4) @map("cancelacion_min_horas")
+  mensajeBienvenida     String?  @map("mensaje_bienvenida") @db.Text
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  sede      Sede  @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+  encargado User? @relation("EncargadoAlquiler", fields: [encargadoId], references: [id], onDelete: SetNull)
+
+  @@map("alquiler_configs")
+}
+
+// Precios por franja horaria: sede x tipoCancha x tipoDia x franja -> precio
+model AlquilerPrecio {
+  id            String        @id @default(uuid())
+  sedeId        String        @map("sede_id")
+  tipoCancha    TipoCancha    @map("tipo_cancha")
+  tipoDia       TipoDia       @map("tipo_dia")
+  franja        FranjaHoraria
+  precio        Int
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  sede Sede @relation("AlquilerPrecios", fields: [sedeId], references: [id], onDelete: Cascade)
+
+  @@unique([sedeId, tipoCancha, tipoDia, franja])
+  @@map("alquiler_precios")
+}
+
+// Disponibilidad semanal recurrente por cancha
+model AlquilerDisponibilidad {
+  id            String   @id @default(uuid())
+  sedeCanchaId  String   @map("sede_cancha_id")
+  diaSemana     Int      @map("dia_semana") // 0=dom, 1=lun, ..., 6=sab
+  horaInicio    String   @map("hora_inicio")
+  horaFin       String   @map("hora_fin")
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  sedeCancha SedeCancha @relation("AlquilerDisponibilidades", fields: [sedeCanchaId], references: [id], onDelete: Cascade)
+
+  @@map("alquiler_disponibilidades")
+}
+
+// Bloqueos de fechas (toda la sede o por cancha específica)
+model AlquilerBloqueo {
+  id            String    @id @default(uuid())
+  sedeId        String    @map("sede_id")
+  sedeCanchaId  String?   @map("sede_cancha_id")
+  fechaInicio   DateTime  @map("fecha_inicio") @db.Date
+  fechaFin      DateTime  @map("fecha_fin") @db.Date
+  motivo        String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  sede       Sede        @relation("AlquilerBloqueos", fields: [sedeId], references: [id], onDelete: Cascade)
+  sedeCancha SedeCancha? @relation("AlquilerBloqueosCancha", fields: [sedeCanchaId], references: [id], onDelete: Cascade)
+
+  @@map("alquiler_bloqueos")
+}
+
+// Reserva de cancha con state machine + tracking de pago
+model ReservaCancha {
+  id                  String               @id @default(uuid())
+  sedeCanchaId        String               @map("sede_cancha_id")
+  userId              String?              @map("user_id")
+  fecha               DateTime             @db.Date
+  horaInicio          String               @map("hora_inicio")
+  horaFin             String               @map("hora_fin")
+  duracionMinutos     Int                  @map("duracion_minutos")
+  precio              Int
+  estado              ReservaCanchaEstado   @default(PENDIENTE)
+  pagado              Boolean              @default(false)
+  metodoPago          MetodoPagoAlquiler?   @map("metodo_pago")
+  nombreExterno       String?              @map("nombre_externo")
+  telefonoExterno     String?              @map("telefono_externo")
+  creadoPorEncargado  Boolean              @default(false) @map("creado_por_encargado")
+  compromisoPago      Boolean              @default(false) @map("compromiso_pago")
+  notas               String?              @db.Text
+  motivoRechazo       String?              @map("motivo_rechazo") @db.Text
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  sedeCancha SedeCancha @relation("ReservasCanchas", fields: [sedeCanchaId], references: [id], onDelete: Cascade)
+  user       User?      @relation("ReservasCanchaUsuario", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("reservas_canchas")
 }

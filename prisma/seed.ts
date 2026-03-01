@@ -44,6 +44,15 @@ async function main() {
     },
   });
 
+  const roleEncargado = await prisma.role.upsert({
+    where: { nombre: 'encargado' },
+    update: {},
+    create: {
+      nombre: 'encargado',
+      descripcion: 'Encargado de sede (gestion de alquileres)',
+    },
+  });
+
   console.log('✅ Roles creados');
 
   // 2. Crear categorías
