@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "TipoDia" ADD VALUE 'SABADO';
+ALTER TYPE "TipoDia" ADD VALUE 'DOMINGO';

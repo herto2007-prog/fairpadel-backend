@@ -51,7 +51,9 @@ export class AlquileresService {
 
   private determinarTipoDia(fecha: Date): string {
     const day = fecha.getDay(); // 0=dom, 6=sab
-    return (day === 0 || day === 6) ? 'FIN_DE_SEMANA' : 'SEMANA';
+    if (day === 0) return 'DOMINGO';
+    if (day === 6) return 'SABADO';
+    return 'SEMANA';
   }
 
   private async validarEncargado(sedeId: string, userId: string): Promise<void> {

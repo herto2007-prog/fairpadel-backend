@@ -247,6 +247,8 @@ enum FranjaHoraria {
 enum TipoDia {
   SEMANA
   FIN_DE_SEMANA
+  SABADO
+  DOMINGO
 }
 
 enum MetodoPagoAlquiler {
