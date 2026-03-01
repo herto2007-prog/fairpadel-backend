@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { AlquileresService } from './alquileres.service';
 import { HabilitarAlquilerDto, ActualizarAlquilerConfigDto } from './dto/alquiler-config.dto';
@@ -205,6 +206,23 @@ export class AlquileresController {
   @Get()
   getSedesConAlquiler(@Query('ciudad') ciudad?: string, @Query('nombre') nombre?: string) {
     return this.alquileresService.obtenerSedesConAlquiler({ ciudad, nombre });
+  }
+
+  @Get('ciudades')
+  getCiudadesConAlquiler() {
+    return this.alquileresService.obtenerCiudadesConAlquiler();
+  }
+
+  @Get('buscar-disponibilidad')
+  buscarDisponibilidad(
+    @Query('ciudad') ciudad: string,
+    @Query('fecha') fecha: string,
+    @Query('horaInicio') horaInicio: string,
+  ) {
+    if (!ciudad || !fecha || !horaInicio) {
+      throw new BadRequestException('ciudad, fecha y horaInicio son requeridos');
+    }
+    return this.alquileresService.buscarDisponibilidad(ciudad, fecha, horaInicio);
   }
 
   @Get(':sedeId')

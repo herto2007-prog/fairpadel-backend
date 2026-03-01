@@ -317,6 +317,167 @@ export class AlquileresService {
   // PÚBLICO
   // ════════════════════════════════════════════════════════
 
+  async obtenerCiudadesConAlquiler(): Promise<string[]> {
+    const sedes = await this.prisma.sede.findMany({
+      where: { activo: true, alquilerConfig: { habilitado: true } },
+      select: { ciudad: true },
+      distinct: ['ciudad'],
+      orderBy: { ciudad: 'asc' },
+    });
+    return sedes.map((s) => s.ciudad);
+  }
+
+  async buscarDisponibilidad(ciudad: string, fechaStr: string, horaInicioStr: string) {
+    const fecha = new Date(fechaStr + 'T00:00:00');
+    const diaSemana = fecha.getDay();
+    const horaInicioMins = this.parseHoraToMinutes(horaInicioStr);
+    const tipoDia = this.determinarTipoDia(fecha);
+    const franja = this.determinarFranja(horaInicioStr);
+
+    // 1. All rental-enabled sedes in city (single query with includes)
+    const sedes = await this.prisma.sede.findMany({
+      where: {
+        ciudad: { equals: ciudad, mode: 'insensitive' },
+        activo: true,
+        alquilerConfig: { habilitado: true },
+      },
+      include: {
+        alquilerConfig: true,
+        canchas: { where: { activa: true } },
+        alquilerPrecios: true,
+      },
+    });
+
+    if (sedes.length === 0) {
+      return { ciudad, fecha: fechaStr, horaInicio: horaInicioStr, sedes: [] };
+    }
+
+    const sedeIds = sedes.map((s) => s.id);
+    const allCanchaIds = sedes.flatMap((s) => s.canchas.map((c) => c.id));
+
+    // 2-5. Batch queries in parallel (no N+1)
+    const [disponibilidades, bloqueos, torneoBlocks, reservas] = await Promise.all([
+      this.prisma.alquilerDisponibilidad.findMany({
+        where: { sedeCanchaId: { in: allCanchaIds }, diaSemana, activo: true },
+      }),
+      this.prisma.alquilerBloqueo.findMany({
+        where: { sedeId: { in: sedeIds }, fechaInicio: { lte: fecha }, fechaFin: { gte: fecha } },
+      }),
+      this.prisma.torneoCanchaHorario.findMany({
+        where: {
+          fecha,
+          torneoCancha: {
+            sedeCanchaId: { in: allCanchaIds },
+            tournament: {
+              categorias: {
+                some: {
+                  estado: { in: ['INSCRIPCIONES_CERRADAS', 'FIXTURE_BORRADOR', 'SORTEO_REALIZADO', 'EN_CURSO'] },
+                },
+              },
+            },
+          },
+        },
+        include: { torneoCancha: { select: { sedeCanchaId: true } } },
+      }),
+      this.prisma.reservaCancha.findMany({
+        where: {
+          sedeCanchaId: { in: allCanchaIds },
+          fecha,
+          estado: { in: ['PENDIENTE', 'CONFIRMADA'] },
+        },
+      }),
+    ]);
+
+    // 6. Compute per-sede availability
+    const results = sedes.map((sede) => {
+      const config = sede.alquilerConfig!;
+      const slotDuration = config.duracionSlotMinutos;
+      const horaFinMins = horaInicioMins + slotDuration;
+      const horaFinStr = this.minutesToHora(horaFinMins);
+
+      const canchasDisponibles: any[] = [];
+      let canchasOcupadas = 0;
+
+      for (const cancha of sede.canchas) {
+        // Check availability rule covers this time
+        const dispRule = disponibilidades.find(
+          (d) =>
+            d.sedeCanchaId === cancha.id &&
+            this.parseHoraToMinutes(d.horaInicio) <= horaInicioMins &&
+            this.parseHoraToMinutes(d.horaFin) >= horaFinMins,
+        );
+        if (!dispRule) { canchasOcupadas++; continue; }
+
+        // Check bloqueos
+        const isBlocked = bloqueos.some(
+          (b) => b.sedeId === sede.id && (!b.sedeCanchaId || b.sedeCanchaId === cancha.id),
+        );
+        if (isBlocked) { canchasOcupadas++; continue; }
+
+        // Check tournament blocks
+        const isTourneyBlocked = torneoBlocks.some((tb) => {
+          if (tb.torneoCancha.sedeCanchaId !== cancha.id) return false;
+          const tbStart = this.parseHoraToMinutes(tb.horaInicio);
+          const tbEnd = this.parseHoraToMinutes(tb.horaFin);
+          return horaInicioMins < tbEnd && horaFinMins > tbStart;
+        });
+        if (isTourneyBlocked) { canchasOcupadas++; continue; }
+
+        // Check existing reservations
+        const isReserved = reservas.some((r) => {
+          if (r.sedeCanchaId !== cancha.id) return false;
+          const rStart = this.parseHoraToMinutes(r.horaInicio);
+          const rEnd = this.parseHoraToMinutes(r.horaFin);
+          return horaInicioMins < rEnd && horaFinMins > rStart;
+        });
+        if (isReserved) { canchasOcupadas++; continue; }
+
+        // Get price
+        const precioObj = sede.alquilerPrecios.find(
+          (p) => p.tipoCancha === cancha.tipo && p.tipoDia === tipoDia && p.franja === franja,
+        );
+
+        canchasDisponibles.push({
+          canchaId: cancha.id,
+          canchaNombre: cancha.nombre,
+          canchaTipo: cancha.tipo,
+          precio: precioObj?.precio ?? 0,
+          horaFin: horaFinStr,
+        });
+      }
+
+      return {
+        id: sede.id,
+        nombre: sede.nombre,
+        ciudad: sede.ciudad,
+        direccion: sede.direccion,
+        telefono: sede.telefono,
+        logoUrl: sede.logoUrl,
+        imagenFondo: sede.imagenFondo,
+        mapsUrl: sede.mapsUrl,
+        config: {
+          duracionSlotMinutos: slotDuration,
+          requiereAprobacion: config.requiereAprobacion,
+          mensajeBienvenida: config.mensajeBienvenida,
+        },
+        canchasDisponibles,
+        canchasOcupadas,
+      };
+    });
+
+    // Filter & sort: only sedes with available courts, most courts first
+    const sedesConDisponibilidad = results
+      .filter((s) => s.canchasDisponibles.length > 0)
+      .sort((a, b) => b.canchasDisponibles.length - a.canchasDisponibles.length || a.nombre.localeCompare(b.nombre));
+
+    return {
+      ciudad,
+      fecha: fechaStr,
+      horaInicio: horaInicioStr,
+      sedes: sedesConDisponibilidad,
+    };
+  }
+
   async obtenerSedesConAlquiler(filters?: { ciudad?: string; nombre?: string }) {
     const where: any = {
       activo: true,
