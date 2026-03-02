@@ -1,0 +1,64 @@
+name: CI/CD Backend
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+        
+      - name: Generate Prisma Client
+        run: npx prisma generate
+        
+      - name: Run linter
+        run: npm run lint
+        
+      - name: Build
+        run: npm run build
+        
+      - name: Run tests
+        run: npm test -- --passWithNoTests
+
+  deploy-staging:
+    needs: test
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Railway (Staging)
+        uses: railway/cli@v3
+        with:
+          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          service: fairpadel-backend
+
+  deploy-production:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Railway (Production)
+        uses: railway/cli@v3
+        with:
+          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          service: fairpadel-backend
+
+  notify:
+    needs: [deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify success
+        run: echo "Deploy exitoso!"
