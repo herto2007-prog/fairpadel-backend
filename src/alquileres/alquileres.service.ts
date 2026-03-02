@@ -698,143 +698,181 @@ export class AlquileresService {
   // ════════════════════════════════════════════════════════
 
   async crearReserva(userId: string, sedeId: string, dto: CrearReservaCanchaDto) {
-    // Validar sede habilitada
-    const config = await this.prisma.alquilerConfig.findUnique({
-      where: { sedeId },
-      include: { sede: { select: { nombre: true } } },
-    });
-    if (!config || !config.habilitado) {
-      throw new BadRequestException('Alquiler no habilitado para esta sede');
-    }
-
-    // Validar cancha pertenece a sede
-    const cancha = await this.prisma.sedeCancha.findFirst({
-      where: { id: dto.sedeCanchaId, sedeId, activa: true },
-    });
-    if (!cancha) throw new BadRequestException('Cancha no encontrada o inactiva');
-
-    // Validar fecha no pasada
-    const fecha = new Date(dto.fecha + 'T00:00:00');
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    if (fecha < hoy) throw new BadRequestException('No se puede reservar en fecha pasada');
-
-    // Calcular horaFin
-    const inicioMins = this.parseHoraToMinutes(dto.horaInicio);
-    const horaFin = this.minutesToHora(inicioMins + config.duracionSlotMinutos);
-
-    // Validar disponibilidad
-    const diaSemana = fecha.getDay();
-    const disponibilidad = await this.prisma.alquilerDisponibilidad.findFirst({
-      where: {
-        sedeCanchaId: dto.sedeCanchaId,
-        diaSemana,
-        activo: true,
-      },
-    });
-    if (!disponibilidad) {
-      throw new BadRequestException('No hay disponibilidad para esta cancha en este dia');
-    }
-
-    const dispInicio = this.parseHoraToMinutes(disponibilidad.horaInicio);
-    const dispFin = this.parseHoraToMinutes(disponibilidad.horaFin);
-    if (inicioMins < dispInicio || inicioMins + config.duracionSlotMinutos > dispFin) {
-      throw new BadRequestException('El horario seleccionado esta fuera de la disponibilidad');
-    }
-
-    // Check bloqueos
-    const bloqueo = await this.prisma.alquilerBloqueo.findFirst({
-      where: {
-        sedeId,
-        fechaInicio: { lte: fecha },
-        fechaFin: { gte: fecha },
-        OR: [{ sedeCanchaId: null }, { sedeCanchaId: dto.sedeCanchaId }],
-      },
-    });
-    if (bloqueo) throw new BadRequestException('Este horario esta bloqueado');
-
-    // Check collision with existing reservations
-    const collision = await this.prisma.reservaCancha.findFirst({
-      where: {
-        sedeCanchaId: dto.sedeCanchaId,
-        fecha,
-        estado: { in: ['PENDIENTE', 'CONFIRMADA'] },
-      },
-    });
-    if (collision) {
-      const cInicio = this.parseHoraToMinutes(collision.horaInicio);
-      const cFin = this.parseHoraToMinutes(collision.horaFin);
-      if (inicioMins < cFin && inicioMins + config.duracionSlotMinutos > cInicio) {
-        throw new BadRequestException('Este horario ya esta reservado');
+    // Usar transacción serializable para evitar race conditions
+    return this.prisma.$transaction(async (tx) => {
+      // Validar sede habilitada
+      const config = await tx.alquilerConfig.findUnique({
+        where: { sedeId },
+        include: { sede: { select: { nombre: true } } },
+      });
+      if (!config || !config.habilitado) {
+        throw new BadRequestException('Alquiler no habilitado para esta sede');
       }
-    }
 
-    // Calculate price
-    const precio = await this.obtenerPrecioSlot(sedeId, cancha.tipo, fecha, dto.horaInicio);
+      // Validar cancha pertenece a sede
+      const cancha = await tx.sedeCancha.findFirst({
+        where: { id: dto.sedeCanchaId, sedeId, activa: true },
+      });
+      if (!cancha) throw new BadRequestException('Cancha no encontrada o inactiva');
 
-    // Create reservation
-    const estado = config.requiereAprobacion ? 'PENDIENTE' : 'CONFIRMADA';
-    const reserva = await this.prisma.reservaCancha.create({
-      data: {
-        sedeCanchaId: dto.sedeCanchaId,
-        userId,
-        fecha,
-        horaInicio: dto.horaInicio,
-        horaFin,
-        duracionMinutos: config.duracionSlotMinutos,
-        precio,
-        estado: estado as any,
-        notas: dto.notas,
-      },
-      include: {
-        sedeCancha: { include: { sede: { select: { id: true, nombre: true } } } },
-        user: { select: { id: true, nombre: true, apellido: true } },
-      },
-    });
+      // Validar fecha no pasada
+      const fecha = new Date(dto.fecha + 'T12:00:00');
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      if (fecha < hoy) throw new BadRequestException('No se puede reservar en fecha pasada');
 
-    // Notify encargado
-    try {
-      if (config.encargadoId) {
-        const user = await this.prisma.user.findUnique({
-          where: { id: userId },
-          select: { nombre: true, apellido: true },
-        });
-        const nombre = user ? `${user.nombre} ${user.apellido}` : 'Un usuario';
-        const fechaStr = fecha.toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
-
-        await this.notificacionesService.notificar({
-          userId: config.encargadoId,
-          tipo: 'SISTEMA',
-          titulo: 'Nueva reserva de cancha',
-          contenido: `${nombre} reservo ${cancha.nombre} para el ${fechaStr} a las ${dto.horaInicio}.`,
-          enlace: '/gestion-alquileres',
-          smsTexto: `FairPadel: Nueva reserva de ${nombre} - ${cancha.nombre} ${fechaStr} ${dto.horaInicio}. Revisa tu panel.`,
-          forzarSms: true,
-        });
+      // Validar anticipación máxima
+      const maxFecha = new Date(hoy);
+      maxFecha.setDate(maxFecha.getDate() + config.anticipacionMaxDias);
+      if (fecha > maxFecha) {
+        throw new BadRequestException(`Solo se puede reservar con ${config.anticipacionMaxDias} días de anticipación máximo`);
       }
-    } catch (e) {
-      this.logger.warn('Error enviando notificacion de reserva: ' + e.message);
-    }
 
-    // If auto-confirmed, notify user
-    if (estado === 'CONFIRMADA') {
-      try {
-        const fechaStr = fecha.toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
-        await this.notificacionesService.notificar({
+      // Validar que no sea el mismo día con menos de 1 hora de anticipación
+      const ahora = new Date();
+      const [horaInicioH, horaInicioM] = dto.horaInicio.split(':').map(Number);
+      const fechaHoraReserva = new Date(fecha);
+      fechaHoraReserva.setHours(horaInicioH, horaInicioM, 0, 0);
+      
+      const horasAntes = (fechaHoraReserva.getTime() - ahora.getTime()) / (1000 * 60 * 60);
+      if (horasAntes < 1) {
+        throw new BadRequestException('Las reservas deben hacerse con al menos 1 hora de anticipación');
+      }
+
+      // Calcular horaFin
+      const inicioMins = this.parseHoraToMinutes(dto.horaInicio);
+      const horaFin = this.minutesToHora(inicioMins + config.duracionSlotMinutos);
+
+      // Validar disponibilidad
+      const diaSemana = fecha.getDay();
+      const disponibilidad = await tx.alquilerDisponibilidad.findFirst({
+        where: {
+          sedeCanchaId: dto.sedeCanchaId,
+          diaSemana,
+          activo: true,
+        },
+      });
+      if (!disponibilidad) {
+        throw new BadRequestException('No hay disponibilidad para esta cancha en este dia');
+      }
+
+      const dispInicio = this.parseHoraToMinutes(disponibilidad.horaInicio);
+      const dispFin = this.parseHoraToMinutes(disponibilidad.horaFin);
+      if (inicioMins < dispInicio || inicioMins + config.duracionSlotMinutos > dispFin) {
+        throw new BadRequestException('El horario seleccionado esta fuera de la disponibilidad');
+      }
+
+      // Check bloqueos (validar hora específica)
+      const bloqueo = await tx.alquilerBloqueo.findFirst({
+        where: {
+          sedeId,
+          fechaInicio: { lte: fecha },
+          fechaFin: { gte: fecha },
+          OR: [{ sedeCanchaId: null }, { sedeCanchaId: dto.sedeCanchaId }],
+        },
+      });
+      if (bloqueo) {
+        // Verificar si el horario específico está dentro del bloqueo
+        const slotHoraInicioMins = this.parseHoraToMinutes(dto.horaInicio);
+        const slotHoraFinMins = this.parseHoraToMinutes(horaFin);
+        
+        // Si el bloqueo tiene hora específica (futuro), verificar
+        // Por ahora asumimos bloqueo de día completo
+        throw new BadRequestException('Este horario esta bloqueado');
+      }
+
+      // Check collision with existing reservations - FIX: usar findMany para verificar TODAS
+      const existingReservations = await tx.reservaCancha.findMany({
+        where: {
+          sedeCanchaId: dto.sedeCanchaId,
+          fecha,
+          estado: { in: ['PENDIENTE', 'CONFIRMADA'] },
+        },
+      });
+      
+      for (const existing of existingReservations) {
+        const cInicio = this.parseHoraToMinutes(existing.horaInicio);
+        const cFin = this.parseHoraToMinutes(existing.horaFin);
+        if (inicioMins < cFin && inicioMins + config.duracionSlotMinutos > cInicio) {
+          throw new BadRequestException('Este horario ya esta reservado');
+        }
+      }
+
+      // Calculate price
+      const precio = await this.obtenerPrecioSlot(sedeId, cancha.tipo, fecha, dto.horaInicio);
+
+      // Create reservation
+      const estado = config.requiereAprobacion ? 'PENDIENTE' : 'CONFIRMADA';
+      const reserva = await tx.reservaCancha.create({
+        data: {
+          sedeCanchaId: dto.sedeCanchaId,
           userId,
-          tipo: 'SISTEMA',
-          titulo: 'Reserva confirmada',
-          contenido: `Tu reserva en ${config.sede.nombre} - ${cancha.nombre} para el ${fechaStr} a las ${dto.horaInicio} fue confirmada automaticamente.`,
-          enlace: '/mis-reservas-cancha',
-          smsTexto: `FairPadel: Tu reserva en ${config.sede.nombre} ${cancha.nombre} ${fechaStr} ${dto.horaInicio} fue confirmada.`,
-          forzarSms: true,
-        });
-      } catch (e) {
-        this.logger.warn('Error enviando notificacion de confirmacion: ' + e.message);
-      }
-    }
+          fecha,
+          horaInicio: dto.horaInicio,
+          horaFin,
+          duracionMinutos: config.duracionSlotMinutos,
+          precio,
+          estado: estado as any,
+          notas: dto.notas,
+        },
+        include: {
+          sedeCancha: { include: { sede: { select: { id: true, nombre: true } } } },
+          user: { select: { id: true, nombre: true, apellido: true } },
+        },
+      });
 
-    return reserva;
+      return { reserva, config, cancha, estado, precio };
+    }, {
+      isolationLevel: 'Serializable',
+      maxWait: 5000,
+      timeout: 10000,
+    }).then(async (result) => {
+      const { reserva, config, cancha, estado } = result;
+      
+      // Notify encargado
+      try {
+        if (config.encargadoId) {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { nombre: true, apellido: true },
+          });
+          const nombre = user ? `${user.nombre} ${user.apellido}` : 'Un usuario';
+          const fechaStr = new Date(dto.fecha + 'T12:00:00').toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
+
+          await this.notificacionesService.notificar({
+            userId: config.encargadoId,
+            tipo: 'SISTEMA',
+            titulo: 'Nueva reserva de cancha',
+            contenido: `${nombre} reservo ${cancha.nombre} para el ${fechaStr} a las ${dto.horaInicio}.`,
+            enlace: '/gestion-alquileres',
+            smsTexto: `FairPadel: Nueva reserva de ${nombre} - ${cancha.nombre} ${fechaStr} ${dto.horaInicio}. Revisa tu panel.`,
+            forzarSms: true,
+          });
+        }
+      } catch (e) {
+        this.logger.warn('Error enviando notificacion de reserva: ' + e.message);
+      }
+
+      // If auto-confirmed, notify user
+      if (estado === 'CONFIRMADA') {
+        try {
+          const fechaStr = new Date(dto.fecha + 'T12:00:00').toLocaleDateString('es-PY', { day: 'numeric', month: 'short' });
+          await this.notificacionesService.notificar({
+            userId,
+            tipo: 'SISTEMA',
+            titulo: 'Reserva confirmada',
+            contenido: `Tu reserva en ${config.sede.nombre} - ${cancha.nombre} para el ${fechaStr} a las ${dto.horaInicio} fue confirmada automaticamente.`,
+            enlace: '/mis-reservas-cancha',
+            smsTexto: `FairPadel: Tu reserva en ${config.sede.nombre} ${cancha.nombre} ${fechaStr} ${dto.horaInicio} fue confirmada.`,
+            forzarSms: true,
+          });
+        } catch (e) {
+          this.logger.warn('Error enviando notificacion de confirmacion: ' + e.message);
+        }
+      }
+
+      return reserva;
+    });
   }
 
   async cancelarReserva(reservaId: string, userId: string) {
@@ -920,6 +958,26 @@ export class AlquileresService {
         },
       },
       orderBy: [{ fecha: 'desc' }, { horaInicio: 'desc' }],
+    });
+  }
+
+  async obtenerProximasReservas(userId: string, limite: number = 3) {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    return this.prisma.reservaCancha.findMany({
+      where: {
+        userId,
+        estado: { in: ['PENDIENTE', 'CONFIRMADA'] },
+        fecha: { gte: hoy },
+      },
+      include: {
+        sedeCancha: {
+          include: { sede: { select: { id: true, nombre: true, ciudad: true, logoUrl: true, direccion: true } } },
+        },
+      },
+      orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }],
+      take: limite,
     });
   }
 

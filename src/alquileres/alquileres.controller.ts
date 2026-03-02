@@ -40,6 +40,13 @@ export class AlquileresController {
     return this.alquileresService.obtenerMisReservas(req.user.id, estado);
   }
 
+  @Get('proximas-reservas')
+  @UseGuards(JwtAuthGuard)
+  getProximasReservas(@Request() req, @Query('limite') limite?: string) {
+    const limit = limite ? parseInt(limite, 10) : 3;
+    return this.alquileresService.obtenerProximasReservas(req.user.id, limit);
+  }
+
   @Put('mis-reservas/:id/cancelar')
   @UseGuards(JwtAuthGuard)
   cancelarReserva(@Param('id') id: string, @Request() req) {
