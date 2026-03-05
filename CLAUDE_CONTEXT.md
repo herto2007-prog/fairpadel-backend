@@ -1,7 +1,7 @@
 # CLAUDE CONTEXT — FairPadel Project Knowledge Base
 
-> Última actualización: Marzo 2025
-> Estado: En desarrollo — Migración v2 en progreso
+> Última actualización: Marzo 2026
+> Estado: CRÍTICO — Migración v2 de enums en progreso
 
 ---
 
@@ -50,60 +50,43 @@ d:\fairpadel/
 
 ---
 
-## 3. PROBLEMA ACTUAL — CRÍTICO
+## 3. PROBLEMA CRÍTICO ACTUAL — ENUMS INCONSISTENTES
 
-### Situación
-La base de datos en Railway (producción) **NO COINCIDE** con el schema de Prisma.
+### Historial del Problema
+La migración `20260215140000_simplify_plans_add_feed` simplificó varios enums, pero el schema de Prisma v2 fue actualizado posteriormente con valores completos, causando inconsistencias.
 
-**BD Real (railway):**
+### Enums Afectados (CRÍTICO)
+
+| Enum | Estado en BD | Estado en Schema v2 | Migración Creada |
+|------|--------------|---------------------|------------------|
+| **PlanTipo** | `UNICO` | `MENSUAL`, `ANUAL` | ✅ `20260305000003_fix_plan_tipo_values` |
+| **PeriodoSuscripcion** | `MENSUAL` | `MENSUAL`, `TRIMESTRAL`, `SEMESTRAL`, `ANUAL` | ✅ `20260305000004_fix_periodo_suscripcion` |
+| **SuscripcionEstado** | `ACTIVA`, `VENCIDA`, `CANCELADA`, `PENDIENTE_PAGO` | `PENDIENTE`, `ACTIVA`, `CANCELADA`, `EXPIRADA` | ✅ `20260305000005_fix_suscripcion_estado` |
+
+### Error Actual
+```
+Invalid input value for enum "PlanTipo": "MENSUAL"
+```
+
+### Causa Raíz
+La migración `20260215140000_simplify_plans_add_feed` (15 Feb 2026) hizo:
 ```sql
-users: id, documento, nombre, apellido, genero, email, telefono, 
-       password_hash, fecha_nacimiento, ciudad, bio, foto_url, 
-       estado, email_verificado, es_premium, ultima_sesion, 
-       created_at, updated_at, categoria_actual_id
+CREATE TYPE "PlanTipo_new" AS ENUM ('UNICO');
+DROP TYPE "PlanTipo";
+ALTER TYPE "PlanTipo_new" RENAME TO "PlanTipo";
 ```
 
-**Schema (prisma):**
-```prisma
-model User {
-  id                      String
-  email                   String       @unique
-  password                String       // ❌ NO EXISTE EN BD
-  nombre                  String
-  apellido                String
-  documento               String       @unique
-  telefono                String?
-  fechaNacimiento         DateTime?    @map("fecha_nacimiento")
-  genero                  Gender
-  ciudad                  String?
-  pais                    String       @default("Paraguay")  // ❌ NO EXISTE EN BD
-  fotoUrl                 String?      @map("foto_url")
-  estado                  UserStatus   @default(NO_VERIFICADO)
-  categoriaActualId       String?      @map("categoria_actual_id")
-  esPremium               Boolean      @default(false) @map("es_premium")
-  fechaFinPremium         DateTime?    @map("fecha_fin_premium")  // ❌ NO EXISTE
-  stripeCustomerId        String?      @map("stripe_customer_id") // ❌ NO EXISTE
-  stripeSubscriptionId    String?      @map("stripe_subscription_id") // ❌ NO EXISTE
-  notificacionesEmail     Boolean      @default(true)  // ❌ NO EXISTE
-  notificacionesSms       Boolean      @default(false) // ❌ NO EXISTE
-  notificacionesPush      Boolean      @default(true)  // ❌ NO EXISTE
-  ...
-}
-```
+Pero el schema actual espera `MENSUAL`/`ANUAL`.
 
-### Errores Actuales
-1. ❌ `users.password` does not exist
-2. ❌ `users.pais` does not exist
-3. ❌ Seed falla porque espera campos que no existen
-
-### Causa Probable
-- Alguien modificó el schema agregando campos nuevos (pais, password, etc.)
-- No se crearon migraciones para la BD existente
-- Railway tiene la BD antigua, el código espera la BD nueva
+### Solución Implementada
+Se crearon migraciones para restaurar los enums a los valores del schema v2:
+1. `20260305000003_fix_plan_tipo_values` — Restaura PlanTipo
+2. `20260305000004_fix_periodo_suscripcion` — Restaura PeriodoSuscripcion
+3. `20260305000005_fix_suscripcion_estado` — Restaura SuscripcionEstado
 
 ---
 
-## 4. HISTORIAL DE CAMBIOS RECIENTES (MIGRACIÓN V2)
+## 4. MIGRACIONES V2 COMPLETADAS
 
 ### Semana 1-3: Fundamentos
 - Corrección de enums (RECHAZADO/RECHAZADA, etc.)
@@ -125,47 +108,20 @@ model User {
 
 ---
 
-## 5. DECISIONES PENDIENTES
+## 5. MIGRACIONES DE SCHEMA PENDIENTES
 
-### CRÍTICO: Schema vs BD — ✅ DECIDIDO
-**Decisión:** El schema de Prisma es la fuente de verdad.
+### ✅ Completadas:
+1. Columnas de User: `password`, `pais`, `fecha_fin_premium`, etc.
+2. Enum PlanTipo: `UNICO` → `MENSUAL`, `ANUAL`
+3. Enum PeriodoSuscripcion: `MENSUAL` → 4 valores
+4. Enum SuscripcionEstado: valores actualizados
 
-**Acción:** Migrar BD al nuevo schema (Opción B)
-
-**Campos a agregar en BD:**
-- `password` (String) — Reemplazará o coexistirá con `password_hash`
-- `pais` (String, default: 'Paraguay')
-- `fecha_fin_premium` (DateTime?)
-- `stripe_customer_id` (String?)
-- `stripe_subscription_id` (String?)
-- `notificaciones_email` (Boolean, default: true)
-- `notificaciones_sms` (Boolean, default: false)
-- `notificaciones_push` (Boolean, default: true)
-
-**Estado:** En progreso — Creando migración SQL
+### Pendiente de Deploy:
+- Todas las migraciones están commiteadas y listas para Railway
 
 ---
 
-## 6. ARCHIVOS CLAVE PARA REFERENCIA
-
-### Schema Original (backup)
-Existe: `backend/prisma/schema.prisma.backup.20260304_171415`
-Este es el schema ANTES de mis cambios. Debería coincidir con la BD.
-
-### Schema Actual
-`backend/prisma/schema.prisma` — Con cambios de migración v2
-
-### Seed
-`backend/prisma/seed.ts` — Falla porque usa campos que no existen en BD
-
-### Servicios Modificados
-- `auth.service.ts` — Usa `password` (debería usar `password_hash`?)
-- `inscripciones.service.ts` — Nuevo sistema sin tabla Pareja
-- `matches/fixture.service.ts` — Integra R2 Engine
-
----
-
-## 7. REGLAS PARA MI (CLAUDE)
+## 6. REGLAS PARA EL AGENTE (CLAUDE)
 
 ### ❌ PROHIBIDO HACER:
 1. **NO** asumir que el schema es correcto
@@ -173,6 +129,7 @@ Este es el schema ANTES de mis cambios. Debería coincidir con la BD.
 3. **NO** cambiar campos en schema sin comparar con BD
 4. **NO** agregar "auto-fixes" al código
 5. **NO** eliminar campos existentes sin confirmar
+6. **NO** pushear sin revisar migraciones anteriores
 
 ### ✅ OBLIGATORIO HACER:
 1. **SIEMPRE** comparar schema vs BD real antes de cambiar
@@ -180,50 +137,68 @@ Este es el schema ANTES de mis cambios. Debería coincidir con la BD.
 3. **SIEMPRE** preguntar cuando haya inconsistencias
 4. **SIEMPRE** probar en local antes de pushear
 5. **SIEMPRE** documentar cambios en este archivo
+6. **SIEMPRE** revisar historial de migraciones antes de crear nuevas
 
 ### 🔍 INVESTIGAR PRIMERO:
 - ¿Existe backup del schema original?
 - ¿Qué campos tiene la BD real?
 - ¿Cuál es el objetivo final de la migración v2?
+- ¿Qué valores tienen los enums en la BD vs schema?
 
 ---
 
-## 8. ESTADO ACTUAL DE REPOS
+## 7. ESTADO ACTUAL DE REPOS
 
 | Repo | Commit | Estado |
 |------|--------|--------|
-| fairpadel-backend | `09d607c` | ⚠️ Schema inconsistente con BD |
+| fairpadel-backend | `416cfe2` | ⚠️ Enums corregidos, pendiente deploy |
 | fairpadel-frontend | `7fc8003` | ✅ Tipos actualizados |
+
+### Migraciones Creadas (no deployadas):
+1. `20260305000001_migrate_to_v2_schema` — Columnas User
+2. `20260305000002_fix_plan_tipo_enum` — (versión alternativa, puede ignorarse)
+3. `20260305000003_fix_plan_tipo_values` — Enum PlanTipo (CORRECTO)
+4. `20260305000004_fix_periodo_suscripcion` — Enum PeriodoSuscripcion
+5. `20260305000005_fix_suscripcion_estado` — Enum SuscripcionEstado
 
 ---
 
-## 9. PROGRESO ACTUAL — MIGRACIÓN V2
+## 8. ANÁLISIS DE INCONSISTENCIAS
 
-### ✅ Completado:
-1. **Decisión tomada:** Schema es fuente de verdad (migrar BD al schema)
-2. **Migración SQL creada:** `20260305000001_migrate_to_v2_schema/migration.sql`
-   - Agrega: `password`, `pais`, `fecha_fin_premium`, `stripe_customer_id`, etc.
-3. **Seed limpiado:** Removido código de "auto-fix" innecesario
+### Proceso de Investigación Realizado:
 
-### 🔄 En progreso:
-1. Commit y push de cambios
-2. Deploy en Railway (ejecutará `migrate deploy` automáticamente)
-3. Verificar que seed funcione
+1. **Error inicial:** Seed fallaba con `users.password` no existe
+2. **Investigación:** Schema tenía campos que BD no tenía
+3. **Decisión:** Schema es fuente de verdad, migrar BD
+4. **Nuevo error:** `PlanTipo` no acepta `MENSUAL`
+5. **Investigación profunda:**
+   - Revisé migración `20260215140000_simplify_plans_add_feed`
+   - Encontré que cambió PlanTipo a `UNICO`
+   - Encontré que cambió PeriodoSuscripcion a solo `MENSUAL`
+   - Comparé con schema actual
+6. **Solución:** Crear migraciones para restaurar enums
+
+### Lección Aprendida:
+Siempre revisar el historial de migraciones antes de crear nuevas. Los enums modificados en el pasado pueden causar conflictos si el schema se actualiza posteriormente.
+
+---
+
+## 9. PRÓXIMOS PASOS
+
+1. ✅ Commit y push de migraciones de enums
+2. 🔄 Deploy en Railway (ejecutará `migrate deploy`)
+3. 🔄 Verificar que seed funcione correctamente
+4. 🔄 Si hay más errores, repetir proceso de investigación
 
 ---
 
 ## NOTAS ADICIONALES
 
 - Railway ejecuta: `npx prisma migrate deploy && npm run seed`
-- La migración SQL verifica si cada columna existe antes de crearla (idempotente)
-- Datos existentes se preservan (solo se agregan columnas, no se eliminan)
+- Las migraciones son idempotentes donde es posible
+- Datos existentes se migran (ej: 'UNICO' → 'MENSUAL')
+- Documentar cualquier nuevo conflicto encontrado
 
 ---
 
-**Documento preparado por Claude después de revisar:**
-- CLAUDE.md (306 líneas)
-- AGENTS.md (200+ líneas)
-- FairPadel_Features_Premium_Especificacion.md
-- backend/prisma/schema.prisma
-- backend/prisma/seed.ts
-- .git/config (URLs de repos)
+**Documento actualizado después de investigación exhaustiva de enums.**
