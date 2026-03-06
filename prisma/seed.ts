@@ -1,4 +1,4 @@
-import { PrismaClient, RoleName, UserStatus } from '@prisma/client';
+import { PrismaClient, RoleName, UserStatus, CategoriaTipo } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -52,7 +52,44 @@ async function main() {
   });
 
   console.log(`✅ Created admin user: ${admin.nombre} ${admin.apellido}`);
-  console.log('🔑 Admin credentials:');
+
+  // Create categories (8 levels per gender)
+  const categories = [
+    // Masculino
+    { nombre: '1ra Caballeros', tipo: CategoriaTipo.MASCULINO, orden: 1 },
+    { nombre: '2da Caballeros', tipo: CategoriaTipo.MASCULINO, orden: 2 },
+    { nombre: '3ra Caballeros', tipo: CategoriaTipo.MASCULINO, orden: 3 },
+    { nombre: '4ta Caballeros', tipo: CategoriaTipo.MASCULINO, orden: 4 },
+    { nombre: '5ta Caballeros', tipo: CategoriaTipo.MASCULINO, orden: 5 },
+    { nombre: '6ta Caballeros', tipo: CategoriaTipo.MASCULINO, orden: 6 },
+    { nombre: '7ma Caballeros', tipo: CategoriaTipo.MASCULINO, orden: 7 },
+    { nombre: '8va Caballeros', tipo: CategoriaTipo.MASCULINO, orden: 8 },
+    // Femenino
+    { nombre: '1ra Damas', tipo: CategoriaTipo.FEMENINO, orden: 1 },
+    { nombre: '2da Damas', tipo: CategoriaTipo.FEMENINO, orden: 2 },
+    { nombre: '3ra Damas', tipo: CategoriaTipo.FEMENINO, orden: 3 },
+    { nombre: '4ta Damas', tipo: CategoriaTipo.FEMENINO, orden: 4 },
+    { nombre: '5ta Damas', tipo: CategoriaTipo.FEMENINO, orden: 5 },
+    { nombre: '6ta Damas', tipo: CategoriaTipo.FEMENINO, orden: 6 },
+    { nombre: '7ma Damas', tipo: CategoriaTipo.FEMENINO, orden: 7 },
+    { nombre: '8va Damas', tipo: CategoriaTipo.FEMENINO, orden: 8 },
+    // Mixto
+    { nombre: 'Mixto A', tipo: CategoriaTipo.MIXTO, orden: 1 },
+    { nombre: 'Mixto B', tipo: CategoriaTipo.MIXTO, orden: 2 },
+    { nombre: 'Mixto C', tipo: CategoriaTipo.MIXTO, orden: 3 },
+  ];
+
+  for (const cat of categories) {
+    await prisma.category.upsert({
+      where: { nombre: cat.nombre },
+      update: {},
+      create: cat,
+    });
+  }
+
+  console.log(`✅ Created ${categories.length} categories`);
+
+  console.log('\n🔑 Admin credentials:');
   console.log('   Documento: ADMIN001');
   console.log('   Password: Admin123!');
 

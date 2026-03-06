@@ -24,6 +24,30 @@ enum RoleName {
   admin
 }
 
+enum TournamentStatus {
+  BORRADOR
+  PENDIENTE_APROBACION
+  PUBLICADO
+  EN_CURSO
+  FINALIZADO
+  CANCELADO
+}
+
+enum TournamentCategoryStatus {
+  INSCRIPCIONES_ABIERTAS
+  INSCRIPCIONES_CERRADAS
+  FIXTURE_BORRADOR
+  SORTEO_REALIZADO
+  EN_CURSO
+  FINALIZADA
+}
+
+enum CategoriaTipo {
+  MASCULINO
+  FEMENINO
+  MIXTO
+}
+
 // ═══════════════════════════════════════════════════════
 // MODELS
 // ═══════════════════════════════════════════════════════
@@ -34,16 +58,15 @@ model User {
   passwordHash  String     @map("password_hash")
   nombre        String
   apellido      String
-  documento     String     @unique // C.I. Paraguaya
+  documento     String     @unique
   telefono      String
   status        UserStatus @default(NO_VERIFICADO)
   
-  // Timestamps
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
   
-  // Relations
   roles         UserRole[]
+  tournaments   Tournament[] @relation("OrganizadorTournaments")
   
   @@map("users")
 }
@@ -53,7 +76,6 @@ model Role {
   name      RoleName   @unique
   createdAt DateTime   @default(now()) @map("created_at")
   
-  // Relations
   users     UserRole[]
   
   @@map("roles")
@@ -65,10 +87,76 @@ model UserRole {
   roleId    String   @map("role_id")
   createdAt DateTime @default(now()) @map("created_at")
   
-  // Relations
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
   
   @@unique([userId, roleId])
   @@map("user_roles")
+}
+
+model Tournament {
+  id                String           @id @default(uuid())
+  nombre            String
+  descripcion       String?
+  slug              String           @unique
+  
+  fechaInicio       DateTime         @map("fecha_inicio")
+  fechaFin          DateTime         @map("fecha_fin")
+  fechaLimiteInscr  DateTime         @map("fecha_limite_inscr")
+  
+  pais              String           @default("Paraguay")
+  ciudad            String
+  
+  estado            TournamentStatus @default(BORRADOR)
+  
+  costoInscripcion  Decimal          @default(0) @map("costo_inscripcion")
+  precioPelota      Decimal?         @map("precio_pelota")
+  
+  flyerUrl          String?          @map("flyer_url")
+  
+  organizadorId     String           @map("organizador_id")
+  organizador       User             @relation("OrganizadorTournaments", fields: [organizadorId], references: [id])
+  
+  minutosPorPartido Int              @default(90) @map("minutos_por_partido")
+  
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  
+  categories        TournamentCategory[]
+  
+  @@map("tournaments")
+}
+
+model Category {
+  id          String        @id @default(uuid())
+  nombre      String        @unique
+  tipo        CategoriaTipo
+  orden       Int           // 1=1ra, 2=2da, 3=3ra... 8=8va
+  descripcion String?
+  
+  createdAt   DateTime      @default(now()) @map("created_at")
+  
+  tournaments TournamentCategory[]
+  
+  @@map("categories")
+}
+
+model TournamentCategory {
+  id            String                   @id @default(uuid())
+  tournamentId  String                   @map("tournament_id")
+  categoryId    String                   @map("category_id")
+  
+  tournament    Tournament               @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category      Category                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  
+  inscripcionAbierta Boolean            @default(true) @map("inscripcion_abierta")
+  estado        TournamentCategoryStatus @default(INSCRIPCIONES_ABIERTAS)
+  
+  cupoMaximo    Int?                     @map("cupo_maximo")
+  
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+  
+  @@unique([tournamentId, categoryId])
+  @@map("tournament_categories")
 }

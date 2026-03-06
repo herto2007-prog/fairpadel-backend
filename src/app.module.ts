@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { TournamentsModule } from './modules/tournaments/tournaments.module';
 
 @Module({
   imports: [
@@ -11,12 +12,13 @@ import { AuthModule } from './modules/auth/auth.module';
     }),
     ThrottlerModule.forRoot([
       {
-        ttl: 60000, // 1 minute
-        limit: 60,  // 60 requests per minute
+        ttl: 60000,
+        limit: 60,
       },
     ]),
     PrismaModule,
     AuthModule,
+    TournamentsModule,
   ],
 })
 export class AppModule {}
