@@ -48,6 +48,18 @@ enum CategoriaTipo {
   MIXTO
 }
 
+enum InscripcionEstado {
+  PENDIENTE_CONFIRMACION
+  CONFIRMADA
+  RECHAZADA
+  CANCELADA
+}
+
+enum ModoPagoInscripcion {
+  COMPLETO
+  INDIVIDUAL
+}
+
 // ═══════════════════════════════════════════════════════
 // MODELS
 // ═══════════════════════════════════════════════════════
@@ -67,6 +79,10 @@ model User {
   
   roles         UserRole[]
   tournaments   Tournament[] @relation("OrganizadorTournaments")
+  
+  // Inscripciones
+  inscripcionesJugador1 Inscripcion[] @relation("InscripcionJugador1")
+  inscripcionesJugador2 Inscripcion[] @relation("InscripcionJugador2")
   
   @@map("users")
 }
@@ -99,30 +115,30 @@ model Tournament {
   nombre            String
   descripcion       String?
   slug              String           @unique
-  
-  fechaInicio       DateTime         @map("fecha_inicio")
-  fechaFin          DateTime         @map("fecha_fin")
-  fechaLimiteInscr  DateTime         @map("fecha_limite_inscr")
-  
-  pais              String           @default("Paraguay")
-  ciudad            String
-  
   estado            TournamentStatus @default(BORRADOR)
   
-  costoInscripcion  Decimal          @default(0) @map("costo_inscripcion")
-  precioPelota      Decimal?         @map("precio_pelota")
+  // Fechas del torneo
+  fechaInicio       DateTime         @map("fecha_inicio")
+  fechaFin          DateTime         @map("fecha_fin")
+  fechaInicioInscripcion DateTime?   @map("fecha_inicio_inscripcion")
+  fechaFinInscripcion    DateTime?   @map("fecha_fin_inscripcion")
   
+  // Configuración
+  maxParejas        Int?             @map("max_parejas")
+  minParejas        Int?             @map("min_parejas")
+  puntosRanking     Int?             @map("puntos_ranking")
+  premio            String?
   flyerUrl          String?          @map("flyer_url")
   
+  // Relaciones
   organizadorId     String           @map("organizador_id")
   organizador       User             @relation("OrganizadorTournaments", fields: [organizadorId], references: [id])
   
-  minutosPorPartido Int              @default(90) @map("minutos_por_partido")
+  categories        TournamentCategory[]
+  inscripciones     Inscripcion[]
   
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
-  
-  categories        TournamentCategory[]
   
   @@map("tournaments")
 }
@@ -137,6 +153,7 @@ model Category {
   createdAt   DateTime      @default(now()) @map("created_at")
   
   tournaments TournamentCategory[]
+  inscripciones Inscripcion[]
   
   @@map("categories")
 }
@@ -159,4 +176,32 @@ model TournamentCategory {
   
   @@unique([tournamentId, categoryId])
   @@map("tournament_categories")
+}
+
+model Inscripcion {
+  id                String                @id @default(uuid())
+  tournamentId      String                @map("tournament_id")
+  categoryId        String                @map("category_id")
+  
+  // Jugadores
+  jugador1Id        String                @map("jugador1_id")
+  jugador2Id        String?               @map("jugador2_id")
+  jugador2Documento String?               @map("jugador2_documento")
+  jugador2Email     String?               @map("jugador2_email")
+  
+  estado            InscripcionEstado     @default(PENDIENTE_CONFIRMACION)
+  modoPago          ModoPagoInscripcion?  @map("modo_pago")
+  
+  notas             String?
+  
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  
+  // Relaciones
+  tournament        Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category          Category              @relation(fields: [categoryId], references: [id])
+  jugador1          User                  @relation("InscripcionJugador1", fields: [jugador1Id], references: [id])
+  jugador2          User?                 @relation("InscripcionJugador2", fields: [jugador2Id], references: [id])
+  
+  @@map("inscripciones")
 }

@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsDateString, IsDecimal, IsInt, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsDateString,
+  IsInt,
+  Min,
+} from 'class-validator';
 
 export class UpdateTournamentDto {
   @IsString({ message: 'El nombre debe ser texto' })
@@ -17,24 +23,37 @@ export class UpdateTournamentDto {
   @IsOptional()
   fechaFin?: string;
 
-  @IsDateString({}, { message: 'La fecha límite de inscripción no es válida' })
+  @IsDateString({}, { message: 'La fecha de inicio de inscripción no es válida' })
   @IsOptional()
-  fechaLimiteInscr?: string;
+  fechaInicioInscripcion?: string;
 
-  @IsString({ message: 'La ciudad debe ser texto' })
+  @IsDateString({}, { message: 'La fecha de fin de inscripción no es válida' })
   @IsOptional()
-  ciudad?: string;
+  fechaFinInscripcion?: string;
 
-  @IsString({ message: 'El país debe ser texto' })
+  @IsInt({ message: 'El máximo de parejas debe ser un número entero' })
+  @Min(1, { message: 'Mínimo 1 pareja' })
   @IsOptional()
-  pais?: string;
+  maxParejas?: number;
 
-  @IsDecimal({}, { message: 'El costo de inscripción debe ser un número' })
+  @IsInt({ message: 'El mínimo de parejas debe ser un número entero' })
+  @Min(1, { message: 'Mínimo 1 pareja' })
   @IsOptional()
-  costoInscripcion?: string;
+  minParejas?: number;
 
-  @IsInt({ message: 'Los minutos por partido deben ser un número entero' })
-  @Min(30, { message: 'Mínimo 30 minutos por partido' })
+  @IsInt({ message: 'Los puntos de ranking deben ser un número entero' })
   @IsOptional()
-  minutosPorPartido?: number;
+  puntosRanking?: number;
+
+  @IsString({ message: 'El premio debe ser texto' })
+  @IsOptional()
+  premio?: string;
+
+  @IsString({ message: 'La URL del flyer debe ser texto' })
+  @IsOptional()
+  flyerUrl?: string;
+
+  @IsString({ message: 'Las categorías deben ser un array de IDs' })
+  @IsOptional()
+  categoryIds?: string[];
 }

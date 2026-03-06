@@ -22,11 +22,13 @@ export class TournamentsService {
         slug: `${slug}-${Date.now()}`,
         fechaInicio: new Date(dto.fechaInicio),
         fechaFin: new Date(dto.fechaFin),
-        fechaLimiteInscr: new Date(dto.fechaLimiteInscr),
-        ciudad: dto.ciudad,
-        pais: dto.pais || 'Paraguay',
-        costoInscripcion: dto.costoInscripcion ? parseFloat(dto.costoInscripcion) : 0,
-        minutosPorPartido: dto.minutosPorPartido || 90,
+        fechaInicioInscripcion: dto.fechaInicioInscripcion ? new Date(dto.fechaInicioInscripcion) : null,
+        fechaFinInscripcion: dto.fechaFinInscripcion ? new Date(dto.fechaFinInscripcion) : null,
+        maxParejas: dto.maxParejas,
+        minParejas: dto.minParejas,
+        puntosRanking: dto.puntosRanking,
+        premio: dto.premio,
+        flyerUrl: dto.flyerUrl,
         organizadorId,
         estado: TournamentStatus.BORRADOR,
       },
@@ -57,11 +59,6 @@ export class TournamentsService {
 
   async findAll() {
     return this.prisma.tournament.findMany({
-      where: {
-        estado: {
-          in: [TournamentStatus.PUBLICADO, TournamentStatus.EN_CURSO, TournamentStatus.FINALIZADO],
-        },
-      },
       include: {
         organizador: {
           select: {
@@ -75,20 +72,37 @@ export class TournamentsService {
             category: true,
           },
         },
+        _count: {
+          select: {
+            inscripciones: true,
+          },
+        },
       },
       orderBy: {
-        fechaInicio: 'desc',
+        createdAt: 'desc',
       },
     });
   }
 
-  async findMyTournaments(organizadorId: string) {
+  async findByOrganizador(organizadorId: string) {
     return this.prisma.tournament.findMany({
       where: { organizadorId },
       include: {
+        organizador: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+          },
+        },
         categories: {
           include: {
             category: true,
+          },
+        },
+        _count: {
+          select: {
+            inscripciones: true,
           },
         },
       },
@@ -115,30 +129,27 @@ export class TournamentsService {
             category: true,
           },
         },
-      },
-    });
-
-    if (!tournament) {
-      throw new NotFoundException('Torneo no encontrado');
-    }
-
-    return tournament;
-  }
-
-  async findBySlug(slug: string) {
-    const tournament = await this.prisma.tournament.findUnique({
-      where: { slug },
-      include: {
-        organizador: {
-          select: {
-            id: true,
-            nombre: true,
-            apellido: true,
+        inscripciones: {
+          include: {
+            jugador1: {
+              select: {
+                id: true,
+                nombre: true,
+                apellido: true,
+              },
+            },
+            jugador2: {
+              select: {
+                id: true,
+                nombre: true,
+                apellido: true,
+              },
+            },
           },
         },
-        categories: {
-          include: {
-            category: true,
+        _count: {
+          select: {
+            inscripciones: true,
           },
         },
       },
@@ -158,30 +169,43 @@ export class TournamentsService {
       throw new ForbiddenException('No tienes permiso para editar este torneo');
     }
 
-    return this.prisma.tournament.update({
+    // Update tournament
+    await this.prisma.tournament.update({
       where: { id },
       data: {
-        ...dto,
+        nombre: dto.nombre,
+        descripcion: dto.descripcion,
         fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : undefined,
         fechaFin: dto.fechaFin ? new Date(dto.fechaFin) : undefined,
-        fechaLimiteInscr: dto.fechaLimiteInscr ? new Date(dto.fechaLimiteInscr) : undefined,
-        costoInscripcion: dto.costoInscripcion ? parseFloat(dto.costoInscripcion) : undefined,
-      },
-      include: {
-        organizador: {
-          select: {
-            id: true,
-            nombre: true,
-            apellido: true,
-          },
-        },
-        categories: {
-          include: {
-            category: true,
-          },
-        },
+        fechaInicioInscripcion: dto.fechaInicioInscripcion ? new Date(dto.fechaInicioInscripcion) : undefined,
+        fechaFinInscripcion: dto.fechaFinInscripcion ? new Date(dto.fechaFinInscripcion) : undefined,
+        maxParejas: dto.maxParejas,
+        minParejas: dto.minParejas,
+        puntosRanking: dto.puntosRanking,
+        premio: dto.premio,
+        flyerUrl: dto.flyerUrl,
       },
     });
+
+    // Update categories if provided
+    if (dto.categoryIds) {
+      // Remove existing categories
+      await this.prisma.tournamentCategory.deleteMany({
+        where: { tournamentId: id },
+      });
+
+      // Add new categories
+      if (dto.categoryIds.length > 0) {
+        await this.prisma.tournamentCategory.createMany({
+          data: dto.categoryIds.map((categoryId) => ({
+            tournamentId: id,
+            categoryId,
+          })),
+        });
+      }
+    }
+
+    return this.findOne(id);
   }
 
   async publish(id: string, organizadorId: string) {
@@ -191,10 +215,22 @@ export class TournamentsService {
       throw new ForbiddenException('No tienes permiso para publicar este torneo');
     }
 
+    if (tournament.estado !== TournamentStatus.BORRADOR) {
+      throw new ForbiddenException('Solo se pueden publicar torneos en estado borrador');
+    }
+
     return this.prisma.tournament.update({
       where: { id },
       data: { estado: TournamentStatus.PUBLICADO },
       include: {
+        organizador: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            email: true,
+          },
+        },
         categories: {
           include: {
             category: true,
@@ -212,16 +248,15 @@ export class TournamentsService {
     }
 
     await this.prisma.tournament.delete({ where: { id } });
+
     return { message: 'Torneo eliminado correctamente' };
   }
 
-  // Categories
   async getCategories() {
     return this.prisma.category.findMany({
-      orderBy: [
-        { tipo: 'asc' },
-        { orden: 'asc' },
-      ],
+      orderBy: {
+        orden: 'asc',
+      },
     });
   }
 }

@@ -11,8 +11,9 @@ import {
 import { TournamentsService } from './tournaments.service';
 import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { UpdateTournamentDto } from './dto/update-tournament.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { GetUser } from '../../common/decorators/get-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { User } from '@prisma/client';
 
 @Controller('tournaments')
 export class TournamentsController {
@@ -30,8 +31,8 @@ export class TournamentsController {
 
   @Get('my-tournaments')
   @UseGuards(JwtAuthGuard)
-  findMyTournaments(@GetUser('userId') userId: string) {
-    return this.tournamentsService.findMyTournaments(userId);
+  findMyTournaments(@GetUser() user: User) {
+    return this.tournamentsService.findByOrganizador(user.id);
   }
 
   @Get(':id')
@@ -39,45 +40,40 @@ export class TournamentsController {
     return this.tournamentsService.findOne(id);
   }
 
-  @Get('by-slug/:slug')
-  findBySlug(@Param('slug') slug: string) {
-    return this.tournamentsService.findBySlug(slug);
-  }
-
   @Post()
   @UseGuards(JwtAuthGuard)
   create(
-    @GetUser('userId') userId: string,
+    @GetUser() user: User,
     @Body() dto: CreateTournamentDto,
   ) {
-    return this.tournamentsService.create(userId, dto);
+    return this.tournamentsService.create(user.id, dto);
   }
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   update(
     @Param('id') id: string,
-    @GetUser('userId') userId: string,
+    @GetUser() user: User,
     @Body() dto: UpdateTournamentDto,
   ) {
-    return this.tournamentsService.update(id, userId, dto);
+    return this.tournamentsService.update(id, user.id, dto);
   }
 
   @Patch(':id/publish')
   @UseGuards(JwtAuthGuard)
   publish(
     @Param('id') id: string,
-    @GetUser('userId') userId: string,
+    @GetUser() user: User,
   ) {
-    return this.tournamentsService.publish(id, userId);
+    return this.tournamentsService.publish(id, user.id);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   remove(
     @Param('id') id: string,
-    @GetUser('userId') userId: string,
+    @GetUser() user: User,
   ) {
-    return this.tournamentsService.remove(id, userId);
+    return this.tournamentsService.remove(id, user.id);
   }
 }
