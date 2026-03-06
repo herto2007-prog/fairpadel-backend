@@ -23,11 +23,21 @@ COPY tsconfig.json nest-cli.json ./
 # Build application
 RUN npm run build
 
-# Verify build
-RUN ls -la dist/
+# Check what was built
+RUN ls -la
+RUN ls -la dist/ || echo "No dist folder"
+RUN ls -la dist/src/ || echo "No dist/src folder"
 
 # Expose port
 EXPOSE 3000
 
-# Run db push (not migrate deploy) and seed
-CMD npx prisma db push --accept-data-loss && npx prisma db seed && node dist/main.js
+# Find the correct path and run
+CMD if [ -f "dist/main.js" ]; then \
+      node dist/main.js; \
+    elif [ -f "dist/src/main.js" ]; then \
+      node dist/src/main.js; \
+    else \
+      echo "Error: main.js not found"; \
+      ls -la dist/; \
+      exit 1; \
+    fi
