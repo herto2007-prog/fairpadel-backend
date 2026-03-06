@@ -20,14 +20,17 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install serve globally
+# Install serve
 RUN npm install -g serve
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
-# Expose port
+# Railway assigns PORT dynamically, we'll use it via environment variable
+ENV PORT=3000
+
+# Expose port (Railway will override this)
 EXPOSE 3000
 
-# Start the application
-CMD ["serve", "-s", "dist", "-l", "3000"]
+# Start the application using shell to access PORT env var
+CMD ["sh", "-c", "serve -s dist -l tcp://0.0.0.0:${PORT}"]
