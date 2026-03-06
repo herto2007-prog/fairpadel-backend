@@ -1,9 +1,10 @@
-import { IsEmail, IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, Matches } from 'class-validator';
 
 export class LoginDto {
-  @IsEmail({}, { message: 'El email no es válido' })
-  @IsNotEmpty({ message: 'El email es requerido' })
-  email: string;
+  @IsString({ message: 'El documento debe ser texto' })
+  @IsNotEmpty({ message: 'El documento es requerido' })
+  @Matches(/^[0-9]+$/, { message: 'El documento debe contener solo números' })
+  documento: string;
 
   @IsString({ message: 'La contraseña debe ser texto' })
   @IsNotEmpty({ message: 'La contraseña es requerida' })

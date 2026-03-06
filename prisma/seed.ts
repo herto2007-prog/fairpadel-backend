@@ -27,11 +27,11 @@ async function main() {
 
   console.log(`✅ Created ${roles.length} roles`);
 
-  // Create admin user
+  // Create admin user with documento ADMIN001
   const adminPassword = await bcrypt.hash('Admin123!', 10);
   
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@fairpadel.com' },
+    where: { documento: 'ADMIN001' },
     update: {},
     create: {
       email: 'admin@fairpadel.com',
@@ -51,9 +51,9 @@ async function main() {
     },
   });
 
-  console.log(`✅ Created admin user: ${admin.email}`);
+  console.log(`✅ Created admin user: ${admin.nombre} ${admin.apellido}`);
   console.log('🔑 Admin credentials:');
-  console.log('   Email: admin@fairpadel.com');
+  console.log('   Documento: ADMIN001');
   console.log('   Password: Admin123!');
 
   console.log('\n🎉 Seed completed successfully!');

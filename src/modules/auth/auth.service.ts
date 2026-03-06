@@ -69,8 +69,8 @@ export class AuthService {
       },
     });
 
-    // Generate token
-    const token = this.generateToken(user.id, user.email);
+    // Generate token (using documento as identifier)
+    const token = this.generateToken(user.id, user.documento);
 
     return {
       access_token: token,
@@ -86,9 +86,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResponseDto> {
-    // Find user by email
+    // Find user by documento (C.I. Paraguaya)
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { documento: dto.documento },
       include: {
         roles: {
           include: {
@@ -114,8 +114,8 @@ export class AuthService {
       throw new UnauthorizedException('Usuario inactivo o suspendido');
     }
 
-    // Generate token
-    const token = this.generateToken(user.id, user.email);
+    // Generate token (using documento as identifier)
+    const token = this.generateToken(user.id, user.documento);
 
     return {
       access_token: token,
@@ -130,8 +130,8 @@ export class AuthService {
     };
   }
 
-  private generateToken(userId: string, email: string): string {
-    const payload = { sub: userId, email };
+  private generateToken(userId: string, documento: string): string {
+    const payload = { sub: userId, documento };
     return this.jwtService.sign(payload, {
       secret: this.configService.get('JWT_SECRET'),
       expiresIn: this.configService.get('JWT_EXPIRATION'),
