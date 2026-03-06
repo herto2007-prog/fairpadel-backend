@@ -1,8 +1,8 @@
 [build]
-builder = "nixpacks"
-buildCommand = "cd v2/backend && npm install && npm run build"
+builder = "DOCKERFILE"
+dockerfilePath = "v2/backend/Dockerfile"
 
 [deploy]
-startCommand = "cd v2/backend && rm -rf prisma/migrations && npx prisma migrate deploy && npx prisma db seed && npm run start:prod"
+startCommand = ""
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
