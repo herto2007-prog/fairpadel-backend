@@ -3,6 +3,6 @@ builder = "nixpacks"
 buildCommand = "cd v2/backend && npm install && npx prisma generate && npm run build"
 
 [deploy]
-startCommand = "cd v2/backend && npx prisma migrate deploy && npx prisma db seed && npm run start:prod"
+startCommand = "cd v2/backend && npx prisma migrate resolve --applied 20260306143830_init && npx prisma migrate deploy && npx prisma db seed && npm run start:prod"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
