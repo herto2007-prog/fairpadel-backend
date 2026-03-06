@@ -1,42 +1,54 @@
-# Windows special files
-nul
-NUL
-
 # Dependencies
 node_modules/
-.pnp
-.pnp.js
 
 # Production builds
 dist/
-build/
-*.tsbuildinfo
+dist-ssr/
+*.local
 
-# Environment variables
+# Environment
 .env
 .env.local
 .env.*.local
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
-*.swp
-*.swo
-
-# OS
 .DS_Store
-Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Logs
+logs/
 *.log
 npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+lerna-debug.log*
 
 # Testing
 coverage/
+.nyc_output/
 
-# Prisma
-backend/prisma/migrations/*/migration_lock.toml
+# Temp
+*.swp
+*.swo
+*~
 
-# Misc
-.cache/
-*.tmp
+# Legacy code (preserved in archive/)
+/backend/
+/frontend/
+
+# Prisma migrations (generated)
+prisma/migrations/*/
+!prisma/migrations/migration_lock.toml
+
+# V2 specific
+v2/backend/node_modules/
+v2/backend/dist/
+v2/frontend/node_modules/
+v2/frontend/dist/
