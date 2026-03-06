@@ -11,6 +11,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma/schema.prisma ./prisma/
 COPY prisma/seed.ts ./prisma/
+COPY scripts/reset-admin.js ./scripts/
 
 # Install dependencies
 RUN npm install
@@ -40,10 +41,20 @@ ENV NODE_ENV=production
 CMD if [ -f "dist/main.js" ]; then \
       echo "🌍 Timezone: $TZ"; \
       echo "🕐 Server time: $(date)"; \
+      echo "🔄 Running DB push..."; \
+      npx prisma db push --accept-data-loss; \
+      echo "🔧 Resetting admin..."; \
+      node scripts/reset-admin.js; \
+      echo "🚀 Starting server..."; \
       node dist/main.js; \
     elif [ -f "dist/src/main.js" ]; then \
       echo "🌍 Timezone: $TZ"; \
       echo "🕐 Server time: $(date)"; \
+      echo "🔄 Running DB push..."; \
+      npx prisma db push --accept-data-loss; \
+      echo "🔧 Resetting admin..."; \
+      node scripts/reset-admin.js; \
+      echo "🚀 Starting server..."; \
       node dist/src/main.js; \
     else \
       echo "Error: main.js not found"; \
