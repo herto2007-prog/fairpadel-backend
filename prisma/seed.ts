@@ -27,31 +27,53 @@ async function main() {
 
   console.log(`✅ Created ${roles.length} roles`);
 
-  // Create admin user with numeric documento
-  const adminPassword = await bcrypt.hash('Admin123!', 10);
+  // Admin credentials - UPDATED
+  const ADMIN_DOCUMENTO = '9999999'; // 7 nueves
+  const ADMIN_PASSWORD = 'Admin123!';
   
-  const admin = await prisma.user.upsert({
+  const adminPassword = await bcrypt.hash(ADMIN_PASSWORD, 10);
+  
+  // Check if old admin exists (999999) and update it, or create new
+  const existingOldAdmin = await prisma.user.findUnique({
     where: { documento: '999999' },
-    update: {},
-    create: {
-      email: 'admin@fairpadel.com',
-      passwordHash: adminPassword,
-      nombre: 'Admin',
-      apellido: 'FairPadel',
-      documento: '999999', // Documento numérico válido
-      telefono: '0981000000',
-      status: UserStatus.ACTIVO,
-      roles: {
-        create: {
-          role: {
-            connect: { name: RoleName.admin },
+  });
+  
+  if (existingOldAdmin) {
+    // Update old admin to new documento
+    await prisma.user.update({
+      where: { id: existingOldAdmin.id },
+      data: {
+        documento: ADMIN_DOCUMENTO,
+        passwordHash: adminPassword,
+      },
+    });
+    console.log(`✅ Updated admin user: documento changed to ${ADMIN_DOCUMENTO}`);
+  } else {
+    // Create or update admin with correct documento
+    const admin = await prisma.user.upsert({
+      where: { documento: ADMIN_DOCUMENTO },
+      update: {
+        passwordHash: adminPassword,
+      },
+      create: {
+        email: 'admin@fairpadel.com',
+        passwordHash: adminPassword,
+        nombre: 'Admin',
+        apellido: 'FairPadel',
+        documento: ADMIN_DOCUMENTO,
+        telefono: '0981000000',
+        status: UserStatus.ACTIVO,
+        roles: {
+          create: {
+            role: {
+              connect: { name: RoleName.admin },
+            },
           },
         },
       },
-    },
-  });
-
-  console.log(`✅ Created admin user: ${admin.nombre} ${admin.apellido}`);
+    });
+    console.log(`✅ Created/Updated admin user: ${admin.nombre} ${admin.apellido}`);
+  }
 
   // Create categories (8 levels per gender)
   const categories = [
@@ -90,8 +112,8 @@ async function main() {
   console.log(`✅ Created ${categories.length} categories`);
 
   console.log('\n🔑 Admin credentials:');
-  console.log('   Documento: 999999');
-  console.log('   Password: Admin123!');
+  console.log(`   Documento: ${ADMIN_DOCUMENTO}`);
+  console.log(`   Password: ${ADMIN_PASSWORD}`);
 
   console.log('\n🎉 Seed completed successfully!');
 }
