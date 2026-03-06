@@ -1,7 +1,9 @@
 FROM node:20-alpine
 
-# Install OpenSSL and other dependencies
-RUN apk add --no-cache openssl libssl3
+# Install OpenSSL and set timezone to Paraguay
+RUN apk add --no-cache openssl libssl3 tzdata
+ENV TZ=America/Asuncion
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 WORKDIR /app
 
@@ -24,17 +26,24 @@ COPY tsconfig.json nest-cli.json ./
 RUN npm run build
 
 # Check what was built
-RUN ls -la
-RUN ls -la dist/ || echo "No dist folder"
+RUN ls -la dist/
 RUN ls -la dist/src/ || echo "No dist/src folder"
 
 # Expose port
 EXPOSE 3000
 
+# Run with Paraguay timezone
+ENV TZ=America/Asuncion
+ENV NODE_ENV=production
+
 # Find the correct path and run
 CMD if [ -f "dist/main.js" ]; then \
+      echo "🌍 Timezone: $TZ"; \
+      echo "🕐 Server time: $(date)"; \
       node dist/main.js; \
     elif [ -f "dist/src/main.js" ]; then \
+      echo "🌍 Timezone: $TZ"; \
+      echo "🕐 Server time: $(date)"; \
       node dist/src/main.js; \
     else \
       echo "Error: main.js not found"; \

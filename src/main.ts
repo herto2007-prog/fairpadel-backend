@@ -3,8 +3,14 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
+// Set timezone for the entire application
+process.env.TZ = 'America/Asuncion';
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  
+  console.log(`🌍 Timezone: ${process.env.TZ}`);
+  console.log(`🕐 Server time: ${new Date().toLocaleString('es-PY')}`);
 
   // Security
   app.use(helmet());
