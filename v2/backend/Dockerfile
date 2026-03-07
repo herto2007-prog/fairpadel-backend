@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+RUN npm install --legacy-peer-deps
 
 # Copy prisma schema
 COPY prisma ./prisma/
@@ -21,5 +21,5 @@ RUN npm run build
 # Expose port
 EXPOSE 3000
 
-# Start application
+# Start application with migrations
 CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
