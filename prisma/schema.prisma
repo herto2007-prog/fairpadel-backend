@@ -61,6 +61,15 @@ enum ModoPagoInscripcion {
 }
 
 // NUEVOS ENUMS PARA FIXTURE
+enum TipoRanking {
+  GLOBAL
+  PAIS
+  REGION
+  CIUDAD
+  CATEGORIA
+  TORNEO
+}
+
 enum RondaTipo {
   ACOMODACION_1
   ACOMODACION_2
@@ -109,6 +118,9 @@ model User {
   // Inscripciones
   inscripcionesJugador1 Inscripcion[] @relation("InscripcionJugador1")
   inscripcionesJugador2 Inscripcion[] @relation("InscripcionJugador2")
+  
+  // Rankings
+  rankings              Ranking[]
   
   @@map("users")
 }
@@ -339,4 +351,42 @@ model Match {
   partidosAnteriores    Match[]         @relation("MatchBracket")
   
   @@map("matches")
+}
+
+// ═══════════════════════════════════════════════════════
+// RANKING (SEMANA 4)
+// ═══════════════════════════════════════════════════════
+
+model Ranking {
+  id                    String       @id @default(uuid())
+  jugadorId             String       @map("jugador_id")
+  
+  tipoRanking           TipoRanking  @map("tipo_ranking")
+  alcance               String?      // Ej: "Paraguay", "Asunción", "1ra"
+  referenciaAlcance     String?      @map("referencia_alcance") // ID de categoría, ciudad, etc.
+  
+  // Estadísticas
+  puntosTotales         Int          @default(0) @map("puntos_totales")
+  torneosJugados        Int          @default(0) @map("torneos_jugados")
+  partidosGanados       Int          @default(0) @map("partidos_ganados")
+  partidosPerdidos      Int          @default(0) @map("partidos_perdidos")
+  
+  // Logros
+  victorias             Int          @default(0) // 1ros puestos
+  finales               Int          @default(0) // 2dos puestos
+  semifinales           Int          @default(0) // 3ros-4tos puestos
+  mejorPuestoHistorico  Int?         @map("mejor_puesto_historico")
+  
+  temporada             String?      // Año o identificador de temporada
+  ultimaActualizacion   DateTime     @updatedAt @map("ultima_actualizacion")
+  
+  createdAt             DateTime     @default(now()) @map("created_at")
+  
+  // Relaciones
+  jugador               User         @relation(fields: [jugadorId], references: [id], onDelete: Cascade)
+  
+  @@unique([jugadorId, tipoRanking, alcance, temporada])
+  @@index([tipoRanking, puntosTotales])
+  @@index([jugadorId])
+  @@map("rankings")
 }

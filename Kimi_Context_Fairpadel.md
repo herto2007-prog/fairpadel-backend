@@ -2,15 +2,15 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-06 19:05
-> **Conversación actual:** FASE 3 completada + Deploy automático frontend configurado
+> **Última actualización:** 2026-03-07 09:55
+> **Conversación actual:** Semana 3 - Fixture Versionado en progreso
 
 ---
 
 ## 📋 RESUMEN EJECUTIVO
 
 **Proyecto:** FairPadel - Sistema de gestión de torneos de pádel para Paraguay  
-**Estado:** FASE 1, 2 y 3 completadas ✅  
+**Estado:** Semana 3 en progreso (Fixture Versionado + Acomodación Paraguaya)  
 **Stack:** NestJS + React + PostgreSQL + Prisma  
 **Metodología:** MVP breadth-first, entregables atómicos y desplegables
 
@@ -20,43 +20,49 @@
 
 ---
 
-## 🎯 ROADMAP V2 - ENTREGABLES
+## 🎯 ROADMAP V2 - ENTREGABLES (Según FAIRPADEL_CONTEXT_TRANSFER.md)
 
-### FASE 0: Limpieza y Fundación ✅
-- [x] 0.0 Crear documento de contexto
-- [x] 0.1 Archivar documentación legacy
-- [x] 0.2 Eliminar archivos rotos/inútiles
-- [x] 0.3 Setup base V2
+### Semana 1: Fundación ✅
+- [x] Setup proyecto NestJS + Prisma + PostgreSQL
+- [x] Modelos core: User, Tournament, Category, TournamentCategory
+- [x] Autenticación JWT, Guards, Roles
+- [x] Deploy inicial funcionando
+- [x] Auth Frontend (Login, Register)
 
-### FASE 1: Núcleo de Autenticación ✅
-- [x] 1.1 Schema mínimo User/Role/UserRole
-- [x] 1.2 Auth Backend (Register, Login, JWT)
-- [x] 1.3 Auth Frontend (LoginPage, RegisterPage, Zustand)
-- [x] 1.4 Push a GitHub
-- [x] 1.5 Deploy a Railway
-- [x] 1.6 Zona horaria Paraguay configurada
-- [x] 1.7 Paleta de colores Mokoto aplicada
+### Semana 2: Inscripciones y Notificaciones ✅
+- [x] Sistema de inscripciones directas (sin Pareja separada)
+- [x] Estados de inscripción (PENDIENTE_CONFIRMACION → CONFIRMADA)
+- [x] Confirmación manual por organizador
+- [x] Frontend Mis Inscripciones
+- [x] Frontend Gestión de Inscripciones
 
-### FASE 2: Gestión de Torneos ✅
-- [x] 2.1 Modelo Tournament
-- [x] 2.2 Modelo Category
-- [x] 2.3 Relación TournamentCategory
-- [x] 2.4 Frontend Torneos (List, Detail, Create)
-- [x] 2.5 Dark Theme implementado
+### Semana 3: Fixture Versionado 🔄 (Backend completo, Frontend pendiente)
+- [x] Modelo FixtureVersion (inmutable, JSON)
+- [x] Modelo Match con estados y resultados
+- [x] Sistema de acomodación paraguaya:
+  - [x] R1 (Acomodación 1): Todos juegan
+  - [x] R2 (Acomodación 2): Perdedores de R1
+  - [x] Bracket Principal: Potencia de 2
+- [x] API Backend Fixture (generar, publicar, listar)
+- [x] API Backend Matches (registrar resultado, avance automático)
+- [ ] Frontend generar fixture
+- [ ] Frontend visualizar bracket
 
-### FASE 3: Inscripciones ✅
-- [x] 3.1 Modelo Inscripción (jugadores inline, sin tabla Pareja)
-- [x] 3.2 Backend Inscripciones (CRUD + confirmación manual)
-- [x] 3.3 Frontend Mis Inscripciones
-- [x] 3.4 Frontend Formulario de Inscripción
-- [x] 3.5 Frontend Gestión de Inscripciones (organizador)
-- [x] 3.6 Flujo: Pago coordinado con organizador (sin integración Bancard)
+### Semana 4: Partidos y Rankings ⏳
+- [ ] Carga de resultados completa
+- [ ] Actualización de rankings
+- [ ] Estadísticas de jugadores
 
-### FASE 4: Deploy Automático Frontend ✅
-- [x] 4.1 Dockerfile multi-stage para frontend
-- [x] 4.2 railway.json configurado
-- [x] 4.3 Push a GitHub
-- [ ] 4.4 Configurar proyecto en Railway (pendiente acción usuario)
+### Semana 5: Pagos y Finanzas ⏳
+- [ ] Entidad Pago independiente
+- [ ] Integración Bancard
+- [ ] Comprobantes de transferencia
+
+### Semana 6: Sedes, Alquileres, Instructores, Feed ⏳
+- [ ] Módulo de sedes y canchas
+- [ ] Alquileres de canchas
+- [ ] Sistema de instructores
+- [ ] Feed social y logros
 
 ---
 
@@ -67,16 +73,17 @@
 | Servicio | URL | Estado |
 |----------|-----|--------|
 | Backend API | `https://confident-ambition-production.up.railway.app/api` | ✅ Activo |
-| Frontend | `https://fairpadel-frontend-production.up.railway.app` | ⏳ Pendiente configuración Railway |
+| Frontend | `https://fairpadel-frontend-production.up.railway.app` | ✅ Activo |
 
 ### Commits Recientes GitHub
 
 **Backend:**
+- `1c10767` - SEMANA 3: Sistema de Fixture Versionado + Acomodación Paraguaya
 - `9478e7d` - FASE 3: Sistema de Inscripciones - Backend + Frontend completo
 - `693e314` - FASE 2: Tournament management UI - List, Detail, Create pages
-- `3ad21c6` - FASE 1: Auth frontend completo con dark theme
 
 **Frontend:**
+- `b0b8892` - Fix: Usar nginx con entrypoint script para puerto dinamico
 - `7dde2c5` - Configuración deploy automático Railway - Dockerfile + railway.json
 
 ---
@@ -89,6 +96,8 @@
 - `AuthModule` - JWT, login por documento, registro
 - `TournamentsModule` - CRUD torneos, categorías, publicación
 - `InscripcionesModule` - Inscripciones, confirmación manual
+- `FixtureModule` - Fixture versionado, sistema de acomodación paraguaya (SEMANA 3)
+- `MatchesModule` - Registro de resultados, avance automático en bracket (SEMANA 3)
 
 **Schema Prisma:**
 - `User` - Usuarios con roles
@@ -97,13 +106,43 @@
 - `Category` - Categorías (1ra-8va M/F + Mixto)
 - `TournamentCategory` - Relación torneo-categoría
 - `Inscripcion` - Inscripciones con jugadores inline
+- `FixtureVersion` - Fixture inmutable con JSON (SEMANA 3)
+- `Match` - Partidos con resultados, sets, bracket (SEMANA 3)
 
-**Endpoints Inscripciones:**
-- `POST /api/inscripciones` - Crear inscripción
-- `GET /api/inscripciones/my` - Mis inscripciones
-- `GET /api/inscripciones/tournament/:id` - Inscripciones de torneo
-- `PATCH /api/inscripciones/:id/confirmar` - Confirmar/rechazar
-- `PATCH /api/inscripciones/:id/cancelar` - Cancelar
+**Endpoints Fixture (NUEVOS):**
+- `POST /api/fixture/generar` - Generar fixture con acomodación paraguaya
+- `POST /api/fixture/:id/publicar` - Publicar fixture
+- `GET /api/fixture/:id` - Ver fixture
+- `GET /api/fixture/tournament/:tournamentId/category/:categoryId` - Fixture activo
+
+**Endpoints Matches (NUEVOS):**
+- `GET /api/matches` - Listar partidos
+- `GET /api/matches/:id` - Ver partido
+- `PATCH /api/matches/:id/resultado` - Registrar resultado (sets)
+- `PATCH /api/matches/:id/programar` - Programar fecha/cancha
+- `PATCH /api/matches/:id/wo` - Registrar WO
+
+### Sistema de Acomodación Paraguaya
+
+```
+Fase 1 (R1 - Acomodación 1):
+├── Todos los inscritos juegan
+├── Emparejamiento aleatorio inicial
+├── Ganadores → clasifican al bracket
+└── Perdedores → van a R2
+
+Fase 2 (R2 - Acomodación 2):
+├── Solo perdedores de R1
+├── Mejor perdedor → BYE al bracket
+├── Resto juega R2
+├── Ganadores R2 → clasifican al bracket
+└── Perdedores R2 → eliminados (jugaron 2 partidos)
+
+Fase 3 (Bracket Principal):
+├── Potencia de 2 (8, 16, 32...)
+├── Octavos → Cuartos → Semis → Final
+└── Avance automático de ganadores
+```
 
 ### Frontend (React + Vite)
 
@@ -118,14 +157,10 @@
 - `/inscripciones/tournament/:id` - Inscribirse
 - `/inscripciones/gestion/:tournamentId` - Gestionar inscripciones
 
-**Servicios:**
-- `authService` - Autenticación
-- `tournamentService` - Torneos
-- `categoryService` - Categorías
-- `inscripcionService` - Inscripciones
-
-**Estado Global (Zustand):**
-- `authStore` - Auth + User + Roles
+**Pendientes Semana 3:**
+- Vista de bracket visual
+- Formulario generar fixture
+- Carga de resultados
 
 ---
 
@@ -152,26 +187,28 @@ fairpadel/
 │   ├── modules/
 │   │   ├── auth/                 # Auth module
 │   │   ├── tournaments/          # Tournaments module
-│   │   └── inscripciones/        # Inscripciones module (NUEVO)
+│   │   ├── inscripciones/        # Inscripciones module
+│   │   ├── fixture/              # Fixture module (SEMANA 3)
+│   │   │   ├── fixture.service.ts
+│   │   │   ├── fixture.controller.ts
+│   │   │   └── fixture.module.ts
+│   │   └── matches/              # Matches module (SEMANA 3)
+│   │       ├── matches.service.ts
+│   │       ├── matches.controller.ts
+│   │       └── matches.module.ts
 │   ├── prisma/
 │   └── app.module.ts
 ├── prisma/
-│   └── schema.prisma             # Schema actualizado con Inscripcion
+│   └── schema.prisma             # Schema con FixtureVersion y Match
 ├── frontend-v2-deploy/           # Frontend React
 │   ├── src/
 │   │   ├── features/
-│   │   │   ├── auth/             # Login, Register
-│   │   │   ├── tournaments/      # Torneos UI
-│   │   │   └── inscripciones/    # Inscripciones UI (NUEVO)
-│   │   ├── services/
-│   │   │   ├── authService.ts
-│   │   │   ├── tournamentService.ts
-│   │   │   └── inscripcionService.ts (NUEVO)
-│   │   └── store/
-│   │       └── authStore.ts
-│   ├── Dockerfile                # Multi-stage build (NUEVO)
-│   ├── railway.json              # Config Railway (NUEVO)
-│   └── .dockerignore             # (NUEVO)
+│   │   │   ├── auth/
+│   │   │   ├── tournaments/
+│   │   │   ├── inscripciones/
+│   │   │   └── fixture/          # Pendiente (SEMANA 3)
+│   ├── Dockerfile
+│   └── railway.json
 ├── archive/                      # Código legacy V1
 └── Kimi_Context_Fairpadel.md     # Este archivo
 ```
@@ -180,49 +217,39 @@ fairpadel/
 
 ## 📝 REGISTRO DE ACCIONES
 
-### 2026-03-06 - FASE 3 Completada + Deploy Frontend
+### 2026-03-07 - Semana 3: Backend completo
 
-**Hora:** 19:00
+**Hora:** 09:50
 
 **Acciones realizadas:**
-1. Creado módulo `InscripcionesModule` en backend
-2. Creado model `Inscripcion` en Prisma schema
-3. Implementado flujo de confirmación manual por organizador
-4. Creadas páginas de inscripciones en frontend:
-   - `MisInscripcionesPage`
-   - `InscripcionPage` (formulario)
-   - `GestionInscripcionesPage` (organizador)
-5. Configurado deploy automático del frontend:
-   - `Dockerfile` multi-stage
-   - `railway.json`
-   - Script `start` en package.json
-6. Push a GitHub de backend y frontend
+1. Agregados modelos FixtureVersion y Match a Prisma schema
+2. Nuevos enums: RondaTipo, MatchStatus, FixtureVersionStatus
+3. Creado FixtureService con algoritmo de acomodación paraguaya:
+   - R1: Todos juegan
+   - R2: Perdedores de R1
+   - Bracket: Potencia de 2
+4. Creado FixtureController con endpoints REST
+5. Creado MatchesService para:
+   - Registrar resultados (sets 1-3)
+   - Avance automático en bracket
+   - Programar partidos
+   - Registrar WO
+6. Commit y push a GitHub
 
-**Build sizes:**
-- Frontend JS: 320.87 kB (gzip: 100.68 kB)
-- Frontend CSS: 26.20 kB (gzip: 5.26 kB)
+**Build:** ✅ Compilado sin errores
+**Deploy:** Railway auto-deploy en progreso
 
 ---
 
 ## 🎯 PRÓXIMO PASO
 
-**Para completar deploy automático del frontend:**
+**Completar Semana 3 con Frontend:**
 
-1. Ir a https://railway.app
-2. Crear nuevo proyecto → Deploy from GitHub
-3. Seleccionar `fairpadel-frontend`
-4. Configurar variable de entorno:
-   - `VITE_API_URL` = `https://confident-ambition-production.up.railway.app/api`
-5. Generar dominio
+1. **Vista de Bracket** - Visualización del árbol de llaves
+2. **Generar Fixture** - Botón para organizadores
+3. **Cargar Resultados** - Formulario de sets
 
-**Para continuar desarrollo:**
-
-**A) FASE 4: Partidos y Brackets** - Generación de fixture, llaves, resultados
-**B) FASE 5: Rankings** - Sistema de puntos y clasificación
-**C) FASE 6: Notificaciones** - Email/SMS cuando se confirma inscripción
-**D) FASE 7: Suscripciones Premium** - Integración con Bancard
-
-**¿Qué prefieres?**
+**¿Comenzamos con el Frontend de Fixture?**
 
 ---
 
