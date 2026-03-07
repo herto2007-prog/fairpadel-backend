@@ -13,9 +13,9 @@ RUN npm install --legacy-peer-deps
 COPY prisma ./prisma/
 
 # Generate Prisma client
-# Nota: Railway no inyecta variables durante build, usamos placeholder temporal
-# La verdadera DATABASE_URL se usa en runtime
-ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+# Usamos ARG que se puede pasar en buildtime, con valor por defecto
+ARG DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder
+ENV DATABASE_URL=${DATABASE_URL}
 RUN npx prisma generate
 
 # Copy source code
@@ -24,11 +24,11 @@ COPY tsconfig*.json ./
 COPY nest-cli.json ./
 COPY railway.json ./
 
-# Build NestJS (ahora tiene los tipos de Prisma)
+# Build NestJS
 RUN npm run build
 
 # Expose port
 EXPOSE 3000
 
-# Runtime: Railway inyecta la verdadera DATABASE_URL aquí
+# Runtime: Railway inyecta la verdadera DATABASE_URL
 CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
