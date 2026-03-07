@@ -76,18 +76,14 @@ export const Navbar = () => {
             {/* CTA Buttons */}
             <div className="hidden md:flex items-center gap-4">
               <motion.a
-                href="https://fairpadel-frontend-production.up.railway.app/login"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/login"
                 className="text-gray-400 hover:text-white transition-colors text-sm font-medium"
                 whileHover={{ scale: 1.05 }}
               >
                 Iniciar Sesión
               </motion.a>
               <motion.a
-                href="https://fairpadel-frontend-production.up.railway.app/register"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/register"
                 className="btn-primary text-sm py-2.5 px-5"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
