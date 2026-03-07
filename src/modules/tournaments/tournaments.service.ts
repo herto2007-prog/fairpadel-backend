@@ -72,13 +72,26 @@ export class TournamentsService {
   }
 
   async create(organizadorId: string, dto: CreateTournamentDto) {
-    return this.prisma.tournament.create({
-      data: {
-        ...dto,
-        organizadorId,
-        estado: 'BORRADOR',
-      },
-    });
+    const data: any = {
+      nombre: dto.nombre,
+      descripcion: dto.descripcion,
+      fechaInicio: dto.fechaInicio,
+      fechaFin: dto.fechaFin,
+      fechaLimiteInscr: dto.fechaLimiteInscripcion,
+      ciudad: dto.ciudad,
+      costoInscripcion: dto.costoInscripcion,
+      organizadorId,
+      estado: 'BORRADOR',
+      pais: dto.pais || 'Paraguay',
+      region: dto.region || dto.ciudad,
+      flyerUrl: dto.flyerUrl || '',
+    };
+    
+    if (dto.sedeId) {
+      data.sedeId = dto.sedeId;
+    }
+    
+    return this.prisma.tournament.create({ data });
   }
 
   async update(id: string, userId: string, dto: UpdateTournamentDto) {

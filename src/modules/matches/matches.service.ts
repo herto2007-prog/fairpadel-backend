@@ -66,15 +66,15 @@ export class MatchesService {
     }
 
     // Determinar ganador (mejor de 3 sets)
-    let parejaGanadoraId: string;
-    let parejaPerdedoraId: string;
+    let inscripcionGanadoraId: string | null = null;
+    let inscripcionPerdedoraId: string | null = null;
 
     if (setsGanadosPareja1 >= 2) {
-      parejaGanadoraId = match.pareja1Id;
-      parejaPerdedoraId = match.pareja2Id;
+      inscripcionGanadoraId = match.inscripcion1Id;
+      inscripcionPerdedoraId = match.inscripcion2Id;
     } else if (setsGanadosPareja2 >= 2) {
-      parejaGanadoraId = match.pareja2Id;
-      parejaPerdedoraId = match.pareja1Id;
+      inscripcionGanadoraId = match.inscripcion2Id;
+      inscripcionPerdedoraId = match.inscripcion1Id;
     } else {
       throw new BadRequestException('Resultado inválido: no hay ganador claro');
     }
@@ -90,15 +90,14 @@ export class MatchesService {
         set2Pareja2: dto.set2Pareja2,
         set3Pareja1: dto.set3Pareja1,
         set3Pareja2: dto.set3Pareja2,
-        parejaGanadoraId,
-        parejaPerdedoraId,
-        notas: dto.notas,
+        inscripcionGanadoraId,
+        inscripcionPerdedoraId,
       },
     });
 
     // Avanzar el ganador al siguiente partido si existe
-    if (match.partidoSiguienteId && parejaGanadoraId) {
-      await this.avanzarGanador(match.partidoSiguienteId, parejaGanadoraId, match.posicionEnSiguiente);
+    if (match.partidoSiguienteId && inscripcionGanadoraId && match.posicionEnSiguiente) {
+      await this.avanzarGanador(match.partidoSiguienteId, inscripcionGanadoraId, match.posicionEnSiguiente);
     }
 
     return this.getMatchById(matchId);
@@ -109,34 +108,15 @@ export class MatchesService {
    */
   private async avanzarGanador(
     partidoSiguienteId: string,
-    parejaGanadoraId: string,
-    posicion: string,
+    inscripcionGanadoraId: string,
+    posicion: number,
   ) {
     const updateData: any = {};
     
-    if (posicion === 'P1') {
-      updateData.pareja1Id = parejaGanadoraId;
-    } else if (posicion === 'P2') {
-      updateData.pareja2Id = parejaGanadoraId;
-    }
-
-    // Obtener info de la pareja
-    const pareja = await this.prisma.inscripcion.findUnique({
-      where: { id: parejaGanadoraId },
-      include: {
-        jugador1: { select: { nombre: true, apellido: true } },
-        jugador2: { select: { nombre: true, apellido: true } },
-      },
-    });
-
-    if (pareja) {
-      const nombrePareja = `${pareja.jugador1.nombre} ${pareja.jugador1.apellido} / ${pareja.jugador2?.nombre || '?'}`;
-      
-      if (posicion === 'P1') {
-        updateData.pareja1Nombre = nombrePareja;
-      } else {
-        updateData.pareja2Nombre = nombrePareja;
-      }
+    if (posicion === 1) {
+      updateData.inscripcion1Id = inscripcionGanadoraId;
+    } else if (posicion === 2) {
+      updateData.inscripcion2Id = inscripcionGanadoraId;
     }
 
     await this.prisma.match.update({
@@ -152,7 +132,6 @@ export class MatchesService {
     matchId: string,
     data: {
       canchaId?: string;
-      canchaNombre?: string;
       fechaProgramada?: Date;
       horaProgramada?: string;
       horaFinEstimada?: string;
@@ -177,8 +156,7 @@ export class MatchesService {
     return this.prisma.match.update({
       where: { id: matchId },
       data: {
-        canchaId: data.canchaId,
-        canchaNombre: data.canchaNombre,
+        torneoCanchaId: data.canchaId,
         fechaProgramada: data.fechaProgramada,
         horaProgramada: data.horaProgramada,
         horaFinEstimada: data.horaFinEstimada,
@@ -194,26 +172,28 @@ export class MatchesService {
     return this.prisma.match.findUnique({
       where: { id: matchId },
       include: {
-        pareja1: {
+        inscripcion1: {
           include: {
             jugador1: { select: { id: true, nombre: true, apellido: true } },
             jugador2: { select: { id: true, nombre: true, apellido: true } },
           },
         },
-        pareja2: {
+        inscripcion2: {
           include: {
             jugador1: { select: { id: true, nombre: true, apellido: true } },
             jugador2: { select: { id: true, nombre: true, apellido: true } },
           },
         },
-        parejaGanadora: {
+        inscripcionGanadora: {
           include: {
             jugador1: { select: { id: true, nombre: true, apellido: true } },
             jugador2: { select: { id: true, nombre: true, apellido: true } },
           },
         },
-        partidoSiguiente: {
-          select: { id: true, ronda: true, ordenEnRonda: true },
+        torneoCancha: {
+          include: {
+            sedeCancha: { select: { id: true, nombre: true } },
+          },
         },
       },
     });
@@ -230,25 +210,29 @@ export class MatchesService {
       where,
       orderBy: [
         { numeroRonda: 'asc' },
-        { ordenEnRonda: 'asc' },
       ],
       include: {
-        pareja1: {
+        inscripcion1: {
           include: {
             jugador1: { select: { nombre: true, apellido: true } },
             jugador2: { select: { nombre: true, apellido: true } },
           },
         },
-        pareja2: {
+        inscripcion2: {
           include: {
             jugador1: { select: { nombre: true, apellido: true } },
             jugador2: { select: { nombre: true, apellido: true } },
           },
         },
-        parejaGanadora: {
+        inscripcionGanadora: {
           include: {
             jugador1: { select: { nombre: true, apellido: true } },
             jugador2: { select: { nombre: true, apellido: true } },
+          },
+        },
+        torneoCancha: {
+          include: {
+            sedeCancha: { select: { nombre: true } },
           },
         },
       },
@@ -260,7 +244,7 @@ export class MatchesService {
    */
   async registrarWO(
     matchId: string,
-    parejaGanadoraId: string,
+    inscripcionGanadoraId: string,
     organizadorId: string,
   ) {
     const match = await this.prisma.match.findUnique({
@@ -278,16 +262,16 @@ export class MatchesService {
       throw new BadRequestException('No tienes permiso');
     }
 
-    const parejaPerdedoraId = match.pareja1Id === parejaGanadoraId 
-      ? match.pareja2Id 
-      : match.pareja1Id;
+    const inscripcionPerdedoraId = match.inscripcion1Id === inscripcionGanadoraId 
+      ? match.inscripcion2Id 
+      : match.inscripcion1Id;
 
     await this.prisma.match.update({
       where: { id: matchId },
       data: {
         estado: MatchStatus.WO,
-        parejaGanadoraId,
-        parejaPerdedoraId,
+        inscripcionGanadoraId,
+        inscripcionPerdedoraId,
         set1Pareja1: 6,
         set1Pareja2: 0,
         set2Pareja1: 6,
@@ -296,8 +280,8 @@ export class MatchesService {
     });
 
     // Avanzar al siguiente
-    if (match.partidoSiguienteId) {
-      await this.avanzarGanador(match.partidoSiguienteId, parejaGanadoraId, match.posicionEnSiguiente);
+    if (match.partidoSiguienteId && match.posicionEnSiguiente) {
+      await this.avanzarGanador(match.partidoSiguienteId, inscripcionGanadoraId, match.posicionEnSiguiente);
     }
 
     return this.getMatchById(matchId);

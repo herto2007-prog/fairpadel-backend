@@ -1,11 +1,15 @@
+<<<<<<< HEAD
 # compiled output
 /dist
 /node_modules
 
+=======
+>>>>>>> 6418b021884974f2d36f475bdaaf4d720054db59
 # Logs
 logs
 *.log
 npm-debug.log*
+<<<<<<< HEAD
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -33,14 +37,39 @@ lerna-debug.log*
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+=======
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+>>>>>>> 6418b021884974f2d36f475bdaaf4d720054db59
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+<<<<<<< HEAD
 
 # Prisma
 prisma/*.db
 prisma/*.db-journal
 
 nul
+=======
+>>>>>>> 6418b021884974f2d36f475bdaaf4d720054db59

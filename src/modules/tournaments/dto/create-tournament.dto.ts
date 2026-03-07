@@ -19,7 +19,19 @@ export class CreateTournamentDto {
   fechaLimiteInscripcion: string;
 
   @IsString()
+  @IsOptional()
+  pais?: string;
+
+  @IsString()
+  @IsOptional()
+  region?: string;
+
+  @IsString()
   ciudad: string;
+
+  @IsString()
+  @IsOptional()
+  flyerUrl?: string;
 
   @IsNumber()
   costoInscripcion: number;

@@ -47,13 +47,13 @@ export class RankingsService {
         },
       },
       include: {
-        parejaGanadora: {
+        inscripcionGanadora: {
           include: {
             jugador1: true,
             jugador2: true,
           },
         },
-        parejaPerdedora: {
+        inscripcionPerdedora: {
           include: {
             jugador1: true,
             jugador2: true,
@@ -115,15 +115,15 @@ export class RankingsService {
     const cuartos = partidos.filter(p => p.ronda === RondaTipo.CUARTOS);
 
     // Campeón y finalista
-    if (final?.parejaGanadora) {
-      const ganador = resultadosPorJugador.get(final.parejaGanadora.jugador1Id);
+    if (final?.inscripcionGanadora) {
+      const ganador = resultadosPorJugador.get(final.inscripcionGanadora.jugador1Id);
       if (ganador) {
         ganador.esCampeon = true;
         ganador.puesto = 1;
         ganador.partidosGanados++;
       }
-      if (final.parejaGanadora.jugador2Id) {
-        const ganador2 = resultadosPorJugador.get(final.parejaGanadora.jugador2Id);
+      if (final.inscripcionGanadora.jugador2Id) {
+        const ganador2 = resultadosPorJugador.get(final.inscripcionGanadora.jugador2Id);
         if (ganador2) {
           ganador2.esCampeon = true;
           ganador2.puesto = 1;
@@ -132,15 +132,15 @@ export class RankingsService {
       }
     }
 
-    if (final?.parejaPerdedora) {
-      const perdedor = resultadosPorJugador.get(final.parejaPerdedora.jugador1Id);
+    if (final?.inscripcionPerdedora) {
+      const perdedor = resultadosPorJugador.get(final.inscripcionPerdedora.jugador1Id);
       if (perdedor) {
         perdedor.esFinalista = true;
         perdedor.puesto = 2;
         perdedor.partidosPerdidos++;
       }
-      if (final.parejaPerdedora.jugador2Id) {
-        const perdedor2 = resultadosPorJugador.get(final.parejaPerdedora.jugador2Id);
+      if (final.inscripcionPerdedora.jugador2Id) {
+        const perdedor2 = resultadosPorJugador.get(final.inscripcionPerdedora.jugador2Id);
         if (perdedor2) {
           perdedor2.esFinalista = true;
           perdedor2.puesto = 2;
@@ -151,15 +151,15 @@ export class RankingsService {
 
     // Semifinalistas (3ro-4to)
     for (const semi of semis) {
-      if (semi.parejaPerdedora) {
-        const perdedor = resultadosPorJugador.get(semi.parejaPerdedora.jugador1Id);
+      if (semi.inscripcionPerdedora) {
+        const perdedor = resultadosPorJugador.get(semi.inscripcionPerdedora.jugador1Id);
         if (perdedor) {
           perdedor.esSemifinalista = true;
           perdedor.puesto = Math.min(perdedor.puesto, 3);
           perdedor.partidosPerdidos++;
         }
-        if (semi.parejaPerdedora.jugador2Id) {
-          const perdedor2 = resultadosPorJugador.get(semi.parejaPerdedora.jugador2Id);
+        if (semi.inscripcionPerdedora.jugador2Id) {
+          const perdedor2 = resultadosPorJugador.get(semi.inscripcionPerdedora.jugador2Id);
           if (perdedor2) {
             perdedor2.esSemifinalista = true;
             perdedor2.puesto = Math.min(perdedor2.puesto, 3);
@@ -168,11 +168,11 @@ export class RankingsService {
         }
       }
       // Los ganadores de semis ya fueron contados (finalistas/campeón)
-      if (semi.parejaGanadora) {
-        const ganador = resultadosPorJugador.get(semi.parejaGanadora.jugador1Id);
+      if (semi.inscripcionGanadora) {
+        const ganador = resultadosPorJugador.get(semi.inscripcionGanadora.jugador1Id);
         if (ganador) ganador.partidosGanados++;
-        if (semi.parejaGanadora.jugador2Id) {
-          const ganador2 = resultadosPorJugador.get(semi.parejaGanadora.jugador2Id);
+        if (semi.inscripcionGanadora.jugador2Id) {
+          const ganador2 = resultadosPorJugador.get(semi.inscripcionGanadora.jugador2Id);
           if (ganador2) ganador2.partidosGanados++;
         }
       }
@@ -180,25 +180,25 @@ export class RankingsService {
 
     // Cuartos (5to-8vo)
     for (const cuarto of cuartos) {
-      if (cuarto.parejaPerdedora) {
-        const perdedor = resultadosPorJugador.get(cuarto.parejaPerdedora.jugador1Id);
+      if (cuarto.inscripcionPerdedora) {
+        const perdedor = resultadosPorJugador.get(cuarto.inscripcionPerdedora.jugador1Id);
         if (perdedor) {
           perdedor.puesto = Math.min(perdedor.puesto, 5);
           perdedor.partidosPerdidos++;
         }
-        if (cuarto.parejaPerdedora.jugador2Id) {
-          const perdedor2 = resultadosPorJugador.get(cuarto.parejaPerdedora.jugador2Id);
+        if (cuarto.inscripcionPerdedora.jugador2Id) {
+          const perdedor2 = resultadosPorJugador.get(cuarto.inscripcionPerdedora.jugador2Id);
           if (perdedor2) {
             perdedor2.puesto = Math.min(perdedor2.puesto, 5);
             perdedor2.partidosPerdidos++;
           }
         }
       }
-      if (cuarto.parejaGanadora) {
-        const ganador = resultadosPorJugador.get(cuarto.parejaGanadora.jugador1Id);
+      if (cuarto.inscripcionGanadora) {
+        const ganador = resultadosPorJugador.get(cuarto.inscripcionGanadora.jugador1Id);
         if (ganador) ganador.partidosGanados++;
-        if (cuarto.parejaGanadora.jugador2Id) {
-          const ganador2 = resultadosPorJugador.get(cuarto.parejaGanadora.jugador2Id);
+        if (cuarto.inscripcionGanadora.jugador2Id) {
+          const ganador2 = resultadosPorJugador.get(cuarto.inscripcionGanadora.jugador2Id);
           if (ganador2) ganador2.partidosGanados++;
         }
       }

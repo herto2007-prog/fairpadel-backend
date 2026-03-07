@@ -27,18 +27,10 @@ export class InscripcionesService {
       throw new BadRequestException('El torneo no está abierto para inscripciones');
     }
 
-    // Validar fechas de inscripción
+    // Validar fechas de inscripción (usando fechaLimiteInscr)
     const now = new Date();
-    if (tournament.fechaInicioInscripcion && now < new Date(tournament.fechaInicioInscripcion)) {
-      throw new BadRequestException('Las inscripciones aún no han comenzado');
-    }
-    if (tournament.fechaFinInscripcion && now > new Date(tournament.fechaFinInscripcion)) {
+    if (now > new Date(tournament.fechaLimiteInscr)) {
       throw new BadRequestException('Las inscripciones han cerrado');
-    }
-
-    // Validar cupo disponible
-    if (tournament.maxParejas && tournament._count.inscripciones >= tournament.maxParejas) {
-      throw new BadRequestException('El torneo ha alcanzado el cupo máximo de parejas');
     }
 
     // Validar categoría existe y pertenece al torneo
