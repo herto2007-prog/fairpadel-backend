@@ -1,19 +1,22 @@
 import { api } from './api';
-import type { AuthResponse, LoginCredentials, RegisterCredentials } from '../types';
+
+export interface LoginData {
+  documento: string;
+  password: string;
+}
+
+export interface RegisterData {
+  email: string;
+  password: string;
+  nombre: string;
+  apellido: string;
+  documento: string;
+  telefono?: string;
+  genero: 'MASCULINO' | 'FEMENINO';
+}
 
 export const authService = {
-  async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const response = await api.post<AuthResponse>('/auth/login', credentials);
-    return response.data;
-  },
-
-  async register(credentials: RegisterCredentials): Promise<AuthResponse> {
-    const response = await api.post<AuthResponse>('/auth/register', credentials);
-    return response.data;
-  },
-
-  async me(): Promise<{ user: AuthResponse['user'] }> {
-    const response = await api.get<{ user: AuthResponse['user'] }>('/auth/me');
-    return response.data;
-  },
+  login: (data: LoginData) => api.post('/auth/login', data).then(r => r.data),
+  register: (data: RegisterData) => api.post('/auth/register', data).then(r => r.data),
+  getMe: () => api.get('/auth/me').then(r => r.data),
 };

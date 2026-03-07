@@ -1,113 +1,244 @@
-@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700;800&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0B0E14;
+  color: white;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+
+/* Landing Page Styles */
+
+
+
+/* Landing Page Styles */
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@theme {
+  --color-primary: #df2531;
+  --color-primary-50: #fef2f2;
+  --color-primary-100: #fee2e2;
+  --color-primary-200: #fecaca;
+  --color-primary-300: #fca5a5;
+  --color-primary-400: #f87171;
+  --color-primary-500: #ef4444;
+  --color-primary-600: #dc2626;
+  --color-primary-700: #b91c1c;
+  --color-primary-800: #991b1b;
+  --color-primary-900: #7f1d1d;
+  
+  --color-dark: #0B0E14;
+  --color-dark-50: #151921;
+  --color-dark-100: #1a1f2a;
+  --color-dark-200: #232838;
+  --color-dark-300: #2d3444;
+  --color-dark-400: #3d4556;
+  --color-dark-500: #4a5568;
+  
+  --font-display: 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+}
+
 @layer base {
   * {
-    @apply border-dark-800;
+    box-sizing: border-box;
   }
   
   html {
-    @apply antialiased;
+    scroll-behavior: smooth;
   }
   
   body {
-    @apply bg-dark-950 text-dark-200 font-sans;
-    background: linear-gradient(180deg, #0B0E14 0%, #0f1419 100%);
-    min-height: 100vh;
-  }
-  
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-display font-bold tracking-tight text-white;
+    background-color: #0B0E14;
+    color: white;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
 @layer components {
-  /* Buttons */
+  .text-gradient {
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    background-image: linear-gradient(to right, #df2531, #f87171);
+  }
+  
+  .glass {
+    background: rgba(21, 25, 33, 0.8);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(35, 40, 56, 0.5);
+  }
+  
+  .glass-hover {
+    transition: all 0.3s ease;
+  }
+  .glass-hover:hover {
+    background: rgba(21, 25, 33, 0.9);
+    border-color: rgba(223, 37, 49, 0.3);
+  }
+  
   .btn-primary {
-    @apply bg-primary-600 text-white px-6 py-3 rounded-xl font-semibold 
-           hover:bg-primary-500 active:bg-primary-700 
-           transition-all duration-200 shadow-lg shadow-primary-600/25
-           disabled:opacity-50 disabled:cursor-not-allowed
-           border border-primary-500/20;
+    font-weight: 600;
+    padding: 1rem 2rem;
+    border-radius: 0.75rem;
+    transition: all 0.3s ease;
+    background-color: #df2531;
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-primary:hover {
+    background-color: rgba(223, 37, 49, 0.9);
+    transform: scale(1.05);
+    box-shadow: 0 10px 25px rgba(223, 37, 49, 0.25);
+  }
+  .btn-primary:active {
+    transform: scale(0.95);
   }
   
   .btn-secondary {
-    @apply bg-dark-800 text-dark-200 px-6 py-3 rounded-xl font-semibold
-           hover:bg-dark-700 active:bg-dark-600
-           transition-all duration-200 border border-dark-700;
+    font-weight: 600;
+    padding: 1rem 2rem;
+    border-radius: 0.75rem;
+    transition: all 0.3s ease;
+    background-color: #151921;
+    color: white;
+    border: 1px solid #232838;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-secondary:hover {
+    transform: scale(1.05);
+    background-color: #1a1f2a;
+  }
+  .btn-secondary:active {
+    transform: scale(0.95);
   }
   
-  .btn-outline {
-    @apply bg-transparent border-2 border-primary-600 text-primary-400 
-           px-6 py-3 rounded-xl font-semibold
-           hover:bg-primary-600/10 hover:text-primary-300
-           transition-all duration-200;
+  .section-padding {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  @media (min-width: 640px) {
+    .section-padding {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .section-padding {
+      padding-left: 2rem;
+      padding-right: 2rem;
+    }
+  }
+  @media (min-width: 1280px) {
+    .section-padding {
+      padding-left: 4rem;
+      padding-right: 4rem;
+    }
+  }
+  @media (min-width: 1536px) {
+    .section-padding {
+      padding-left: 6rem;
+      padding-right: 6rem;
+    }
   }
   
-  /* Cards */
-  .card {
-    @apply bg-dark-900 rounded-2xl border border-dark-800
-           shadow-xl shadow-black/20;
+  .heading-xl {
+    font-size: 2.25rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
+  @media (min-width: 640px) {
+    .heading-xl {
+      font-size: 3rem;
+    }
+  }
+  @media (min-width: 768px) {
+    .heading-xl {
+      font-size: 3.75rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .heading-xl {
+      font-size: 4.5rem;
+    }
   }
   
-  .card-elevated {
-    @apply bg-dark-850 rounded-2xl border border-dark-800
-           shadow-2xl shadow-black/30;
+  .heading-lg {
+    font-size: 1.875rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
+  @media (min-width: 640px) {
+    .heading-lg {
+      font-size: 2.25rem;
+    }
+  }
+  @media (min-width: 768px) {
+    .heading-lg {
+      font-size: 3rem;
+    }
   }
   
-  /* Inputs */
-  .input {
-    @apply w-full px-4 py-3.5 rounded-xl bg-dark-900 border border-dark-800 
-           text-dark-100 placeholder-dark-500
-           focus:border-primary-600 focus:ring-2 focus:ring-primary-600/20 
-           outline-none transition-all duration-200;
+  .heading-md {
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+  @media (min-width: 640px) {
+    .heading-md {
+      font-size: 1.875rem;
+    }
   }
   
-  /* Navigation */
-  .nav-item {
-    @apply text-dark-400 hover:text-dark-200 transition-colors duration-200
-           px-4 py-2 rounded-lg hover:bg-dark-800/50;
+  .text-body {
+    font-size: 1rem;
+    line-height: 1.625;
+    color: #9ca3af;
+  }
+  @media (min-width: 640px) {
+    .text-body {
+      font-size: 1.125rem;
+    }
   }
   
-  .nav-item-active {
-    @apply text-primary-400 bg-primary-600/10 px-4 py-2 rounded-lg
-           border border-primary-600/20;
+  .card-hover {
+    transition: all 0.5s ease;
+  }
+  .card-hover:hover {
+    transform: scale(1.02);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   }
   
-  /* Status badges */
-  .badge {
-    @apply px-3 py-1 rounded-full text-xs font-semibold;
+  .glow-primary {
+    box-shadow: 0 0 60px rgba(223, 37, 49, 0.3);
   }
   
-  .badge-primary {
-    @apply badge bg-primary-600/20 text-primary-300 border border-primary-600/30;
-  }
-  
-  .badge-success {
-    @apply badge bg-green-600/20 text-green-300 border border-green-600/30;
-  }
-  
-  .badge-warning {
-    @apply badge bg-yellow-600/20 text-yellow-300 border border-yellow-600/30;
-  }
-  
-  /* Gradient backgrounds */
-  .gradient-dark {
-    background: linear-gradient(135deg, #151921 0%, #0B0E14 100%);
-  }
-  
-  .gradient-card {
-    background: linear-gradient(180deg, #1C2130 0%, #151921 100%);
+  .glow-primary-strong {
+    box-shadow: 0 0 100px rgba(223, 37, 49, 0.5);
   }
 }
 
-/* Custom scrollbar for dark theme */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
-  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -115,17 +246,17 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2A3142;
+  background: #232838;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3D4659;
+  background: #df2531;
 }
 
-/* Toast notifications dark theme */
-[data-sonner-toast] {
-  background: #151921 !important;
-  border: 1px solid #232838 !important;
-  color: #E5E7EB !important;
+/* Selection color */
+::selection {
+  background: rgba(223, 37, 49, 0.3);
+  color: white;
 }
+

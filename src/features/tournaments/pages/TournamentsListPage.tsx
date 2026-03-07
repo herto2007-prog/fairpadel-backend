@@ -1,19 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, Trophy, Loader2 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
-import { Button } from '../../../components/ui/Button';
-import { TournamentCard } from '../components/TournamentCard';
 import { tournamentService, Tournament } from '../../../services/tournamentService';
-import { useAuthStore } from '../../../store/authStore';
-import { UserRole } from '../../../types';
+import { Calendar, MapPin, ChevronRight } from 'lucide-react';
 
-export function TournamentsListPage() {
+export default function TournamentsListPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const { isAuthenticated, user } = useAuthStore();
-
-  const isOrganizador = user?.roles?.includes(UserRole.ORGANIZADOR) || user?.roles?.includes(UserRole.ADMIN);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadTournaments();
@@ -21,69 +12,56 @@ export function TournamentsListPage() {
 
   const loadTournaments = async () => {
     try {
+      setLoading(true);
       const data = await tournamentService.getAll();
       setTournaments(data);
-    } catch (error: any) {
-      toast.error('Error al cargar torneos');
+    } catch (err) {
+      console.error('Error loading tournaments:', err);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return <div className="p-8 text-center">Cargando...</div>;
 
   return (
-    <div className="min-h-screen bg-dark-950">
-      {/* Header */}
-      <div className="border-b border-dark-800 bg-dark-900/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-primary-600/20 rounded-xl flex items-center justify-center">
-                <Trophy className="w-6 h-6 text-primary-500" />
+    <div className="min-h-screen bg-[#0B0E14] text-white p-6">
+      <div className="max-w-6xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8">Torneos</h1>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {tournaments.map((tournament) => (
+            <a
+              key={tournament.id}
+              href={`/tournaments/${tournament.id}`}
+              className="bg-[#151921] rounded-lg border border-[#232838] p-6 hover:border-[#df2531] transition-colors"
+            >
+              <h2 className="text-xl font-semibold mb-2">{tournament.nombre}</h2>
+              
+              <div className="space-y-2 text-gray-400 text-sm mb-4">
+                <div className="flex items-center gap-2">
+                  <Calendar size={16} />
+                  <span>{new Date(tournament.fechaInicio).toLocaleDateString('es-PY')}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <MapPin size={16} />
+                  <span>{tournament.ciudad}</span>
+                </div>
               </div>
-              <div>
-                <h1 className="text-2xl font-display font-bold text-white">Torneos</h1>
-                <p className="text-dark-400 text-sm">Descubre y participa en los mejores torneos de pádel</p>
-              </div>
-            </div>
 
-            {isAuthenticated && isOrganizador && (
-              <Link to="/tournaments/create">
-                <Button className="gap-2">
-                  <Plus className="w-4 h-4" />
-                  Crear Torneo
-                </Button>
-              </Link>
-            )}
-          </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[#df2531] font-semibold">
+                  Gs. {tournament.costoInscripcion?.toLocaleString() || 0}
+                </span>
+                <ChevronRight size={20} className="text-gray-500" />
+              </div>
+            </a>
+          ))}
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {tournaments.length === 0 ? (
-          <div className="text-center py-16">
-            <Trophy className="w-16 h-16 text-dark-700 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-dark-300 mb-2">No hay torneos disponibles</h3>
-            <p className="text-dark-500 mb-6">Sé el primero en crear un torneo</p>
-            {isAuthenticated && isOrganizador && (
-              <Link to="/tournaments/create">
-                <Button>Crear Torneo</Button>
-              </Link>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tournaments.map((tournament) => (
-              <TournamentCard key={tournament.id} tournament={tournament} />
-            ))}
+        {tournaments.length === 0 && (
+          <div className="text-center py-12 text-gray-400">
+            No hay torneos disponibles
           </div>
         )}
       </div>

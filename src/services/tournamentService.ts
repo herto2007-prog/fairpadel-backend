@@ -3,120 +3,36 @@ import { api } from './api';
 export interface Tournament {
   id: string;
   nombre: string;
-  descripcion: string | null;
-  slug: string;
+  descripcion?: string;
   fechaInicio: string;
   fechaFin: string;
-  fechaInicioInscripcion: string | null;
-  fechaFinInscripcion: string | null;
-  maxParejas: number | null;
-  minParejas: number | null;
-  puntosRanking: number | null;
-  premio: string | null;
-  flyerUrl: string | null;
+  fechaLimiteInscripcion: string;
+  costoInscripcion: number;
   estado: string;
-  organizador: {
+  ciudad: string;
+  sede?: {
+    id: string;
+    nombre: string;
+  };
+  organizador?: {
     id: string;
     nombre: string;
     apellido: string;
-    email: string;
   };
-  categories: {
+  categorias?: {
     id: string;
-    inscripcionAbierta: boolean;
-    estado: string;
     category: {
       id: string;
       nombre: string;
       tipo: string;
-      orden: number;
     };
   }[];
-  inscripciones?: {
-    id: string;
-    estado: string;
-    jugador1: {
-      id: string;
-      nombre: string;
-      apellido: string;
-    };
-    jugador2: {
-      id: string;
-      nombre: string;
-      apellido: string;
-    } | null;
-  }[];
-  _count?: {
-    inscripciones: number;
-  };
-  createdAt: string;
-}
-
-export interface Category {
-  id: string;
-  nombre: string;
-  tipo: string;
-  orden: number;
-}
-
-export interface CreateTournamentData {
-  nombre: string;
-  descripcion?: string;
-  fechaInicio: string;
-  fechaFin: string;
-  fechaInicioInscripcion?: string;
-  fechaFinInscripcion?: string;
-  maxParejas?: number;
-  minParejas?: number;
-  puntosRanking?: number;
-  premio?: string;
-  flyerUrl?: string;
-  categoryIds?: string[];
 }
 
 export const tournamentService = {
-  async getAll(): Promise<Tournament[]> {
-    const response = await api.get('/tournaments');
-    return response.data;
-  },
-
-  async getById(id: string): Promise<Tournament> {
-    const response = await api.get(`/tournaments/${id}`);
-    return response.data;
-  },
-
-  async getBySlug(slug: string): Promise<Tournament> {
-    const response = await api.get(`/tournaments/by-slug/${slug}`);
-    return response.data;
-  },
-
-  async getMyTournaments(): Promise<Tournament[]> {
-    const response = await api.get('/tournaments/my-tournaments');
-    return response.data;
-  },
-
-  async getCategories(): Promise<Category[]> {
-    const response = await api.get('/tournaments/categories');
-    return response.data;
-  },
-
-  async create(data: CreateTournamentData): Promise<Tournament> {
-    const response = await api.post('/tournaments', data);
-    return response.data;
-  },
-
-  async update(id: string, data: Partial<CreateTournamentData>): Promise<Tournament> {
-    const response = await api.patch(`/tournaments/${id}`, data);
-    return response.data;
-  },
-
-  async publish(id: string): Promise<Tournament> {
-    const response = await api.patch(`/tournaments/${id}/publish`);
-    return response.data;
-  },
-
-  async delete(id: string): Promise<{ message: string }> {
-    const response = await api.delete(`/tournaments/${id}`);
-    return response.data;
-  },
+  getAll: () => api.get('/tournaments').then(r => r.data),
+  getById: (id: string) => api.get(`/tournaments/${id}`).then(r => r.data),
+  create: (data: any) => api.post('/tournaments', data).then(r => r.data),
+  update: (id: string, data: any) => api.patch(`/tournaments/${id}`, data).then(r => r.data),
+  delete: (id: string) => api.delete(`/tournaments/${id}`).then(r => r.data),
 };

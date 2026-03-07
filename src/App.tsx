@@ -1,108 +1,73 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
-import { LoginPage } from './features/auth/pages/LoginPage';
-import { RegisterPage } from './features/auth/pages/RegisterPage';
-import { HomePage } from './pages/HomePage';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { UserRole } from './types';
-import { TournamentsListPage } from './features/tournaments/pages/TournamentsListPage';
-import { TournamentDetailPage } from './features/tournaments/pages/TournamentDetailPage';
-import { CreateTournamentPage } from './features/tournaments/pages/CreateTournamentPage';
-import { MisInscripcionesPage } from './features/inscripciones/pages/MisInscripcionesPage';
-import { InscripcionPage } from './features/inscripciones/pages/InscripcionPage';
-import { GestionInscripcionesPage } from './features/inscripciones/pages/GestionInscripcionesPage';
-import { BracketPage } from './features/fixture/pages/BracketPage';
-import { CargarResultadoPage } from './features/fixture/pages/CargarResultadoPage';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+
+// Landing
+import LandingPage from './pages/LandingPage';
+
+// Auth
+import LoginPage from './features/auth/pages/LoginPage';
+
+// Torneos (V1)
+import TournamentsListPage from './features/tournaments/pages/TournamentsListPage';
+import TournamentDetailPage from './features/tournaments/pages/TournamentDetailPage';
+
+// Inscripciones (V1)
+import MisInscripcionesPage from './features/inscripciones/pages/MisInscripcionesPage';
+
+// Fixture (V1)
+// import BracketPage from './features/fixture/pages/BracketPage';
+
+// Rankings (V1)
+import RankingsPage from './features/rankings/pages/RankingsPage';
+
+// Sedes (V2)
+import SedesListPage from './features/sedes/pages/SedesListPage';
+import SedeDetailPage from './features/sedes/pages/SedeDetailPage';
+
+// Alquileres (V2)
+import AlquileresPage from './features/alquileres/pages/AlquileresPage';
+import MisReservasPage from './features/alquileres/pages/MisReservasPage';
+
+// Instructores (V2)
+import InstructoresListPage from './features/instructores/pages/InstructoresListPage';
+import InstructorDetailPage from './features/instructores/pages/InstructorDetailPage';
 
 function App() {
   return (
-    <BrowserRouter>
-      <Toaster 
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: '#151921',
-            color: '#E5E7EB',
-            border: '1px solid #232838',
-          },
-        }}
-      />
+    <Router>
       <Routes>
-        {/* Auth Routes */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        {/* Landing */}
+        <Route path="/" element={<LandingPage />} />
         
-        {/* Tournament Routes - Public */}
+        {/* Auth */}
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* Torneos (V1) */}
         <Route path="/tournaments" element={<TournamentsListPage />} />
         <Route path="/tournaments/:id" element={<TournamentDetailPage />} />
         
-        {/* Tournament Routes - Protected (Organizador) */}
-        <Route
-          path="/tournaments/create"
-          element={
-            <ProtectedRoute requiredRoles={[UserRole.ORGANIZADOR, UserRole.ADMIN]}>
-              <CreateTournamentPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Inscripciones Routes - Protected */}
-        <Route
-          path="/inscripciones/my"
-          element={
-            <ProtectedRoute>
-              <MisInscripcionesPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/inscripciones/tournament/:id"
-          element={
-            <ProtectedRoute>
-              <InscripcionPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/inscripciones/gestion/:tournamentId"
-          element={
-            <ProtectedRoute requiredRoles={[UserRole.ORGANIZADOR, UserRole.ADMIN]}>
-              <GestionInscripcionesPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Fixture Routes */}
-        <Route
-          path="/fixture/:tournamentId/:categoryId"
-          element={
-            <ProtectedRoute>
-              <BracketPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/matches/:matchId/resultado"
-          element={
-            <ProtectedRoute requiredRoles={[UserRole.ORGANIZADOR, UserRole.ADMIN]}>
-              <CargarResultadoPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Inscripciones (V1) */}
+        <Route path="/inscripciones/my" element={<MisInscripcionesPage />} />
+        {/* <Route path="/inscripciones/tournament/:id" element={<InscripcionPage />} /> */}
         
-        {/* Home - Protected */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <HomePage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Fixture (V1) */}
+        {/* <Route path="/fixture/:tournamentId/:categoryId" element={<BracketPage />} /> */}
         
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Rankings (V1) */}
+        <Route path="/rankings" element={<RankingsPage />} />
+        
+        {/* Sedes (V2) */}
+        <Route path="/sedes" element={<SedesListPage />} />
+        <Route path="/sedes/:id" element={<SedeDetailPage />} />
+        
+        {/* Alquileres (V2) */}
+        <Route path="/alquileres" element={<AlquileresPage />} />
+        <Route path="/mis-reservas" element={<MisReservasPage />} />
+        
+        {/* Instructores (V2) */}
+        <Route path="/instructores" element={<InstructoresListPage />} />
+        <Route path="/instructores/:id" element={<InstructorDetailPage />} />
       </Routes>
-    </BrowserRouter>
+    </Router>
   );
 }
 

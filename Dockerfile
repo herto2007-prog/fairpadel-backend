@@ -3,36 +3,32 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
 
-# Copy source code
 COPY . .
-
-# Build the application
 RUN npm run build
 
-# Production stage with nginx
+# Production stage
 FROM nginx:alpine
 
-# Install envsubst for variable substitution
-RUN apk add --no-cache gettext
-
-# Copy nginx config template
-COPY nginx.conf /etc/nginx/conf.d/default.conf.template
-
-# Copy entrypoint script
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-# Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Expose port (Railway will set PORT env var)
-EXPOSE 3000
+# Copy nginx config
+RUN echo 'server { \
+    listen $PORT; \
+    location / { \
+        root /usr/share/nginx/html; \
+        index index.html; \
+        try_files $uri $uri/ /index.html; \
+    } \
+}' > /etc/nginx/conf.d/default.conf.template
 
-# Use entrypoint script
+# Entrypoint script to replace PORT
+RUN echo '#!/bin/sh \
+export PORT=${PORT:-80} \
+envsubst "\$PORT" < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf \
+nginx -g "daemon off;" \
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
 ENTRYPOINT ["/entrypoint.sh"]
