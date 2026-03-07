@@ -1,3 +1,4 @@
+import React from 'react';
 import { motion } from 'framer-motion';
 import { Instagram, Facebook, Twitter, Mail, MapPin, Phone } from 'lucide-react';
 
@@ -46,7 +47,7 @@ export const Footer = () => {
           <div className="col-span-2">
             <motion.a
               href="#hero"
-              onClick={(e) => { e.preventDefault(); scrollToSection('#hero'); }}
+              onClick={(e: React.MouseEvent) => { e.preventDefault(); scrollToSection('#hero'); }}
               className="inline-block mb-6"
               whileHover={{ scale: 1.05 }}
             >
@@ -87,7 +88,7 @@ export const Footer = () => {
                 <li key={link.name}>
                   <a
                     href={link.href}
-                    onClick={(e) => { 
+                    onClick={(e: React.MouseEvent) => { 
                       if (link.href.startsWith('#')) {
                         e.preventDefault(); 
                         scrollToSection(link.href); 

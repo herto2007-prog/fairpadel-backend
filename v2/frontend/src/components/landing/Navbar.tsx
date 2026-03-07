@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
 
@@ -46,7 +46,7 @@ export const Navbar = () => {
             {/* Logo */}
             <motion.a
               href="#hero"
-              onClick={(e) => { e.preventDefault(); scrollToSection('#hero'); }}
+              onClick={(e: React.MouseEvent) => { e.preventDefault(); scrollToSection('#hero'); }}
               className="flex items-center gap-3"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -64,7 +64,7 @@ export const Navbar = () => {
                 <motion.a
                   key={link.name}
                   href={link.href}
-                  onClick={(e) => { e.preventDefault(); scrollToSection(link.href); }}
+                  onClick={(e: React.MouseEvent) => { e.preventDefault(); scrollToSection(link.href); }}
                   className="text-gray-400 hover:text-white transition-colors text-sm font-medium"
                   whileHover={{ y: -2 }}
                 >
@@ -123,7 +123,7 @@ export const Navbar = () => {
                 <motion.a
                   key={link.name}
                   href={link.href}
-                  onClick={(e) => { e.preventDefault(); scrollToSection(link.href); }}
+                  onClick={(e: React.MouseEvent) => { e.preventDefault(); scrollToSection(link.href); }}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}

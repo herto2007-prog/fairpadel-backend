@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { ArrowRight, Sparkles } from 'lucide-react';
-import { FadeIn } from '../components/AnimatedSection';
+import { FadeIn } from './AnimatedSection';
 
 export const CTA = () => {
   return (

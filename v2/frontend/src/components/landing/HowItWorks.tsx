@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { UserPlus, Settings, Users, Trophy, ChevronRight } from 'lucide-react';
-import { FadeIn } from '../components/AnimatedSection';
+import { FadeIn } from './AnimatedSection';
 
 const steps = [
   {

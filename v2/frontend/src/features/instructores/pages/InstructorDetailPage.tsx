@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { instructoresService, Instructor } from '../../../services/instructoresService';
-import { MapPin, Award, Calendar, Phone } from 'lucide-react';
+import { MapPin, Award, Calendar } from 'lucide-react';
 
 export default function InstructorDetailPage() {
   const { id } = useParams<{ id: string }>();

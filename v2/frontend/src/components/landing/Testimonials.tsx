@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Quote, Star } from 'lucide-react';
-import { FadeIn } from '../components/AnimatedSection';
+import { FadeIn } from './AnimatedSection';
 
 const testimonials = [
   {

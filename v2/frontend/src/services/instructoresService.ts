@@ -4,6 +4,8 @@ export interface Instructor {
   id: string;
   experienciaAnios: number;
   especialidades?: string;
+  descripcion?: string;
+  certificaciones?: string;
   precioIndividual?: number;
   precioGrupal?: number;
   user: { nombre: string; apellido: string; fotoUrl?: string };

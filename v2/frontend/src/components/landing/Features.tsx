@@ -9,7 +9,7 @@ import {
   Zap,
   Award
 } from 'lucide-react';
-import { StaggerContainer, StaggerItem } from '../components/AnimatedSection';
+import { StaggerContainer, StaggerItem } from './AnimatedSection';
 
 const features = [
   {

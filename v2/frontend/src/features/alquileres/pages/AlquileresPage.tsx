@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { alquileresService } from '../../../services/alquileresService';
 import { sedesService } from '../../../services/sedesService';
-import { Calendar, Clock, MapPin } from 'lucide-react';
+import { Clock, MapPin } from 'lucide-react';
 
 interface Slot {
   horaInicio: string;

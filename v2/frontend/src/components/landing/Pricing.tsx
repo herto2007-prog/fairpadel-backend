@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Check, Star, Zap, Crown } from 'lucide-react';
-import { FadeIn } from '../components/AnimatedSection';
+import { FadeIn } from './AnimatedSection';
 
 const plans = [
   {
