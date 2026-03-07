@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, IsInt, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsInt, IsEnum, IsBoolean } from 'class-validator';
 import { MetodoPagoAlquiler } from '@prisma/client';
 
 export class CreateReservaDto {

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { FixtureVersionStatus, RondaTipo, MatchStatus, TournamentCategoryStatus } from '@prisma/client';
+import { FixtureVersionEstado, MatchStatus } from '@prisma/client';
 
 export interface GenerarFixtureData {
   tournamentId: string;
@@ -9,20 +9,20 @@ export interface GenerarFixtureData {
 
 export interface SlotDefinition {
   id: string;
-  ronda: RondaTipo;
+  ronda: string;
   numeroRonda: number;
   orden: number;
   pareja1Id?: string;
   pareja2Id?: string;
   esBye?: boolean;
   partidoSiguienteId?: string;
-  posicionEnSiguiente?: 'P1' | 'P2';
+  posicionEnSiguiente?: number;
 }
 
 export interface FixtureDefinicion {
   slots: SlotDefinition[];
   rondas: {
-    tipo: RondaTipo;
+    tipo: string;
     cantidadPartidos: number;
   }[];
   reglas: {
@@ -103,7 +103,7 @@ export class FixtureService {
         tournamentId,
         categoryId,
         version: nuevaVersion,
-        estado: FixtureVersionStatus.BORRADOR,
+        estado: 'BORRADOR',
         definicion: definicion as any,
         totalPartidos: definicion.slots.length,
       },
@@ -115,7 +115,7 @@ export class FixtureService {
     // Actualizar estado de la categoría
     await this.prisma.tournamentCategory.updateMany({
       where: { tournamentId, categoryId },
-      data: { estado: TournamentCategoryStatus.FIXTURE_BORRADOR },
+      data: { estado: 'INSCRIPCIONES_ABIERTAS' },
     });
 
     return this.getFixtureById(fixtureVersion.id);
@@ -129,7 +129,7 @@ export class FixtureService {
   ): FixtureDefinicion {
     const totalParejas = inscripciones.length;
     const slots: SlotDefinition[] = [];
-    const rondas: { tipo: RondaTipo; cantidadPartidos: number }[] = [];
+    const rondas: { tipo: string; cantidadPartidos: number }[] = [];
 
     // Mezclar aleatoriamente para el primer emparejamiento (seed inicial)
     const parejasMezcladas = [...inscripciones].sort(() => Math.random() - 0.5);
@@ -144,7 +144,7 @@ export class FixtureService {
 
       slots.push({
         id: `R1-${i + 1}`,
-        ronda: RondaTipo.ACOMODACION_1,
+        ronda: 'ACOMODACION_1',
         numeroRonda: 1,
         orden: i + 1,
         pareja1Id: pareja1?.id,
@@ -153,7 +153,7 @@ export class FixtureService {
       });
     }
 
-    rondas.push({ tipo: RondaTipo.ACOMODACION_1, cantidadPartidos: partidosR1 });
+    rondas.push({ tipo: 'ACOMODACION_1', cantidadPartidos: partidosR1 });
 
     // FASE 2: Acomodación 2 (R2) - Perdedores de R1
     // Cantidad de perdedores = partidosR1 (ganadores) + posibles BYEs
@@ -163,14 +163,14 @@ export class FixtureService {
     for (let i = 0; i < partidosR2; i++) {
       slots.push({
         id: `R2-${i + 1}`,
-        ronda: RondaTipo.ACOMODACION_2,
+        ronda: 'ACOMODACION_2',
         numeroRonda: 2,
         orden: i + 1,
         // Las parejas se asignarán después de R1 según games ganados
       });
     }
 
-    rondas.push({ tipo: RondaTipo.ACOMODACION_2, cantidadPartidos: partidosR2 });
+    rondas.push({ tipo: 'ACOMODACION_2', cantidadPartidos: partidosR2 });
 
     // Calcular cuántas parejas pasan al bracket principal
     // Ganadores R1 + Ganadores R2 + posible BYE del mejor perdedor
@@ -185,12 +185,12 @@ export class FixtureService {
     let rondaActual = 3;
 
     for (let r = 0; r < rondasBracket; r++) {
-      let tipoRonda: RondaTipo;
+      let tipoRonda: string;
       
-      if (partidosEnRonda === 1) tipoRonda = RondaTipo.FINAL;
-      else if (partidosEnRonda === 2) tipoRonda = RondaTipo.SEMIS;
-      else if (partidosEnRonda === 4) tipoRonda = RondaTipo.CUARTOS;
-      else tipoRonda = RondaTipo.OCTAVOS;
+      if (partidosEnRonda === 1) tipoRonda = 'FINAL';
+      else if (partidosEnRonda === 2) tipoRonda = 'SEMIS';
+      else if (partidosEnRonda === 4) tipoRonda = 'CUARTOS';
+      else tipoRonda = 'OCTAVOS';
 
       for (let i = 0; i < partidosEnRonda; i++) {
         const slotId = `${tipoRonda}-${i + 1}`;
@@ -202,18 +202,18 @@ export class FixtureService {
         };
 
         // Conectar con partido siguiente (excepto en la final)
-        if (tipoRonda !== RondaTipo.FINAL) {
+        if (tipoRonda !== 'FINAL') {
           const siguienteRondaPartidos = partidosEnRonda / 2;
           const parentIndex = Math.floor(i / 2);
           
-          let siguienteRondaTipo: RondaTipo;
-          if (siguienteRondaPartidos === 1) siguienteRondaTipo = RondaTipo.FINAL;
-          else if (siguienteRondaPartidos === 2) siguienteRondaTipo = RondaTipo.SEMIS;
-          else if (siguienteRondaPartidos === 4) siguienteRondaTipo = RondaTipo.CUARTOS;
-          else siguienteRondaTipo = RondaTipo.OCTAVOS;
+          let siguienteRondaTipo: string;
+          if (siguienteRondaPartidos === 1) siguienteRondaTipo = 'FINAL';
+          else if (siguienteRondaPartidos === 2) siguienteRondaTipo = 'SEMIS';
+          else if (siguienteRondaPartidos === 4) siguienteRondaTipo = 'CUARTOS';
+          else siguienteRondaTipo = 'OCTAVOS';
 
           slot.partidoSiguienteId = `${siguienteRondaTipo}-${parentIndex + 1}`;
-          slot.posicionEnSiguiente = i % 2 === 0 ? 'P1' : 'P2';
+          slot.posicionEnSiguiente = i % 2 === 0 ? 1 : 2;
         }
 
         slots.push(slot);
@@ -242,13 +242,13 @@ export class FixtureService {
    * Conecta los partidos de acomodación (R1, R2) con el bracket principal
    */
   private conectarAcomodacionConBracket(slots: SlotDefinition[]) {
-    const slotsR1 = slots.filter(s => s.ronda === RondaTipo.ACOMODACION_1);
-    const slotsR2 = slots.filter(s => s.ronda === RondaTipo.ACOMODACION_2);
+    const slotsR1 = slots.filter(s => s.ronda === 'ACOMODACION_1');
+    const slotsR2 = slots.filter(s => s.ronda === 'ACOMODACION_2');
     const slotsBracket = slots.filter(s => 
-      s.ronda === RondaTipo.OCTAVOS || 
-      s.ronda === RondaTipo.CUARTOS || 
-      s.ronda === RondaTipo.SEMIS || 
-      s.ronda === RondaTipo.FINAL
+      s.ronda === 'OCTAVOS' || 
+      s.ronda === 'CUARTOS' || 
+      s.ronda === 'SEMIS' || 
+      s.ronda === 'FINAL'
     );
 
     // Los ganadores de R1 van al bracket
@@ -289,17 +289,10 @@ export class FixtureService {
           categoryId: '',   // Se asigna desde fixtureVersion
           ronda: slot.ronda,
           numeroRonda: slot.numeroRonda,
-          ordenEnRonda: slot.orden,
-          pareja1Id: slot.pareja1Id,
-          pareja2Id: slot.pareja2Id,
-          pareja1Nombre: pareja1 
-            ? `${pareja1.jugador1.nombre} ${pareja1.jugador1.apellido} / ${pareja1.jugador2?.nombre || '?'}`
-            : null,
-          pareja2Nombre: pareja2
-            ? `${pareja2.jugador1.nombre} ${pareja2.jugador1.apellido} / ${pareja2.jugador2?.nombre || '?'}`
-            : null,
+
+          inscripcion1Id: slot.pareja1Id,
+          inscripcion2Id: slot.pareja2Id,
           estado: slot.esBye ? MatchStatus.FINALIZADO : MatchStatus.PROGRAMADO,
-          esBye: slot.esBye || false,
           partidoSiguienteId: slot.partidoSiguienteId,
           posicionEnSiguiente: slot.posicionEnSiguiente,
         },
@@ -326,18 +319,18 @@ export class FixtureService {
   async publicarFixture(fixtureVersionId: string, organizadorId: string) {
     const fixtureVersion = await this.prisma.fixtureVersion.findUnique({
       where: { id: fixtureVersionId },
-      include: { tournament: true },
+      include: { tournamentCategory: true },
     });
 
     if (!fixtureVersion) {
       throw new NotFoundException('Fixture no encontrado');
     }
 
-    if (fixtureVersion.tournament.organizadorId !== organizadorId) {
+    if (fixtureVersion.tournamentCategory.tournamentId !== organizadorId) {
       throw new BadRequestException('No tienes permiso para publicar este fixture');
     }
 
-    if (fixtureVersion.estado !== FixtureVersionStatus.BORRADOR) {
+    if (fixtureVersion.estado !== 'BORRADOR') {
       throw new BadRequestException('Solo se pueden publicar fixtures en estado borrador');
     }
 
@@ -346,16 +339,16 @@ export class FixtureService {
       where: {
         tournamentId: fixtureVersion.tournamentId,
         categoryId: fixtureVersion.categoryId,
-        estado: FixtureVersionStatus.PUBLICADO,
+        estado: 'PUBLICADO',
       },
-      data: { estado: FixtureVersionStatus.ARCHIVADO, archivadoAt: new Date() },
+      data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
     });
 
     // Publicar nueva versión
     const fixturePublicado = await this.prisma.fixtureVersion.update({
       where: { id: fixtureVersionId },
       data: {
-        estado: FixtureVersionStatus.PUBLICADO,
+        estado: 'PUBLICADO',
         publicadoAt: new Date(),
       },
     });
@@ -366,7 +359,7 @@ export class FixtureService {
         tournamentId: fixtureVersion.tournamentId,
         categoryId: fixtureVersion.categoryId,
       },
-      data: { estado: TournamentCategoryStatus.SORTEO_REALIZADO },
+      data: { estado: 'SORTEO_REALIZADO' },
     });
 
     return fixturePublicado;
@@ -379,22 +372,20 @@ export class FixtureService {
     return this.prisma.fixtureVersion.findUnique({
       where: { id: fixtureVersionId },
       include: {
-        tournament: {
-          select: { id: true, nombre: true, organizadorId: true },
+        tournamentCategory: {
+          select: { id: true, tournamentId: true, categoryId: true },
         },
-        category: {
-          select: { id: true, nombre: true, tipo: true },
-        },
-        matches: {
-          orderBy: [{ numeroRonda: 'asc' }, { ordenEnRonda: 'asc' }],
+
+        partidos: {
+          orderBy: [{ numeroRonda: 'asc' }],
           include: {
-            pareja1: {
+            inscripcion1: {
               include: {
                 jugador1: { select: { nombre: true, apellido: true } },
                 jugador2: { select: { nombre: true, apellido: true } },
               },
             },
-            pareja2: {
+            inscripcion2: {
               include: {
                 jugador1: { select: { nombre: true, apellido: true } },
                 jugador2: { select: { nombre: true, apellido: true } },
@@ -414,19 +405,19 @@ export class FixtureService {
       where: {
         tournamentId,
         categoryId,
-        estado: FixtureVersionStatus.PUBLICADO,
+        estado: 'PUBLICADO',
       },
       include: {
-        matches: {
-          orderBy: [{ numeroRonda: 'asc' }, { ordenEnRonda: 'asc' }],
+        partidos: {
+          orderBy: [{ numeroRonda: 'asc' }],
           include: {
-            pareja1: {
+            inscripcion1: {
               include: {
                 jugador1: { select: { nombre: true, apellido: true } },
                 jugador2: { select: { nombre: true, apellido: true } },
               },
             },
-            pareja2: {
+            inscripcion2: {
               include: {
                 jugador1: { select: { nombre: true, apellido: true } },
                 jugador2: { select: { nombre: true, apellido: true } },

@@ -5,7 +5,9 @@ import {
   MaxLength,
   IsNotEmpty,
   Matches,
+  IsEnum,
 } from 'class-validator';
+import { Gender } from '@prisma/client';
 
 export class RegisterDto {
   @IsEmail({}, { message: 'El email no es válido' })
@@ -36,4 +38,8 @@ export class RegisterDto {
   @IsNotEmpty({ message: 'El teléfono es requerido' })
   @Matches(/^09[0-9]{8}$/, { message: 'El teléfono debe tener formato paraguayo (09XXXXXXXX)' })
   telefono: string;
+
+  @IsEnum(Gender, { message: 'El género debe ser MASCULINO o FEMENINO' })
+  @IsNotEmpty({ message: 'El género es requerido' })
+  genero: Gender;
 }

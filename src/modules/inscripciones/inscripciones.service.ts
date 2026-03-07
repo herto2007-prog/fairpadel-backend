@@ -78,12 +78,13 @@ export class InscripcionesService {
 
     return this.prisma.inscripcion.create({
       data: {
-        tournamentId: dto.tournamentId,
-        categoryId: dto.categoryId,
-        jugador1Id,
-        jugador2Id,
+        tournament: { connect: { id: dto.tournamentId } },
+        category: { connect: { id: dto.categoryId } },
+        jugador1: { connect: { id: jugador1Id } },
+        ...(jugador2Id && { jugador2: { connect: { id: jugador2Id } } }),
         jugador2Documento,
         jugador2Email,
+        modalidad: dto.modalidad,
         modoPago: dto.modoPago || 'COMPLETO',
         estado: InscripcionEstado.PENDIENTE_CONFIRMACION,
       },

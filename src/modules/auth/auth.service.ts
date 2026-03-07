@@ -10,7 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
-import { RoleName, UserStatus } from '@prisma/client';
+import { UserStatus } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -46,16 +46,17 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
-        passwordHash,
+        password: passwordHash,
         nombre: dto.nombre,
         apellido: dto.apellido,
         documento: dto.documento,
         telefono: dto.telefono,
-        status: UserStatus.ACTIVO,
+        genero: dto.genero,
+        estado: UserStatus.ACTIVO,
         roles: {
           create: {
             role: {
-              connect: { name: RoleName.jugador },
+              connect: { nombre: 'jugador' },
             },
           },
         },
@@ -80,7 +81,7 @@ export class AuthService {
         nombre: user.nombre,
         apellido: user.apellido,
         documento: user.documento,
-        roles: user.roles.map((ur) => ur.role.name),
+        roles: user.roles.map((ur) => ur.role.nombre),
       },
     };
   }
@@ -103,14 +104,14 @@ export class AuthService {
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+    const isPasswordValid = await bcrypt.compare(dto.password, user.password);
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
     // Check user status
-    if (user.status === UserStatus.INACTIVO || user.status === UserStatus.SUSPENDIDO) {
+    if (user.estado === UserStatus.INACTIVO || user.estado === UserStatus.SUSPENDIDO) {
       throw new UnauthorizedException('Usuario inactivo o suspendido');
     }
 
@@ -125,7 +126,7 @@ export class AuthService {
         nombre: user.nombre,
         apellido: user.apellido,
         documento: user.documento,
-        roles: user.roles.map((ur) => ur.role.name),
+        roles: user.roles.map((ur) => ur.role.nombre),
       },
     };
   }

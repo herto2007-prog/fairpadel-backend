@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TipoRanking, RondaTipo, MatchStatus } from '@prisma/client';
+import { TipoRanking, MatchStatus } from '@prisma/client';
 
 // Sistema de puntos por puesto en torneo
 const PUNTOS_POR_PUESTO = {
@@ -25,6 +25,7 @@ interface ResultadoTorneo {
   partidosGanados: number;
   partidosPerdidos: number;
   categoryId: string;
+  genero?: string;
 }
 
 @Injectable()
@@ -43,7 +44,7 @@ export class RankingsService {
         categoryId,
         estado: MatchStatus.FINALIZADO,
         ronda: {
-          in: [RondaTipo.FINAL, RondaTipo.SEMIS, RondaTipo.CUARTOS, RondaTipo.OCTAVOS],
+          in: ['FINAL', 'SEMIS', 'CUARTOS', 'OCTAVOS'],
         },
       },
       include: {
@@ -110,9 +111,9 @@ export class RankingsService {
     }
 
     // Procesar partidos para determinar puestos
-    const final = partidos.find(p => p.ronda === RondaTipo.FINAL);
-    const semis = partidos.filter(p => p.ronda === RondaTipo.SEMIS);
-    const cuartos = partidos.filter(p => p.ronda === RondaTipo.CUARTOS);
+    const final = partidos.find(p => p.ronda === 'FINAL');
+    const semis = partidos.filter(p => p.ronda === 'SEMIS');
+    const cuartos = partidos.filter(p => p.ronda === 'CUARTOS');
 
     // Campeón y finalista
     if (final?.inscripcionGanadora) {
@@ -241,6 +242,15 @@ export class RankingsService {
 
     const temporada = new Date().getFullYear().toString();
 
+    // Obtener género del jugador si no está disponible
+    if (!resultado.genero) {
+      const jugador = await this.prisma.user.findUnique({
+        where: { id: resultado.jugadorId },
+        select: { genero: true },
+      });
+      resultado.genero = jugador?.genero || 'MASCULINO';
+    }
+
     // Actualizar ranking GLOBAL
     await this.upsertRanking({
       jugadorId: resultado.jugadorId,
@@ -248,6 +258,7 @@ export class RankingsService {
       puntos: puntosTorneo,
       resultado,
       temporada,
+      genero: resultado.genero,
     });
 
     // Actualizar ranking por CATEGORÍA
@@ -255,10 +266,10 @@ export class RankingsService {
       jugadorId: resultado.jugadorId,
       tipoRanking: TipoRanking.CATEGORIA,
       alcance: resultado.categoryId,
-      referenciaAlcance: resultado.categoryId,
       puntos: puntosTorneo,
       resultado,
       temporada,
+      genero: resultado.genero,
     });
   }
 
@@ -269,10 +280,10 @@ export class RankingsService {
     jugadorId: string;
     tipoRanking: TipoRanking;
     alcance?: string;
-    referenciaAlcance?: string;
     puntos: number;
     resultado: ResultadoTorneo;
     temporada: string;
+    genero: string;
   }) {
     const existing = await this.prisma.ranking.findFirst({
       where: {
@@ -290,13 +301,11 @@ export class RankingsService {
         data: {
           puntosTotales: existing.puntosTotales + data.puntos,
           torneosJugados: existing.torneosJugados + 1,
-          partidosGanados: existing.partidosGanados + data.resultado.partidosGanados,
-          partidosPerdidos: existing.partidosPerdidos + data.resultado.partidosPerdidos,
-          victorias: existing.victorias + (data.resultado.esCampeon ? 1 : 0),
-          finales: existing.finales + (data.resultado.esFinalista ? 1 : 0),
-          semifinales: existing.semifinales + (data.resultado.esSemifinalista ? 1 : 0),
-          mejorPuestoHistorico: existing.mejorPuestoHistorico 
-            ? Math.min(existing.mejorPuestoHistorico, data.resultado.puesto)
+          victorias: existing.victorias + data.resultado.partidosGanados,
+          derrotas: existing.derrotas + data.resultado.partidosPerdidos,
+          campeonatos: existing.campeonatos + (data.resultado.esCampeon ? 1 : 0),
+          mejorPosicion: existing.mejorPosicion 
+            ? Math.min(existing.mejorPosicion, data.resultado.puesto)
             : data.resultado.puesto,
         },
       });
@@ -306,16 +315,15 @@ export class RankingsService {
         data: {
           jugadorId: data.jugadorId,
           tipoRanking: data.tipoRanking,
-          alcance: data.alcance,
-          referenciaAlcance: data.referenciaAlcance,
+          alcance: data.alcance || '',
+          genero: data.genero as any,
+          posicion: data.resultado.puesto,
           puntosTotales: data.puntos,
           torneosJugados: 1,
-          partidosGanados: data.resultado.partidosGanados,
-          partidosPerdidos: data.resultado.partidosPerdidos,
-          victorias: data.resultado.esCampeon ? 1 : 0,
-          finales: data.resultado.esFinalista ? 1 : 0,
-          semifinales: data.resultado.esSemifinalista ? 1 : 0,
-          mejorPuestoHistorico: data.resultado.puesto,
+          victorias: data.resultado.partidosGanados,
+          derrotas: data.resultado.partidosPerdidos,
+          campeonatos: data.resultado.esCampeon ? 1 : 0,
+          mejorPosicion: data.resultado.puesto,
           temporada: data.temporada,
         },
       });
@@ -357,7 +365,7 @@ export class RankingsService {
     return this.prisma.ranking.findMany({
       where: {
         tipoRanking: TipoRanking.CATEGORIA,
-        referenciaAlcance: categoryId,
+        alcance: categoryId,
         temporada: temp,
       },
       orderBy: { puntosTotales: 'desc' },
@@ -401,12 +409,10 @@ export class RankingsService {
     return {
       puntosTotales: global?.puntosTotales || 0,
       torneosJugados: global?.torneosJugados || 0,
-      partidosGanados: global?.partidosGanados || 0,
-      partidosPerdidos: global?.partidosPerdidos || 0,
       victorias: global?.victorias || 0,
-      finales: global?.finales || 0,
-      semifinales: global?.semifinales || 0,
-      mejorPuesto: global?.mejorPuestoHistorico || null,
+      derrotas: global?.derrotas || 0,
+      campeonatos: global?.campeonatos || 0,
+      mejorPuesto: global?.mejorPosicion || null,
       rankingsPorCategoria: rankings.filter(r => r.tipoRanking === TipoRanking.CATEGORIA),
     };
   }
