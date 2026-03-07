@@ -60,6 +60,32 @@ enum ModoPagoInscripcion {
   INDIVIDUAL
 }
 
+// NUEVOS ENUMS PARA FIXTURE
+enum RondaTipo {
+  ACOMODACION_1
+  ACOMODACION_2
+  OCTAVOS
+  CUARTOS
+  SEMIS
+  FINAL
+  TERCER_PUESTO
+}
+
+enum MatchStatus {
+  PROGRAMADO
+  EN_JUEGO
+  FINALIZADO
+  WO
+  SUSPENDIDO
+  CANCELADO
+}
+
+enum FixtureVersionStatus {
+  BORRADOR
+  PUBLICADO
+  ARCHIVADO
+}
+
 // ═══════════════════════════════════════════════════════
 // MODELS
 // ═══════════════════════════════════════════════════════
@@ -136,6 +162,8 @@ model Tournament {
   
   categories        TournamentCategory[]
   inscripciones     Inscripcion[]
+  fixtureVersions   FixtureVersion[]
+  matches           Match[]
   
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
@@ -154,6 +182,8 @@ model Category {
   
   tournaments TournamentCategory[]
   inscripciones Inscripcion[]
+  fixtureVersions FixtureVersion[]
+  matches     Match[]
   
   @@map("categories")
 }
@@ -203,5 +233,110 @@ model Inscripcion {
   jugador1          User                  @relation("InscripcionJugador1", fields: [jugador1Id], references: [id])
   jugador2          User?                 @relation("InscripcionJugador2", fields: [jugador2Id], references: [id])
   
+  // Relación con matches (como pareja)
+  matchesPareja1    Match[]               @relation("MatchPareja1")
+  matchesPareja2    Match[]               @relation("MatchPareja2")
+  matchesGanados    Match[]               @relation("MatchGanador")
+  matchesPerdidos   Match[]               @relation("MatchPerdedor")
+  
   @@map("inscripciones")
+}
+
+// ═══════════════════════════════════════════════════════
+// FIXTURE VERSIONADO (SEMANA 3)
+// ═══════════════════════════════════════════════════════
+
+model FixtureVersion {
+  id                String                @id @default(uuid())
+  tournamentId      String                @map("tournament_id")
+  categoryId        String                @map("category_id")
+  version           Int                   @default(1)
+  
+  estado            FixtureVersionStatus  @default(BORRADOR)
+  
+  // Definición del fixture como JSON
+  definicion        Json                  @map("definicion")
+  
+  totalPartidos     Int                   @default(0) @map("total_partidos")
+  
+  publicadoAt       DateTime?             @map("publicado_at")
+  archivadoAt       DateTime?             @map("archivado_at")
+  
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  
+  // Relaciones
+  tournament        Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category          Category              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  matches           Match[]
+  
+  @@unique([tournamentId, categoryId, version])
+  @@map("fixture_versions")
+}
+
+model Match {
+  id                    String          @id @default(uuid())
+  tournamentId          String          @map("tournament_id")
+  categoryId            String          @map("category_id")
+  fixtureVersionId      String          @map("fixture_version_id")
+  
+  // Ronda y posición
+  ronda                 RondaTipo
+  numeroRonda           Int             @map("numero_ronda")
+  ordenEnRonda          Int             @default(0) @map("orden_en_ronda")
+  
+  // Parejas (referencia a inscripciones)
+  pareja1Id             String?         @map("pareja1_id")
+  pareja2Id             String?         @map("pareja2_id")
+  
+  // Información de la pareja (para mostrar sin join)
+  pareja1Nombre         String?         @map("pareja1_nombre")
+  pareja2Nombre         String?         @map("pareja2_nombre")
+  
+  // Cancha y horario
+  canchaId              String?         @map("cancha_id")
+  canchaNombre          String?         @map("cancha_nombre")
+  fechaProgramada       DateTime?       @map("fecha_programada")
+  horaProgramada        String?         @map("hora_programada")
+  horaFinEstimada       String?         @map("hora_fin_estimada")
+  
+  // Estado
+  estado                MatchStatus     @default(PROGRAMADO)
+  
+  // Resultados - Sets (máximo 3 sets)
+  set1Pareja1           Int?            @map("set1_pareja1")
+  set1Pareja2           Int?            @map("set1_pareja2")
+  set2Pareja1           Int?            @map("set2_pareja1")
+  set2Pareja2           Int?            @map("set2_pareja2")
+  set3Pareja1           Int?            @map("set3_pareja1")
+  set3Pareja2           Int?            @map("set3_pareja2")
+  
+  // Ganador
+  parejaGanadoraId      String?         @map("pareja_ganadora_id")
+  parejaPerdedoraId     String?         @map("pareja_perdedora_id")
+  
+  // Enlaces para bracket
+  partidoSiguienteId    String?         @map("partido_siguiente_id")
+  posicionEnSiguiente   String?         @map("posicion_en_siguiente") // "P1" o "P2"
+  
+  // Metadata
+  esBye                 Boolean         @default(false) @map("es_bye")
+  notas                 String?
+  
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  
+  // Relaciones
+  tournament            Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  category              Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  fixtureVersion        FixtureVersion  @relation(fields: [fixtureVersionId], references: [id], onDelete: Cascade)
+  
+  pareja1               Inscripcion?    @relation("MatchPareja1", fields: [pareja1Id], references: [id])
+  pareja2               Inscripcion?    @relation("MatchPareja2", fields: [pareja2Id], references: [id])
+  parejaGanadora        Inscripcion?    @relation("MatchGanador", fields: [parejaGanadoraId], references: [id])
+  parejaPerdedora       Inscripcion?    @relation("MatchPerdedor", fields: [parejaPerdedoraId], references: [id])
+  partidoSiguiente      Match?          @relation("MatchBracket", fields: [partidoSiguienteId], references: [id])
+  partidosAnteriores    Match[]         @relation("MatchBracket")
+  
+  @@map("matches")
 }

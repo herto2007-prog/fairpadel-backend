@@ -5,6 +5,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TournamentsModule } from './modules/tournaments/tournaments.module';
 import { InscripcionesModule } from './modules/inscripciones/inscripciones.module';
+import { FixtureModule } from './modules/fixture/fixture.module';
+import { MatchesModule } from './modules/matches/matches.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { InscripcionesModule } from './modules/inscripciones/inscripciones.modul
     AuthModule,
     TournamentsModule,
     InscripcionesModule,
+    FixtureModule,
+    MatchesModule,
   ],
 })
 export class AppModule {}
