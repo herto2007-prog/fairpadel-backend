@@ -1,4 +1,3 @@
-import { Navbar } from '../components/landing/Navbar';
 import { Hero } from '../components/landing/Hero';
 import { Features } from '../components/landing/Features';
 import { HowItWorks } from '../components/landing/HowItWorks';
@@ -12,7 +11,6 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#0B0E14] text-white overflow-x-hidden">
       <ParticleBackground />
-      <Navbar />
       <main>
         <Hero />
         <Features />

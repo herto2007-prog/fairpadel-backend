@@ -46,60 +46,96 @@ export const Hero = () => {
         <div className="grid lg:grid-cols-2 gap-16 items-center">
           {/* Left Column - Text */}
           <div className="text-center lg:text-left">
+            
+            {/* Logo con efecto dramático */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.5, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ 
+                duration: 1, 
+                delay: 0.2,
+                type: "spring",
+                stiffness: 100,
+                damping: 15
+              }}
+              className="mb-8 flex justify-center lg:justify-start"
+            >
+              <motion.div
+                animate={{
+                  scale: [1, 1.05, 1],
+                  filter: [
+                    "drop-shadow(0 0 20px rgba(223, 37, 49, 0.3))",
+                    "drop-shadow(0 0 40px rgba(223, 37, 49, 0.6))",
+                    "drop-shadow(0 0 20px rgba(223, 37, 49, 0.3))"
+                  ]
+                }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                className="relative"
+              >
+                <img 
+                  src="/logos/Asset 2fair padel.png" 
+                  alt="FairPadel" 
+                  className="h-24 w-auto lg:h-32"
+                />
+                {/* Glow effect behind logo */}
+                <div className="absolute inset-0 -z-10 blur-3xl bg-primary/30 rounded-full scale-150" />
+              </motion.div>
+            </motion.div>
+
             {/* Badge */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 mb-8"
+              transition={{ duration: 0.6, delay: 0.5 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 mb-6"
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
               </span>
-              <span className="text-primary text-sm font-medium">Sistema #1 de Gestión de Torneos en Paraguay</span>
+              <span className="text-primary text-sm font-medium">Bienvenido a la experiencia definitiva del pádel</span>
             </motion.div>
 
-            {/* Headline */}
+            {/* Headline - Bienvenida a la marca */}
             <motion.h1
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.1 }}
+              transition={{ duration: 0.8, delay: 0.6 }}
               className="heading-xl mb-6"
             >
-              <span className="text-white">Organiza torneos de pádel</span>
+              <span className="text-gradient">FairPadel</span>
               <br />
-              <span className="text-gradient">como un profesional</span>
+              <span className="text-white text-3xl sm:text-4xl lg:text-5xl font-semibold">
+                La plataforma #1 de pádel en Paraguay
+              </span>
             </motion.h1>
 
             {/* Subheadline */}
             <motion.p
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
+              transition={{ duration: 0.8, delay: 0.7 }}
               className="text-body text-lg mb-10 max-w-xl mx-auto lg:mx-0"
             >
-              La plataforma todo-en-uno para crear torneos, gestionar inscripciones, 
-              generar fixtures automáticos y llevar rankings. Diseñada para 
-              organizadores y jugadores de pádel en Paraguay.
+              Únete a miles de jugadores y organizadores que ya viven el pádel 
+              de forma profesional. Tu torneo, tu comunidad, tu pasión. 
+              Todo en un solo lugar.
             </motion.p>
 
             {/* CTA Buttons */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.3 }}
+              transition={{ duration: 0.8, delay: 0.8 }}
               className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-12"
             >
               <motion.a
-                href="https://fairpadel-frontend-production.up.railway.app/register"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/register"
                 className="btn-primary inline-flex items-center justify-center gap-2 text-lg group"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                Crear Mi Primer Torneo
+                Empezar Ahora
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </motion.a>
               <motion.button
@@ -109,7 +145,7 @@ export const Hero = () => {
                 onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 <Play className="w-5 h-5" />
-                Ver Demo
+                Ver Cómo Funciona
               </motion.button>
             </motion.div>
 
@@ -117,7 +153,7 @@ export const Hero = () => {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ duration: 0.8, delay: 0.5 }}
+              transition={{ duration: 0.8, delay: 1 }}
               className="flex items-center justify-center lg:justify-start gap-6 text-sm text-gray-500"
             >
               <div className="flex -space-x-2">
@@ -138,7 +174,7 @@ export const Hero = () => {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1, delay: 0.3 }}
+            transition={{ duration: 1, delay: 0.5 }}
             className="relative hidden lg:block"
           >
             {/* Main Card */}
@@ -148,9 +184,16 @@ export const Hero = () => {
               className="relative z-10 glass rounded-3xl p-8 glow-primary"
             >
               <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-xl font-bold text-white">Torneo "Copa Primavera"</h3>
-                  <p className="text-gray-400 text-sm">24 equipos inscritos</p>
+                <div className="flex items-center gap-3">
+                  <img 
+                    src="/logos/Asset 2fair padel.png" 
+                    alt="FairPadel" 
+                    className="h-8 w-auto"
+                  />
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Copa Primavera</h3>
+                    <p className="text-gray-400 text-sm">24 equipos inscritos</p>
+                  </div>
                 </div>
                 <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-medium">
                   EN CURSO
@@ -201,7 +244,7 @@ export const Hero = () => {
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: '75%' }}
-                    transition={{ duration: 1.5, delay: 0.8 }}
+                    transition={{ duration: 1.5, delay: 1.2 }}
                     className="h-full bg-gradient-to-r from-primary to-red-500 rounded-full"
                   />
                 </div>
@@ -247,7 +290,7 @@ export const Hero = () => {
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.6 }}
+          transition={{ duration: 0.8, delay: 1.1 }}
           className="mt-20 grid grid-cols-3 gap-8 max-w-3xl mx-auto"
         >
           {stats.map((stat, index) => (
@@ -255,7 +298,7 @@ export const Hero = () => {
               key={stat.label}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.7 + index * 0.1 }}
+              transition={{ duration: 0.5, delay: 1.2 + index * 0.1 }}
               className="text-center"
             >
               <div className="flex items-center justify-center gap-2 mb-2">
