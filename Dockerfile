@@ -12,8 +12,11 @@ COPY prisma ./prisma/
 # Generate Prisma client
 RUN npx prisma generate
 
-# Copy source code
-COPY . .
+# Copy only backend source code (NOT frontend)
+COPY src ./src/
+COPY tsconfig*.json ./
+COPY nest-cli.json ./
+COPY railway.json ./
 
 # Build application
 RUN npm run build
