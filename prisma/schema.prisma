@@ -10,11 +10,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-seed = {
-  provider = "ts-node",
-  script   = "prisma/seed.ts"
-}
-
 // ═══════════════════════════════════════════════════════
 // ENUMS
 // ═══════════════════════════════════════════════════════
