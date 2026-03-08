@@ -50,6 +50,15 @@ export class AuthService {
     // Hash password
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
+    // Buscar la categoría por nombre
+    const categoria = await this.prisma.category.findFirst({
+      where: { nombre: dto.categoria },
+    });
+
+    if (!categoria) {
+      throw new ConflictException('La categoría seleccionada no existe');
+    }
+
     // Create user with jugador role - estado NO_VERIFICADO
     const user = await this.prisma.user.create({
       data: {
@@ -59,7 +68,11 @@ export class AuthService {
         apellido: dto.apellido,
         documento: dto.documento,
         telefono: dto.telefono,
+        fechaNacimiento: new Date(dto.fechaNacimiento),
         genero: dto.genero,
+        ciudad: dto.ciudad,
+        fotoUrl: dto.fotoUrl,
+        categoriaActualId: categoria.id,
         estado: UserStatus.NO_VERIFICADO,
         roles: {
           create: {

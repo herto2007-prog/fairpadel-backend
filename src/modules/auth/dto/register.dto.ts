@@ -6,6 +6,8 @@ import {
   IsNotEmpty,
   Matches,
   IsEnum,
+  IsOptional,
+  IsDateString,
 } from 'class-validator';
 import { Gender } from '@prisma/client';
 
@@ -36,10 +38,25 @@ export class RegisterDto {
 
   @IsString({ message: 'El teléfono debe ser texto' })
   @IsNotEmpty({ message: 'El teléfono es requerido' })
-  @Matches(/^09[0-9]{8}$/, { message: 'El teléfono debe tener formato paraguayo (09XXXXXXXX)' })
   telefono: string;
+
+  @IsDateString({}, { message: 'La fecha de nacimiento no es válida' })
+  @IsNotEmpty({ message: 'La fecha de nacimiento es requerida' })
+  fechaNacimiento: string;
 
   @IsEnum(Gender, { message: 'El género debe ser MASCULINO o FEMENINO' })
   @IsNotEmpty({ message: 'El género es requerido' })
   genero: Gender;
+
+  @IsString({ message: 'La ciudad debe ser texto' })
+  @IsNotEmpty({ message: 'La ciudad es requerida' })
+  ciudad: string;
+
+  @IsString({ message: 'La categoría debe ser texto' })
+  @IsNotEmpty({ message: 'La categoría es requerida' })
+  categoria: string;
+
+  @IsString({ message: 'La URL de foto debe ser texto' })
+  @IsOptional()
+  fotoUrl?: string;
 }
