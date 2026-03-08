@@ -5,9 +5,17 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
-  // Configuración CORS robusta
+  // CORS: Configuración para dominios custom de producción
   const allowedOrigins = [
+    // Desarrollo local
     'http://localhost:5173',
+    'http://localhost:3000',
+    
+    // Producción - Dominios custom (oficial)
+    'https://fairpadel.com',
+    'https://www.fairpadel.com',
+    
+    // Fallback - Railway (mientras se configura el dominio)
     'https://fairpadel-frontend-production.up.railway.app',
   ];
 
@@ -16,11 +24,11 @@ async function bootstrap() {
       // Permitir requests sin origin (mobile apps, curl, etc)
       if (!origin) return callback(null, true);
       
-      // Permitir orígenes de la lista
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      // Verificar si el origen está permitido
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.log(`CORS bloqueado para origen: ${origin}`);
+        console.log(`[CORS] Bloqueado: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
@@ -29,18 +37,11 @@ async function bootstrap() {
     allowedHeaders: [
       'Origin',
       'X-Requested-With',
-      'Content-Type',
+      'Content-Type', 
       'Accept',
       'Authorization',
     ],
-    preflightContinue: false,
     optionsSuccessStatus: 204,
-  });
-
-  // Middleware para loguear todas las peticiones (debugging temporal)
-  app.use((req, res, next) => {
-    console.log(`[${req.method}] ${req.url} from ${req.headers.origin || 'no-origin'}`);
-    next();
   });
 
   app.useGlobalPipes(
@@ -55,7 +56,9 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Server running on port ${port}`);
-  console.log(`CORS allowed for: ${allowedOrigins.join(', ')}`);
+  
+  console.log(`✅ Backend corriendo en puerto ${port}`);
+  console.log(`🌐 CORS permitido para:`);
+  allowedOrigins.forEach(origin => console.log(`   - ${origin}`));
 }
 bootstrap();
