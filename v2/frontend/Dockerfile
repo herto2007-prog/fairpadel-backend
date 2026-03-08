@@ -1,34 +1,34 @@
-# Build stage - usar Debian en lugar de Alpine
-FROM node:20-slim AS builder
+# Multi-stage build para Vite React
+
+# Stage 1: Build
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Instalar dependencias necesarias
+# Instalar OpenSSL (necesario para algunas dependencias)
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
-# Copiar package files
+# Copiar package.json primero (mejor caché)
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
-# Copiar source
+# Copiar el resto
 COPY . .
 
-# Build
+# Build de producción
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine
+# Stage 2: Servir con nginx
+FROM nginx:1.25-alpine-slim
 
 # Copiar build output
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Crear config de nginx con template
-RUN echo 'server { listen PORT_PLACEHOLDER; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } }' > /etc/nginx/conf.d/default.conf.template
+# Configuración de nginx
+RUN printf 'server {\n    listen ${PORT};\n    root /usr/share/nginx/html;\n    index index.html;\n    location / {\n        try_files $uri $uri/ /index.html;\n    }\n}' > /etc/nginx/templates/default.conf.template
 
-# Script de inicio que reemplaza el puerto
-RUN echo '#!/bin/sh' > /start.sh && \
-    echo 'sed "s/PORT_PLACEHOLDER/${PORT}/g" /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf' >> /start.sh && \
-    echo 'nginx -g "daemon off;"' >> /start.sh && \
-    chmod +x /start.sh
+# Puerto por defecto (Railway sobrescribe con $PORT)
+ENV PORT=80
 
-CMD ["/start.sh"]
+# Nginx usa envsubst para reemplazar ${PORT}
+CMD ["nginx", "-g", "daemon off;"]
