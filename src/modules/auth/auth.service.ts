@@ -91,8 +91,10 @@ export class AuthService {
       },
     });
 
-    // Create verification token
-    await this.createVerificationToken(user.id, user.email, user.nombre);
+    // Create verification token (async - no bloquea la respuesta)
+    this.createVerificationToken(user.id, user.email, user.nombre).catch(err => {
+      this.logger.error('Error enviando email de verificación:', err);
+    });
 
     // Generate token (using documento as identifier)
     const token = this.generateToken(user.id, user.documento);
@@ -158,7 +160,8 @@ export class AuthService {
   }
 
   /**
-   * Crea un token de verificación y envía el email
+   * Crea un token de verificación y envía el email (async)
+   * Optimizado: No bloquea el registro, el email se envía en segundo plano
    */
   private async createVerificationToken(userId: string, email: string, nombre: string): Promise<void> {
     // Generar token aleatorio
@@ -166,7 +169,7 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24); // Expira en 24 horas
 
-    // Guardar en base de datos
+    // Guardar en base de datos (esto sí debe esperarse)
     await this.prisma.emailVerification.create({
       data: {
         userId,
@@ -179,14 +182,16 @@ export class AuthService {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
     const verificationLink = `${frontendUrl}/verify-email?token=${token}`;
 
-    // Enviar email
-    try {
-      await this.emailService.sendVerificationEmail(email, nombre, verificationLink);
-      this.logger.log(`Email de verificación enviado a ${email}`);
-    } catch (error) {
-      this.logger.error(`Error enviando email a ${email}:`, error);
-      // No lanzamos error para no interrumpir el registro
-    }
+    // Enviar email EN SEGUNDO PLANO (no bloquea el registro)
+    // Esto hace que el registro sea instantáneo para el usuario
+    this.emailService.sendVerificationEmail(email, nombre, verificationLink)
+      .then(() => {
+        this.logger.log(`Email de verificación enviado a ${email}`);
+      })
+      .catch((error) => {
+        this.logger.error(`Error enviando email a ${email}:`, error);
+        // No lanzamos error para no interrumpir el registro
+      });
   }
 
   /**
