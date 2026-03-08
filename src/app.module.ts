@@ -12,6 +12,7 @@ import { AlquileresModule } from './modules/alquileres/alquileres.module';
 import { InstructoresModule } from './modules/instructores/instructores.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { EmailModule } from './email/email.module';
+import { SeedModule } from './seed/seed.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { EmailModule } from './email/email.module';
     InstructoresModule,
     UploadsModule,
     EmailModule,
+    SeedModule, // Seed automático al iniciar
   ],
 })
 export class AppModule {}
