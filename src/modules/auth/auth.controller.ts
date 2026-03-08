@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Get } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -23,5 +23,23 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async me(@GetUser() user: any) {
     return { user };
+  }
+
+  /**
+   * Verifica el email con el token
+   * GET /api/auth/verify-email?token=xxx
+   */
+  @Get('verify-email')
+  async verifyEmail(@Query('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
+  /**
+   * Reenvía el email de verificación
+   * POST /api/auth/resend-verification
+   */
+  @Post('resend-verification')
+  async resendVerificationEmail(@Body('email') email: string) {
+    return this.authService.resendVerificationEmail(email);
   }
 }
