@@ -5,13 +5,42 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
-  // CORS: Permitir cualquier origen en producción (temporalmente)
+  // Configuración CORS robusta
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'https://fairpadel-frontend-production.up.railway.app',
+  ];
+
   app.enableCors({
-    origin: true, // Permite cualquier origen
+    origin: (origin, callback) => {
+      // Permitir requests sin origin (mobile apps, curl, etc)
+      if (!origin) return callback(null, true);
+      
+      // Permitir orígenes de la lista
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.log(`CORS bloqueado para origen: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-    exposedHeaders: ['Access-Control-Allow-Origin'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Origin',
+      'X-Requested-With',
+      'Content-Type',
+      'Accept',
+      'Authorization',
+    ],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  });
+
+  // Middleware para loguear todas las peticiones (debugging temporal)
+  app.use((req, res, next) => {
+    console.log(`[${req.method}] ${req.url} from ${req.headers.origin || 'no-origin'}`);
+    next();
   });
 
   app.useGlobalPipes(
@@ -26,6 +55,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Application is running on: ${await app.getUrl()}`);
+  console.log(`Server running on port ${port}`);
+  console.log(`CORS allowed for: ${allowedOrigins.join(', ')}`);
 }
 bootstrap();

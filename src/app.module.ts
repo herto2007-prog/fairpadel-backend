@@ -13,6 +13,7 @@ import { InstructoresModule } from './modules/instructores/instructores.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { EmailModule } from './email/email.module';
 import { SeedModule } from './seed/seed.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -31,5 +32,6 @@ import { SeedModule } from './seed/seed.module';
     EmailModule,
     SeedModule, // Seed automático al iniciar
   ],
+  controllers: [AppController],
 })
 export class AppModule {}
