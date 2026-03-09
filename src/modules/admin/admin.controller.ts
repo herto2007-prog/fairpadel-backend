@@ -1,9 +1,52 @@
-import { Controller, Post, Body, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Get, Body, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('admin')
 export class AdminController {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Endpoint de diagnóstico para verificar la conexión a la base de datos
+   */
+  @Get('db-info')
+  async getDbInfo() {
+    try {
+      // Contar usuarios
+      const userCount = await this.prisma.user.count();
+      
+      // Obtener info de conexión (sin exponer credenciales sensibles)
+      const dbUrl = process.env.DATABASE_URL || 'no-configurada';
+      const dbHost = dbUrl.includes('@') ? dbUrl.split('@')[1].split(':')[0] : 'desconocido';
+      
+      // Listar algunos usuarios (solo nombres, no datos sensibles)
+      const recentUsers = await this.prisma.user.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          nombre: true,
+          apellido: true,
+          email: true,
+          documento: true,
+          estado: true,
+          createdAt: true,
+        },
+      });
+
+      return {
+        database_host: dbHost,
+        total_users: userCount,
+        recent_users: recentUsers,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      return {
+        error: 'Error conectando a la base de datos',
+        details: error.message,
+        database_url_configured: !!process.env.DATABASE_URL,
+      };
+    }
+  }
 
   /**
    * Endpoint temporal para asignar roles de admin y organizador
