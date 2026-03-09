@@ -97,7 +97,7 @@ export class EmailService {
    * Template HTML para verificación de email
    */
   private getVerificationEmailTemplate(name: string, link: string): string {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+    const logoUrl = 'https://res.cloudinary.com/dncjaaybv/image/upload/v1773057029/logo_h4y1tl.png';
     
     return `<!DOCTYPE html>
 <html lang="es">
@@ -126,17 +126,14 @@ export class EmailService {
       text-align: center;
       backdrop-filter: blur(10px);
     }
+    .logo-container {
+      margin-bottom: 32px;
+    }
     .logo {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 32px;
-      background: linear-gradient(135deg, #df2531 0%, #b91c1c 100%);
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 36px;
-      font-weight: bold;
+      width: 120px;
+      height: auto;
+      max-height: 80px;
+      object-fit: contain;
     }
     .title {
       font-size: 28px;
@@ -211,13 +208,16 @@ export class EmailService {
     @media (max-width: 480px) {
       .card { padding: 32px 24px; }
       .title { font-size: 24px; }
+      .logo { width: 100px; }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <div class="logo">FP</div>
+      <div class="logo-container">
+        <img src="${logoUrl}" alt="FairPadel" class="logo" />
+      </div>
       
       <h1 class="title">¡Bienvenido, ${name}!</h1>
       <p class="subtitle">
@@ -268,6 +268,8 @@ export class EmailService {
    * Template HTML para recuperación de contraseña
    */
   private getPasswordResetEmailTemplate(name: string, link: string): string {
+    const logoUrl = 'https://res.cloudinary.com/dncjaaybv/image/upload/v1773057029/logo_h4y1tl.png';
+    
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -295,17 +297,14 @@ export class EmailService {
       text-align: center;
       backdrop-filter: blur(10px);
     }
+    .logo-container {
+      margin-bottom: 32px;
+    }
     .logo {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 32px;
-      background: linear-gradient(135deg, #df2531 0%, #b91c1c 100%);
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 36px;
-      font-weight: bold;
+      width: 120px;
+      height: auto;
+      max-height: 80px;
+      object-fit: contain;
     }
     .title {
       font-size: 28px;
@@ -364,13 +363,16 @@ export class EmailService {
     @media (max-width: 480px) {
       .card { padding: 32px 24px; }
       .title { font-size: 24px; }
+      .logo { width: 100px; }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <div class="logo">FP</div>
+      <div class="logo-container">
+        <img src="${logoUrl}" alt="FairPadel" class="logo" />
+      </div>
       
       <h1 class="title">Recupera tu contraseña</h1>
       <p class="subtitle">

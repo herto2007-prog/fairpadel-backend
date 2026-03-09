@@ -256,6 +256,92 @@ export class AuthService {
     return { message: 'Email de verificación reenviado' };
   }
 
+  /**
+   * Solicita recuperación de contraseña
+   * Envía email con link para resetear
+   */
+  async requestPasswordReset(email: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    // Por seguridad, no revelamos si el email existe o no
+    if (!user) {
+      return { message: 'Si el email existe, recibirás instrucciones para recuperar tu contraseña' };
+    }
+
+    // Eliminar tokens anteriores
+    await this.prisma.passwordReset.deleteMany({
+      where: { userId: user.id },
+    });
+
+    // Generar token aleatorio
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // Expira en 1 hora
+
+    // Guardar token
+    await this.prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        token,
+        expiresAt,
+      },
+    });
+
+    // Generar link
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+    const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+    // Enviar email en segundo plano
+    this.emailService.sendPasswordResetEmail(user.email, user.nombre, resetLink)
+      .then(() => {
+        this.logger.log(`Email de recuperación enviado a ${user.email}`);
+      })
+      .catch((error) => {
+        this.logger.error(`Error enviando email de recuperación a ${user.email}:`, error);
+      });
+
+    return { message: 'Si el email existe, recibirás instrucciones para recuperar tu contraseña' };
+  }
+
+  /**
+   * Resetea la contraseña con el token
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    // Buscar token
+    const reset = await this.prisma.passwordReset.findUnique({
+      where: { token },
+    });
+
+    if (!reset) {
+      throw new BadRequestException('Token inválido');
+    }
+
+    // Verificar expiración
+    if (reset.expiresAt < new Date()) {
+      throw new BadRequestException('El token ha expirado. Solicita uno nuevo.');
+    }
+
+    // Hash nueva contraseña
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Actualizar contraseña
+    await this.prisma.user.update({
+      where: { id: reset.userId },
+      data: { password: passwordHash },
+    });
+
+    // Eliminar token usado
+    await this.prisma.passwordReset.delete({
+      where: { id: reset.id },
+    });
+
+    this.logger.log(`Contraseña actualizada para usuario ${reset.userId}`);
+
+    return { message: 'Contraseña actualizada exitosamente' };
+  }
+
   private generateToken(userId: string, documento: string): string {
     const payload = { sub: userId, documento };
     return this.jwtService.sign(payload, {

@@ -2,6 +2,7 @@ import { Controller, Post, Body, UseGuards, Get, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GetUser } from './decorators/get-user.decorator';
 
@@ -41,5 +42,23 @@ export class AuthController {
   @Post('resend-verification')
   async resendVerificationEmail(@Body('email') email: string) {
     return this.authService.resendVerificationEmail(email);
+  }
+
+  /**
+   * Solicita recuperación de contraseña
+   * POST /api/auth/forgot-password
+   */
+  @Post('forgot-password')
+  async forgotPassword(@Body('email') email: string) {
+    return this.authService.requestPasswordReset(email);
+  }
+
+  /**
+   * Resetea la contraseña con el token
+   * POST /api/auth/reset-password
+   */
+  @Post('reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.token, dto.password);
   }
 }
