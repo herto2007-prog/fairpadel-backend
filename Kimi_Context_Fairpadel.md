@@ -2,8 +2,36 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-08 23:10
-> **Conversación actual:** Deploy PRODUCCIÓN exitoso - Backend y Frontend online
+> **Última actualización:** 2026-03-09 12:00
+> **Conversación actual:** Sistema estable - Flujo de auth completo funcionando
+
+---
+
+## 🏆 REGLAS DE ORO (Nunca olvidar)
+
+### 1. Entender el Sistema como un Todo
+**Antes de cambiar cualquier cosa, preguntar:**
+- ¿Dónde más se usa este dato/componente?
+- ¿Qué otros flujos dependen de esto?
+- ¿El frontend/backend están sincronizados?
+
+**Ejemplo real:** Cambiar nombres de categorías en el backend sin actualizar el frontend rompió el registro. Las categorías se usan en:
+- Seed inicial
+- Registro de usuario
+- Creación de torneos
+- Filtros de búsqueda
+
+### 2. Compilar Localmente Antes de Push
+Nunca enviar código sin verificar que compila:
+```bash
+npm run build  # Backend
+npm run build  # Frontend
+```
+
+### 3. Una Base de Datos = Una Verdad
+- Local desarrollo → Base local
+- Producción → Base de Railway (la que inyecta Railway, no otra)
+- Nunca mezclar datos entre entornos
 
 ---
 
