@@ -208,6 +208,31 @@ v2/
 
 ---
 
+## 🏗️ DECISIONES ARQUITECTÓNICAS IMPORTANTES
+
+### Categorías vs Género (2026-03-09)
+
+**Decisión:** Las categorías de pádel NO tienen género. Son las PERSONAS (usuarios) las que tienen género.
+
+**Modelo correcto:**
+```
+Categoría: "1ª Categoría", "2ª Categoría", etc. (sin género)
+Usuario: { categoriaActualId, genero: MASCULINO|FEMENINO }
+Torneo: { categorias: [...], separaPorGenero: true }
+```
+
+**En la UI:**
+- Registro: Usuario selecciona categoría + género
+- Torneos: El sistema organiza competencias separadas por género (Caballeros/Damas)
+- Rankings: Separados por categoría Y género
+
+**Por qué es importante:**
+- Una mujer puede jugar en "1ª Categoría" y eso no cambia por ser mujer
+- El género separa la competencia, no la categoría
+- Facilita organizar torneos mixtos o por género según se requiera
+
+---
+
 ## 🚀 INSTRUCCIONES DE DEPLOY
 
 ### 1. Backend (Ya en Producción)
