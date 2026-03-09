@@ -1,5 +1,9 @@
 FROM node:20-slim
 
+# Force rebuild on each deploy
+ARG RAILWAY_DEPLOYMENT_ID=unknown
+RUN echo "Building deployment: ${RAILWAY_DEPLOYMENT_ID}"
+
 WORKDIR /app
 
 # Install OpenSSL for Prisma
@@ -32,4 +36,4 @@ EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
 # DEBUG: Verificar que el build existe antes de iniciar
-CMD ["sh", "-c", "echo '=== DEBUG: Iniciando container ===' && npx prisma migrate deploy && echo '=== DEBUG: Verificando dist/ ===' && ls -la dist/ && echo '=== DEBUG: Iniciando aplicacion ===' && node dist/main.js"
+CMD ["sh", "-c", "echo '=== DEBUG: Iniciando container ===' && npx prisma migrate deploy && echo '=== DEBUG: Verificando dist/ ===' && ls -la dist/ && echo '=== DEBUG: Iniciando aplicacion ===' && node dist/main.js"]
