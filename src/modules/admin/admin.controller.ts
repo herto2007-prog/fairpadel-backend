@@ -1,5 +1,8 @@
-import { Controller, Post, Get, Body, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Get, Body, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('admin')
 export class AdminController {
@@ -197,6 +200,100 @@ export class AdminController {
         email: updatedUser.email,
         roles: updatedUser.roles.map(r => r.role.nombre),
       },
+    };
+  }
+
+  /**
+   * Obtener lista de usuarios (solo admin)
+   */
+  @Get('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getUsers() {
+    const users = await this.prisma.user.findMany({
+      include: {
+        roles: {
+          include: { role: true },
+        },
+        categoriaActual: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return users.map(user => ({
+      id: user.id,
+      nombre: user.nombre,
+      apellido: user.apellido,
+      email: user.email,
+      documento: user.documento,
+      estado: user.estado,
+      roles: user.roles.map(r => r.role.nombre),
+      categoriaActual: user.categoriaActual ? { nombre: user.categoriaActual.nombre } : null,
+    }));
+  }
+
+  /**
+   * Actualizar roles de un usuario (solo admin)
+   */
+  @Post('users/update-roles')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async updateUserRoles(
+    @Body('userId') userId: string,
+    @Body('roles') roles: string[],
+  ) {
+    // Validar que los roles existan
+    const validRoles = await this.prisma.role.findMany({
+      where: { nombre: { in: roles } },
+    });
+
+    if (validRoles.length !== roles.length) {
+      return { success: false, message: 'Algunos roles no existen' };
+    }
+
+    // Eliminar roles actuales
+    await this.prisma.userRole.deleteMany({
+      where: { userId },
+    });
+
+    // Agregar nuevos roles
+    for (const role of validRoles) {
+      await this.prisma.userRole.create({
+        data: {
+          userId,
+          roleId: role.id,
+        },
+      });
+    }
+
+    return { success: true, message: 'Roles actualizados correctamente' };
+  }
+
+  /**
+   * Estadísticas del sistema (solo admin)
+   */
+  @Get('stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getStats() {
+    const [
+      totalUsers,
+      activeUsers,
+      pendingUsers,
+      totalTournaments,
+      totalInscripciones,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { estado: 'ACTIVO' } }),
+      this.prisma.user.count({ where: { estado: 'NO_VERIFICADO' } }),
+      this.prisma.tournament.count(),
+      this.prisma.inscripcion.count(),
+    ]);
+
+    return {
+      users: { total: totalUsers, active: activeUsers, pending: pendingUsers },
+      tournaments: totalTournaments,
+      inscripciones: totalInscripciones,
     };
   }
 }
