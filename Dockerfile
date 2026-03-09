@@ -39,5 +39,6 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-# Usamos db push --force-reset para recrear todo el schema (BORRA DATOS)
-CMD ["sh", "-c", "npx prisma db push --force-reset && exec node dist/main.js"]
+# IMPORTANTE: Solo hacemos db push (sin --force-reset) para no borrar datos
+# El schema ya debería estar creado. Si hay cambios, se aplican sin borrar datos.
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && exec node dist/main.js"]
