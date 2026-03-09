@@ -35,6 +35,5 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-# DEBUG: Verificar que el build existe antes de iniciar
-# Simple CMD - Railway maneja las variables
-CMD npx prisma migrate deploy && ls dist/ && node dist/main.js
+# Usamos shell form para que Railway pueda inyectar variables
+CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/main.js"]
