@@ -35,5 +35,5 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-# Usamos shell form para que Railway pueda inyectar variables
-CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/main.js"]
+# Usamos db push para crear tablas sin migraciones
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && exec node dist/main.js"]
