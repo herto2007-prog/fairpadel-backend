@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-09 12:00
-> **Conversación actual:** Sistema estable - Flujo de auth completo funcionando
+> **Última actualización:** 2026-03-09 15:30
+> **Conversación actual:** Admin Panel completo - CRUD Sedes + Gestión Roles | Esperando deploy Railway (outage)
 
 ---
 
@@ -261,6 +261,49 @@ Torneo: { categorias: [...], separaPorGenero: true }
 
 ---
 
+## 🛡️ MEDIDAS DE PROTECCIÓN IMPLEMENTADAS
+
+### Protección de Base de Datos (Crítico)
+**Problema:** El Dockerfile tenía `prisma db push --force-reset` que borraba TODOS los datos en cada deploy.
+
+**Solución:** Cambiado a `prisma db push --accept-data-loss` (solo actualiza schema, mantiene datos).
+
+**Verificación:** 
+- ✅ Base de datos persistente entre deploys
+- ✅ Usuarios permanecen registrados
+- ✅ Datos de sedes/canchas se mantienen
+
+---
+
+## 🎛️ PANEL DE ADMINISTRACIÓN
+
+### Funcionalidades Implementadas
+
+#### 1. Gestión de Roles ✅
+- **URL:** `/admin` → Tab "Roles"
+- **Features:**
+  - Lista de usuarios con búsqueda
+  - Toggle de roles (Jugador, Organizador, Admin)
+  - Estadísticas en tiempo real
+  - Protección por guards (solo admin puede modificar)
+
+#### 2. CRUD de Sedes ✅
+- **URL:** `/admin` → Tab "Sedes"
+- **Features:**
+  - Crear nueva sede (nombre, ciudad, dirección, teléfono, maps)
+  - Editar sede existente
+  - Desactivar/Reactivar sede (soft delete)
+  - Cards visuales con info de canchas
+  - Estadísticas (total, activas, inactivas)
+
+#### 3. Próximos Módulos Admin
+- Ascensos de categoría
+- Configuración Premium
+- Sistema de puntos por torneo
+- Gestión de torneos
+
+---
+
 ## 🚀 INSTRUCCIONES DE DEPLOY
 
 ### 1. Backend (Ya en Producción)
@@ -316,6 +359,81 @@ La V2 está **EN PRODUCCIÓN** y funcionando. Próximas tareas:
    - Optimización de queries Prisma
 
 **¿Qué preferís hacer mañana?**
+
+---
+
+---
+
+## 📚 PLAN DE DOCUMENTACIÓN
+
+### 1. Documentación Técnica (Para desarrolladores)
+
+#### API Documentation (Swagger/OpenAPI)
+- **Qué es:** Documentación automática de todos los endpoints
+- **Cómo se usa:** Acceder a `/api/docs` y ver todos los endpoints con ejemplos
+- **Beneficio:** Facilita que otros devs integren con la API
+
+#### Diagrama de Arquitectura
+- **Flujo de datos:** Usuario → Frontend → Backend → Database
+- **Autenticación:** JWT flow
+- **Modelos de datos:** Entidad-Relación completo
+
+### 2. Documentación de Usuario (Para jugadores/organizadores)
+
+#### Manual de Usuario (PDF/Web)
+- **Cómo registrarse** paso a paso
+- **Cómo inscribirse en un torneo**
+- **Cómo ver rankings**
+- **Cómo subir resultados**
+
+#### Videos tutoriales (Loom/Youtube)
+- Registro e inicio de sesión
+- Creación de torneos (para organizadores)
+- Gestión de sedes (para admin)
+
+### 3. Documentación de Admin
+
+#### Guía del Administrador
+- **Gestión de usuarios y roles**
+- **Creación y gestión de sedes**
+- **Configuración de sistema de puntos**
+- **Gestión de ascensos**
+
+#### Checklist de operaciones diarias
+- Verificar registros pendientes
+- Validar sedes nuevas
+- Monitorear torneos activos
+
+### 4. Documentación de Despliegue (DevOps)
+
+#### Guía de Deploy
+- Cómo hacer deploy en Railway
+- Variables de entorno requeridas
+- Backups de base de datos
+- Rollback en caso de errores
+
+#### Monitoreo
+- Logs de Railway
+- Métricas de uso
+- Alertas de errores
+
+---
+
+## 🎯 PRIORIDADES DE DOCUMENTACIÓN
+
+**Alta Prioridad:**
+1. ✅ API Docs (Swagger) - Técnico
+2. ✅ Guía de Admin - Panel de gestión
+3. 🔄 Manual de Usuario básico
+
+**Media Prioridad:**
+4. Diagramas de arquitectura
+5. Videos tutoriales
+6. Guía de Deploy detallada
+
+**Baja Prioridad:**
+7. Documentación de código inline
+8. Wiki del proyecto
 
 ---
 
