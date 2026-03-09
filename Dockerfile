@@ -31,4 +31,5 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
+# Usamos node directamente para evitar problemas con npm run
+CMD ["sh", "-c", "npx prisma migrate deploy && ls -la dist/ && node dist/main"]
