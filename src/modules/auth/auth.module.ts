@@ -11,6 +11,7 @@ import { EmailModule } from '../../email/email.module';
 
 @Module({
   imports: [
+    ConfigModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     EmailModule,
     JwtModule.registerAsync({
