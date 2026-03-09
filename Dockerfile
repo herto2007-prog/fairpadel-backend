@@ -35,5 +35,5 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-# Usamos db push para crear tablas sin migraciones
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && exec node dist/main.js"]
+# Usamos db push --force-reset para recrear todo el schema (BORRA DATOS)
+CMD ["sh", "-c", "npx prisma db push --force-reset && exec node dist/main.js"]
