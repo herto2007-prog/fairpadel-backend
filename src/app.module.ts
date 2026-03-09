@@ -14,12 +14,14 @@ import { InstructoresModule } from './modules/instructores/instructores.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { EmailModule } from './email/email.module';
 import { SeedModule } from './seed/seed.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { AppController } from './app.controller';
 
 @Module({
   imports: [
     CommonModule, // Servicios globales como DateService
     PrismaModule,
+    AdminModule, // Setup temporal - quitar después
     AuthModule,
     UsersModule,
     TournamentsModule,
