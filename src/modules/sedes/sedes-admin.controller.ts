@@ -8,26 +8,56 @@ import {
   Param,
   UseGuards,
 } from '@nestjs/common';
+import { IsString, IsOptional, IsBoolean, IsUrl } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 
-// DTOs
+// DTOs con validaciones
 class CreateSedeDto {
+  @IsString()
   nombre: string;
+
+  @IsString()
   ciudad: string;
+
+  @IsOptional()
+  @IsString()
   direccion?: string;
+
+  @IsOptional()
+  @IsString()
   mapsUrl?: string;
+
+  @IsOptional()
+  @IsString()
   telefono?: string;
 }
 
 class UpdateSedeDto {
+  @IsOptional()
+  @IsString()
   nombre?: string;
+
+  @IsOptional()
+  @IsString()
   ciudad?: string;
+
+  @IsOptional()
+  @IsString()
   direccion?: string;
+
+  @IsOptional()
+  @IsString()
   mapsUrl?: string;
+
+  @IsOptional()
+  @IsString()
   telefono?: string;
+
+  @IsOptional()
+  @IsBoolean()
   activa?: boolean;
 }
 
