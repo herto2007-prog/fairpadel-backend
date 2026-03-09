@@ -517,9 +517,10 @@ model SedeCancha {
   id          String    @id @default(uuid())
   sedeId      String    @map("sede_id")
   nombre      String
-  tipo        TipoCancha @default(CRISTAL)
+  tipo        TipoCancha @default(SINTETICO)
   tieneLuz    Boolean   @default(false) @map("tiene_luz")
   cubierta    Boolean   @default(false)
+  notas       String?   // Características especiales (techada, gradas, etc.)
   activa      Boolean   @default(true)
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")

@@ -74,6 +74,10 @@ class CreateCanchaDto {
   @IsOptional()
   @IsBoolean()
   tieneLuz?: boolean;
+
+  @IsOptional()
+  @IsString()
+  notas?: string;
 }
 
 class UpdateCanchaDto {
@@ -92,6 +96,10 @@ class UpdateCanchaDto {
   @IsOptional()
   @IsBoolean()
   activa?: boolean;
+
+  @IsOptional()
+  @IsString()
+  notas?: string;
 }
 
 @Controller('admin/sedes')
@@ -293,8 +301,9 @@ export class SedesAdminController {
         data: {
           sedeId,
           nombre: dto.nombre,
-          tipo: dto.tipo || TipoCancha.CEMENTO,
+          tipo: dto.tipo || TipoCancha.SINTETICO,
           tieneLuz: dto.tieneLuz ?? false,
+          notas: dto.notas,
           activa: true,
         },
       });
@@ -330,6 +339,7 @@ export class SedesAdminController {
           ...(dto.tipo && { tipo: dto.tipo }),
           ...(dto.tieneLuz !== undefined && { tieneLuz: dto.tieneLuz }),
           ...(dto.activa !== undefined && { activa: dto.activa }),
+          ...(dto.notas !== undefined && { notas: dto.notas }),
         },
       });
 
