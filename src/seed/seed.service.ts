@@ -22,31 +22,32 @@ export class SeedService implements OnModuleInit {
 
   private async seedCategories() {
     // Categorías del sistema paraguayo de pádel
-    const categoriasMasculinas = [
-      { nombre: 'Principiante', tipo: Gender.MASCULINO, orden: 0 },
-      { nombre: '8ª Categoría', tipo: Gender.MASCULINO, orden: 1 },
-      { nombre: '7ª Categoría', tipo: Gender.MASCULINO, orden: 2 },
-      { nombre: '6ª Categoría', tipo: Gender.MASCULINO, orden: 3 },
-      { nombre: '5ª Categoría', tipo: Gender.MASCULINO, orden: 4 },
-      { nombre: '4ª Categoría', tipo: Gender.MASCULINO, orden: 5 },
-      { nombre: '3ª Categoría', tipo: Gender.MASCULINO, orden: 6 },
-      { nombre: '2ª Categoría', tipo: Gender.MASCULINO, orden: 7 },
-      { nombre: '1ª Categoría', tipo: Gender.MASCULINO, orden: 8 },
+    // Caballeros = Masculino, Damas = Femenino
+    const categoriasCaballeros = [
+      { nombre: 'Principiante Caballeros', tipo: Gender.MASCULINO, orden: 0 },
+      { nombre: '8ª Categoría Caballeros', tipo: Gender.MASCULINO, orden: 1 },
+      { nombre: '7ª Categoría Caballeros', tipo: Gender.MASCULINO, orden: 2 },
+      { nombre: '6ª Categoría Caballeros', tipo: Gender.MASCULINO, orden: 3 },
+      { nombre: '5ª Categoría Caballeros', tipo: Gender.MASCULINO, orden: 4 },
+      { nombre: '4ª Categoría Caballeros', tipo: Gender.MASCULINO, orden: 5 },
+      { nombre: '3ª Categoría Caballeros', tipo: Gender.MASCULINO, orden: 6 },
+      { nombre: '2ª Categoría Caballeros', tipo: Gender.MASCULINO, orden: 7 },
+      { nombre: '1ª Categoría Caballeros', tipo: Gender.MASCULINO, orden: 8 },
     ];
 
-    const categoriasFemeninas = [
-      { nombre: 'Principiante Femenino', tipo: Gender.FEMENINO, orden: 0 },
-      { nombre: '8ª Categoría Femenina', tipo: Gender.FEMENINO, orden: 1 },
-      { nombre: '7ª Categoría Femenina', tipo: Gender.FEMENINO, orden: 2 },
-      { nombre: '6ª Categoría Femenina', tipo: Gender.FEMENINO, orden: 3 },
-      { nombre: '5ª Categoría Femenina', tipo: Gender.FEMENINO, orden: 4 },
-      { nombre: '4ª Categoría Femenina', tipo: Gender.FEMENINO, orden: 5 },
-      { nombre: '3ª Categoría Femenina', tipo: Gender.FEMENINO, orden: 6 },
-      { nombre: '2ª Categoría Femenina', tipo: Gender.FEMENINO, orden: 7 },
-      { nombre: '1ª Categoría Femenina', tipo: Gender.FEMENINO, orden: 8 },
+    const categoriasDamas = [
+      { nombre: 'Principiante Damas', tipo: Gender.FEMENINO, orden: 0 },
+      { nombre: '8ª Categoría Damas', tipo: Gender.FEMENINO, orden: 1 },
+      { nombre: '7ª Categoría Damas', tipo: Gender.FEMENINO, orden: 2 },
+      { nombre: '6ª Categoría Damas', tipo: Gender.FEMENINO, orden: 3 },
+      { nombre: '5ª Categoría Damas', tipo: Gender.FEMENINO, orden: 4 },
+      { nombre: '4ª Categoría Damas', tipo: Gender.FEMENINO, orden: 5 },
+      { nombre: '3ª Categoría Damas', tipo: Gender.FEMENINO, orden: 6 },
+      { nombre: '2ª Categoría Damas', tipo: Gender.FEMENINO, orden: 7 },
+      { nombre: '1ª Categoría Damas', tipo: Gender.FEMENINO, orden: 8 },
     ];
 
-    const todasLasCategorias = [...categoriasMasculinas, ...categoriasFemeninas];
+    const todasLasCategorias = [...categoriasCaballeros, ...categoriasDamas];
 
     for (const categoria of todasLasCategorias) {
       await this.prisma.category.upsert({
