@@ -2,15 +2,20 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-07 11:00
-> **Conversación actual:** Semana 6 completada + Configuración lista para deploy
+> **Última actualización:** 2026-03-08 23:10
+> **Conversación actual:** Deploy PRODUCCIÓN exitoso - Backend y Frontend online
 
 ---
 
 ## 📋 RESUMEN EJECUTIVO
 
 **Proyecto:** FairPadel - Sistema de gestión de torneos de pádel para Paraguay  
-**Estado:** Semana 6 completada + Configuración lista ✅  
+**Estado:** 🚀 **DEPLOY PRODUCCIÓN EXITOSO** - Backend y Frontend online  
+**URLs:**
+- Frontend: https://www.fairpadel.com
+- Backend API: https://api.fairpadel.com/api
+- Health Check: https://api.fairpadel.com/api/health
+
 **Stack:** NestJS + React + PostgreSQL + Prisma  
 **Metodología:** MVP breadth-first, entregables atómicos y desplegables
 
@@ -60,6 +65,55 @@
 - [x] Frontend Instructores (directorio, perfil)
 - [x] Configuración completa para deploy
 
+### Deploy a Producción ✅ (2026-03-08)
+- [x] Backend deployado en Railway: confident-ambition-production.up.railway.app
+- [x] Frontend deployado en Railway: fairpadel-frontend-production.up.railway.app
+- [x] Dominio custom configurado: api.fairpadel.com
+- [x] Dominio custom configurado: www.fairpadel.com
+- [x] CORS configurado para dominios custom
+- [x] Base de datos reiniciada con schema completo
+- [x] Seed automático de categorías y roles funcionando
+
+---
+
+## 🔧 PROBLEMAS RESUELTOS (2026-03-08)
+
+### 1. ConfigModule en Módulos
+**Problema:** Error `Nest can't resolve dependencies` en EmailModule, UploadsModule y AuthModule.
+**Solución:** Agregar `ConfigModule` a los `imports` de los módulos que usan `ConfigService`.
+
+### 2. Railway Dockerfile CMD
+**Problema:** Railway ignoraba el `startCommand` del `railway.json` y usaba el `CMD` del Dockerfile.
+**Solución:** Remover `startCommand` de `railway.json` y usar solo el `CMD` del Dockerfile.
+
+### 3. Puerto y Host Binding
+**Problema:** El backend no respondía porque escuchaba solo en `localhost`.
+**Solución:** Agregar `'0.0.0.0'` al `app.listen()` en `main.ts`.
+
+### 4. Base de Datos - Schema Desactualizado
+**Problema:** La DB tenía datos viejos y el schema nuevo requería columnas nuevas.
+**Solución:** Usar `prisma db push --force-reset` para recrear el schema completo.
+
+### 5. Timezone Paraguay
+**Problema:** El servidor mostraba hora UTC en vez de hora de Paraguay (UTC-3).
+**Solución:** Crear `DateService` reutilizable con zona horaria `America/Asuncion`.
+
+---
+
+## 🆕 NUEVOS SERVICIOS CREADOS
+
+### DateService (src/common/services/date.service.ts)
+Servicio global para manejar fechas en zona horaria de Paraguay:
+```typescript
+@Injectable()
+export class DateService {
+  formatNow(): string;        // "08/03/2026, 23:10:45"
+  getDateOnly(): string;      // "2026-03-08"
+  getTimeOnly(): string;      // "23:10:45"
+  isToday(date: Date): boolean;
+}
+```
+
 ---
 
 ## 🚀 ESTADO ACTUAL
@@ -70,6 +124,10 @@
 v2/
 ├── backend/
 │   ├── src/
+│   │   ├── common/             ✅ NUEVO (DateService global)
+│   │   │   ├── common.module.ts
+│   │   │   └── services/
+│   │   │       └── date.service.ts
 │   │   ├── modules/
 │   │   │   ├── auth/
 │   │   │   ├── users/
@@ -78,17 +136,18 @@ v2/
 │   │   │   ├── alquileres/     ✅ NUEVO
 │   │   │   └── instructores/   ✅ NUEVO
 │   │   ├── prisma/
+│   │   ├── seed/               ✅ Seed automático
 │   │   ├── app.module.ts
 │   │   └── main.ts
 │   ├── prisma/schema.prisma
-│   ├── Dockerfile              ✅ NUEVO
-│   ├── railway.json            ✅ NUEVO
-│   ├── package.json            ✅ NUEVO
-│   ├── tsconfig.json           ✅ NUEVO
-│   ├── nest-cli.json           ✅ NUEVO
-│   ├── .env.example            ✅ NUEVO
-│   ├── .gitignore              ✅ NUEVO
-│   └── README.md               ✅ NUEVO
+│   ├── Dockerfile              ✅ Configurado para Railway
+│   ├── railway.json            ✅ Configurado
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── nest-cli.json
+│   ├── .env.example
+│   ├── .gitignore
+│   └── README.md
 │
 └── frontend/
     ├── src/
@@ -97,22 +156,22 @@ v2/
     │   │   ├── sedes/          ✅ NUEVO
     │   │   ├── alquileres/     ✅ NUEVO
     │   │   └── instructores/   ✅ NUEVO
-    │   ├── services/           ✅ NUEVO
-    │   ├── App.tsx             ✅ NUEVO
-    │   ├── main.tsx            ✅ NUEVO
-    │   └── index.css           ✅ NUEVO
-    ├── Dockerfile              ✅ NUEVO
-    ├── railway.json            ✅ NUEVO
-    ├── package.json            ✅ NUEVO
-    ├── tsconfig.json           ✅ NUEVO
-    ├── tsconfig.node.json      ✅ NUEVO
-    ├── vite.config.ts          ✅ NUEVO
-    ├── tailwind.config.js      ✅ NUEVO
-    ├── postcss.config.js       ✅ NUEVO
-    ├── index.html              ✅ NUEVO
-    ├── .env.example            ✅ NUEVO
-    ├── .gitignore              ✅ NUEVO
-    └── README.md               ✅ NUEVO
+    │   ├── services/
+    │   ├── App.tsx
+    │   ├── main.tsx
+    │   └── index.css
+    ├── Dockerfile              ✅ Configurado para Railway
+    ├── railway.json            ✅ Configurado
+    ├── package.json
+    ├── tsconfig.json
+    ├── tsconfig.node.json
+    ├── vite.config.ts
+    ├── tailwind.config.js
+    ├── postcss.config.js
+    ├── index.html
+    ├── .env.example
+    ├── .gitignore
+    └── README.md
 ```
 
 ---
@@ -151,51 +210,59 @@ v2/
 
 ## 🚀 INSTRUCCIONES DE DEPLOY
 
-### 1. Backend
+### 1. Backend (Ya en Producción)
 
 ```bash
 cd v2/backend
 
-# Crear .env.local
-DATABASE_URL=postgresql://...
+# Variables de entorno en Railway:
+DATABASE_URL=postgresql://...  # Inyectado por Railway
 JWT_SECRET=your-secret-key
-FRONTEND_URL=https://your-frontend-url.up.railway.app
+FRONTEND_URL=https://www.fairpadel.com
+PORT=3000  # Inyectado por Railway
 
-# Deploy en Railway
+# Deploy automático en Railway
 git add .
-git commit -m "Backend V2 - Semana 6 completa"
-git push origin main
+git commit -m "Backend update"
+git push origin master
 ```
 
-### 2. Frontend
+### 2. Frontend (Ya en Producción)
 
 ```bash
 cd v2/frontend
 
-# Crear .env.local
-VITE_API_URL=https://your-backend-url.up.railway.app/api
+# Variables de entorno en Railway:
+VITE_API_URL=https://api.fairpadel.com/api
 
-# Build local (opcional)
-npm install
-npm run build
-
-# Deploy en Railway
+# Deploy automático en Railway
 git add .
-git commit -m "Frontend V2 - Semana 6 completa"
-git push origin main
+git commit -m "Frontend update"
+git push origin master
 ```
 
 ---
 
 ## 🎯 PRÓXIMO PASO
 
-La V2 está **lista para deploy**. Se puede:
+La V2 está **EN PRODUCCIÓN** y funcionando. Próximas tareas:
 
-1. **Probar localmente** primero
-2. **Deployar directamente** en Railway
-3. **Continuar con Week 5 (Pagos)** si se prefiere
+1. **Week 5: Pagos y Finanzas** ⏳
+   - Entidad Pago independiente
+   - Integración Bancard
+   - Comprobantes de transferencia
 
-**¿Qué preferís hacer?**
+2. **Testing End-to-End**
+   - Flujo completo de registro
+   - Flujo de inscripción a torneo
+   - Flujo de fixture y resultados
+
+3. **Optimizaciones**
+   - Cache de rankings
+   - WebSockets para notificaciones en tiempo real
+   - Optimización de queries Prisma
+
+**¿Qué preferís hacer mañana?**
 
 ---
 
