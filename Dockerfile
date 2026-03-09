@@ -36,4 +36,5 @@ EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
 # DEBUG: Verificar que el build existe antes de iniciar
-CMD ["sh", "-c", "echo '=== DEBUG: Iniciando container ===' && npx prisma migrate deploy && echo '=== DEBUG: Verificando dist/ ===' && ls -la dist/ && echo '=== DEBUG: Iniciando aplicacion ===' && node dist/main.js"]
+# Simple CMD - Railway maneja las variables
+CMD npx prisma migrate deploy && ls dist/ && node dist/main.js
