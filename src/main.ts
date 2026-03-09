@@ -3,7 +3,9 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  console.log('🚀 Iniciando aplicación...');
   const app = await NestFactory.create(AppModule);
+  console.log('✅ AppModule creado');
   
   // CORS: Configuración para dominios custom de producción
   const allowedOrigins = [
@@ -55,8 +57,8 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const port = process.env.PORT || 3000;
+  console.log(`🔌 Intentando escuchar en puerto ${port}...`);
   await app.listen(port, '0.0.0.0');
-  
   console.log(`✅ Backend corriendo en puerto ${port}`);
   console.log(`🌐 CORS permitido para:`);
   allowedOrigins.forEach(origin => console.log(`   - ${origin}`));

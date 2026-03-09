@@ -9,10 +9,15 @@ export class SeedService implements OnModuleInit {
   constructor(private prisma: PrismaService) {}
 
   async onModuleInit() {
-    this.logger.log('🌱 Verificando datos iniciales...');
-    await this.seedCategories();
-    await this.seedRoles();
-    this.logger.log('✅ Datos iniciales verificados');
+    this.logger.log('🌱 Iniciando seed...');
+    try {
+      await this.seedCategories();
+      await this.seedRoles();
+      this.logger.log('✅ Seed completado');
+    } catch (error) {
+      this.logger.error('❌ Error en seed:', error.message);
+      // No propagamos el error para no bloquear el inicio de la app
+    }
   }
 
   private async seedCategories() {
