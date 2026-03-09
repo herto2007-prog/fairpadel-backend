@@ -79,31 +79,32 @@ export class AdminController {
       }
 
       // Crear categorías si no existen
-      const categoriasMasculinas = [
-        { nombre: 'Principiante', tipo: 'MASCULINO', orden: 0 },
-        { nombre: '8ª Categoría', tipo: 'MASCULINO', orden: 1 },
-        { nombre: '7ª Categoría', tipo: 'MASCULINO', orden: 2 },
-        { nombre: '6ª Categoría', tipo: 'MASCULINO', orden: 3 },
-        { nombre: '5ª Categoría', tipo: 'MASCULINO', orden: 4 },
-        { nombre: '4ª Categoría', tipo: 'MASCULINO', orden: 5 },
-        { nombre: '3ª Categoría', tipo: 'MASCULINO', orden: 6 },
-        { nombre: '2ª Categoría', tipo: 'MASCULINO', orden: 7 },
-        { nombre: '1ª Categoría', tipo: 'MASCULINO', orden: 8 },
+      // Usamos Gender enum de Prisma: MASCULINO | FEMENINO
+      const categoriasCaballeros = [
+        { nombre: 'Principiante Caballeros', tipo: 'MASCULINO' as const, orden: 0 },
+        { nombre: '8ª Categoría Caballeros', tipo: 'MASCULINO' as const, orden: 1 },
+        { nombre: '7ª Categoría Caballeros', tipo: 'MASCULINO' as const, orden: 2 },
+        { nombre: '6ª Categoría Caballeros', tipo: 'MASCULINO' as const, orden: 3 },
+        { nombre: '5ª Categoría Caballeros', tipo: 'MASCULINO' as const, orden: 4 },
+        { nombre: '4ª Categoría Caballeros', tipo: 'MASCULINO' as const, orden: 5 },
+        { nombre: '3ª Categoría Caballeros', tipo: 'MASCULINO' as const, orden: 6 },
+        { nombre: '2ª Categoría Caballeros', tipo: 'MASCULINO' as const, orden: 7 },
+        { nombre: '1ª Categoría Caballeros', tipo: 'MASCULINO' as const, orden: 8 },
       ];
 
-      const categoriasFemeninas = [
-        { nombre: 'Principiante Femenino', tipo: 'FEMENINO', orden: 0 },
-        { nombre: '8ª Categoría Femenina', tipo: 'FEMENINO', orden: 1 },
-        { nombre: '7ª Categoría Femenina', tipo: 'FEMENINO', orden: 2 },
-        { nombre: '6ª Categoría Femenina', tipo: 'FEMENINO', orden: 3 },
-        { nombre: '5ª Categoría Femenina', tipo: 'FEMENINO', orden: 4 },
-        { nombre: '4ª Categoría Femenina', tipo: 'FEMENINO', orden: 5 },
-        { nombre: '3ª Categoría Femenina', tipo: 'FEMENINO', orden: 6 },
-        { nombre: '2ª Categoría Femenina', tipo: 'FEMENINO', orden: 7 },
-        { nombre: '1ª Categoría Femenina', tipo: 'FEMENINO', orden: 8 },
+      const categoriasDamas = [
+        { nombre: 'Principiante Damas', tipo: 'FEMENINO' as const, orden: 0 },
+        { nombre: '8ª Categoría Damas', tipo: 'FEMENINO' as const, orden: 1 },
+        { nombre: '7ª Categoría Damas', tipo: 'FEMENINO' as const, orden: 2 },
+        { nombre: '6ª Categoría Damas', tipo: 'FEMENINO' as const, orden: 3 },
+        { nombre: '5ª Categoría Damas', tipo: 'FEMENINO' as const, orden: 4 },
+        { nombre: '4ª Categoría Damas', tipo: 'FEMENINO' as const, orden: 5 },
+        { nombre: '3ª Categoría Damas', tipo: 'FEMENINO' as const, orden: 6 },
+        { nombre: '2ª Categoría Damas', tipo: 'FEMENINO' as const, orden: 7 },
+        { nombre: '1ª Categoría Damas', tipo: 'FEMENINO' as const, orden: 8 },
       ];
 
-      for (const cat of [...categoriasMasculinas, ...categoriasFemeninas]) {
+      for (const cat of [...categoriasCaballeros, ...categoriasDamas]) {
         await this.prisma.category.upsert({
           where: { nombre: cat.nombre },
           update: {},
