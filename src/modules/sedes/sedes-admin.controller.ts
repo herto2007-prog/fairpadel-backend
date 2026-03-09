@@ -8,8 +8,9 @@ import {
   Param,
   UseGuards,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsBoolean, IsUrl } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEnum } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TipoCancha } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -67,8 +68,8 @@ class CreateCanchaDto {
   nombre: string;
 
   @IsOptional()
-  @IsString()
-  tipo?: string;
+  @IsEnum(TipoCancha)
+  tipo?: TipoCancha;
 
   @IsOptional()
   @IsBoolean()
@@ -81,8 +82,8 @@ class UpdateCanchaDto {
   nombre?: string;
 
   @IsOptional()
-  @IsString()
-  tipo?: string;
+  @IsEnum(TipoCancha)
+  tipo?: TipoCancha;
 
   @IsOptional()
   @IsBoolean()
@@ -292,7 +293,7 @@ export class SedesAdminController {
         data: {
           sedeId,
           nombre: dto.nombre,
-          tipo: dto.tipo || 'CEMENTO',
+          tipo: dto.tipo || TipoCancha.CEMENTO,
           tieneLuz: dto.tieneLuz ?? false,
           activa: true,
         },
