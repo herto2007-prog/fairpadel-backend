@@ -15,6 +15,7 @@ import { UploadsModule } from './uploads/uploads.module';
 import { EmailModule } from './email/email.module';
 import { SeedModule } from './seed/seed.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { ModalidadesModule } from './modules/modalidades/modalidades.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -22,6 +23,7 @@ import { AppController } from './app.controller';
     CommonModule, // Servicios globales como DateService
     PrismaModule,
     AdminModule, // Setup temporal - quitar después
+    ModalidadesModule,
     AuthModule,
     UsersModule,
     TournamentsModule,

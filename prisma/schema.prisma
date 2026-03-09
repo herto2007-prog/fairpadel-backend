@@ -36,10 +36,35 @@ enum TournamentStatus {
   CANCELADO
 }
 
-enum Modalidad {
-  TRADICIONAL
-  MIXTO
-  SUMA
+// Modalidades ahora son configurables, no solo un enum
+// Cada modalidad define las reglas del torneo
+model ModalidadConfig {
+  id          String   @id @default(uuid())
+  nombre      String   @unique  // Ej: "Clásico", "Mixto", "Suma", "Americano"
+  descripcion String   @db.Text
+  activa      Boolean  @default(true)
+  
+  // Reglas de la modalidad (JSON flexible)
+  // Ejemplo: { 
+  //   tipoEmparejamiento: "PAREJA_FIJA", // o "ROTATIVO", "INDIVIDUAL"
+  //   generoRequerido: "MIXTO", // o "MASCULINO", "FEMENINO", "CUALQUIERA"
+  //   sistemaPuntos: "TRADICIONAL", // o "SUMA", "SETS"
+  //   formatoBracket: "ELIMINACION_DIRECTA", // o "GRUPOS", "LIGA"
+  //   setsPorPartido: 3,
+  //   puntosPorVictoria: 100,
+  //   puntosPorDerrota: 50,
+  //   requierePareja: true,
+  //   permiteIndividual: false
+  // }
+  reglas      Json     @default("{}")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  torneos     TournamentModalidad[]
+
+  @@map("modalidades_config")
 }
 
 enum CategoriaEstado {
@@ -686,14 +711,15 @@ model TournamentCategory {
 }
 
 model TournamentModalidad {
-  id           String     @id @default(uuid())
-  tournamentId String     @map("tournament_id")
-  modalidad    Modalidad
-  createdAt    DateTime   @default(now()) @map("created_at")
+  id              String          @id @default(uuid())
+  tournamentId    String          @map("tournament_id")
+  modalidadConfigId String        @map("modalidad_config_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament      Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  modalidadConfig ModalidadConfig @relation(fields: [modalidadConfigId], references: [id])
 
-  @@unique([tournamentId, modalidad])
+  @@unique([tournamentId, modalidadConfigId])
   @@map("tournament_modalidades")
 }
 
@@ -765,7 +791,6 @@ model Inscripcion {
   jugador2Documento String   @map("jugador2_documento")
   jugador2Email     String?  @map("jugador2_email") // Para invitar
   
-  modalidad    Modalidad
   estado       InscripcionEstado     @default(PENDIENTE_PAGO)
   modoPago     ModoPagoInscripcion?  @map("modo_pago")
   createdAt    DateTime              @default(now()) @map("created_at")

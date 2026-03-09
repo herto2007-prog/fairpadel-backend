@@ -1,5 +1,5 @@
 import { IsString, IsOptional, IsUUID, IsEnum } from 'class-validator';
-import { ModoPagoInscripcion, Modalidad } from '@prisma/client';
+import { ModoPagoInscripcion } from '@prisma/client';
 
 export class CreateInscripcionDto {
   @IsUUID()
@@ -25,6 +25,5 @@ export class CreateInscripcionDto {
   @IsOptional()
   modoPago?: ModoPagoInscripcion;
 
-  @IsEnum(Modalidad)
-  modalidad: Modalidad;
+
 }

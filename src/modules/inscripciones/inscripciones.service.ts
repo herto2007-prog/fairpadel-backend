@@ -84,7 +84,6 @@ export class InscripcionesService {
         ...(jugador2Id && { jugador2: { connect: { id: jugador2Id } } }),
         jugador2Documento,
         jugador2Email,
-        modalidad: dto.modalidad,
         modoPago: dto.modoPago || 'COMPLETO',
         estado: InscripcionEstado.PENDIENTE_CONFIRMACION,
       },

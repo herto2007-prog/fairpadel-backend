@@ -2,6 +2,23 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Gender } from '@prisma/client';
 
+// Reglas base para modalidades
+const REGLAS_BASE = {
+  tipoEmparejamiento: 'PAREJA_FIJA',
+  generoRequerido: 'CUALQUIERA',
+  sistemaPuntos: 'TRADICIONAL',
+  formatoBracket: 'ELIMINACION_DIRECTA',
+  setsPorPartido: 3,
+  puntosPorVictoria: 100,
+  puntosPorDerrota: 50,
+  requierePareja: true,
+  permiteIndividual: false,
+  descripcionLarga: '',
+  // Nuevos campos para diferenciar variantes
+  minimoPartidosGarantizados: 1,
+  variante: 'MUNDIAL', // 'PY' o 'MUNDIAL'
+};
+
 @Injectable()
 export class SeedService implements OnModuleInit {
   private readonly logger = new Logger(SeedService.name);
@@ -13,6 +30,7 @@ export class SeedService implements OnModuleInit {
     try {
       await this.seedCategories();
       await this.seedRoles();
+      await this.seedModalidades();
       this.logger.log('✅ Seed completado');
     } catch (error) {
       this.logger.error('❌ Error en seed:', error.message);
@@ -65,5 +83,169 @@ export class SeedService implements OnModuleInit {
     }
 
     this.logger.log('✅ Roles verificados');
+  }
+
+  private async seedModalidades() {
+    const modalidades = [
+      // ═══════════════════════════════════════════════════════════
+      // CLÁSICO - Parejas fijas, formato tradicional
+      // ═══════════════════════════════════════════════════════════
+      {
+        nombre: 'Clásico PY',
+        descripcion: 'Modalidad tradicional paraguaya. Todos juegan mínimo 2 partidos.',
+        reglas: {
+          ...REGLAS_BASE,
+          variante: 'PY',
+          tipoEmparejamiento: 'PAREJA_FIJA',
+          sistemaPuntos: 'TRADICIONAL',
+          formatoBracket: 'GARANTIZADO_2_PARTIDOS', // Todos juegan 2 partidos mínimo
+          setsPorPartido: 3,
+          requierePareja: true,
+          minimoPartidosGarantizados: 2,
+          descripcionLarga: 'Formato tradicional de Paraguay. Cada jugador forma pareja fija y garantiza jugar al menos 2 partidos. El bracket se organiza para que nadie quede eliminado en el primer partido.',
+        },
+      },
+      {
+        nombre: 'Clásico Mundo',
+        descripcion: 'Modalidad clásica internacional. Eliminación directa pura.',
+        reglas: {
+          ...REGLAS_BASE,
+          variante: 'MUNDIAL',
+          tipoEmparejamiento: 'PAREJA_FIJA',
+          sistemaPuntos: 'TRADICIONAL',
+          formatoBracket: 'ELIMINACION_DIRECTA', // Pierdes, te vas
+          setsPorPartido: 3,
+          requierePareja: true,
+          minimoPartidosGarantizados: 1,
+          descripcionLarga: 'Formato internacional de eliminación directa. Parejas fijas. Pierdes un partido y quedas eliminado del torneo.',
+        },
+      },
+      // ═══════════════════════════════════════════════════════════
+      // MIXTO - Parejas de género opuesto
+      // ═══════════════════════════════════════════════════════════
+      {
+        nombre: 'Mixto PY',
+        descripcion: 'Modalidad mixta paraguaya. 1 hombre + 1 mujer, mínimo 2 partidos.',
+        reglas: {
+          ...REGLAS_BASE,
+          variante: 'PY',
+          tipoEmparejamiento: 'PAREJA_FIJA',
+          generoRequerido: 'MIXTO',
+          sistemaPuntos: 'TRADICIONAL',
+          formatoBracket: 'GARANTIZADO_2_PARTIDOS',
+          setsPorPartido: 3,
+          requierePareja: true,
+          minimoPartidosGarantizados: 2,
+          descripcionLarga: 'Cada pareja está conformada por un jugador masculino y uno femenino. Todos garantizan jugar al menos 2 partidos.',
+        },
+      },
+      {
+        nombre: 'Mixto Mundo',
+        descripcion: 'Modalidad mixta internacional. Eliminación directa.',
+        reglas: {
+          ...REGLAS_BASE,
+          variante: 'MUNDIAL',
+          tipoEmparejamiento: 'PAREJA_FIJA',
+          generoRequerido: 'MIXTO',
+          sistemaPuntos: 'TRADICIONAL',
+          formatoBracket: 'ELIMINACION_DIRECTA',
+          setsPorPartido: 3,
+          requierePareja: true,
+          minimoPartidosGarantizados: 1,
+          descripcionLarga: 'Pareja mixta (hombre + mujer) con eliminación directa. Pierdes, quedas fuera.',
+        },
+      },
+      // ═══════════════════════════════════════════════════════════
+      // SUMA - Puntos acumulados, rotación de parejas
+      // ═══════════════════════════════════════════════════════════
+      {
+        nombre: 'Suma PY',
+        descripcion: 'Formato suma paraguayo. Rotación de parejas, todos juegan igual.',
+        reglas: {
+          ...REGLAS_BASE,
+          variante: 'PY',
+          tipoEmparejamiento: 'ROTATIVO',
+          sistemaPuntos: 'SUMA',
+          formatoBracket: 'LIGA_ROTATIVA_PY', // Todos contra todos, rotación específica PY
+          setsPorPartido: 1,
+          puntosPorVictoria: 100,
+          puntosPorDerrota: 50,
+          requierePareja: false,
+          permiteIndividual: true,
+          minimoPartidosGarantizados: 0, // En suma todos juegan la misma cantidad
+          descripcionLarga: 'Los jugadores rotan parejas según el sistema paraguayo. Se acumulan puntos individuales. Gana quien tenga más puntos al final. Todos juegan la misma cantidad de partidos.',
+        },
+      },
+      {
+        nombre: 'Suma Mundo',
+        descripcion: 'Formato suma internacional. Rotación suiza o americana.',
+        reglas: {
+          ...REGLAS_BASE,
+          variante: 'MUNDIAL',
+          tipoEmparejamiento: 'ROTATIVO',
+          sistemaPuntos: 'SUMA',
+          formatoBracket: 'SUIZO', // Sistema suizo de emparejamiento
+          setsPorPartido: 1,
+          puntosPorVictoria: 100,
+          puntosPorDerrota: 50,
+          requierePareja: false,
+          permiteIndividual: true,
+          minimoPartidosGarantizados: 0,
+          descripcionLarga: 'Rotación de parejas estilo suizo. Los emparejamientos se ajustan según el desempeño. Sistema usado internacionalmente.',
+        },
+      },
+      // ═══════════════════════════════════════════════════════════
+      // AMERICANO - Rotación cada partido
+      // ═══════════════════════════════════════════════════════════
+      {
+        nombre: 'Americano PY',
+        descripcion: 'Americano a la paraguaya. Rotación aleatoria, mismas oportunidades.',
+        reglas: {
+          ...REGLAS_BASE,
+          variante: 'PY',
+          tipoEmparejamiento: 'ROTATIVO',
+          sistemaPuntos: 'TRADICIONAL',
+          formatoBracket: 'AMERICANO_PY', // Sistema paraguayo de americanos
+          setsPorPartido: 1,
+          puntosPorVictoria: 2,
+          puntosPorDerrota: 1,
+          requierePareja: false,
+          permiteIndividual: true,
+          minimoPartidosGarantizados: 0,
+          descripcionLarga: 'Los jugadores cambian de pareja en cada partido según sorteo aleatorio paraguayo. Todos juegan la misma cantidad de partidos contra diferentes oponentes.',
+        },
+      },
+      {
+        nombre: 'Americano Mundo',
+        descripcion: 'Americano internacional. Rotación por ranking.',
+        reglas: {
+          ...REGLAS_BASE,
+          variante: 'MUNDIAL',
+          tipoEmparejamiento: 'ROTATIVO',
+          sistemaPuntos: 'TRADICIONAL',
+          formatoBracket: 'AMERICANO_SUIZO', // Rotación basada en resultados
+          setsPorPartido: 1,
+          puntosPorVictoria: 2,
+          puntosPorDerrota: 1,
+          requierePareja: false,
+          permiteIndividual: true,
+          minimoPartidosGarantizados: 0,
+          descripcionLarga: 'Rotación de parejas basada en ranking y resultados (sistema suizo-americano). Usado en torneos internacionales.',
+        },
+      },
+    ];
+
+    for (const modalidad of modalidades) {
+      await this.prisma.modalidadConfig.upsert({
+        where: { nombre: modalidad.nombre },
+        update: {}, // No actualizar si ya existe
+        create: {
+          ...modalidad,
+          activa: true,
+        },
+      });
+    }
+
+    this.logger.log('✅ Modalidades verificadas (PY + Mundo)');
   }
 }
