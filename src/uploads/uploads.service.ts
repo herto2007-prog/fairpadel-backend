@@ -4,13 +4,27 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class UploadsService {
+  private readonly isCloudinaryConfigured: boolean;
+
   constructor(private configService: ConfigService) {
-    // Configurar Cloudinary
-    cloudinary.config({
-      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
-    });
+    const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME');
+    const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY');
+    const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET');
+
+    this.isCloudinaryConfigured = !!(cloudName && apiKey && apiSecret);
+
+    if (this.isCloudinaryConfigured) {
+      // Configurar Cloudinary
+      cloudinary.config({
+        cloud_name: cloudName,
+        api_key: apiKey,
+        api_secret: apiSecret,
+      });
+      console.log('✅ Cloudinary configurado correctamente');
+    } else {
+      console.warn('⚠️ Cloudinary NO configurado - las imágenes no se subirán');
+      console.warn('   Faltan variables: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET');
+    }
   }
 
   /**
@@ -23,6 +37,13 @@ export class UploadsService {
     file: Express.Multer.File,
     folder: string = 'fairpadel',
   ): Promise<{ url: string; publicId: string }> {
+    // Verificar configuración de Cloudinary
+    if (!this.isCloudinaryConfigured) {
+      throw new BadRequestException(
+        'Servicio de imágenes no configurado. Contacta al administrador.',
+      );
+    }
+
     try {
       // Validar tipo de archivo
       const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
