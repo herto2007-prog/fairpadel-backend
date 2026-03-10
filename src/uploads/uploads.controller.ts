@@ -9,10 +9,18 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { IsString, IsOptional } from 'class-validator';
 import { UploadsService } from './uploads.service';
 import { JwtAuthGuard } from '../modules/auth/guards/jwt-auth.guard';
 import { GetUser } from '../modules/auth/decorators/get-user.decorator';
 import { User } from '@prisma/client';
+
+// DTO para upload de imágenes
+class UploadImageDto {
+  @IsString()
+  @IsOptional()
+  folder?: string;
+}
 
 @Controller('uploads')
 export class UploadsController {
@@ -54,12 +62,13 @@ export class UploadsController {
   @UseInterceptors(FileInterceptor('image'))
   async uploadImage(
     @UploadedFile() file: Express.Multer.File,
-    @Body('folder') folder: string = 'general',
+    @Body() dto: UploadImageDto,
   ) {
     if (!file) {
       throw new BadRequestException('No se proporcionó ninguna imagen');
     }
 
+    const folder = dto.folder || 'general';
     // Validar que folder solo contenga caracteres permitidos
     const validFolder = /^[a-zA-Z0-9_-]+$/.test(folder) ? folder : 'general';
 
