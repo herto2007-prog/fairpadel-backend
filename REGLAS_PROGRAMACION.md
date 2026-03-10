@@ -167,5 +167,25 @@ npm run lint           # Debe pasar sin errores
 
 ---
 
+## 11. Deploy Automático en Railway
+
+**"Las migraciones y seeds se ejecutan automáticamente en deploy"**
+
+El `Dockerfile` está configurado para:
+1. `prisma migrate deploy` - Aplicar migraciones pendientes
+2. `prisma db seed` - Ejecutar seed si hay datos nuevos
+3. Iniciar la aplicación
+
+**Archivos críticos:**
+- `Dockerfile` - Contiene el CMD con el flujo completo
+- `railway.json` - Configura el builder Docker
+- `prisma/migrations/` - Carpeta de migraciones versionadas
+- `prisma/seed.ts` - Datos iniciales del sistema
+
+⚠️ **NUNCA modificar el Dockerfile sin validar el flujo de migraciones.**
+✅ **Siempre crear migraciones formales:** `npx prisma migrate dev --name descripcion`
+
+---
+
 *Última actualización: Marzo 2025*
 *Responsable: Kimi Code CLI + Equipo FairPadel*

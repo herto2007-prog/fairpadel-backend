@@ -39,6 +39,5 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-# IMPORTANTE: Solo hacemos db push (sin --force-reset) para no borrar datos
-# El schema ya debería estar creado. Si hay cambios, se aplican sin borrar datos.
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && exec node dist/main.js"]
+# Flujo: 1) Aplicar migraciones formales 2) Seed si es necesario 3) Iniciar app
+CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && exec node dist/main.js"]
