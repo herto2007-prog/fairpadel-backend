@@ -184,6 +184,7 @@ export class AdminTorneosController {
   @Post()
   async create(@Body() dto: CreateTorneoDto, @Request() req) {
     const user = req.user;
+    console.log('[CreateTorneo] DTO recibido:', JSON.stringify(dto, null, 2));
     try {
       // Obtener configuración de comisión
       const configComision = await this.prisma.fairpadelConfig.findUnique({
