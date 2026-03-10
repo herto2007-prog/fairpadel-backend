@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   UseInterceptors,
   UploadedFile,
   Body,
@@ -85,6 +86,19 @@ export class UploadsController {
     return {
       success: false,
       message: 'Funcionalidad en desarrollo',
+    };
+  }
+
+  /**
+   * Health check del servicio de uploads
+   * GET /api/uploads/health
+   */
+  @Get('health')
+  healthCheck() {
+    return {
+      success: true,
+      message: 'Servicio de uploads activo',
+      timestamp: new Date().toISOString(),
     };
   }
 }
