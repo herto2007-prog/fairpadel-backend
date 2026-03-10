@@ -38,8 +38,16 @@ class CreateTorneoDto {
   @IsString()
   ciudad: string;
 
+  @IsString()
+  @IsOptional()
+  region?: string;
+
   @IsNumber()
   costoInscripcion: number;
+
+  @IsNumber()
+  @IsOptional()
+  minutosPorPartido?: number;
 
   @IsString()
   @IsOptional()
@@ -48,6 +56,10 @@ class CreateTorneoDto {
   @IsString()
   @IsOptional()
   flyerUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  flyerPublicId?: string;
 
   @IsArray()
   @IsOptional()
@@ -193,11 +205,11 @@ export class AdminTorneosController {
             organizadorId: user.id,
             estado: 'BORRADOR',
             pais: 'Paraguay',
-            region: dto.ciudad,
+            region: dto.region || dto.ciudad,
             flyerUrl: dto.flyerUrl || '',
             sedeId: dto.sedeId || null,
             slug,
-            minutosPorPartido: 60,
+            minutosPorPartido: dto.minutosPorPartido || 120,
           },
         });
 
