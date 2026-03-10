@@ -687,6 +687,11 @@ model Tournament {
   publicacionesFeed    PublicacionFeed[] @relation("FeedTournament")
   movimientos          MovimientoFinanciero[]
   auspiciantesEspecie  AuspicianteEspecie[]
+  
+  // Relaciones V2 - Sistema de gestión integral
+  comision             TorneoComision?
+  checklistItems       ChecklistItem[]
+  notificaciones       NotificacionEnviada[]
 
   @@map("tournaments")
 }
@@ -1901,4 +1906,112 @@ model ReservaMensualero {
   grupo             GrupoMensualero      @relation(fields: [grupoId], references: [id], onDelete: Cascade)
 
   @@map("reservas_mensualeros")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO: FAIRPADEL CORE - Gestión de Plataforma
+// ═══════════════════════════════════════════════════════
+
+model FairpadelConfig {
+  id          String   @id @default(uuid())
+  clave       String   @unique
+  valor       String
+  descripcion String?  @db.Text
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("fairpadel_config")
+}
+
+model TorneoComision {
+  id               String    @id @default(uuid())
+  tournamentId     String    @unique @map("tournament_id")
+  montoEstimado    Int       @map("monto_estimado")
+  montoPagado      Int       @default(0) @map("monto_pagado")
+  estado           String    @default("PENDIENTE") // PENDIENTE, PARCIAL, PAGADO
+  bloqueoActivo    Boolean   @default(false) @map("bloqueo_activo")
+  rondaBloqueo     String?   @map("ronda_bloqueo") // CUARTOS, SEMIFINALES, FINAL
+  comprobanteUrl   String?   @map("comprobante_url")
+  comprobanteNotas String?   @map("comprobante_notas") @db.Text
+  pagadoAt         DateTime? @map("pagado_at")
+  revisadoPor      String?   @map("revisado_por")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("torneo_comisiones")
+}
+
+model ChecklistTemplate {
+  id          String               @id @default(uuid())
+  nombre      String
+  descripcion String?              @db.Text
+  esDefault   Boolean              @default(false) @map("es_default")
+  activo      Boolean              @default(true)
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  items ChecklistTemplateItem[]
+
+  @@map("checklist_templates")
+}
+
+model ChecklistTemplateItem {
+  id          String            @id @default(uuid())
+  templateId  String            @map("template_id")
+  categoria   String            // PELOTAS, AUSPICIANTES, PREMIOS, INFRAESTRUCTURA, BEBIDAS, LOGISTICA, OTRO
+  titulo      String
+  descripcion String?           @db.Text
+  orden       Int               @default(0)
+  esCalculado Boolean           @default(false) @map("es_calculado") // Si es cálculo automático (pelotas)
+  formula     String?           // Fórmula para cálculo automático
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("checklist_template_items")
+}
+
+model ChecklistItem {
+  id                String    @id @default(uuid())
+  tournamentId      String    @map("tournament_id")
+  templateItemId    String?   @map("template_item_id")
+  categoria         String
+  titulo            String
+  descripcion       String?   @db.Text
+  fechaRecordatorio DateTime? @map("fecha_recordatorio")
+  recordatorioEnviado Boolean @default(false) @map("recordatorio_enviado")
+  completado        Boolean   @default(false)
+  completadoAt      DateTime? @map("completado_at")
+  notas             String?   @db.Text
+  valorCalculado    Int?      @map("valor_calculado") // Para pelotas: cantidad estimada
+  valorReal         Int?      @map("valor_real") // Ajustado por organizador
+  orden             Int       @default(0)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("checklist_items")
+}
+
+model NotificacionEnviada {
+  id             String   @id @default(uuid())
+  tournamentId   String   @map("tournament_id")
+  inscripcionId  String?  @map("inscripcion_id")
+  tipo           String   // SMS, EMAIL, WHATSAPP
+  destinatario   String   // phone o email
+  template       String   // INVITACION_JUGADOR, RECORDATORIO_CHECKLIST, etc
+  contenido      String   @db.Text
+  estado         String   @default("ENVIADO") // ENVIADO, ENTREGADO, FALLIDO
+  errorMsg       String?  @map("error_msg") @db.Text
+  enviadoAt      DateTime @default(now()) @map("enviado_at")
+  leido          Boolean  @default(false)
+  leidoAt        DateTime? @map("leido_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@index([tournamentId, tipo])
+  @@map("notificaciones_enviadas")
 }
