@@ -153,5 +153,19 @@ npm run lint           # Debe pasar sin errores
 
 ---
 
+## 10. Separación de Responsabilidades (Kimi vs Usuario)
+
+**"El usuario (dueño) NUNCA realiza acciones directas en la base de datos"**
+
+- Toda interacción con datos debe ser a través de la API/UI
+- No ejecutar `prisma studio`, SQL directo, ni migraciones manuales en producción
+- Kimi gestiona migraciones, seeds y cambios de schema
+- El usuario gestiona configuración a través del panel admin
+
+❌ **PROHIBIDO para usuario:** Acceso directo a BD, modificaciones manuales de tablas.
+✅ **PERMITIDO para usuario:** Configuración vía `/fairpadel/admin`, dashboards, reportes.
+
+---
+
 *Última actualización: Marzo 2025*
 *Responsable: Kimi Code CLI + Equipo FairPadel*
