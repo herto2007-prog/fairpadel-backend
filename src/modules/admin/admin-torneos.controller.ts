@@ -43,6 +43,10 @@ class CreateTorneoDto {
   @IsOptional()
   region?: string;
 
+  @IsString()
+  @IsOptional()
+  pais?: string;
+
   @IsNumber()
   costoInscripcion: number;
 
@@ -207,7 +211,7 @@ export class AdminTorneosController {
             costoInscripcion: dto.costoInscripcion,
             organizadorId: user.id,
             estado: 'BORRADOR',
-            pais: 'Paraguay',
+            pais: dto.pais || 'Paraguay',
             region: dto.region || dto.ciudad,
             flyerUrl: dto.flyerUrl || '',
             sedeId: dto.sedeId || null,
