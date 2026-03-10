@@ -11,7 +11,8 @@ import {
   NotFoundException,
   Request,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, ValidateNested } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -27,13 +28,32 @@ class CreateTorneoDto {
   descripcion?: string;
 
   @IsDateString()
+  @Transform(({ value }) => {
+    // Si viene como YYYY-MM-DD, agregar tiempo para hacerlo ISO-8601
+    if (value && typeof value === 'string' && value.length === 10) {
+      return `${value}T00:00:00.000Z`;
+    }
+    return value;
+  })
   fechaInicio: string;
 
   @IsDateString()
+  @Transform(({ value }) => {
+    if (value && typeof value === 'string' && value.length === 10) {
+      return `${value}T23:59:59.999Z`;
+    }
+    return value;
+  })
   fechaFin: string;
 
   @IsDateString()
   @IsOptional()
+  @Transform(({ value }) => {
+    if (value && typeof value === 'string' && value.length === 10) {
+      return `${value}T23:59:59.999Z`;
+    }
+    return value;
+  })
   fechaLimiteInscripcion?: string;
 
   @IsString()
@@ -48,10 +68,23 @@ class CreateTorneoDto {
   pais?: string;
 
   @IsNumber()
+  @Transform(({ value }) => {
+    // Convertir string a number si es necesario
+    if (typeof value === 'string') {
+      return parseInt(value, 10);
+    }
+    return value;
+  })
   costoInscripcion: number;
 
   @IsNumber()
   @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return parseInt(value, 10);
+    }
+    return value;
+  })
   minutosPorPartido?: number;
 
   @IsString()
@@ -68,10 +101,12 @@ class CreateTorneoDto {
 
   @IsArray()
   @IsOptional()
+  @IsString({ each: true })
   modalidadIds?: string[];
 
   @IsArray()
   @IsOptional()
+  @IsString({ each: true })
   categoriaIds?: string[];
 }
 
@@ -200,25 +235,32 @@ export class AdminTorneosController {
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
 
+        // Preparar datos del torneo para Prisma
+        const torneoData: any = {
+          nombre: dto.nombre,
+          descripcion: dto.descripcion || '',
+          fechaInicio: new Date(dto.fechaInicio),
+          fechaFin: new Date(dto.fechaFin),
+          fechaLimiteInscr: new Date(dto.fechaLimiteInscripcion || dto.fechaInicio),
+          ciudad: dto.ciudad,
+          costoInscripcion: dto.costoInscripcion, // Prisma maneja Decimal desde number
+          organizador: { connect: { id: user.id } },
+          estado: 'BORRADOR',
+          pais: dto.pais || 'Paraguay',
+          region: dto.region || dto.ciudad,
+          flyerUrl: dto.flyerUrl || '',
+          slug,
+          minutosPorPartido: dto.minutosPorPartido || 120,
+        };
+
+        // Agregar sede solo si existe
+        if (dto.sedeId) {
+          torneoData.sedePrincipal = { connect: { id: dto.sedeId } };
+        }
+
         // Crear torneo usando sintaxis de relación de Prisma
         const torneo = await tx.tournament.create({
-          data: {
-            nombre: dto.nombre,
-            descripcion: dto.descripcion || '',
-            fechaInicio: dto.fechaInicio,
-            fechaFin: dto.fechaFin,
-            fechaLimiteInscr: dto.fechaLimiteInscripcion || dto.fechaInicio,
-            ciudad: dto.ciudad,
-            costoInscripcion: dto.costoInscripcion,
-            organizador: { connect: { id: user.id } },
-            estado: 'BORRADOR',
-            pais: dto.pais || 'Paraguay',
-            region: dto.region || dto.ciudad,
-            flyerUrl: dto.flyerUrl || '',
-            slug,
-            minutosPorPartido: dto.minutosPorPartido || 120,
-            ...(dto.sedeId && { sedePrincipal: { connect: { id: dto.sedeId } } }),
-          },
+          data: torneoData,
         });
 
         // Crear registro de comisión
