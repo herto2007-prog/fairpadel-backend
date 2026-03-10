@@ -7,6 +7,8 @@ import {
   Body,
   BadRequestException,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { IsString, IsOptional } from 'class-validator';
@@ -60,13 +62,32 @@ export class UploadsController {
   @Post('image')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('image'))
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false, // Permitir campos extra de Multer
+    }),
+  )
   async uploadImage(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadImageDto,
   ) {
+    console.log('[Upload] Recibiendo petición de upload');
+    console.log('[Upload] DTO recibido:', dto);
+    console.log('[Upload] File presente:', !!file);
+    
     if (!file) {
+      console.log('[Upload] Error: No file recibido');
       throw new BadRequestException('No se proporcionó ninguna imagen');
     }
+
+    console.log('[Upload] File info:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      bufferPresente: !!file.buffer,
+    });
 
     const folder = dto.folder || 'general';
     // Validar que folder solo contenga caracteres permitidos
