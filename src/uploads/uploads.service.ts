@@ -7,9 +7,9 @@ export class UploadsService {
   private readonly isCloudinaryConfigured: boolean;
 
   constructor(private configService: ConfigService) {
-    const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME');
-    const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY');
-    const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET');
+    const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME')?.trim();
+    const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY')?.trim();
+    const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET')?.trim();
 
     this.isCloudinaryConfigured = !!(cloudName && apiKey && apiSecret);
 
@@ -20,10 +20,14 @@ export class UploadsService {
         api_key: apiKey,
         api_secret: apiSecret,
       });
-      console.log('✅ Cloudinary configurado correctamente');
+      console.log('✅ Cloudinary configurado');
+      console.log(`   Cloud name: ${cloudName}`);
+      console.log(`   API Key: ${apiKey?.substring(0, 4)}...`);
     } else {
-      console.warn('⚠️ Cloudinary NO configurado - las imágenes no se subirán');
-      console.warn('   Faltan variables: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET');
+      console.warn('⚠️ Cloudinary NO configurado');
+      console.warn('   CLOUDINARY_CLOUD_NAME:', cloudName ? '✓' : '✗');
+      console.warn('   CLOUDINARY_API_KEY:', apiKey ? '✓' : '✗');
+      console.warn('   CLOUDINARY_API_SECRET:', apiSecret ? '✓' : '✗');
     }
   }
 
@@ -75,7 +79,13 @@ export class UploadsService {
         url: result.secure_url,
         publicId: result.public_id,
       };
-    } catch (error) {
+    } catch (error: any) {
+      // Errores específicos de Cloudinary
+      if (error.message?.includes('Invalid cloud_name')) {
+        throw new BadRequestException(
+          'Error de configuración de Cloudinary. Contacta al administrador.',
+        );
+      }
       throw new BadRequestException(
         `Error al subir imagen: ${error.message}`,
       );
