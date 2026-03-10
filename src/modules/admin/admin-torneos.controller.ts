@@ -9,6 +9,7 @@ import {
   UseGuards,
   BadRequestException,
   NotFoundException,
+  Request,
 } from '@nestjs/common';
 import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -115,7 +116,8 @@ export class AdminTorneosController {
   // ═══════════════════════════════════════════════════════════
 
   @Get()
-  async findAll(@Body('user') user: any) {
+  async findAll(@Request() req) {
+    const user = req.user;
     const where = user.roles.includes('admin') 
       ? {} 
       : { organizadorId: user.id };
@@ -176,7 +178,8 @@ export class AdminTorneosController {
   }
 
   @Post()
-  async create(@Body() dto: CreateTorneoDto, @Body('user') user: any) {
+  async create(@Body() dto: CreateTorneoDto, @Request() req) {
+    const user = req.user;
     try {
       // Obtener configuración de comisión
       const configComision = await this.prisma.fairpadelConfig.findUnique({
