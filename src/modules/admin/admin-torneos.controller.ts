@@ -200,32 +200,25 @@ export class AdminTorneosController {
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
 
-        // Preparar datos del torneo
-        const torneoData: any = {
-          nombre: dto.nombre,
-          descripcion: dto.descripcion || '',
-          fechaInicio: dto.fechaInicio,
-          fechaFin: dto.fechaFin,
-          fechaLimiteInscr: dto.fechaLimiteInscripcion || dto.fechaInicio,
-          ciudad: dto.ciudad,
-          costoInscripcion: dto.costoInscripcion,
-          organizadorId: user.id,
-          estado: 'BORRADOR',
-          pais: dto.pais || 'Paraguay',
-          region: dto.region || dto.ciudad,
-          flyerUrl: dto.flyerUrl || '',
-          slug,
-          minutosPorPartido: dto.minutosPorPartido || 120,
-        };
-
-        // Agregar sedeId solo si existe
-        if (dto.sedeId) {
-          torneoData.sedeId = dto.sedeId;
-        }
-
-        // Crear torneo
+        // Crear torneo usando sintaxis de relación de Prisma
         const torneo = await tx.tournament.create({
-          data: torneoData,
+          data: {
+            nombre: dto.nombre,
+            descripcion: dto.descripcion || '',
+            fechaInicio: dto.fechaInicio,
+            fechaFin: dto.fechaFin,
+            fechaLimiteInscr: dto.fechaLimiteInscripcion || dto.fechaInicio,
+            ciudad: dto.ciudad,
+            costoInscripcion: dto.costoInscripcion,
+            organizador: { connect: { id: user.id } },
+            estado: 'BORRADOR',
+            pais: dto.pais || 'Paraguay',
+            region: dto.region || dto.ciudad,
+            flyerUrl: dto.flyerUrl || '',
+            slug,
+            minutosPorPartido: dto.minutosPorPartido || 120,
+            ...(dto.sedeId && { sedePrincipal: { connect: { id: dto.sedeId } } }),
+          },
         });
 
         // Crear registro de comisión
