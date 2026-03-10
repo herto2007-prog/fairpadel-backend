@@ -3,7 +3,6 @@ import { AdminController } from './admin.controller';
 import { AdminCategoriasController } from './admin-categorias.controller';
 import { AdminModalidadesController } from './admin-modalidades.controller';
 import { AdminTorneosController } from './admin-torneos.controller';
-import { AdminTorneosV2Controller } from './admin-torneos-v2.controller';
 import { FairpadelAdminController } from './fairpadel-admin.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 
@@ -14,7 +13,6 @@ import { PrismaModule } from '../../prisma/prisma.module';
     AdminCategoriasController,
     AdminModalidadesController,
     AdminTorneosController,
-    AdminTorneosV2Controller,
     FairpadelAdminController,
   ],
 })

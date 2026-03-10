@@ -7,16 +7,17 @@ import {
   Body,
   Param,
   UseGuards,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { TournamentStatus, TipoCancha } from '@prisma/client';
 
-// DTOs para el Wizard
-class CreateTorneoBasicoDto {
+// DTOs
+class CreateTorneoDto {
   @IsString()
   nombre: string;
 
@@ -31,7 +32,8 @@ class CreateTorneoBasicoDto {
   fechaFin: string;
 
   @IsDateString()
-  fechaLimiteInscripcion: string;
+  @IsOptional()
+  fechaLimiteInscripcion?: string;
 
   @IsString()
   ciudad: string;
@@ -46,6 +48,14 @@ class CreateTorneoBasicoDto {
   @IsString()
   @IsOptional()
   flyerUrl?: string;
+
+  @IsArray()
+  @IsOptional()
+  modalidadIds?: string[];
+
+  @IsArray()
+  @IsOptional()
+  categoriaIds?: string[];
 }
 
 class AsignarModalidadesDto {
@@ -58,25 +68,28 @@ class AsignarCategoriasDto {
   categoriaIds: string[];
 }
 
-class ConfigurarBracketDto {
+class SubirComprobanteDto {
   @IsString()
-  formato: string; // ELIMINACION_DIRECTA, GRUPOS, LIGA, etc.
+  comprobanteUrl: string;
+
+  @IsString()
+  @IsOptional()
+  notas?: string;
+}
+
+class CompletarChecklistDto {
+  @IsString()
+  @IsOptional()
+  notas?: string;
 
   @IsNumber()
   @IsOptional()
-  setsPorPartido?: number;
+  valorReal?: number;
+}
 
-  @IsNumber()
-  @IsOptional()
-  puntosPorVictoria?: number;
-
-  @IsNumber()
-  @IsOptional()
-  puntosPorDerrota?: number;
-
-  @IsNumber()
-  @IsOptional()
-  minutosPorPartido?: number;
+class ConfigurarRecordatorioDto {
+  @IsDateString()
+  fechaRecordatorio: string;
 }
 
 @Controller('admin/torneos')
@@ -85,9 +98,10 @@ class ConfigurarBracketDto {
 export class AdminTorneosController {
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Listar todos los torneos (admin ve todos, organizador ve los suyos)
-   */
+  // ═══════════════════════════════════════════════════════════
+  // CRUD BÁSICO
+  // ═══════════════════════════════════════════════════════════
+
   @Get()
   async findAll(@Body('user') user: any) {
     const where = user.roles.includes('admin') 
@@ -117,197 +131,210 @@ export class AdminTorneosController {
     return torneos;
   }
 
-  /**
-   * Crear torneo básico (Paso 1 del Wizard)
-   */
-  @Post()
-  async create(@Body() dto: CreateTorneoBasicoDto, @Body('user') user: any) {
-    try {
-      // Generar slug único
-      const slug = dto.nombre
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
-
-      const torneo = await this.prisma.tournament.create({
-        data: {
-          nombre: dto.nombre,
-          descripcion: dto.descripcion || '',
-          fechaInicio: dto.fechaInicio,
-          fechaFin: dto.fechaFin,
-          fechaLimiteInscr: dto.fechaLimiteInscripcion,
-          ciudad: dto.ciudad,
-          costoInscripcion: dto.costoInscripcion,
-          organizadorId: user.id,
-          estado: 'BORRADOR',
-          pais: 'Paraguay',
-          region: dto.ciudad,
-          flyerUrl: dto.flyerUrl || '',
-          sedeId: dto.sedeId || null,
-          slug,
-          minutosPorPartido: 60,
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id },
+      include: {
+        organizador: {
+          select: { id: true, nombre: true, apellido: true, email: true },
         },
+        categorias: {
+          include: { category: true },
+        },
+        modalidades: {
+          include: { modalidadConfig: true },
+        },
+        sedePrincipal: {
+          include: {
+            canchas: { where: { activa: true } },
+          },
+        },
+        _count: {
+          select: { inscripciones: true },
+        },
+      },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    return torneo;
+  }
+
+  @Post()
+  async create(@Body() dto: CreateTorneoDto, @Body('user') user: any) {
+    try {
+      // Obtener configuración de comisión
+      const configComision = await this.prisma.fairpadelConfig.findUnique({
+        where: { clave: 'COMISION_POR_JUGADOR' },
+      });
+      const comisionPorJugador = parseInt(configComision?.valor || '0');
+
+      // Crear en transacción
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Generar slug único
+        const slug = dto.nombre
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
+
+        // Crear torneo
+        const torneo = await tx.tournament.create({
+          data: {
+            nombre: dto.nombre,
+            descripcion: dto.descripcion || '',
+            fechaInicio: dto.fechaInicio,
+            fechaFin: dto.fechaFin,
+            fechaLimiteInscr: dto.fechaLimiteInscripcion || dto.fechaInicio,
+            ciudad: dto.ciudad,
+            costoInscripcion: dto.costoInscripcion,
+            organizadorId: user.id,
+            estado: 'BORRADOR',
+            pais: 'Paraguay',
+            region: dto.ciudad,
+            flyerUrl: dto.flyerUrl || '',
+            sedeId: dto.sedeId || null,
+            slug,
+            minutosPorPartido: 60,
+          },
+        });
+
+        // Crear registro de comisión
+        await tx.torneoComision.create({
+          data: {
+            tournamentId: torneo.id,
+            montoEstimado: 0,
+            montoPagado: 0,
+            estado: 'PENDIENTE',
+            bloqueoActivo: false,
+          },
+        });
+
+        // Crear checklist desde template
+        const template = await tx.checklistTemplate.findFirst({
+          where: { esDefault: true, activo: true },
+          include: { items: true },
+        });
+
+        if (template) {
+          for (const item of template.items) {
+            await tx.checklistItem.create({
+              data: {
+                tournamentId: torneo.id,
+                templateItemId: item.id,
+                categoria: item.categoria,
+                titulo: item.titulo,
+                descripcion: item.descripcion,
+                orden: item.orden,
+                valorCalculado: item.esCalculado ? 0 : null,
+              },
+            });
+          }
+        }
+
+        // Asignar modalidades si se proporcionaron
+        if (dto.modalidadIds?.length) {
+          for (const modalidadId of dto.modalidadIds) {
+            await tx.tournamentModalidad.create({
+              data: {
+                tournamentId: torneo.id,
+                modalidadConfigId: modalidadId,
+              },
+            });
+          }
+        }
+
+        // Asignar categorías si se proporcionaron
+        if (dto.categoriaIds?.length) {
+          for (const categoriaId of dto.categoriaIds) {
+            await tx.tournamentCategory.create({
+              data: {
+                tournamentId: torneo.id,
+                categoryId: categoriaId,
+              },
+            });
+          }
+        }
+
+        return torneo;
       });
 
       return {
         success: true,
-        message: 'Torneo creado correctamente',
-        torneo,
+        message: 'Torneo creado correctamente con checklist inicial',
+        torneo: result,
+        comisionPorJugador,
       };
     } catch (error) {
-      return {
+      throw new BadRequestException({
         success: false,
         message: 'Error creando torneo',
         error: error.message,
-      };
+      });
     }
   }
 
-  /**
-   * Asignar modalidades al torneo (Paso 2)
-   */
-  @Post(':id/modalidades')
-  async asignarModalidades(
+  @Put(':id')
+  async update(
     @Param('id') torneoId: string,
-    @Body() dto: AsignarModalidadesDto,
-  ) {
-    try {
-      // Eliminar modalidades existentes
-      await this.prisma.tournamentModalidad.deleteMany({
-        where: { tournamentId: torneoId },
-      });
-
-      // Crear nuevas relaciones
-      for (const modalidadId of dto.modalidadIds) {
-        await this.prisma.tournamentModalidad.create({
-          data: {
-            tournamentId: torneoId,
-            modalidadConfigId: modalidadId,
-          },
-        });
-      }
-
-      const modalidades = await this.prisma.tournamentModalidad.findMany({
-        where: { tournamentId: torneoId },
-        include: { modalidadConfig: true },
-      });
-
-      return {
-        success: true,
-        message: 'Modalidades asignadas correctamente',
-        modalidades,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error asignando modalidades',
-        error: error.message,
-      };
-    }
-  }
-
-  /**
-   * Asignar categorías al torneo (Paso 2 alternativo)
-   */
-  @Post(':id/categorias')
-  async asignarCategorias(
-    @Param('id') torneoId: string,
-    @Body() dto: AsignarCategoriasDto,
-  ) {
-    try {
-      // Eliminar categorías existentes
-      await this.prisma.tournamentCategory.deleteMany({
-        where: { tournamentId: torneoId },
-      });
-
-      // Crear nuevas relaciones
-      for (const categoriaId of dto.categoriaIds) {
-        await this.prisma.tournamentCategory.create({
-          data: {
-            tournamentId: torneoId,
-            categoryId: categoriaId,
-          },
-        });
-      }
-
-      const categorias = await this.prisma.tournamentCategory.findMany({
-        where: { tournamentId: torneoId },
-        include: { category: true },
-      });
-
-      return {
-        success: true,
-        message: 'Categorías asignadas correctamente',
-        categorias,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error asignando categorías',
-        error: error.message,
-      };
-    }
-  }
-
-  /**
-   * Configurar bracket y reglas (Paso 3)
-   */
-  @Put(':id/configuracion')
-  async configurarBracket(
-    @Param('id') torneoId: string,
-    @Body() dto: ConfigurarBracketDto,
+    @Body() dto: Partial<CreateTorneoDto>,
   ) {
     try {
       const torneo = await this.prisma.tournament.update({
         where: { id: torneoId },
         data: {
-          ...(dto.setsPorPartido && { setsPorPartido: dto.setsPorPartido }),
-          ...(dto.minutosPorPartido && { minutosPorPartido: dto.minutosPorPartido }),
+          ...(dto.nombre && { nombre: dto.nombre }),
+          ...(dto.descripcion !== undefined && { descripcion: dto.descripcion }),
+          ...(dto.fechaInicio && { fechaInicio: dto.fechaInicio }),
+          ...(dto.fechaFin && { fechaFin: dto.fechaFin }),
+          ...(dto.fechaLimiteInscripcion && { fechaLimiteInscr: dto.fechaLimiteInscripcion }),
+          ...(dto.ciudad && { ciudad: dto.ciudad, region: dto.ciudad }),
+          ...(dto.costoInscripcion !== undefined && { costoInscripcion: dto.costoInscripcion }),
+          ...(dto.sedeId !== undefined && { sedeId: dto.sedeId }),
+          ...(dto.flyerUrl !== undefined && { flyerUrl: dto.flyerUrl }),
         },
       });
 
       return {
         success: true,
-        message: 'Configuración actualizada',
+        message: 'Torneo actualizado',
         torneo,
       };
     } catch (error) {
       return {
         success: false,
-        message: 'Error actualizando configuración',
+        message: 'Error actualizando torneo',
         error: error.message,
       };
     }
   }
 
-  /**
-   * Publicar torneo (Paso final)
-   */
-  @Put(':id/publicar')
-  async publicar(@Param('id') torneoId: string) {
+  @Delete(':id')
+  async remove(@Param('id') torneoId: string) {
     try {
-      const torneo = await this.prisma.tournament.update({
+      await this.prisma.tournament.delete({
         where: { id: torneoId },
-        data: { estado: 'PUBLICADO' },
       });
 
       return {
         success: true,
-        message: 'Torneo publicado correctamente',
-        torneo,
+        message: 'Torneo eliminado correctamente',
       };
     } catch (error) {
       return {
         success: false,
-        message: 'Error publicando torneo',
+        message: 'Error eliminando torneo',
         error: error.message,
       };
     }
   }
 
-  /**
-   * Obtener datos para el wizard (sedes, modalidades, categorías disponibles)
-   */
+  // ═══════════════════════════════════════════════════════════
+  // DATOS AUXILIARES
+  // ═══════════════════════════════════════════════════════════
+
   @Get('datos/wizard')
   async getDatosWizard() {
     try {
@@ -341,112 +368,293 @@ export class AdminTorneosController {
     }
   }
 
-  /**
-   * Obtener detalle completo de un torneo
-   */
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
+  // ═══════════════════════════════════════════════════════════
+  // MODALIDADES Y CATEGORÍAS
+  // ═══════════════════════════════════════════════════════════
+
+  @Post(':id/modalidades')
+  async asignarModalidades(
+    @Param('id') torneoId: string,
+    @Body() dto: AsignarModalidadesDto,
+  ) {
     try {
-      const torneo = await this.prisma.tournament.findUnique({
-        where: { id },
-        include: {
-          organizador: {
-            select: { id: true, nombre: true, apellido: true, email: true },
-          },
-          categorias: {
-            include: { category: true },
-          },
-          modalidades: {
-            include: { modalidadConfig: true },
-          },
-          sedePrincipal: {
-            include: {
-              canchas: {
-                where: { activa: true },
-              },
-            },
-          },
-          torneoSedes: {
-            include: { sede: true },
-          },
-          _count: {
-            select: { inscripciones: true },
-          },
-        },
+      await this.prisma.tournamentModalidad.deleteMany({
+        where: { tournamentId: torneoId },
       });
 
-      if (!torneo) {
-        return { error: 'Torneo no encontrado' };
+      for (const modalidadId of dto.modalidadIds) {
+        await this.prisma.tournamentModalidad.create({
+          data: {
+            tournamentId: torneoId,
+            modalidadConfigId: modalidadId,
+          },
+        });
       }
 
-      return torneo;
+      const modalidades = await this.prisma.tournamentModalidad.findMany({
+        where: { tournamentId: torneoId },
+        include: { modalidadConfig: true },
+      });
+
+      return {
+        success: true,
+        message: 'Modalidades asignadas correctamente',
+        modalidades,
+      };
     } catch (error) {
       return {
         success: false,
-        message: 'Error obteniendo torneo',
+        message: 'Error asignando modalidades',
         error: error.message,
       };
     }
   }
 
-  /**
-   * Actualizar torneo básico
-   */
-  @Put(':id')
-  async update(
+  @Post(':id/categorias')
+  async asignarCategorias(
     @Param('id') torneoId: string,
-    @Body() dto: Partial<CreateTorneoBasicoDto>,
+    @Body() dto: AsignarCategoriasDto,
   ) {
     try {
-      const torneo = await this.prisma.tournament.update({
-        where: { id: torneoId },
-        data: {
-          ...(dto.nombre && { nombre: dto.nombre }),
-          ...(dto.descripcion !== undefined && { descripcion: dto.descripcion }),
-          ...(dto.fechaInicio && { fechaInicio: dto.fechaInicio }),
-          ...(dto.fechaFin && { fechaFin: dto.fechaFin }),
-          ...(dto.fechaLimiteInscripcion && { fechaLimiteInscr: dto.fechaLimiteInscripcion }),
-          ...(dto.ciudad && { ciudad: dto.ciudad, region: dto.ciudad }),
-          ...(dto.costoInscripcion !== undefined && { costoInscripcion: dto.costoInscripcion }),
-          ...(dto.sedeId !== undefined && { sedeId: dto.sedeId }),
-          ...(dto.flyerUrl !== undefined && { flyerUrl: dto.flyerUrl }),
-        },
+      await this.prisma.tournamentCategory.deleteMany({
+        where: { tournamentId: torneoId },
+      });
+
+      for (const categoriaId of dto.categoriaIds) {
+        await this.prisma.tournamentCategory.create({
+          data: {
+            tournamentId: torneoId,
+            categoryId: categoriaId,
+          },
+        });
+      }
+
+      const categorias = await this.prisma.tournamentCategory.findMany({
+        where: { tournamentId: torneoId },
+        include: { category: true },
       });
 
       return {
         success: true,
-        message: 'Torneo actualizado',
+        message: 'Categorías asignadas correctamente',
+        categorias,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error asignando categorías',
+        error: error.message,
+      };
+    }
+  }
+
+  @Put(':id/publicar')
+  async publicar(@Param('id') torneoId: string) {
+    try {
+      const torneo = await this.prisma.tournament.update({
+        where: { id: torneoId },
+        data: { estado: 'PUBLICADO' },
+      });
+
+      return {
+        success: true,
+        message: 'Torneo publicado correctamente',
         torneo,
       };
     } catch (error) {
       return {
         success: false,
-        message: 'Error actualizando torneo',
+        message: 'Error publicando torneo',
         error: error.message,
       };
     }
   }
 
-  /**
-   * Eliminar torneo
-   */
-  @Delete(':id')
-  async remove(@Param('id') torneoId: string) {
-    try {
-      await this.prisma.tournament.delete({
-        where: { id: torneoId },
-      });
+  // ═══════════════════════════════════════════════════════════
+  // CHECKLIST
+  // ═══════════════════════════════════════════════════════════
 
-      return {
-        success: true,
-        message: 'Torneo eliminado correctamente',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Error eliminando torneo',
-        error: error.message,
-      };
+  @Get(':id/checklist')
+  async getChecklist(@Param('id') tournamentId: string) {
+    const items = await this.prisma.checklistItem.findMany({
+      where: { tournamentId },
+      orderBy: { orden: 'asc' },
+    });
+
+    return {
+      success: true,
+      items,
+      progreso: {
+        total: items.length,
+        completados: items.filter(i => i.completado).length,
+        porcentaje: Math.round((items.filter(i => i.completado).length / items.length) * 100) || 0,
+      },
+    };
+  }
+
+  @Put(':id/checklist/:itemId')
+  async completarChecklistItem(
+    @Param('id') tournamentId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: CompletarChecklistDto,
+  ) {
+    const item = await this.prisma.checklistItem.update({
+      where: { id: itemId, tournamentId },
+      data: {
+        completado: true,
+        completadoAt: new Date(),
+        notas: dto.notas,
+        valorReal: dto.valorReal,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Ítem completado',
+      item,
+    };
+  }
+
+  @Put(':id/checklist/:itemId/recordatorio')
+  async configurarRecordatorio(
+    @Param('id') tournamentId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: ConfigurarRecordatorioDto,
+  ) {
+    const item = await this.prisma.checklistItem.update({
+      where: { id: itemId, tournamentId },
+      data: {
+        fechaRecordatorio: new Date(dto.fechaRecordatorio),
+        recordatorioEnviado: false,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Recordatorio configurado',
+      item,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // COMISIÓN Y BLOQUEO
+  // ═══════════════════════════════════════════════════════════
+
+  @Get(':id/detalle')
+  async getDetalleCompleto(@Param('id') id: string) {
+    const [torneo, comision, checklist, configComision] = await Promise.all([
+      this.prisma.tournament.findUnique({
+        where: { id },
+        include: {
+          organizador: {
+            select: { id: true, nombre: true, apellido: true, email: true, telefono: true },
+          },
+          categorias: { include: { category: true } },
+          modalidades: { include: { modalidadConfig: true } },
+          sedePrincipal: true,
+          _count: { select: { inscripciones: true } },
+        },
+      }),
+      this.prisma.torneoComision.findUnique({
+        where: { tournamentId: id },
+      }),
+      this.prisma.checklistItem.findMany({
+        where: { tournamentId: id },
+        orderBy: { orden: 'asc' },
+      }),
+      this.prisma.fairpadelConfig.findUnique({
+        where: { clave: 'COMISION_POR_JUGADOR' },
+      }),
+    ]);
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
     }
+
+    // Calcular estadísticas
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: { tournamentId: id },
+      select: { estado: true },
+    });
+
+    const stats = {
+      total: inscripciones.length,
+      confirmadas: inscripciones.filter(i => i.estado === 'CONFIRMADA').length,
+      pendientesPago: inscripciones.filter(i => i.estado === 'PENDIENTE_PAGO').length,
+    };
+
+    const comisionPorJugador = parseInt(configComision?.valor || '0');
+    const montoEstimado = stats.confirmadas * 2 * comisionPorJugador;
+
+    return {
+      ...torneo,
+      comision: {
+        ...comision,
+        montoEstimado,
+        comisionPorJugador,
+      },
+      checklist,
+      stats,
+    };
+  }
+
+  @Post(':id/comision/comprobante')
+  async subirComprobante(
+    @Param('id') tournamentId: string,
+    @Body() dto: SubirComprobanteDto,
+  ) {
+    const comision = await this.prisma.torneoComision.update({
+      where: { tournamentId },
+      data: {
+        comprobanteUrl: dto.comprobanteUrl,
+        comprobanteNotas: dto.notas,
+        estado: 'PENDIENTE_VERIFICACION',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Comprobante subido. Pendiente de verificación por admin.',
+      comision,
+    };
+  }
+
+  @Get(':id/estado')
+  async verificarEstado(@Param('id') tournamentId: string) {
+    const [torneo, comision, configRonda] = await Promise.all([
+      this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { estado: true, nombre: true },
+      }),
+      this.prisma.torneoComision.findUnique({
+        where: { tournamentId },
+      }),
+      this.prisma.fairpadelConfig.findUnique({
+        where: { clave: 'RONDA_BLOQUEO_PAGO' },
+      }),
+    ]);
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    const rondaBloqueo = configRonda?.valor || 'CUARTOS';
+    
+    return {
+      torneo: {
+        nombre: torneo.nombre,
+        estado: torneo.estado,
+      },
+      bloqueo: {
+        activo: comision?.bloqueoActivo || false,
+        rondaBloqueo,
+        comisionEstado: comision?.estado || 'PENDIENTE',
+        montoPagado: comision?.montoPagado || 0,
+        montoEstimado: comision?.montoEstimado || 0,
+      },
+      mensaje: comision?.bloqueoActivo 
+        ? `Torneo bloqueado. Para continuar a semifinales, regulariza el pago de comisión.`
+        : 'Torneo activo',
+    };
   }
 }
