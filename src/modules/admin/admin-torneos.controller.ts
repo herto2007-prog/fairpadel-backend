@@ -159,7 +159,7 @@ export class AdminTorneosController {
     const user = req.user;
     const where = user.roles.includes('admin') 
       ? {} 
-      : { organizadorId: user.id };
+      : { organizadorId: user.userId };
 
     const torneos = await this.prisma.tournament.findMany({
       where,
@@ -219,7 +219,8 @@ export class AdminTorneosController {
   @Post()
   async create(@Body() dto: CreateTorneoDto, @Request() req) {
     const user = req.user;
-    console.log('[CreateTorneo] DTO recibido:', JSON.stringify(dto, null, 2));
+    console.log('[CreateTorneo] User desde JWT:', user);
+    console.log('[CreateTorneo] User.userId:', user.userId);
     try {
       // Obtener configuración de comisión
       const configComision = await this.prisma.fairpadelConfig.findUnique({
@@ -244,7 +245,7 @@ export class AdminTorneosController {
           fechaLimiteInscr: new Date(dto.fechaLimiteInscripcion || dto.fechaInicio),
           ciudad: dto.ciudad,
           costoInscripcion: dto.costoInscripcion, // Prisma maneja Decimal desde number
-          organizador: { connect: { id: user.id } },
+          organizador: { connect: { id: user.userId } },
           estado: 'BORRADOR',
           pais: dto.pais || 'Paraguay',
           region: dto.region || dto.ciudad,
