@@ -1,0 +1,503 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
+import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, Min, Max } from 'class-validator';
+import { PrismaService } from '../../prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+
+// DTOs
+class AgregarSedeDto {
+  @IsString()
+  sedeId: string;
+}
+
+class AgregarCanchaDto {
+  @IsString()
+  sedeCanchaId: string;
+}
+
+class ConfigurarDiaDto {
+  @IsDateString()
+  fecha: string;
+
+  @IsString()
+  horaInicio: string; // "18:00"
+
+  @IsString()
+  horaFin: string; // "23:00"
+
+  @IsNumber()
+  @Min(30)
+  @Max(180)
+  minutosSlot: number = 90;
+}
+
+class GenerarSlotsDto {
+  @IsDateString()
+  fecha: string;
+}
+
+@Controller('admin/torneos/:id/disponibilidad')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin', 'organizador')
+export class AdminDisponibilidadController {
+  constructor(private prisma: PrismaService) {}
+
+  /**
+   * GET /admin/torneos/:id/disponibilidad
+   * Obtener configuración completa de disponibilidad del torneo
+   */
+  @Get()
+  async getDisponibilidad(@Param('id') tournamentId: string) {
+    const [torneo, sedes, canchas, dias] = await Promise.all([
+      this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { id: true, nombre: true, fechaInicio: true, fechaFin: true },
+      }),
+      this.prisma.torneoSede.findMany({
+        where: { tournamentId },
+        include: {
+          sede: {
+            include: {
+              canchas: { where: { activa: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.torneoCancha.findMany({
+        where: { tournamentId, activa: true },
+        include: {
+          sedeCancha: {
+            include: {
+              sede: { select: { id: true, nombre: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.torneoDisponibilidadDia.findMany({
+        where: { tournamentId },
+        include: {
+          slots: {
+            include: {
+              torneoCancha: {
+                include: {
+                  sedeCancha: { select: { id: true, nombre: true } },
+                },
+              },
+              match: {
+                select: {
+                  id: true,
+                  ronda: true,
+                  inscripcion1: { select: { id: true } },
+                  inscripcion2: { select: { id: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { fecha: 'asc' },
+      }),
+    ]);
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    return {
+      success: true,
+      torneo: {
+        id: torneo.id,
+        nombre: torneo.nombre,
+        fechaInicio: torneo.fechaInicio,
+        fechaFin: torneo.fechaFin,
+      },
+      sedes: sedes.map((s) => ({
+        id: s.sede.id,
+        nombre: s.sede.nombre,
+        ciudad: s.sede.ciudad,
+        orden: s.orden,
+      })),
+      canchas: canchas.map((c) => ({
+        id: c.id,
+        nombre: c.sedeCancha.nombre,
+        sedeId: c.sedeCancha.sede.id,
+        sedeNombre: c.sedeCancha.sede.nombre,
+        orden: c.orden,
+      })),
+      dias: dias.map((d) => ({
+        id: d.id,
+        fecha: d.fecha,
+        horaInicio: d.horaInicio,
+        horaFin: d.horaFin,
+        minutosSlot: d.minutosSlot,
+        activo: d.activo,
+        totalSlots: d.slots.length,
+        slotsLibres: d.slots.filter((s) => s.estado === 'LIBRE').length,
+        slotsOcupados: d.slots.filter((s) => s.estado === 'OCUPADO').length,
+      })),
+    };
+  }
+
+  /**
+   * POST /admin/torneos/:id/disponibilidad/sedes
+   * Agregar una sede al torneo
+   */
+  @Post('sedes')
+  async agregarSede(@Param('id') tournamentId: string, @Body() dto: AgregarSedeDto) {
+    try {
+      // Verificar que la sede existe
+      const sede = await this.prisma.sede.findUnique({
+        where: { id: dto.sedeId },
+      });
+      if (!sede) {
+        throw new NotFoundException('Sede no encontrada');
+      }
+
+      // Verificar que no esté ya agregada
+      const existing = await this.prisma.torneoSede.findUnique({
+        where: {
+          tournamentId_sedeId: {
+            tournamentId,
+            sedeId: dto.sedeId,
+          },
+        },
+      });
+      if (existing) {
+        return {
+          success: false,
+          message: 'La sede ya está agregada al torneo',
+        };
+      }
+
+      const torneoSede = await this.prisma.torneoSede.create({
+        data: {
+          tournamentId,
+          sedeId: dto.sedeId,
+        },
+        include: {
+          sede: true,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Sede agregada al torneo',
+        sede: torneoSede.sede,
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error agregando sede',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * DELETE /admin/torneos/:id/disponibilidad/sedes/:sedeId
+   * Quitar una sede del torneo
+   */
+  @Delete('sedes/:sedeId')
+  async quitarSede(@Param('id') tournamentId: string, @Param('sedeId') sedeId: string) {
+    try {
+      await this.prisma.torneoSede.delete({
+        where: {
+          tournamentId_sedeId: {
+            tournamentId,
+            sedeId,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Sede removida del torneo',
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error removiendo sede',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * POST /admin/torneos/:id/disponibilidad/canchas
+   * Agregar una cancha al torneo
+   */
+  @Post('canchas')
+  async agregarCancha(@Param('id') tournamentId: string, @Body() dto: AgregarCanchaDto) {
+    try {
+      // Verificar que la cancha existe
+      const cancha = await this.prisma.sedeCancha.findUnique({
+        where: { id: dto.sedeCanchaId },
+        include: { sede: true },
+      });
+      if (!cancha) {
+        throw new NotFoundException('Cancha no encontrada');
+      }
+
+      // Verificar que la sede esté agregada al torneo
+      const sedeEnTorneo = await this.prisma.torneoSede.findUnique({
+        where: {
+          tournamentId_sedeId: {
+            tournamentId,
+            sedeId: cancha.sedeId,
+          },
+        },
+      });
+      if (!sedeEnTorneo) {
+        return {
+          success: false,
+          message: 'Primero debe agregar la sede al torneo',
+        };
+      }
+
+      // Verificar que no esté ya agregada
+      const existing = await this.prisma.torneoCancha.findUnique({
+        where: {
+          tournamentId_sedeCanchaId: {
+            tournamentId,
+            sedeCanchaId: dto.sedeCanchaId,
+          },
+        },
+      });
+      if (existing) {
+        return {
+          success: false,
+          message: 'La cancha ya está agregada al torneo',
+        };
+      }
+
+      const torneoCancha = await this.prisma.torneoCancha.create({
+        data: {
+          tournamentId,
+          sedeCanchaId: dto.sedeCanchaId,
+        },
+        include: {
+          sedeCancha: {
+            include: {
+              sede: true,
+            },
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Cancha agregada al torneo',
+        cancha: {
+          id: torneoCancha.id,
+          nombre: torneoCancha.sedeCancha.nombre,
+          sede: torneoCancha.sedeCancha.sede.nombre,
+        },
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error agregando cancha',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * DELETE /admin/torneos/:id/disponibilidad/canchas/:canchaId
+   * Quitar una cancha del torneo
+   */
+  @Delete('canchas/:canchaId')
+  async quitarCancha(@Param('id') tournamentId: string, @Param('canchaId') canchaId: string) {
+    try {
+      await this.prisma.torneoCancha.update({
+        where: { id: canchaId },
+        data: { activa: false },
+      });
+
+      return {
+        success: true,
+        message: 'Cancha desactivada del torneo',
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error desactivando cancha',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * POST /admin/torneos/:id/disponibilidad/dias
+   * Configurar un día de disponibilidad
+   */
+  @Post('dias')
+  async configurarDia(@Param('id') tournamentId: string, @Body() dto: ConfigurarDiaDto) {
+    try {
+      const fecha = new Date(dto.fecha);
+
+      // Verificar que la fecha esté dentro del rango del torneo
+      const torneo = await this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { fechaInicio: true, fechaFin: true },
+      });
+      if (!torneo) {
+        throw new NotFoundException('Torneo no encontrado');
+      }
+
+      // Crear o actualizar la disponibilidad del día
+      const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
+        where: {
+          tournamentId_fecha: {
+            tournamentId,
+            fecha,
+          },
+        },
+        update: {
+          horaInicio: dto.horaInicio,
+          horaFin: dto.horaFin,
+          minutosSlot: dto.minutosSlot,
+          activo: true,
+        },
+        create: {
+          tournamentId,
+          fecha,
+          horaInicio: dto.horaInicio,
+          horaFin: dto.horaFin,
+          minutosSlot: dto.minutosSlot,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Día configurado correctamente',
+        dia: disponibilidad,
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error configurando día',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * DELETE /admin/torneos/:id/disponibilidad/dias/:diaId
+   * Eliminar un día de disponibilidad
+   */
+  @Delete('dias/:diaId')
+  async eliminarDia(@Param('id') tournamentId: string, @Param('diaId') diaId: string) {
+    try {
+      await this.prisma.torneoDisponibilidadDia.update({
+        where: { id: diaId },
+        data: { activo: false },
+      });
+
+      return {
+        success: true,
+        message: 'Día desactivado',
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error desactivando día',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * POST /admin/torneos/:id/disponibilidad/dias/:diaId/generar-slots
+   * Generar los slots para un día específico
+   */
+  @Post('dias/:diaId/generar-slots')
+  async generarSlots(@Param('id') tournamentId: string, @Param('diaId') diaId: string) {
+    try {
+      const dia = await this.prisma.torneoDisponibilidadDia.findFirst({
+        where: { id: diaId, tournamentId },
+      });
+      if (!dia) {
+        throw new NotFoundException('Día no encontrado');
+      }
+
+      const canchas = await this.prisma.torneoCancha.findMany({
+        where: { tournamentId, activa: true },
+      });
+
+      if (canchas.length === 0) {
+        return {
+          success: false,
+          message: 'No hay canchas configuradas para generar slots',
+        };
+      }
+
+      const slotsCreados = [];
+
+      // Para cada cancha, generar slots según horario
+      for (const cancha of canchas) {
+        let horaActual = this.parseHora(dia.horaInicio);
+        const horaFin = this.parseHora(dia.horaFin);
+
+        while (horaActual < horaFin) {
+          const horaInicioStr = this.formatHora(horaActual);
+          const horaFinSlot = horaActual + dia.minutosSlot;
+          
+          if (horaFinSlot > horaFin) break;
+
+          const horaFinStr = this.formatHora(horaFinSlot);
+
+          // Crear slot
+          const slot = await this.prisma.torneoSlot.create({
+            data: {
+              disponibilidadId: diaId,
+              torneoCanchaId: cancha.id,
+              horaInicio: horaInicioStr,
+              horaFin: horaFinStr,
+              estado: 'LIBRE',
+            },
+          });
+
+          slotsCreados.push(slot);
+          horaActual = horaFinSlot;
+        }
+      }
+
+      return {
+        success: true,
+        message: `${slotsCreados.length} slots generados`,
+        totalSlots: slotsCreados.length,
+        canchasUsadas: canchas.length,
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error generando slots',
+        error: error.message,
+      });
+    }
+  }
+
+  // Helpers
+  private parseHora(hora: string): number {
+    const [h, m] = hora.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  private formatHora(minutos: number): string {
+    const h = Math.floor(minutos / 60);
+    const m = minutos % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+}

@@ -569,6 +569,7 @@ model TorneoCancha {
   sedeCancha    SedeCancha         @relation(fields: [sedeCanchaId], references: [id], onDelete: Cascade)
   horarios      TorneoCanchaHorario[]
   partidos      Match[]
+  slots         TorneoSlot[]
 
   @@unique([tournamentId, sedeCanchaId])
   @@map("torneo_canchas")
@@ -587,6 +588,44 @@ model TorneoCanchaHorario {
 
   @@unique([torneoCanchaId, diaSemana, horaInicio])
   @@map("torneo_cancha_horarios")
+}
+
+// NUEVO: Disponibilidad específica por fecha del torneo (para sorteo de slots)
+model TorneoDisponibilidadDia {
+  id            String   @id @default(uuid())
+  tournamentId  String   @map("tournament_id")
+  fecha         DateTime @db.Date // Fecha específica: 2025-05-15
+  horaInicio    String   @map("hora_inicio") // "18:00"
+  horaFin       String   @map("hora_fin")    // "23:00"
+  minutosSlot   Int      @default(90) @map("minutos_slot") // Duración de cada partido
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  slots         TorneoSlot[]
+
+  @@unique([tournamentId, fecha])
+  @@map("torneo_disponibilidad_dias")
+}
+
+// NUEVO: Slots generados para cada día/cancha (la grilla)
+model TorneoSlot {
+  id                String   @id @default(uuid())
+  disponibilidadId  String   @map("disponibilidad_id")
+  torneoCanchaId    String   @map("torneo_cancha_id")
+  horaInicio        String   @map("hora_inicio") // "18:00"
+  horaFin           String   @map("hora_fin")    // "19:30"
+  estado            String   @default("LIBRE") // LIBRE, OCUPADO, BLOQUEADO
+  matchId           String?  @unique @map("match_id")   // Si está ocupado, qué partido (único para 1:1)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  disponibilidad  TorneoDisponibilidadDia @relation(fields: [disponibilidadId], references: [id], onDelete: Cascade)
+  torneoCancha    TorneoCancha            @relation(fields: [torneoCanchaId], references: [id], onDelete: Cascade)
+  match           Match?                  @relation("SlotPartido", fields: [matchId], references: [id])
+
+  @@unique([disponibilidadId, torneoCanchaId, horaInicio])
+  @@map("torneo_slots")
 }
 
 model TorneoPelotasRonda {
@@ -695,6 +734,9 @@ model Tournament {
   comision             TorneoComision?
   checklistItems       ChecklistItem[]
   notificaciones       NotificacionEnviada[]
+  
+  // NUEVO: Disponibilidad de días para sorteo de slots
+  disponibilidadDias   TorneoDisponibilidadDia[]
 
   @@map("tournaments")
 }
@@ -962,6 +1004,7 @@ model Match {
   
   torneoCancha     TorneoCancha?    @relation(fields: [torneoCanchaId], references: [id])
   sedeCancha       SedeCancha?      @relation(fields: [sedeCanchaId], references: [id])
+  slot             TorneoSlot?      @relation("SlotPartido")
   
   publicacionesFeed PublicacionFeed[]
 
