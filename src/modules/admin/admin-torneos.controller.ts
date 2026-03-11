@@ -324,13 +324,16 @@ export class AdminTorneosController {
         return torneo;
       });
 
+      console.log('[CreateTorneo] Torneo creado exitosamente:', result.id);
+      
       return {
         success: true,
         message: 'Torneo creado correctamente con checklist inicial',
         torneo: result,
         comisionPorJugador,
       };
-    } catch (error) {
+    } catch (error: any) {
+      console.error('[CreateTorneo] Error:', error);
       throw new BadRequestException({
         success: false,
         message: 'Error creando torneo',
