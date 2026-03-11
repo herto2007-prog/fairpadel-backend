@@ -19,6 +19,8 @@ import { ModalidadesModule } from './modules/modalidades/modalidades.module';
 import { InvitacionesModule } from './modules/invitaciones/invitaciones.module';
 import { NotificacionesModule } from './modules/notificaciones/notificaciones.module';
 import { AppController } from './app.controller';
+import { DemoPublicController } from './modules/demo/demo-public.controller';
+import { PrismaService } from './prisma/prisma.service';
 
 @Module({
   imports: [
@@ -42,6 +44,7 @@ import { AppController } from './app.controller';
     EmailModule,
     SeedModule, // Seed automático al iniciar
   ],
-  controllers: [AppController],
+  controllers: [AppController, DemoPublicController],
+  providers: [PrismaService],
 })
 export class AppModule {}

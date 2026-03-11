@@ -7,7 +7,10 @@ const prisma = new PrismaClient();
  * Distribuidos en categorías para simular torneos reales
  */
 async function main() {
-  console.log('🌱 Iniciando seed de jugadores demo...');
+  console.log('🌱 ==========================================');
+  console.log('🌱 INICIANDO SEED DE JUGADORES DEMO');
+  console.log('🌱 ==========================================');
+  console.log('⏰ Fecha:', new Date().toISOString());
 
   // Obtener categorías existentes
   const categorias = await prisma.category.findMany({
@@ -74,10 +77,16 @@ async function main() {
     console.log(`  ✅ Insertados ${Math.min(i + batchSize, jugadores.length)}/${jugadores.length} jugadores`);
   }
 
-  console.log('✅ Seed completado: 400 jugadores demo creados');
+  console.log('✅ ==========================================');
+  console.log('✅ SEED COMPLETADO: 400 jugadores demo creados');
+  console.log('✅ ==========================================');
 }
 
 main()
+  .then(() => {
+    console.log('🎉 Proceso finalizado exitosamente');
+    process.exit(0);
+  })
   .catch((e) => {
     console.error('❌ Error en seed:', e);
     process.exit(1);
