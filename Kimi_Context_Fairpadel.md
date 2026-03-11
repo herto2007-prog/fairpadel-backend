@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-11 08:20
-> **Conversación actual:** Ventana Pública de Inscripción V2 - Lista Torneos + Wizard + Invitaciones
+> **Última actualización:** 2026-03-11 11:15
+> **Conversación actual:** Refactor UI - Fondo consistente + Wizard compacto + Layout system
 
 ---
 
@@ -63,10 +63,16 @@
 - [x] **Validaciones de Categorías por Género/Nivel**
 - [x] **Endpoints públicos: /t/public, /inscripciones/public**
 
+### ✅ Completado (2026-03-11)
+- [x] **Refactor UI Wizard de Inscripción** - Diseño compacto/minimalista
+- [x] **Selector de código de país** - En teléfono del jugador 2
+- [x] **Filtro inteligente de categorías** - Validaciones automáticas por género/nivel
+- [x] **Sistema de fondo consistente** - BackgroundEffects en toda la app
+- [x] **Componente PageLayout** - Plantilla reutilizable para nuevas páginas
+
 ### ⏳ En Progreso / Pendiente
 - [ ] Integración de pagos (Bancard)
 - [ ] Sistema de Fixture dinámico
-- [ ] Refinamiento visual de lista de torneos
 - [ ] Rankings automáticos
 - [ ] Notificaciones push/SMS (Tigo) - Backend listo, falta provider
 
@@ -203,28 +209,27 @@
 
 **InscripcionWizardPage (`/t/:slug/inscribirse`):**
 
-**Paso 1 - Jugador 1:**
-- Detecta usuario logueado automáticamente
-- Si no está logueado → redirect a login con return URL
-- Muestra datos del jugador y categoría actual
+**Diseño:** UI compacta, minimalista, tecnológica (padding reducido, textos densos)
 
-**Paso 2 - Jugador 2:**
-- Búsqueda por nombre/apellido o documento
-- Resultados con foto, nombre, documento, categoría
-- Si no existe → formulario para crear invitación
-- Campos: nombre, apellido, documento, teléfono, email
+**Paso 1 - Equipo (fusión J1 + J2):**
+- **Jugador 1:** Detecta usuario logueado automáticamente, redirect a login si no
+- **Búsqueda Jugador 2:** Por nombre/apellido o documento (debounce)
+- **Resultados:** Lista compacta con foto, nombre, documento, categoría
+- **Invitación:** Si no existe → formulario para crear invitación
+  - Selector de código de país (dropdown banderas)
+  - Campos: nombre, apellido, documento, teléfono, email
 
-**Paso 3 - Categoría:**
-- Grid de categorías disponibles
-- Validaciones de género/nivel aplicadas
-- Mensajes explicativos según el caso
+**Paso 2 - Categoría (filtrado inteligente):**
+- Categorías auto-filtradas por género del equipo
+- Validaciones de nivel aplicadas automáticamente
+- Mensajes explicativos inline según reglas de negocio
+- Solo muestra opciones válidas (no hay opciones deshabilitadas)
 
-**Paso 4 - Confirmación:**
-- Resumen de inscripción
-- Selección modo de pago (completo/individu
+**Paso 3 - Confirmación:**
+- Resumen compacto de la inscripción
 - Checkbox de consentimiento obligatorio
 - Datos bancarios del organizador
-- Botón confirmar
+- Botón confirmar inscripción
 
 ### 2. Sistema de Invitaciones ✅
 
@@ -276,7 +281,66 @@ model InvitacionJugador {
 }
 ```
 
-### 5. Commits Realizados ✅
+### 5. Refactor UI Wizard de Inscripción ✅
+
+**Cambios realizados:**
+- **Pasos fusionados:** De 4 a 3 pasos (Jugador1+Pareja → Categoría → Confirmar)
+- **Diseño compacto:** Menos padding, tipografía más densa, bordes sutiles
+- **Selector de país:** Dropdown de códigos de país (🇸🇻 +503, 🇨🇷 +506, etc.)
+- **Filtro inteligente:** Categorías filtradas automáticamente según género/nivel
+- **Validaciones visuales:** Mensajes explicativos inline según reglas de negocio
+
+### 6. Sistema de Fondo Consistente ✅
+
+**Componente `BackgroundEffects`:**
+- Gradientes difuminados animados (orbs de color primary)
+- Grid pattern sutil con color de marca
+- Partículas flotantes animadas
+- Variantes: `subtle`, `default`, `intense`
+
+**Páginas actualizadas:**
+- `InscripcionWizardPage` - Wizard de inscripción
+- `TorneosPublicListPage` - Lista pública de torneos
+- `TorneoPublicDetailPage` - Detalle de torneo
+- `LoginPage` - Login (ya tenía)
+- `DashboardPage` - Dashboard del usuario
+- `SedesListPage` / `SedeDetailPage` - Sedes
+- `RankingsPage` - Rankings
+- `TournamentsListPage` / `TournamentDetailPage` - Torneos (legacy)
+- `MisTorneosPage` - Panel del organizador
+- `TorneoWizard` - Wizard de creación de torneos
+
+### 7. Componente PageLayout (Nuevo) ✅
+
+**Ubicación:** `src/components/layout/PageLayout.tsx`
+
+**Props:**
+```typescript
+variant?: 'default' | 'centered' | 'full'
+bgVariant?: 'default' | 'subtle' | 'intense'
+showGrid?: boolean
+showEffects?: boolean
+showHeader?: boolean
+backUrl?: string
+maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'
+```
+
+**Uso:**
+```tsx
+import { PageLayout, PageLoading, PageError } from '../components/layout';
+
+// Página estándar
+<PageLayout showHeader backUrl="/torneos">
+  <Contenido />
+</PageLayout>
+
+// Página centrada (login, etc)
+<PageLayout variant="centered">
+  <Formulario />
+</PageLayout>
+```
+
+### 8. Commits Realizados ✅
 
 **Backend:**
 - `d0aa7f5` - feat: Ventana pública de inscripción V2 - Backend completo
@@ -285,6 +349,10 @@ model InvitacionJugador {
 **Frontend:**
 - `99b736b` - feat: Ventana pública de inscripción V2 - Frontend completo
 - `fb66539` - feat: Actualizar ruta /tournaments para usar la nueva vista V2
+- `fdbb63e` - refactor(wizard): UI compacta y minimalista
+- `dfe9086` - fix(wizard): restaurar BackgroundEffects
+- `f3b008d` - feat(ui): aplicar fondo consistente a todas las páginas
+- `96aaa2a` - fix(wizard): aplicar BackgroundEffects al wizard de creación
 
 ---
 
@@ -331,22 +399,42 @@ src/
 │   │   │   │   ├── ResumenStats.tsx         
 │   │   │   │   ├── ModalConfirmar.tsx       
 │   │   │   │   └── ModalCancelar.tsx        
-│   │   │   ├── TorneoWizard.tsx             ✅ 5 pasos crear torneo
+│   │   │   ├── TorneoWizard.tsx             ✅ 5 pasos crear torneo + fondo
 │   │   │   └── SedeAutocomplete.tsx         
 │   │   └── pages/
-│   │       ├── MisTorneosPage.tsx           ✅ Lista + wizard
-│   │       └── GestionarTorneoPage.tsx      ✅ Tabs gestión
+│   │       ├── MisTorneosPage.tsx           ✅ Lista + wizard + fondo
+│   │       └── GestionarTorneoPage.tsx      ✅ Tabs gestión + fondo
 │   ├── tournaments/
 │   │   └── pages/
-│   │       ├── TorneosPublicListPage.tsx    ✅ NUEVO: /torneos
-│   │       ├── TorneoPublicDetailPage.tsx   ✅ NUEVO: /t/:slug
-│   │       └── TournamentsListPage.tsx      (Legacy V1)
-│   └── inscripciones/
+│   │       ├── TorneosPublicListPage.tsx    ✅ /torneos + fondo
+│   │       ├── TorneoPublicDetailPage.tsx   ✅ /t/:slug + fondo
+│   │       ├── TournamentsListPage.tsx      (Legacy + fondo)
+│   │       └── TournamentDetailPage.tsx     (Legacy + fondo)
+│   ├── inscripciones/
+│   │   └── pages/
+│   │       └── InscripcionWizardPage.tsx    ✅ Wizard 3 pasos compacto + fondo
+│   ├── sedes/
+│   │   └── pages/
+│   │       ├── SedesListPage.tsx            ✅ + fondo
+│   │       └── SedeDetailPage.tsx           ✅ + fondo
+│   ├── rankings/
+│   │   └── pages/
+│   │       └── RankingsPage.tsx             ✅ + fondo
+│   └── auth/
 │       └── pages/
-│           └── InscripcionWizardPage.tsx    ✅ NUEVO: Wizard 4 pasos
-├── components/ui/
-│   └── CityAutocomplete.tsx                 
-└── App.tsx                                  ✅ Rutas /torneos, /t/* actualizadas
+│           ├── LoginPage.tsx                ✅ + fondo
+│           └── components/
+│               └── RegisterWizard.tsx       ✅ + fondo
+├── components/
+│   ├── ui/
+│   │   ├── BackgroundEffects.tsx            ✅ Fondo animado reutilizable
+│   │   └── CityAutocomplete.tsx             
+│   └── layout/
+│       ├── PageLayout.tsx                   ✅ NUEVO: Layout system
+│       └── index.ts                         ✅ Exports
+├── pages/
+│   └── DashboardPage.tsx                    ✅ + fondo
+└── App.tsx                                  ✅ Rutas actualizadas
 ```
 
 ---
@@ -414,15 +502,16 @@ Flujo automático:
 ## 🎯 PRÓXIMOS PASOS SUGERIDOS
 
 ### Para mañana (continuación):
-1. **Refinar vista lista de torneos** - Agregar más info, mejorar filtros, destacados
-2. **Conectar checklist al backend** - Persistencia de tareas y recordatorios
-3. **Inscripción manual** - Formulario para que organizador inscriba parejas directamente
-4. **Fixture/Bracket** - Generar cuadro de juego
+1. **Conectar checklist al backend** - Persistencia de tareas y recordatorios
+2. **Inscripción manual** - Formulario para que organizador inscriba parejas directamente
+3. **Fixture/Bracket** - Generar cuadro de juego
+4. **Mejorar UX del wizard** - Animaciones más fluidas, mejor feedback
 
 ### Futuro cercano:
 5. **Integración Bancard** - Pasarela de pagos online
 6. **Notificaciones reales** - Conectar con proveedor SMS/email (Tigo, SendGrid)
 7. **Rankings automáticos** - Cálculo de puntos por torneo
+8. **Modo offline/PWA** - Cache de datos para uso sin conexión
 
 ---
 
@@ -434,7 +523,7 @@ Flujo automático:
 3. Preguntar al usuario qué prioridad tiene para el día
 4. Recordar: un tema a la vez, entregables desplegables
 
-**Estado de ánimo del usuario:** Muy satisfecho con el resultado visual del checklist y la gestión de inscripciones. Solicitó que la ruta /tournaments muestre la nueva lista de torneos V2. Listo para refinar la vista mañana.
+**Estado de ánimo del usuario:** Muy satisfecho con el resultado visual del nuevo diseño compacto y el fondo consistente. Destacó que el wizard de inscripción "quedó espectacular". Solicitó aplicar el mismo fondo a toda la app, lo cual ya está completado. Interesado en continuar con funcionalidades core como fixture y pagos.
 
 ---
 
