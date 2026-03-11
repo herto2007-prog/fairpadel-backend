@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-11 11:45
-> **Conversación actual:** Refactor UI completo - Wizards minimalistas + Sistema de diseño
+> **Última actualización:** 2026-03-11 16:00
+> **Conversación actual:** Sistema de Bracket V1 - Zona + Repechaje + Eliminatoria
 
 ---
 
@@ -71,9 +71,25 @@
 - [x] **Sistema de fondo consistente** - BackgroundEffects en toda la app
 - [x] **Componente PageLayout** - Plantilla reutilizable para nuevas páginas
 
+### ✅ Completado (2026-03-11) - Sistema de Bracket V1
+- [x] **Análisis de lógica paraguaya** - Zona → Repechaje → Eliminación directa
+- [x] **Modelos de BD extendidos** - Campos opcionales en Match (esBye, tipoEntrada, etc.)
+- [x] **Servicio BracketService** - Cálculo automático de configuración según cantidad de parejas
+- [x] **Endpoints REST completos:**
+  - `GET /admin/torneos/:id/categorias` - Listar con conteo de inscripciones
+  - `POST /admin/categorias/:id/bracket/generar` - Generar bracket completo
+  - `GET /admin/bracket/:fixtureVersionId/partidos` - Obtener partidos
+  - `POST /admin/bracket/:fixtureVersionId/publicar` - Publicar bracket
+- [x] **UI Frontend completa:**
+  - `BracketManager` - Lista de categorías del torneo
+  - `ConfigurarBracketModal` - Cálculo y vista previa del bracket
+  - `BracketView` - Visualización por fases (Zona, Repechaje, Octavos, etc.)
+- [x] **Integración en GestionarTorneoPage** - Nuevo tab "Fixture"
+
 ### ⏳ En Progreso / Pendiente
 - [ ] Integración de pagos (Bancard)
-- [ ] Sistema de Fixture dinámico
+- [ ] Asignación de horarios/canchas a partidos (drag & drop)
+- [ ] Registro de resultados en tiempo real
 - [ ] Rankings automáticos
 - [ ] Notificaciones push/SMS (Tigo) - Backend listo, falta provider
 
@@ -500,6 +516,83 @@ Flujo automático:
 
 ---
 
+## 🏆 SISTEMA DE BRACKET (IMPLEMENTADO)
+
+### Lógica Paraguaya (Zona + Repechaje)
+
+**Objetivo:** Garantizar **mínimo 2 partidos** por pareja, eliminando solo los que pierden 2 veces.
+
+**Flujo para 18 parejas (ejemplo):**
+```
+FASE DE ZONA (9 partidos)
+├── 18 parejas → 9 ganan / 9 pierden
+├── Los 9 ganadores pasan al bracket principal
+└── De los 9 perdedores, 4 van a repechaje / 5 van directo a octavos
+
+REPECHAJE (2 partidos)
+├── 4 perdedores de zona juegan entre sí
+├── 2 ganan y pasan a octavos (ya tienen 2 partidos)
+└── 2 pierden y quedan ELIMINADOS (2 partidos jugados) ✓
+
+OCTAVOS EN ADELANTE (Eliminación directa)
+├── 9 ganadores zona + 2 ganadores repechaje + 5 perdedores directos = 16 parejas
+├── Cuartos → Semis → Final
+└── Si pierdes, te vas (pero ya jugaste mínimo 2 partidos)
+```
+
+### Configuración Automática según Cantidad
+
+| Inscriptos | Bracket | Zona | Repechaje | Byes |
+|------------|---------|------|-----------|------|
+| 12-15 | 8 | 6-7 partidos | 0-2 parejas | 0-1 |
+| 16-18 | 16 | 8-9 partidos | 0-4 parejas | 0-1 |
+| 19-24 | 16 | 9-12 partidos | 2-8 parejas | 1-2 |
+| 25-32 | 32 | 12-16 partidos | 4-16 parejas | 0-1 |
+
+**Nota:** Si la cantidad es impar, se usan BYEs estratégicos (ventaja por ranking).
+
+### Estructura de Datos
+
+**Match (extendido):**
+```prisma
+esBye: Boolean              // true = partido con BYE
+tipoEntrada1: String        // INSCRIPCION | GANADOR_ZONA | PERDEDOR_ZONA | etc.
+tipoEntrada2: String
+partidoOrigen1Id: String    // De qué partido viene entrada1
+partidoOrigen2Id: String
+// Campos existentes:
+// - partidoSiguienteId (ganador)
+// - partidoPerdedorSiguienteId (perdedor va a repechaje)
+```
+
+**FixtureVersion.definicion (JSON):**
+```typescript
+{
+  config: {
+    totalParejas: 18,
+    tamanoBracket: 16,
+    parejasConBye: 1,
+    partidosZona: 9,
+    parejasEnRepechaje: 4,
+    // ...
+  },
+  partidos: [...],      // Estructura completa del bracket
+  inscripciones: [...]  // Datos de parejas para mostrar
+}
+```
+
+### Archivos Creados
+
+**Backend:**
+- `src/modules/bracket/` - Servicio reutilizable para cualquier tipo de torneo
+- `src/modules/admin/admin-bracket.controller.ts` - Endpoints REST
+
+**Frontend:**
+- `src/features/organizador/components/bracket/` - Componentes UI completos
+- Integrado en `GestionarTorneoPage` como nuevo tab "Fixture"
+
+---
+
 ## ⚠️ PROTECCIÓN CRÍTICA
 
 ### Base de Datos
@@ -517,16 +610,16 @@ Flujo automático:
 ## 🎯 PRÓXIMOS PASOS SUGERIDOS
 
 ### Para mañana (continuación):
-1. **Conectar checklist al backend** - Persistencia de tareas y recordatorios
-2. **Inscripción manual** - Formulario para que organizador inscriba parejas directamente
-3. **Fixture/Bracket** - Generar cuadro de juego
-4. **Mejorar UX del wizard** - Animaciones más fluidas, mejor feedback
+1. **Asignación de horarios/canchas** - Drag & drop para programar partidos en slots
+2. **Registro de resultados** - Formulario para ingresar sets y avanzar ganadores
+3. **Inscripción manual** - Formulario para que organizador inscriba parejas directamente
+4. **Conectar checklist al backend** - Persistencia de tareas y recordatorios
 
 ### Futuro cercano:
-5. **Integración Bancard** - Pasarela de pagos online
+5. **Calendario de partidos** - Vista semanal con canchas como columnas
 6. **Notificaciones reales** - Conectar con proveedor SMS/email (Tigo, SendGrid)
 7. **Rankings automáticos** - Cálculo de puntos por torneo
-8. **Modo offline/PWA** - Cache de datos para uso sin conexión
+8. **Integración Bancard** - Pasarela de pagos online (postergado)
 
 ---
 
@@ -538,8 +631,8 @@ Flujo automático:
 3. Preguntar al usuario qué prioridad tiene para el día
 4. Recordar: un tema a la vez, entregables desplegables
 
-**Estado de ánimo del usuario:** Muy satisfecho con el resultado visual del nuevo diseño compacto y el fondo consistente. Destacó que el wizard de inscripción "quedó espectacular". Solicitó aplicar el mismo fondo a toda la app y el mismo estilo minimalista al wizard de creación de torneos (ambos completados). Interesado en continuar con funcionalidades core como fixture y pagos.
+**Estado de ánimo del usuario:** Muy satisfecho con la comprensión del sistema de bracket paraguayo (Zona + Repechaje). Validó que la lógica implementada es correcta: todos compiten por el campeonato, se garantizan 2 partidos mínimo, y el repechaje elimina solo los que pierden 2 veces. Interesado en continuar con la asignación de horarios/canchas y registro de resultados.
 
 ---
 
-*Documento actualizado automáticamente tras sesión de desarrollo.*
+*Documento actualizado: 2026-03-11 - Sistema de Bracket V1 implementado completamente (backend + frontend).*
