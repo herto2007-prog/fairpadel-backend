@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-10 23:30
-> **Conversación actual:** Sistema de gestión integral de torneos V2 | Checklist + Inscripciones + Wizard
+> **Última actualización:** 2026-03-11 08:20
+> **Conversación actual:** Ventana Pública de Inscripción V2 - Lista Torneos + Wizard + Invitaciones
 
 ---
 
@@ -54,12 +54,21 @@
 - [x] **Gestión de Inscripciones (Fase 1 - Vista Organizador)**
 - [x] **Panel /mis-torneos para Organizadores**
 
+### ✅ Completado (2026-03-11)
+- [x] **Ventana Pública de Inscripción V2**
+- [x] **Página Lista de Torneos (/torneos, /tournaments)**
+- [x] **Página Detalle del Torneo (/t/:slug)**
+- [x] **Wizard de Inscripción 4 pasos (/t/:slug/inscribirse)**
+- [x] **Sistema de Invitaciones para Jugador2 no registrado**
+- [x] **Validaciones de Categorías por Género/Nivel**
+- [x] **Endpoints públicos: /t/public, /inscripciones/public**
+
 ### ⏳ En Progreso / Pendiente
 - [ ] Integración de pagos (Bancard)
 - [ ] Sistema de Fixture dinámico
-- [ ] Ventana pública de inscripciones
+- [ ] Refinamiento visual de lista de torneos
 - [ ] Rankings automáticos
-- [ ] Notificaciones push/SMS (Tigo)
+- [ ] Notificaciones push/SMS (Tigo) - Backend listo, falta provider
 
 ---
 
@@ -149,6 +158,136 @@
 
 ---
 
+## 🆕 ENTREGABLES HOY (2026-03-11)
+
+### 1. Ventana Pública de Inscripción V2 ✅
+
+#### Backend - Nuevos Endpoints
+
+**Torneos Públicos:**
+- `GET /t/public` - Lista de torneos con filtros (ciudad, categoría, período)
+- `GET /t/:slug` - Detalle de torneo por slug
+- `GET /t/datos/filtros` - Datos para filtros del frontend
+- `GET /t/:slug/categorias` - Categorías disponibles con validaciones
+
+**Inscripciones Públicas:**
+- `GET /inscripciones/public/buscar-pareja` - Buscar jugador2 por nombre/apellido/documento
+- `POST /inscripciones/public/validar-categoria` - Validar reglas de categoría
+- `POST /inscripciones/public` - Crear inscripción (con o sin invitación)
+- `GET /inscripciones/public/pendientes` - Inscripciones pendientes del usuario
+- `POST /inscripciones/public/:id/aceptar` - Aceptar invitación
+- `POST /inscripciones/public/:id/rechazar` - Rechazar invitación
+
+**Invitaciones:**
+- `GET /invitacion/:token` - Verificar validez de invitación
+- `POST /invitacion/:token/registrar` - Registrar usuario desde invitación
+
+#### Frontend - Nuevas Páginas
+
+**TorneosPublicListPage (`/torneos`, `/tournaments`):**
+- Lista de torneos con diseño moderno
+- Búsqueda por nombre/descripción/ciudad
+- Filtros: ciudad, categoría, período (próximos/en curso/finalizados)
+- Cards con flyer, precio, fecha, inscritos
+- Badges "Inscripciones abiertas"
+- Paginación
+- Responsive
+
+**TorneoPublicDetailPage (`/t/:slug`):**
+- Hero con flyer grande
+- Info completa: fechas, ubicación, categorías, premios
+- Mapa de sede (Google Maps)
+- Organizador
+- Sponsors
+- Card de inscripción sticky
+
+**InscripcionWizardPage (`/t/:slug/inscribirse`):**
+
+**Paso 1 - Jugador 1:**
+- Detecta usuario logueado automáticamente
+- Si no está logueado → redirect a login con return URL
+- Muestra datos del jugador y categoría actual
+
+**Paso 2 - Jugador 2:**
+- Búsqueda por nombre/apellido o documento
+- Resultados con foto, nombre, documento, categoría
+- Si no existe → formulario para crear invitación
+- Campos: nombre, apellido, documento, teléfono, email
+
+**Paso 3 - Categoría:**
+- Grid de categorías disponibles
+- Validaciones de género/nivel aplicadas
+- Mensajes explicativos según el caso
+
+**Paso 4 - Confirmación:**
+- Resumen de inscripción
+- Selección modo de pago (completo/individu
+- Checkbox de consentimiento obligatorio
+- Datos bancarios del organizador
+- Botón confirmar
+
+### 2. Sistema de Invitaciones ✅
+
+**Flujo:**
+1. Jugador1 inscribe a pareja no registrada
+2. Se crea inscripción con estado PENDIENTE_CONFIRMACION
+3. Se envía invitación (email/token) a jugador2
+4. Jugador2 recibe email con link al registro
+5. Al registrarse, se vincula automáticamente a la inscripción
+6. Estado cambia a PENDIENTE_PAGO
+7. Notificaciones a ambos jugadores
+
+**Modelo InvitacionJugador:**
+- token único
+- expira en 48 horas
+- estados: PENDIENTE, ACEPTADA, RECHAZADA, EXPIRADA
+
+### 3. Validaciones de Categorías ✅
+
+**Reglas implementadas:**
+
+| Jugador | Categoría Damas | Categoría Caballeros |
+|---------|-----------------|---------------------|
+| **Hombre** | ❌ No puede | ✅ Puede (superiores e iguales)<br>❌ No puede bajar a inferiores |
+| **Mujer** | ✅ Puede (superiores e iguales)<br>❌ No puede bajar a inferiores | ✅ Puede<br>✅ Puede bajar **UNA** como excepción |
+
+**Nota:** La excepción de bajar una categoría solo aplica cuando la mujer juega en categorías Caballeros, NO en su propio género.
+
+### 4. Schema Prisma Actualizado ✅
+
+```prisma
+model Inscripcion {
+  // ... campos existentes
+  notas String? @db.Text  // NUEVO
+  invitacion InvitacionJugador?  // NUEVO
+}
+
+model InvitacionJugador {
+  id String @id @default(uuid())
+  inscripcionId String @unique
+  email String
+  token String @unique
+  estado String @default("PENDIENTE")
+  expiraAt DateTime
+  createdAt DateTime @default(now())
+  respondedAt DateTime?
+  
+  inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id])
+}
+```
+
+### 5. Commits Realizados ✅
+
+**Backend:**
+- `d0aa7f5` - feat: Ventana pública de inscripción V2 - Backend completo
+- `db5a0fd` - fix: Corrección en validaciones de categorías para mujeres
+
+**Frontend:**
+- `99b736b` - feat: Ventana pública de inscripción V2 - Frontend completo
+- `fb66539` - feat: Actualizar ruta /tournaments para usar la nueva vista V2
+
+---
+
 ## 📁 ESTRUCTURA DE ARCHIVOS IMPORTANTES
 
 ### Backend
@@ -156,13 +295,23 @@
 src/
 ├── modules/
 │   ├── admin/
-│   │   ├── admin-torneos.controller.ts      ✅ NUEVOS ENDPOINTS: /:id/inscripciones
+│   │   ├── admin-torneos.controller.ts      ✅ CRUD torneos + checklist + comisiones
 │   │   ├── fairpadel-admin.controller.ts    ✅ Panel del dueño
 │   │   └── ...
-│   └── auth/
-│       └── strategies/jwt.strategy.ts       ✅ Retorna userId
+│   ├── auth/
+│   │   └── strategies/jwt.strategy.ts       ✅ Retorna userId
+│   ├── tournaments/
+│   │   └── public-tournaments.controller.ts ✅ NUEVO: Endpoints públicos /t/*
+│   ├── inscripciones/
+│   │   ├── inscripciones.controller.ts      ✅ CRUD inscripciones
+│   │   └── public-inscripciones.controller.ts ✅ NUEVO: Wizard inscripción pública
+│   ├── invitaciones/
+│   │   ├── invitaciones.controller.ts       ✅ NUEVO: Sistema de invitaciones
+│   │   └── invitaciones.module.ts           ✅ NUEVO
+│   └── notificaciones/
+│       └── notificaciones.service.ts        ✅ Envío de invitaciones
 ├── prisma/
-│   ├── schema.prisma                        ✅ Modelo Inscripcion actualizado
+│   ├── schema.prisma                        ✅ Modelos: Inscripcion, InvitacionJugador
 │   └── seed.ts                              
 └── uploads/
     └── uploads.controller.ts                ✅ Fix para ValidationPipe
@@ -172,24 +321,32 @@ src/
 ```
 src/
 ├── features/
-│   └── organizador/
-│       ├── components/
-│       │   ├── checklist/
-│       │   │   └── ChecklistCuaderno.tsx    ✅ NUEVO - Cuaderno con tabs
-│       │   ├── inscripciones/
-│       │   │   ├── InscripcionesManager.tsx ✅ NUEVO
-│       │   │   ├── InscripcionCard.tsx      ✅ NUEVO
-│       │   │   ├── ResumenStats.tsx         ✅ NUEVO
-│       │   │   ├── ModalConfirmar.tsx       ✅ NUEVO
-│       │   │   └── ModalCancelar.tsx        ✅ NUEVO
-│       │   ├── TorneoWizard.tsx             ✅ NUEVO - 5 pasos
-│       │   └── SedeAutocomplete.tsx         ✅ NUEVO - Busqueda de sedes
+│   ├── organizador/
+│   │   ├── components/
+│   │   │   ├── checklist/
+│   │   │   │   └── ChecklistCuaderno.tsx    ✅ Cuaderno con tabs
+│   │   │   ├── inscripciones/
+│   │   │   │   ├── InscripcionesManager.tsx ✅ Vista organizador
+│   │   │   │   ├── InscripcionCard.tsx      
+│   │   │   │   ├── ResumenStats.tsx         
+│   │   │   │   ├── ModalConfirmar.tsx       
+│   │   │   │   └── ModalCancelar.tsx        
+│   │   │   ├── TorneoWizard.tsx             ✅ 5 pasos crear torneo
+│   │   │   └── SedeAutocomplete.tsx         
+│   │   └── pages/
+│   │       ├── MisTorneosPage.tsx           ✅ Lista + wizard
+│   │       └── GestionarTorneoPage.tsx      ✅ Tabs gestión
+│   ├── tournaments/
+│   │   └── pages/
+│   │       ├── TorneosPublicListPage.tsx    ✅ NUEVO: /torneos
+│   │       ├── TorneoPublicDetailPage.tsx   ✅ NUEVO: /t/:slug
+│   │       └── TournamentsListPage.tsx      (Legacy V1)
+│   └── inscripciones/
 │       └── pages/
-│           ├── MisTorneosPage.tsx           ✅ Lista + wizard integrado
-│           └── GestionarTorneoPage.tsx      ✅ Tabs: Checklist, Inscripciones, etc.
+│           └── InscripcionWizardPage.tsx    ✅ NUEVO: Wizard 4 pasos
 ├── components/ui/
-│   └── CityAutocomplete.tsx                 ✅ Usado en wizard
-└── index.css                                ✅ Fuente handwriting agregada
+│   └── CityAutocomplete.tsx                 
+└── App.tsx                                  ✅ Rutas /torneos, /t/* actualizadas
 ```
 
 ---
@@ -257,15 +414,15 @@ Flujo automático:
 ## 🎯 PRÓXIMOS PASOS SUGERIDOS
 
 ### Para mañana (continuación):
-1. **Conectar checklist al backend** - Guardar tareas nuevas, recordatorios
-2. **Inscripción manual** - Formulario para que organizador inscriba parejas
-3. **Ventana pública de inscripción** - `/t/{slug}` para que jugadores se inscriban
-4. **Sistema de invitaciones** - Email/token para jugador2
+1. **Refinar vista lista de torneos** - Agregar más info, mejorar filtros, destacados
+2. **Conectar checklist al backend** - Persistencia de tareas y recordatorios
+3. **Inscripción manual** - Formulario para que organizador inscriba parejas directamente
+4. **Fixture/Bracket** - Generar cuadro de juego
 
 ### Futuro cercano:
-5. **Fixture/Bracket** - Generar cuadro de juego
-6. **Integración Bancard** - Pagos online
-7. **Notificaciones** - Email/SMS a jugadores
+5. **Integración Bancard** - Pasarela de pagos online
+6. **Notificaciones reales** - Conectar con proveedor SMS/email (Tigo, SendGrid)
+7. **Rankings automáticos** - Cálculo de puntos por torneo
 
 ---
 
@@ -277,7 +434,7 @@ Flujo automático:
 3. Preguntar al usuario qué prioridad tiene para el día
 4. Recordar: un tema a la vez, entregables desplegables
 
-**Estado de ánimo del usuario:** Muy satisfecho con el resultado visual del checklist y la gestión de inscripciones. Quiere continuar iterando mañana.
+**Estado de ánimo del usuario:** Muy satisfecho con el resultado visual del checklist y la gestión de inscripciones. Solicitó que la ruta /tournaments muestre la nueva lista de torneos V2. Listo para refinar la vista mañana.
 
 ---
 
