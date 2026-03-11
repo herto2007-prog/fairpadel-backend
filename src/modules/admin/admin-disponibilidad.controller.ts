@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
   BadRequestException,
   NotFoundException,
@@ -164,11 +165,15 @@ export class AdminDisponibilidadController {
   @Get('slots')
   async getSlotsPorSemana(
     @Param('id') tournamentId: string,
-    @Body() dto: GetSlotsPorSemanaDto,
+    @Query('fechaInicio') fechaInicioStr: string,
+    @Query('fechaFin') fechaFinStr: string,
   ) {
     try {
-      const fechaInicio = new Date(dto.fechaInicio);
-      const fechaFin = new Date(dto.fechaFin);
+      if (!fechaInicioStr || !fechaFinStr) {
+        throw new BadRequestException('fechaInicio y fechaFin son requeridos');
+      }
+      const fechaInicio = new Date(fechaInicioStr);
+      const fechaFin = new Date(fechaFinStr);
 
       const dias = await this.prisma.torneoDisponibilidadDia.findMany({
         where: {
@@ -247,8 +252,8 @@ export class AdminDisponibilidadController {
 
       return {
         success: true,
-        fechaInicio: dto.fechaInicio,
-        fechaFin: dto.fechaFin,
+        fechaInicio: fechaInicioStr,
+        fechaFin: fechaFinStr,
         totalSlots: slots.length,
         slots,
       };
