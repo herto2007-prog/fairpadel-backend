@@ -799,6 +799,7 @@ model Inscripcion {
   
   estado       InscripcionEstado     @default(PENDIENTE_PAGO)
   modoPago     ModoPagoInscripcion?  @map("modo_pago")
+  notas        String?               @db.Text
   createdAt    DateTime              @default(now()) @map("created_at")
   updatedAt    DateTime              @updatedAt @map("updated_at")
 
@@ -818,6 +819,7 @@ model Inscripcion {
   
   pagos        Pago[]
   comprobantes ComprobantePago[]
+  invitacion   InvitacionJugador?
 
   @@unique([tournamentId, categoryId, jugador1Id, jugador2Documento])
   @@map("inscripciones")
@@ -826,13 +828,16 @@ model Inscripcion {
 // NUEVO: Invitaciones a jugador2 (sistema de invitación explícito)
 model InvitacionJugador {
   id              String   @id @default(uuid())
-  inscripcionId   String   @map("inscripcion_id")
+  inscripcionId   String   @unique @map("inscripcion_id")
   email           String   // Email del invitado
   token           String   @unique // Token para aceptar invitación
   estado          String   @default("PENDIENTE") // PENDIENTE, ACEPTADA, RECHAZADA, EXPIRADA
   expiraAt        DateTime @map("expira_at")
   createdAt       DateTime @default(now()) @map("created_at")
   respondedAt     DateTime? @map("responded_at")
+
+  // Relaciones
+  inscripcion     Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
 
   @@map("invitaciones_jugador")
 }

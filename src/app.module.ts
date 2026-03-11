@@ -16,6 +16,8 @@ import { EmailModule } from './email/email.module';
 import { SeedModule } from './seed/seed.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ModalidadesModule } from './modules/modalidades/modalidades.module';
+import { InvitacionesModule } from './modules/invitaciones/invitaciones.module';
+import { NotificacionesModule } from './modules/notificaciones/notificaciones.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -28,6 +30,8 @@ import { AppController } from './app.controller';
     UsersModule,
     TournamentsModule,
     InscripcionesModule,
+    InvitacionesModule,
+    NotificacionesModule,
     FixtureModule,
     MatchesModule,
     RankingsModule,
