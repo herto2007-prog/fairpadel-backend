@@ -726,4 +726,125 @@ export class AdminTorneosController {
         : 'Torneo activo',
     };
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // INSCRIPCIONES
+  // ═══════════════════════════════════════════════════════════
+
+  @Get(':id/inscripciones')
+  async getInscripciones(@Param('id') tournamentId: string) {
+    try {
+      const [inscripciones, categorias] = await Promise.all([
+        this.prisma.inscripcion.findMany({
+          where: { tournamentId },
+          include: {
+            category: true,
+            jugador1: {
+              select: { id: true, nombre: true, apellido: true, telefono: true, email: true },
+            },
+            jugador2: {
+              select: { id: true, nombre: true, apellido: true, telefono: true, email: true },
+            },
+            pagos: {
+              where: { estado: 'COMPLETADO' },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.tournamentCategory.findMany({
+          where: { tournamentId },
+          include: { category: true },
+        }),
+      ]);
+
+      // Agrupar por categoría
+      const porCategoria = categorias.map(cat => {
+        const inscritos = inscripciones.filter(i => i.categoryId === cat.categoryId);
+        return {
+          categoriaId: cat.categoryId,
+          categoriaNombre: cat.category.nombre,
+          categoriaTipo: cat.category.tipo,
+          total: inscritos.length,
+          confirmadas: inscritos.filter(i => i.estado === 'CONFIRMADA').length,
+          pendientes: inscritos.filter(i => i.estado === 'PENDIENTE_PAGO' || i.estado === 'PENDIENTE_CONFIRMACION').length,
+          inscripciones: inscritos,
+        };
+      });
+
+      // Stats globales
+      const stats = {
+        total: inscripciones.length,
+        confirmadas: inscripciones.filter(i => i.estado === 'CONFIRMADA').length,
+        pendientes: inscripciones.filter(i => i.estado === 'PENDIENTE_PAGO' || i.estado === 'PENDIENTE_CONFIRMACION').length,
+        incompletas: inscripciones.filter(i => !i.jugador2Id).length,
+        ingresos: inscripciones
+          .filter(i => i.estado === 'CONFIRMADA')
+          .reduce((sum, i) => sum + i.pagos.reduce((pSum, p) => pSum + Number(p.monto), 0), 0),
+      };
+
+      return {
+        success: true,
+        stats,
+        porCategoria,
+      };
+    } catch (error) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error cargando inscripciones',
+        error: error.message,
+      });
+    }
+  }
+
+  @Put(':id/inscripciones/:inscripcionId/confirmar')
+  async confirmarInscripcion(
+    @Param('id') tournamentId: string,
+    @Param('inscripcionId') inscripcionId: string,
+  ) {
+    try {
+      const inscripcion = await this.prisma.inscripcion.update({
+        where: { id: inscripcionId, tournamentId },
+        data: { estado: 'CONFIRMADA' },
+      });
+
+      return {
+        success: true,
+        message: 'Inscripción confirmada',
+        inscripcion,
+      };
+    } catch (error) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error confirmando inscripción',
+        error: error.message,
+      });
+    }
+  }
+
+  @Put(':id/inscripciones/:inscripcionId/cancelar')
+  async cancelarInscripcion(
+    @Param('id') tournamentId: string,
+    @Param('inscripcionId') inscripcionId: string,
+    @Body('motivo') motivo?: string,
+  ) {
+    try {
+      const inscripcion = await this.prisma.inscripcion.update({
+        where: { id: inscripcionId, tournamentId },
+        data: { estado: 'CANCELADA' },
+      });
+
+      return {
+        success: true,
+        message: 'Inscripción cancelada',
+        motivo: motivo || 'Sin motivo especificado',
+        inscripcion,
+      };
+    } catch (error) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error cancelando inscripción',
+        error: error.message,
+      });
+    }
+  }
 }
