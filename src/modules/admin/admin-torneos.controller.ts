@@ -746,7 +746,7 @@ export class AdminTorneosController {
               select: { id: true, nombre: true, apellido: true, telefono: true, email: true },
             },
             pagos: {
-              where: { estado: 'COMPLETADO' },
+              where: { estado: 'CONFIRMADO' },
             },
           },
           orderBy: { createdAt: 'desc' },
@@ -779,7 +779,7 @@ export class AdminTorneosController {
         incompletas: inscripciones.filter(i => !i.jugador2Id).length,
         ingresos: inscripciones
           .filter(i => i.estado === 'CONFIRMADA')
-          .reduce((sum, i) => sum + i.pagos.reduce((pSum, p) => pSum + Number(p.monto), 0), 0),
+          .reduce((sum, i: any) => sum + (i.pagos?.reduce((pSum: number, p: any) => pSum + Number(p.monto || 0), 0) || 0), 0),
       };
 
       return {
