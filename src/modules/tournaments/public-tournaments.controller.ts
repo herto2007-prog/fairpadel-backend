@@ -343,11 +343,15 @@ export class PublicTournamentsController {
    * - SÍ pueden inscribirse en categorías superiores (no frenamos progreso)
    * - NO pueden inscribirse en categorías Damas (bajo ninguna circunstancia)
    * 
-   * REGLAS PARA MUJERES:
+   * REGLAS PARA MUJERES EN CATEGORÍAS DAMAS (su género):
    * - NO pueden inscribirse en categorías inferiores a la suya
    * - SÍ pueden inscribirse en categorías superiores
-   * - Como EXCEPCIÓN pueden inscribirse en UNA categoría inferior (solo una)
-   * - SÍ pueden inscribirse en categorías masculinas (probar su capacidad)
+   * - NO aplica excepción de bajar (solo en Caballeros)
+   * 
+   * REGLAS PARA MUJERES EN CATEGORÍAS CABALLEROS:
+   * - SÍ pueden inscribirse (probar su capacidad)
+   * - Como EXCEPCIÓN pueden bajar UNA categoría inferior a la suya
+   * - SÍ pueden inscribirse en categorías superiores
    */
   private filtrarCategoriasPorReglas(
     categoriasTorneo: any[],
@@ -368,19 +372,24 @@ export class PublicTournamentsController {
         return false;
       }
 
-      // REGLA 2: Ninguno puede en categorías inferiores (menor orden = superior categoría)
-      // Las categorías van: 1ra (orden 1) > 2da (orden 2) > 3ra (orden 3) > etc
-      if (ordenCategoria < ordenJugador) {
-        // La categoría es inferior a la del jugador
-        // Mujeres pueden UNA vez, hombres NO pueden
-        if (jugadorGenero === 'FEMENINO') {
-          // Aquí deberíamos verificar si ya usó su excepción
-          // Por ahora permitimos pero marcamos como excepción
-          return true;
-        }
+      // REGLA 2: Categoría igual o superior - permitida para todos
+      if (ordenCategoria >= ordenJugador) {
+        return true;
+      }
+
+      // REGLA 3: Categorías INFERIORES (ordenCategoria < ordenJugador)
+      // Hombres: NO pueden en inferiores (bajo ninguna circunstancia)
+      if (jugadorGenero === 'MASCULINO') {
         return false;
       }
 
+      // Mujeres en categorías Damas (su género): NO pueden bajar
+      if (esCategoriaFemenina(categoria.tipo)) {
+        return false;
+      }
+
+      // Mujeres en categorías Caballeros: SÍ pueden bajar UNA como excepción
+      // Aquí deberíamos verificar si ya usó su excepción
       return true;
     });
   }
