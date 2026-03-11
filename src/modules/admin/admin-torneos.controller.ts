@@ -181,7 +181,10 @@ export class AdminTorneosController {
       orderBy: { createdAt: 'desc' },
     });
 
-    return torneos;
+    return {
+      success: true,
+      torneos,
+    };
   }
 
   @Get(':id')
