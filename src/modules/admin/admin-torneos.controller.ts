@@ -187,6 +187,116 @@ export class AdminTorneosController {
     };
   }
 
+  /**
+   * GET /admin/torneos/pendientes-aprobacion
+   * Solo para admin: listar torneos pendientes de aprobación
+   */
+  @Get('pendientes-aprobacion')
+  @Roles('admin')
+  async getPendientesAprobacion() {
+    const torneos = await this.prisma.tournament.findMany({
+      where: {
+        estado: {
+          in: ['BORRADOR', 'PENDIENTE_APROBACION'],
+        },
+      },
+      include: {
+        organizador: {
+          select: { id: true, nombre: true, apellido: true, email: true, telefono: true },
+        },
+        categorias: {
+          include: { category: true },
+        },
+        _count: {
+          select: { inscripciones: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      success: true,
+      torneos,
+    };
+  }
+
+  /**
+   * POST /admin/torneos/:id/aprobar
+   * Solo para admin: aprobar y publicar un torneo
+   */
+  @Post(':id/aprobar')
+  @Roles('admin')
+  async aprobarTorneo(@Param('id') id: string) {
+    const torneo = await this.prisma.tournament.update({
+      where: { id },
+      data: {
+        estado: 'PUBLICADO',
+      },
+      include: {
+        organizador: {
+          select: { id: true, nombre: true, apellido: true, email: true },
+        },
+      },
+    });
+
+    // Crear notificación para el organizador
+    await this.prisma.notificacion.create({
+      data: {
+        userId: torneo.organizadorId,
+        tipo: 'TORNEO',
+        titulo: '¡Tu torneo fue aprobado!',
+        contenido: `El torneo "${torneo.nombre}" ha sido aprobado y ya está visible públicamente.`,
+        enlace: `/mis-torneos/${torneo.id}/gestionar`,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Torneo aprobado y publicado exitosamente',
+      torneo,
+    };
+  }
+
+  /**
+   * POST /admin/torneos/:id/rechazar
+   * Solo para admin: rechazar un torneo
+   */
+  @Post(':id/rechazar')
+  @Roles('admin')
+  async rechazarTorneo(
+    @Param('id') id: string,
+    @Body('motivo') motivo?: string,
+  ) {
+    const torneo = await this.prisma.tournament.update({
+      where: { id },
+      data: {
+        estado: 'RECHAZADO',
+      },
+      include: {
+        organizador: {
+          select: { id: true, nombre: true, apellido: true, email: true },
+        },
+      },
+    });
+
+    // Crear notificación para el organizador
+    await this.prisma.notificacion.create({
+      data: {
+        userId: torneo.organizadorId,
+        tipo: 'TORNEO',
+        titulo: 'Tu torneo no fue aprobado',
+        contenido: `El torneo "${torneo.nombre}" no cumple con los requisitos.${motivo ? ` Motivo: ${motivo}` : ''}`,
+        enlace: `/mis-torneos`,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Torneo rechazado',
+      torneo,
+    };
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const torneo = await this.prisma.tournament.findUnique({
