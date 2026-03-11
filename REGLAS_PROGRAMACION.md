@@ -1,6 +1,39 @@
 # Reglas de Programación - FairPadel
 
 > Documento de oro para desarrollo. Violaciones = bugs en producción.
+> **Para nuevos agentes:** Leer completo antes de tocar código. Cuando dudes, preguntar.
+
+---
+
+## 0. Información Crítica del Proyecto (LEER PRIMERO)
+
+### URLs y Accesos
+| Servicio | URL | Notas |
+|----------|-----|-------|
+| Frontend Prod | https://www.fairpadel.com | Deploy automático desde main |
+| Backend Prod | https://api.fairpadel.com | Railway + PostgreSQL |
+| Health Check | https://api.fairpadel.com/api/health | Para verificar estado |
+
+### Repositorios (GitHub)
+```bash
+# Backend
+https://github.com/herto2007-prog/fairpadel-backend.git
+
+# Frontend  
+https://github.com/herto2007-prog/fairpadel-frontend.git
+```
+
+### Stack Tecnológico
+- **Backend:** NestJS + Prisma + PostgreSQL + TypeScript
+- **Frontend:** React 18 + Vite + Tailwind CSS + framer-motion
+- **Deploy:** Railway (Docker) + GitHub Actions
+- **BD:** PostgreSQL en Railway (producción), SQLite local (dev opcional)
+
+### Documentación de Contexto
+- **`Kimi_Context_Fairpadel.md`** - Historial completo de decisiones, features implementados, estado del proyecto
+- **`REGLAS_PROGRAMACION.md`** - Este documento (reglas de código)
+
+**REGLA DE ORO:** Siempre leer `Kimi_Context_Fairpadel.md` al inicio de sesión para entender el estado actual.
 
 ---
 
@@ -14,6 +47,8 @@
 - Solo entonces: `git push`
 
 ❌ **NUNCA** pushear código sin compilar localmente primero.
+
+**Para nuevos agentes:** Si ves errores de TypeScript que no entiendes, NO uses `any`. Pregunta primero.
 
 ---
 
@@ -82,12 +117,56 @@
 
 ---
 
-## 7. UX/UI Consistente (Compacta)
+## 7. Sistema de Diseño UI/UX
 
-- Páginas internas usan clase `compact-ui` (tamaños ~15% menores)
-- Landing preservado con tamaños originales
-- Feedback visual inmediato: estados de carga, mensajes de error/éxito
-- Animaciones suaves con `framer-motion`
+### Estilo Visual FairPadel
+- **Fondo:** `bg-dark` (#0a0b0f) + `BackgroundEffects` (gradientes + grid)
+- **Color primario:** `#df2531` (rojo FairPadel)
+- **Bordes sutiles:** `border-white/5` o `border-white/10`
+- **Fondos cards:** `bg-white/[0.02]` o `bg-white/5`
+- **Tipografía:** Blanco con opacidades (`text-white/40` para secundarios)
+
+### Densidad de UI
+Tenemos **DOS modos** de UI:
+
+**1. Landing (Marketing):**
+- Espaciado generoso (`py-16`, `p-8`)
+- Textos grandes (`text-4xl`, `text-lg`)
+- Hero con impacto visual
+
+**2. Páginas Internas (Compacta):**
+- Espaciado reducido (`py-4`, `p-4`)
+- Textos densos (`text-base`, `text-sm`, `text-xs`)
+- Máxima información por pantalla
+- Wizards con pasos comprimidos
+
+**REGLA:** Si es página de gestión/admin/inscripción → usar estilo compacto.
+
+### Componentes Base Obligatorios
+
+**BackgroundEffects** (`src/components/ui/BackgroundEffects.tsx`)
+```tsx
+// Siempre incluir en páginas:
+<BackgroundEffects variant="subtle" showGrid={true} />
+// Variantes: 'subtle' | 'default' | 'intense'
+```
+
+**PageLayout** (`src/components/layout/PageLayout.tsx`)
+```tsx
+import { PageLayout } from '../components/layout';
+
+<PageLayout showHeader backUrl="/torneos">
+  <Contenido />
+</PageLayout>
+```
+
+**CityAutocomplete** - Para selección de ciudades paraguayas
+**PhoneSelector** - Para teléfonos con código de país
+
+### Animaciones
+- Usar `framer-motion` para transiciones
+- Duración: 200ms para UI compacta, 300ms para landing
+- Transiciones de página: `AnimatePresence` con `mode="wait"`
 
 ---
 
@@ -104,6 +183,63 @@
 - Commits descriptivos en español
 - Commits atómicos (un cambio lógico por commit)
 - Backend primero, luego frontend (cuando hay dependencias)
+
+### Estructura de Carpetas (Frontend)
+```
+src/
+├── components/
+│   ├── ui/              # Componentes base (Button, Input, Modal)
+│   ├── layout/          # PageLayout, BackgroundEffects
+│   └── landing/         # Componentes solo para landing
+├── features/            # Por dominio funcional
+│   ├── auth/            # Login, register, context
+│   ├── tournaments/     # Torneos públicos
+│   ├── inscripciones/   # Wizard de inscripción
+│   ├── organizador/     # Panel de organizador
+│   └── admin/           # Panel admin
+├── services/            # API calls (api.ts, authService.ts)
+├── hooks/               # Custom hooks
+└── utils/               # Helpers
+```
+
+### Patrones de Código (Frontend)
+
+**1. Llamadas API centralizadas:**
+```typescript
+// SIEMPRE usar el api.ts configurado
+import { api } from '../services/api';
+
+// ✅ Correcto
+const { data } = await api.get('/endpoint');
+
+// ❌ Incorrecto
+const res = await fetch('https://api.fairpadel.com/endpoint');
+```
+
+**2. Manejo de errores consistente:**
+```typescript
+try {
+  const { data } = await api.post('/endpoint', payload);
+  if (data.success) {
+    // éxito
+  }
+} catch (err: any) {
+  // Mensaje amigable para usuario
+  const message = err.response?.data?.message || 'Error inesperado';
+  setError(message);
+}
+```
+
+**3. Fondo consistente en páginas:**
+```typescript
+// Toda página debe tener:
+<div className="min-h-screen bg-dark relative overflow-hidden">
+  <BackgroundEffects variant="subtle" showGrid={true} />
+  <div className="relative z-10">
+    {/* contenido */}
+  </div>
+</div>
+```
 
 ---
 
@@ -150,6 +286,27 @@ npm run lint           # Debe pasar sin errores
 | Mar 2025 | Push sin build | Backend crash en Railway | Implementar Regla #1 |
 | Mar 2025 | DTOs sin decoradores | 400 Bad Request en endpoints | Implementar Regla #4 |
 | Mar 2025 | `--force-reset` en Dockerfile | Pérdida de datos | Implementar Regla #5 |
+| Mar 2025 | `any` en TypeScript | Pérdida de type safety, bugs | Usar tipos estrictos, interfaces |
+| Mar 2025 | Fondos inconsistentes | UX fragmentada | Implementar Regla #7 (BackgroundEffects) |
+| Mar 2025 | Strings vacíos en opcionales | Validaciones fallan | Usar `undefined` (Regla #4) |
+
+### Lecciones Aprendidas
+
+**TypeScript estricto SIEMPRE:**
+```typescript
+// ❌ NUNCA
+const data: any = await api.get('/endpoint');
+
+// ✅ SIEMPRE
+interface ApiResponse { success: boolean; data: Torneo[]; }
+const { data }: { data: ApiResponse } = await api.get('/endpoint');
+```
+
+**Consistencia visual:**
+Si ves `bg-[#0B0E14]`, `bg-[#151921]`, `bg-dark` mezclados → unificar a `bg-dark` + `BackgroundEffects`.
+
+**Manejo de errores:**
+Siempre mostrar error al usuario, no solo en console.log.
 
 ---
 
@@ -171,21 +328,100 @@ npm run lint           # Debe pasar sin errores
 
 **"Las migraciones y seeds se ejecutan automáticamente en deploy"**
 
+### Configuración Docker
 El `Dockerfile` está configurado para:
-1. `prisma migrate deploy` - Aplicar migraciones pendientes
-2. `prisma db seed` - Ejecutar seed si hay datos nuevos
-3. Iniciar la aplicación
+1. Build de la aplicación
+2. `prisma migrate deploy` - Aplicar migraciones pendientes
+3. `prisma db seed` - Ejecutar seed si hay datos nuevos
+4. Iniciar la aplicación
 
 **Archivos críticos:**
-- `Dockerfile` - Contiene el CMD con el flujo completo
-- `railway.json` - Configura el builder Docker
-- `prisma/migrations/` - Carpeta de migraciones versionadas
+- `Dockerfile` - Flujo completo de build + deploy
+- `railway.json` - Configura healthcheck y builder
+- `prisma/migrations/` - Migraciones versionadas (NUNCA borrar)
 - `prisma/seed.ts` - Datos iniciales del sistema
 
+### Variables de Entorno (Producción)
+Configuradas en Railway Dashboard:
+- `DATABASE_URL` - PostgreSQL connection string
+- `JWT_SECRET` - Para tokens de autenticación
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` - Para imágenes
+- `FRONTEND_URL` - https://www.fairpadel.com
+
+⚠️ **NUNCA hardcodear secrets en código. Siempre usar `process.env.XXX`.**
+
+### Proceso de Migraciones
+```bash
+# 1. Desarrollo local - crear migración
+npx prisma migrate dev --name nombre_descriptivo
+
+# 2. Commit de los archivos generados en prisma/migrations/
+git add prisma/migrations/
+git commit -m "migrate: descripción del cambio"
+
+# 3. Push - Railway aplica automáticamente
+git push
+```
+
 ⚠️ **NUNCA modificar el Dockerfile sin validar el flujo de migraciones.**
-✅ **Siempre crear migraciones formales:** `npx prisma migrate dev --name descripcion`
+✅ **Siempre crear migraciones formales, nunca usar `db push` en prod.**
+
+---
+
+## 12. Flujo de Trabajo para Nuevos Agentes
+
+### Al Iniciar una Sesión
+1. **Leer `Kimi_Context_Fairpadel.md`** - Entender estado actual del proyecto
+2. **Verificar último commit** - `git log --oneline -5`
+3. **Hacer pull** - `git pull` en ambos repos
+4. **Verificar build local** - `npm run build` en frontend y backend
+
+### Antes de Cualquier Cambio
+1. **Entender el contexto** - ¿Qué se quiere lograr?
+2. **Buscar código similar** - `grep -r "patrón" src/`
+3. **Seguir convenciones existentes** - No inventar nuevos patrones
+
+### Durante el Desarrollo
+1. **Commits frecuentes** - Un cambio lógico por commit
+2. **Mensajes descriptivos** - En español: `feat:`, `fix:`, `refactor:`, `docs:`
+3. **Testear localmente** - Build sin errores antes de push
+
+### Al Finalizar
+1. **Verificar build** - `npm run build` en ambos repos
+2. **Commit y push** - Con mensaje descriptivo
+3. **Verificar deploy** - Revisar Railway dashboard
+4. **Actualizar Kimi_Context** - Documentar cambios importantes
+
+---
+
+## 13. Checklist de Transferencia (Para Agentes)
+
+Antes de dejar el proyecto, documentar:
+- [ ] Features en progreso (qué falta, qué está a medias)
+- [ ] Bugs conocidos (workarounds, causas)
+- [ ] Deuda técnica (qué se "aplanó" para entregar rápido)
+- [ ] Configuraciones especiales (env vars, providers)
+- [ ] Contactos/proveedores (si hay integraciones externas)
+
+---
+
+## 14. Decisiones Arquitectónicas Clave
+
+**¿Por qué Prisma + PostgreSQL?**
+- Type safety, migrations automáticas, relaciones claras
+
+**¿Por qué NestJS?**
+- Estructura modular, inyección de dependencias, decorators
+
+**¿Por qué Railway?**
+- Deploy automático desde GitHub, PostgreSQL managed, variables de entorno fáciles
+
+**¿Por qué diseño compacto en páginas internas?**
+- Usuarios gestionan torneos (organizadores) → necesitan ver mucha info rápido
+- Landing es para conversión → necesita impacto visual
 
 ---
 
 *Última actualización: Marzo 2025*
 *Responsable: Kimi Code CLI + Equipo FairPadel*
+*Para nuevos agentes: Leer completo, preguntar dudas, nunca asumir.*
