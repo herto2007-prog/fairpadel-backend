@@ -31,6 +31,7 @@ export class SeedService implements OnModuleInit {
       await this.seedCategories();
       await this.seedRoles();
       await this.seedModalidades();
+      await this.seedJugadoresDemo(); // NUEVO: Crear jugadores demo automáticamente
       this.logger.log('✅ Seed completado');
     } catch (error) {
       this.logger.error('❌ Error en seed:', error.message);
@@ -247,5 +248,76 @@ export class SeedService implements OnModuleInit {
     }
 
     this.logger.log('✅ Modalidades verificadas (PY + Mundo)');
+  }
+
+  private async seedJugadoresDemo() {
+    this.logger.log('🎮 Verificando jugadores demo...');
+
+    // Verificar si ya existen jugadores demo
+    const existingCount = await this.prisma.jugadorDemo.count();
+    if (existingCount > 0) {
+      this.logger.log(`✅ Ya existen ${existingCount} jugadores demo`);
+      return;
+    }
+
+    // Obtener categorías
+    const categoriasMasc = await this.prisma.category.findMany({
+      where: { tipo: Gender.MASCULINO },
+      orderBy: { orden: 'asc' },
+    });
+    
+    const categoriasFem = await this.prisma.category.findMany({
+      where: { tipo: Gender.FEMENINO },
+      orderBy: { orden: 'asc' },
+    });
+
+    if (categoriasMasc.length === 0 || categoriasFem.length === 0) {
+      this.logger.warn('⚠️ No hay categorías suficientes para crear jugadores demo');
+      return;
+    }
+
+    const jugadores = [];
+
+    // 200 masculinos
+    for (let i = 1; i <= 200; i++) {
+      const categoria = categoriasMasc[(i - 1) % categoriasMasc.length];
+      jugadores.push({
+        nombre: `Player ${i}`,
+        apellido: `Masculino ${i}`,
+        documento: `DEMO-M-${String(i).padStart(5, '0')}`,
+        email: `demo.m${i}@fairpadel.test`,
+        telefono: `+595991${String(i).padStart(6, '0')}`,
+        genero: Gender.MASCULINO,
+        categoriaId: categoria.id,
+      });
+    }
+
+    // 200 femeninas
+    for (let i = 1; i <= 200; i++) {
+      const categoria = categoriasFem[(i - 1) % categoriasFem.length];
+      jugadores.push({
+        nombre: `Player ${i}`,
+        apellido: `Femenino ${i}`,
+        documento: `DEMO-F-${String(i).padStart(5, '0')}`,
+        email: `demo.f${i}@fairpadel.test`,
+        telefono: `+595992${String(i).padStart(6, '0')}`,
+        genero: Gender.FEMENINO,
+        categoriaId: categoria.id,
+      });
+    }
+
+    // Insertar en batches
+    const batchSize = 50;
+    let inserted = 0;
+    for (let i = 0; i < jugadores.length; i += batchSize) {
+      const batch = jugadores.slice(i, i + batchSize);
+      const result = await this.prisma.jugadorDemo.createMany({
+        data: batch,
+        skipDuplicates: true,
+      });
+      inserted += result.count;
+    }
+
+    this.logger.log(`✅ Creados ${inserted} jugadores demo (200M + 200F)`);
   }
 }
