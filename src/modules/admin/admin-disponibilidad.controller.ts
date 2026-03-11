@@ -48,6 +48,14 @@ class GenerarSlotsDto {
   fecha: string;
 }
 
+class GetSlotsPorSemanaDto {
+  @IsDateString()
+  fechaInicio: string;
+
+  @IsDateString()
+  fechaFin: string;
+}
+
 @Controller('admin/torneos/:id/disponibilidad')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin', 'organizador')
@@ -147,6 +155,110 @@ export class AdminDisponibilidadController {
         slotsOcupados: d.slots.filter((s) => s.estado === 'OCUPADO').length,
       })),
     };
+  }
+
+  /**
+   * GET /admin/torneos/:id/disponibilidad/slots?fechaInicio=...&fechaFin=...
+   * Obtener slots por rango de fechas para la vista de calendario
+   */
+  @Get('slots')
+  async getSlotsPorSemana(
+    @Param('id') tournamentId: string,
+    @Body() dto: GetSlotsPorSemanaDto,
+  ) {
+    try {
+      const fechaInicio = new Date(dto.fechaInicio);
+      const fechaFin = new Date(dto.fechaFin);
+
+      const dias = await this.prisma.torneoDisponibilidadDia.findMany({
+        where: {
+          tournamentId,
+          fecha: {
+            gte: fechaInicio,
+            lte: fechaFin,
+          },
+          activo: true,
+        },
+        include: {
+          slots: {
+            where: {
+              estado: { in: ['LIBRE', 'OCUPADO'] },
+            },
+            include: {
+              torneoCancha: {
+                include: {
+                  sedeCancha: {
+                    include: {
+                      sede: { select: { id: true, nombre: true } },
+                    },
+                  },
+                },
+              },
+              match: {
+                include: {
+                  inscripcion1: {
+                    include: {
+                      jugador1: { select: { id: true, nombre: true, apellido: true } },
+                      jugador2: { select: { id: true, nombre: true, apellido: true } },
+                    },
+                  },
+                  inscripcion2: {
+                    include: {
+                      jugador1: { select: { id: true, nombre: true, apellido: true } },
+                      jugador2: { select: { id: true, nombre: true, apellido: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { fecha: 'asc' },
+      });
+
+      // Aplanar los slots para la vista de calendario
+      const slots = dias.flatMap((dia) =>
+        dia.slots.map((slot) => ({
+          id: slot.id,
+          fecha: dia.fecha,
+          horaInicio: slot.horaInicio,
+          horaFin: slot.horaFin,
+          estado: slot.estado,
+          cancha: {
+            id: slot.torneoCancha.id,
+            nombre: slot.torneoCancha.sedeCancha.nombre,
+            sedeId: slot.torneoCancha.sedeCancha.sede.id,
+            sedeNombre: slot.torneoCancha.sedeCancha.sede.nombre,
+          },
+          match: slot.match
+            ? {
+                id: slot.match.id,
+                ronda: slot.match.ronda,
+                pareja1: slot.match.inscripcion1
+                  ? `${slot.match.inscripcion1.jugador1.apellido} / ${slot.match.inscripcion1.jugador2?.apellido || '?'}`
+                  : 'BYE',
+                pareja2: slot.match.inscripcion2
+                  ? `${slot.match.inscripcion2.jugador1.apellido} / ${slot.match.inscripcion2.jugador2?.apellido || '?'}`
+                  : 'BYE',
+              }
+            : null,
+        })),
+      );
+
+      return {
+        success: true,
+        fechaInicio: dto.fechaInicio,
+        fechaFin: dto.fechaFin,
+        totalSlots: slots.length,
+        slots,
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error obteniendo slots',
+        error: error.message,
+      });
+    }
   }
 
   /**
