@@ -19,8 +19,7 @@ import { ModalidadesModule } from './modules/modalidades/modalidades.module';
 import { InvitacionesModule } from './modules/invitaciones/invitaciones.module';
 import { NotificacionesModule } from './modules/notificaciones/notificaciones.module';
 import { AppController } from './app.controller';
-import { DemoPublicController } from './modules/demo/demo-public.controller';
-import { PrismaService } from './prisma/prisma.service';
+import { DemoPublicModule } from './modules/demo/demo-public.module';
 
 @Module({
   imports: [
@@ -43,8 +42,8 @@ import { PrismaService } from './prisma/prisma.service';
     UploadsModule,
     EmailModule,
     SeedModule, // Seed automático al iniciar
+    DemoPublicModule, // Endpoint público para verificar estado de demo
   ],
-  controllers: [AppController, DemoPublicController],
-  providers: [PrismaService],
+  controllers: [AppController],
 })
 export class AppModule {}
