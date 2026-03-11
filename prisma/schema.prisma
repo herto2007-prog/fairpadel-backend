@@ -395,6 +395,9 @@ model User {
   // Alquileres
   encargadoAlquileres      AlquilerConfig[]
   responsableMensualeros   GrupoMensualero[]
+  
+  // Demo / Test
+  jugadorDemo              JugadorDemo?
 
   @@map("users")
 }
@@ -2026,4 +2029,27 @@ model NotificacionEnviada {
 
   @@index([tournamentId, tipo])
   @@map("notificaciones_enviadas")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO: DATOS DE PRUEBA / DEMO
+// ═══════════════════════════════════════════════════════
+
+model JugadorDemo {
+  id          String   @id @default(uuid())
+  nombre      String
+  apellido    String
+  documento   String   @unique
+  email       String   @unique
+  telefono    String
+  genero      Gender
+  categoriaId String   @map("categoria_id") // Categoría base del jugador
+  
+  // Si se convierte en usuario real, se vincula aquí
+  userId      String?  @unique @map("user_id")
+  user        User?    @relation(fields: [userId], references: [id])
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("jugadores_demo")
 }

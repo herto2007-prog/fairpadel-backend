@@ -7,9 +7,10 @@ import { FairpadelAdminController } from './fairpadel-admin.controller';
 import { AdminBracketController } from './admin-bracket.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { BracketModule } from '../bracket';
+import { DemoModule } from '../demo/demo.module';
 
 @Module({
-  imports: [PrismaModule, BracketModule],
+  imports: [PrismaModule, BracketModule, DemoModule],
   controllers: [
     AdminController,
     AdminCategoriasController,
