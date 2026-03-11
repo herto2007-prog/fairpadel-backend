@@ -935,6 +935,13 @@ model Match {
   partidoPerdedorSiguienteId  String?  @map("partido_perdedor_siguiente_id")
   posicionEnPerdedor          Int?     @map("posicion_en_perdedor")
   
+  // NUEVO: Sistema Zona + Repechaje + Bracket (Opción A)
+  esBye                   Boolean  @default(false) @map("es_bye")
+  tipoEntrada1            String?  @map("tipo_entrada1")  // INSCRIPCION | GANADOR_ZONA | GANADOR_REPECHAJE | BYE_DIRECTO
+  tipoEntrada2            String?  @map("tipo_entrada2")
+  partidoOrigen1Id        String?  @map("partido_origen1_id")  // De qué partido viene entrada1
+  partidoOrigen2Id        String?  @map("partido_origen2_id")  // De qué partido viene entrada2
+  
   observaciones      String?      @db.Text
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
