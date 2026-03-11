@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-11 11:15
-> **Conversación actual:** Refactor UI - Fondo consistente + Wizard compacto + Layout system
+> **Última actualización:** 2026-03-11 11:45
+> **Conversación actual:** Refactor UI completo - Wizards minimalistas + Sistema de diseño
 
 ---
 
@@ -63,8 +63,9 @@
 - [x] **Validaciones de Categorías por Género/Nivel**
 - [x] **Endpoints públicos: /t/public, /inscripciones/public**
 
-### ✅ Completado (2026-03-11)
-- [x] **Refactor UI Wizard de Inscripción** - Diseño compacto/minimalista
+### ✅ Completado (2026-03-11) - Refactor UI
+- [x] **Refactor UI Wizard de Inscripción** - Diseño compacto/minimalista (3 pasos)
+- [x] **Refactor UI Wizard de Creación** - Mismo estilo minimalista aplicado
 - [x] **Selector de código de país** - En teléfono del jugador 2
 - [x] **Filtro inteligente de categorías** - Validaciones automáticas por género/nivel
 - [x] **Sistema de fondo consistente** - BackgroundEffects en toda la app
@@ -89,20 +90,33 @@
 
 ## 🆕 ENTREGABLES HOY (2026-03-10)
 
-### 1. Wizard de Creación de Torneos (5 pasos) ✅
+### 1. Wizard de Creación de Torneos (5 pasos) ✅ - REFACTOR MINIMALISTA
+
+**Diseño:** UI compacta, minimalista, tecnológica (mismo estilo que wizard de inscripción)
+
+**Cambios de estilo aplicados:**
+| Elemento | Antes | Después |
+|----------|-------|---------|
+| Padding general | `py-8` | `py-4` |
+| Padding card | `p-6 md:p-8` | `p-4` |
+| Título | `text-2xl` | `text-base` |
+| Iconos header | `w-16 h-16` | `w-10 h-10` |
+| Bordes | `border-[#232838]` | `border-white/5` |
+| Fondos cards | `bg-[#151921]` | `bg-white/[0.02]` |
+| Progress bar | `h-1.5` | `h-0.5` |
+| Espaciado | `space-y-6` | `space-y-4` |
 
 **Pasos implementados:**
-1. **Identidad & Fechas** - Nombre, descripción, ciudad (con auto-region), sede, fechas
-2. **Inversión** - Costo en Guaraníes con formato, duración por partido (slider 60-180min)
-3. **Flyer** - Upload a Cloudinary con drag & drop, preview de card
-4. **Categorías** - Grid separado por género (Caballeros/Damas), selección múltiple
-5. **Confirmar** - Resumen y crear torneo
+1. **Identidad & Fechas** - Nombre, descripción, ciudad (auto-region), sede, fechas
+2. **Inversión** - Costo en Guaraníes, duración por partido (slider 60-180min)
+3. **Flyer** - Upload drag & drop, preview compacto de card
+4. **Categorías** - Grid 3 columnas compacto, selección múltiple
+5. **Confirmar** - Resumen denso, crear torneo
 
 **Características:**
-- Validación por paso
-- Navegación con teclado
-- Animaciones entre pasos
-- Post-creación: muestra link de inscripción y botón "Gestionar"
+- Validación por paso con errores inline
+- Navegación fluida con animaciones 200ms
+- Post-creación: link de inscripción y botón "Gestionar"
 
 ### 2. Checklist Estilo Cuaderno ✅
 
@@ -349,10 +363,11 @@ import { PageLayout, PageLoading, PageError } from '../components/layout';
 **Frontend:**
 - `99b736b` - feat: Ventana pública de inscripción V2 - Frontend completo
 - `fb66539` - feat: Actualizar ruta /tournaments para usar la nueva vista V2
-- `fdbb63e` - refactor(wizard): UI compacta y minimalista
+- `fdbb63e` - refactor(wizard): UI compacta y minimalista (inscripción)
 - `dfe9086` - fix(wizard): restaurar BackgroundEffects
 - `f3b008d` - feat(ui): aplicar fondo consistente a todas las páginas
 - `96aaa2a` - fix(wizard): aplicar BackgroundEffects al wizard de creación
+- `046a962` - refactor(wizard): diseño minimalista para wizard de creación de torneos
 
 ---
 
@@ -523,7 +538,7 @@ Flujo automático:
 3. Preguntar al usuario qué prioridad tiene para el día
 4. Recordar: un tema a la vez, entregables desplegables
 
-**Estado de ánimo del usuario:** Muy satisfecho con el resultado visual del nuevo diseño compacto y el fondo consistente. Destacó que el wizard de inscripción "quedó espectacular". Solicitó aplicar el mismo fondo a toda la app, lo cual ya está completado. Interesado en continuar con funcionalidades core como fixture y pagos.
+**Estado de ánimo del usuario:** Muy satisfecho con el resultado visual del nuevo diseño compacto y el fondo consistente. Destacó que el wizard de inscripción "quedó espectacular". Solicitó aplicar el mismo fondo a toda la app y el mismo estilo minimalista al wizard de creación de torneos (ambos completados). Interesado en continuar con funcionalidades core como fixture y pagos.
 
 ---
 
