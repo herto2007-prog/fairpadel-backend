@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-11 16:00
-> **Conversación actual:** Sistema de Bracket V1 - Zona + Repechaje + Eliminatoria
+> **Última actualización:** 2026-03-11 16:30
+> **Conversación actual:** Sistema Demo implementado - 400 jugadores de prueba para testear flujo completo
 
 ---
 
@@ -85,6 +85,21 @@
   - `ConfigurarBracketModal` - Cálculo y vista previa del bracket
   - `BracketView` - Visualización por fases (Zona, Repechaje, Octavos, etc.)
 - [x] **Integración en GestionarTorneoPage** - Nuevo tab "Fixture"
+
+### ✅ Completado (2026-03-11) - Sistema Demo / Datos de Prueba
+- [x] **Modelo JugadorDemo** - Tabla separada para jugadores de prueba
+- [x] **Seed de 400 jugadores** - 200 masculinos + 200 femeninos distribuidos en categorías
+- [x] **Servicio DemoService** - Lógica para llenar/limpiar torneos automáticamente
+- [x] **Endpoints REST:**
+  - `POST /admin/demo/torneos/:id/llenar` - Llena torneo con inscripciones demo (12-32 parejas por categoría)
+  - `DELETE /admin/demo/torneos/:id/limpiar` - Elimina inscripciones demo
+  - `GET /admin/demo/status` - Info del sistema
+- [x] **Distribución REALISTA** - Más parejas en categorías bajas (ej: 3ra=12, 7ma=20)
+- [x] **Estados mixtos** - 60% CONFIRMADA, 30% PENDIENTE_PAGO, 10% PENDIENTE_CONFIRMACION
+- [x] **Pagos ficticios** - Las confirmadas incluyen pago automático
+
+**Flujo de prueba completo:**
+1. Crear torneo → 2. `POST /admin/demo/torneos/:id/llenar` → 3. Generar bracket → 4. Probar flujo → 5. `DELETE .../limpiar`
 
 ### ⏳ En Progreso / Pendiente
 - [ ] Integración de pagos (Bancard)
@@ -631,8 +646,8 @@ partidoOrigen2Id: String
 3. Preguntar al usuario qué prioridad tiene para el día
 4. Recordar: un tema a la vez, entregables desplegables
 
-**Estado de ánimo del usuario:** Muy satisfecho con la comprensión del sistema de bracket paraguayo (Zona + Repechaje). Validó que la lógica implementada es correcta: todos compiten por el campeonato, se garantizan 2 partidos mínimo, y el repechaje elimina solo los que pierden 2 veces. Interesado en continuar con la asignación de horarios/canchas y registro de resultados.
+**Estado de ánimo del usuario:** Satisfecho con el sistema completo de bracket. Solicitó herramienta para testear el flujo completo con datos de prueba. Se implementó sistema demo con 400 jugadores y endpoints para llenar/limpiar torneos automáticamente. Listo para probar el flujo real del organizador.
 
 ---
 
-*Documento actualizado: 2026-03-11 - Sistema de Bracket V1 implementado completamente (backend + frontend).*
+*Documento actualizado: 2026-03-11 - Sistema Demo implementado. Backend listo para pruebas con 400 jugadores de prueba y flujo completo de bracket (Zona + Repechaje + Eliminación). Frontend con UI de bracket integrada.*
