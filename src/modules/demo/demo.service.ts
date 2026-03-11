@@ -235,4 +235,13 @@ export class DemoService {
       return 'PENDIENTE_CONFIRMACION'; // 10%
     }
   }
+
+  /**
+   * Cuenta jugadores demo por género
+   */
+  async countJugadores(genero: 'MASCULINO' | 'FEMENINO'): Promise<number> {
+    return this.prisma.jugadorDemo.count({
+      where: { genero },
+    });
+  }
 }

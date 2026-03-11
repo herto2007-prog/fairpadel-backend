@@ -58,9 +58,17 @@ export class DemoController {
    */
   @Get('status')
   async getStatus() {
-    // Este endpoint es público solo para admin para verificar estado
+    const countMasc = await this.demoService.countJugadores('MASCULINO');
+    const countFem = await this.demoService.countJugadores('FEMENINO');
+    
     return {
-      message: 'Sistema Demo activo',
+      message: 'Sistema Demo',
+      jugadoresDisponibles: {
+        masculinos: countMasc,
+        femeninos: countFem,
+        total: countMasc + countFem,
+      },
+      seedEjecutado: countMasc > 0 && countFem > 0,
       endpoints: [
         'POST /admin/demo/torneos/:id/llenar - Llenar torneo con inscripciones demo',
         'DELETE /admin/demo/torneos/:id/limpiar - Limpiar inscripciones demo',
@@ -70,6 +78,7 @@ export class DemoController {
         'Los jugadores demo tienen documentos que empiezan con DEMO-M- o DEMO-F-',
         'Se crean con estados mixtos: 60% CONFIRMADA, 30% PENDIENTE_PAGO, 10% PENDIENTE_CONFIRMACION',
         'Las inscripciones confirmadas incluyen pago ficticio',
+        'IMPORTANTE: Ejecutar seed-demo.ts primero para crear los 400 jugadores de prueba',
       ],
     };
   }
