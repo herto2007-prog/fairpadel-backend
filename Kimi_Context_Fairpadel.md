@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-11 21:30
-> **Conversación actual:** Sistema de fechas/timezone Paraguay implementado - Configurador de disponibilidad con drag-to-paint
+> **Última actualización:** 2026-03-12 14:00
+> **Conversación actual:** Sistema de Bracket Paraguayo implementado - Fórmula correcta con Ronda de Ajuste, Frontend con separación por género
 
 ---
 
@@ -100,20 +100,37 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 - [x] **Sistema de fondo consistente** - BackgroundEffects en toda la app
 - [x] **Componente PageLayout** - Plantilla reutilizable para nuevas páginas
 
-### ✅ Completado (2026-03-11) - Sistema de Bracket V1
-- [x] **Análisis de lógica paraguaya** - Zona → Repechaje → Eliminación directa
-- [x] **Modelos de BD extendidos** - Campos opcionales en Match (esBye, tipoEntrada, etc.)
-- [x] **Servicio BracketService** - Cálculo automático de configuración según cantidad de parejas
+### ✅ Completado (2026-03-12) - Sistema de Bracket V2 (Paraguayo Correcto)
+- [x] **Fórmula del Sistema Paraguayo** (corregida):
+  ```
+  PartidosZona = floor(parejas / 2)
+  ObjetivoBracket = (parejas <= 15) ? 8 : 16
+  Eliminaciones = parejas - ObjetivoBracket
+  PartidosRondaAjuste = Eliminaciones
+  ```
+- [x] **Lógica de Ronda de Ajuste** - Puede incluir ganadores O perdedores de zona
+- [x] **Modelos de BD extendidos** - Campos opcionales en Match (esBye, tipoEntrada, partidoSiguienteId, etc.)
+- [x] **Servicio BracketService** - Cálculo automático con fórmula correcta
 - [x] **Endpoints REST completos:**
   - `GET /admin/torneos/:id/categorias` - Listar con conteo de inscripciones
-  - `POST /admin/categorias/:id/bracket/generar` - Generar bracket completo
+  - `GET /admin/categorias/:id/bracket/config` - Obtener configuración previa
+  - `POST /admin/categorias/:id/bracket/sortear` - Realizar sorteo (preview/guardar)
+  - `POST /admin/categorias/:id/bracket/generar` - Generar y guardar bracket
+  - `POST /admin/categorias/:id/cerrar-inscripciones` - Cerrar inscripciones
+  - `POST /admin/categorias/:id/abrir-inscripciones` - Reabrir inscripciones
   - `GET /admin/bracket/:fixtureVersionId/partidos` - Obtener partidos
   - `POST /admin/bracket/:fixtureVersionId/publicar` - Publicar bracket
-- [x] **UI Frontend completa:**
-  - `BracketManager` - Lista de categorías del torneo
-  - `ConfigurarBracketModal` - Cálculo y vista previa del bracket
-  - `BracketView` - Visualización por fases (Zona, Repechaje, Octavos, etc.)
-- [x] **Integración en GestionarTorneoPage** - Nuevo tab "Fixture"
+  - `POST /admin/bracket/:fixtureVersionId/sortear-nuevo` - Re-sortear
+- [x] **Validaciones:**
+  - Mínimo 8 parejas para sortear
+  - Inscripciones deben estar cerradas
+  - No permite re-sortear si ya está publicado
+- [x] **UI Frontend - Estilo Minimalista:**
+  - `BracketManager` - Lista separada por género (Damas/Caballeros/Mixto), orden ascendente
+  - `ConfigurarBracketModal` - Vista previa con fórmula del sistema
+  - `BracketView` - Visualización por fases
+  - Botón "Cerrar inscripciones" en pestaña Inscripciones Y Fixture
+- [x] **Integración:** Tab "Fixture" en `/mis-torneos/:id/gestionar`
 
 ### ✅ Completado (2026-03-11) - Sistema Demo / Datos de Prueba
 - [x] **Modelo JugadorDemo** - Tabla separada para jugadores de prueba
@@ -138,6 +155,7 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 - [x] **Sistema 100% en hora Paraguay (UTC-3)** - Sin desfases entre frontend y backend
 
 ### ⏳ En Progreso / Pendiente
+- [x] ~~Sistema de Bracket Paraguayo~~ ✅ **COMPLETADO**
 - [ ] Integración de pagos (Bancard)
 - [ ] Asignación de horarios/canchas a partidos (drag & drop)
 - [ ] Registro de resultados en tiempo real
@@ -148,10 +166,12 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 
 ## 🏗️ ARQUITECTURA DE REPOSITORIOS
 
-| Repo | URL | Tecnología | Deploy |
-|------|-----|------------|--------|
-| Backend | https://github.com/herto2007-prog/fairpadel-backend.git | NestJS + Prisma + PostgreSQL | Railway (api.fairpadel.com) |
-| Frontend | https://github.com/herto2007-prog/fairpadel-frontend.git | React 18 + Vite + Tailwind | Railway (www.fairpadel.com) |
+| Repo | URL | Tecnología | Deploy | Ruta Local |
+|------|-----|------------|--------|------------|
+| Backend | https://github.com/herto2007-prog/fairpadel-backend.git | NestJS + Prisma + PostgreSQL | Railway (api.fairpadel.com) | `d:\fairpadel\` |
+| Frontend | https://github.com/herto2007-prog/fairpadel-frontend.git | React 18 + Vite + Tailwind | Railway (www.fairpadel.com) | `d:\fairpadel\frontend\` |
+
+**IMPORTANTE:** El frontend debe clonarse en `d:\fairpadel\frontend\` (esperado por tsconfig.json que excluye "frontend" del build del backend).
 
 ---
 
@@ -567,40 +587,75 @@ Flujo automático:
 
 ---
 
-## 🏆 SISTEMA DE BRACKET (IMPLEMENTADO)
+## 🏆 SISTEMA DE BRACKET (IMPLEMENTADO V2)
 
-### Lógica Paraguaya (Zona + Repechaje)
+### Sistema Paraguayo - Fórmula Correcta
 
-**Objetivo:** Garantizar **mínimo 2 partidos** por pareja, eliminando solo los que pierden 2 veces.
+**Objetivo:** Garantizar **mínimo 2 partidos** por pareja eliminada.
+
+**Fórmula:**
+```
+PartidosZona = floor(parejas / 2)
+ObjetivoBracket = (parejas <= 15) ? 8 : 16
+Eliminaciones = parejas - ObjetivoBracket
+PartidosRondaAjuste = Eliminaciones
+```
 
 **Flujo para 18 parejas (ejemplo):**
 ```
 FASE DE ZONA (9 partidos)
 ├── 18 parejas → 9 ganan / 9 pierden
 ├── Los 9 ganadores pasan al bracket principal
-└── De los 9 perdedores, 4 van a repechaje / 5 van directo a octavos
+└── De los 9 perdedores, 4 juegan ronda de ajuste / 5 van directo
 
-REPECHAJE (2 partidos)
-├── 4 perdedores de zona juegan entre sí
-├── 2 ganan y pasan a octavos (ya tienen 2 partidos)
-└── 2 pierden y quedan ELIMINADOS (2 partidos jugados) ✓
+RONDA DE AJUSTE (2 partidos)
+├── 4 parejas juegan (mix de ganadores/perdedores según necesidad)
+├── 2 ganan y pasan al bracket
+└── 2 pierden y quedan ELIMINADOS (jugaron zona + ajuste = 2 partidos) ✓
 
-OCTAVOS EN ADELANTE (Eliminación directa)
-├── 9 ganadores zona + 2 ganadores repechaje + 5 perdedores directos = 16 parejas
-├── Cuartos → Semis → Final
-└── Si pierdes, te vas (pero ya jugaste mínimo 2 partidos)
+BRACKET DE 16 (Eliminación directa)
+├── 9 ganadores zona + 2 ganadores ajuste + 5 directos = 16 parejas
+├── Octavos → Cuartos → Semis → Final
+└── Eliminación directa, no hay segunda chance
 ```
 
-### Configuración Automática según Cantidad
+### Tablas de Configuración
 
-| Inscriptos | Bracket | Zona | Repechaje | Byes |
-|------------|---------|------|-----------|------|
-| 12-15 | 8 | 6-7 partidos | 0-2 parejas | 0-1 |
-| 16-18 | 16 | 8-9 partidos | 0-4 parejas | 0-1 |
-| 19-24 | 16 | 9-12 partidos | 2-8 parejas | 1-2 |
-| 25-32 | 32 | 12-16 partidos | 4-16 parejas | 0-1 |
+**Torneos que terminan en CUARTOS (8 parejas):**
+| Parejas | Zona | Eliminaciones | Ronda Ajuste | Bracket |
+|---------|------|---------------|--------------|---------|
+| 8 | 4p | 0 | 0p | 8 |
+| 9 | 4p | 1 | 1p | 8 |
+| 10 | 5p | 2 | 2p | 8 |
+| 11 | 5p | 3 | 3p | 8 |
+| 12 | 6p | 4 | 4p | 8 |
+| 13 | 6p | 5 | 5p | 8 |
+| 14 | 7p | 6 | 6p | 8 |
+| 15 | 7p | 7 | 7p | 8 |
 
-**Nota:** Si la cantidad es impar, se usan BYEs estratégicos (ventaja por ranking).
+**Torneos que terminan en OCTAVOS (16 parejas):**
+| Parejas | Zona | Eliminaciones | Ronda Ajuste | Bracket |
+|---------|------|---------------|--------------|---------|
+| 16 | 8p | 0 | 0p | 16 |
+| 17 | 8p | 1 | 1p | 16 |
+| 18 | 9p | 2 | 2p | 16 |
+| 19 | 9p | 3 | 3p | 16 |
+| 20 | 10p | 4 | 4p | 16 |
+| 21 | 10p | 5 | 5p | 16 |
+| 22 | 11p | 6 | 6p | 16 |
+| 23 | 11p | 7 | 7p | 16 |
+| 24 | 12p | 8 | 8p | 16 |
+
+### Flujo de Sorteo
+
+1. **Inscripciones Abiertas** → Recibir inscripciones
+2. **Cerrar Inscripciones** (mínimo 8 parejas) → Estado: `INSCRIPCIONES_CERRADAS`
+3. **Sortear** → Genera bracket en estado `BORRADOR`
+4. **Publicar** → Estado: `SORTEO_REALIZADO`, visible para jugadores
+
+**Ubicación en el sistema:**
+- Frontend: `/mis-torneos/:id/gestionar` → Tab "Fixture"
+- También disponible: Botón "Cerrar inscripciones" en Tab "Inscripciones"
 
 ### Estructura de Datos
 
@@ -632,15 +687,18 @@ partidoOrigen2Id: String
 }
 ```
 
-### Archivos Creados
+### Archivos Creados/Modificados
 
-**Backend:**
-- `src/modules/bracket/` - Servicio reutilizable para cualquier tipo de torneo
-- `src/modules/admin/admin-bracket.controller.ts` - Endpoints REST
+**Backend (`d:\fairpadel\`):**
+- `src/modules/bracket/bracket.service.ts` - Servicio con fórmula correcta
+- `src/modules/admin/admin-bracket.controller.ts` - Endpoints REST (sortear, cerrar/abrir inscripciones)
 
-**Frontend:**
-- `src/features/organizador/components/bracket/` - Componentes UI completos
-- Integrado en `GestionarTorneoPage` como nuevo tab "Fixture"
+**Frontend (`d:\fairpadel\frontend\`):**
+- `src/features/organizador/components/bracket/BracketManager.tsx` - Lista por género, estilo minimalista
+- `src/features/organizador/components/bracket/ConfigurarBracketModal.tsx` - Vista previa del sorteo
+- `src/features/organizador/components/bracket/BracketView.tsx` - Visualización del bracket
+- `src/features/organizador/components/inscripciones/InscripcionesManager.tsx` - Agregado botón cerrar/reabrir inscripciones
+- Integrado en `GestionarTorneoPage` como tab "Fixture"
 
 ---
 
