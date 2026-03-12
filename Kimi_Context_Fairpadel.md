@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-12 19:00
-> **Conversación actual:** Módulo de Programación Inteligente implementado - Backend listo con algoritmo de distribución automática de partidos
+> **Última actualización:** 2026-03-11 13:36
+> **Conversación actual:** Vista Demo agregada - Tab con datos estáticos para visualizar flujo completo del torneo
 
 ---
 
@@ -154,7 +154,7 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 - [x] **ConfiguradorSede actualizado** - Usa utilidades de fecha Paraguay
 - [x] **Sistema 100% en hora Paraguay (UTC-3)** - Sin desfases entre frontend y backend
 
-### ✅ Completado (2026-03-12) - Módulo de Programación Inteligente
+### ✅ Completado (2026-03-12) - Módulo de Programación Inteligente - BACKEND
 - [x] **Servicio ProgramacionService** - Algoritmo de distribución automática
 - [x] **Distribución por fases:** Zona → Ronda de Ajuste → Bracket (Octavos → Cuartos → Semis → Final)
 - [x] **Validaciones inteligentes:**
@@ -172,10 +172,39 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 - [x] **Integración con disponibilidad** - Usa TorneoSlot configurados
 - [x] **Soporta sorteo por lotes** - Programa categorías a medida que se sortean
 
+### ✅ Completado (2026-03-11) - Módulo de Programación Inteligente - FRONTEND
+- [x] **Componente ProgramacionManager** - Vista principal de programación
+  - Predicción de recursos (horas necesarias vs disponibles)
+  - Distribución por días con slots ocupados
+  - Vista por fases: Zona → Ronda → Octavos → Cuartos → Semis → Final
+  - Estados: SIN_CALCULAR → CALCULADO → APLICADO
+- [x] **Acciones disponibles:**
+  - Calcular automáticamente
+  - Recalcular distribución
+  - Aplicar programación a la base de datos
+- [x] **Validaciones visuales:**
+  - Conflictos destacados en rojo
+  - Alertas de déficit de recursos
+  - Loading states con spinners
+- [x] **Integración:** Tab "Programación" en `/mis-torneos/:id/gestionar`
+- [x] **Preparación para edición manual** - Estructura lista para futura implementación
+
+### ✅ Completado (2026-03-12) - Vista Demo (Datos Estáticos)
+- [x] **Tab "Vista Demo"** en panel de gestión `/mis-torneos/:id/gestionar`
+- [x] **Banner de estado del torneo** con info del torneo demo
+- [x] **Stats cards** - Inscripciones, confirmadas, pendientes, ingresos
+- [x] **Timeline del flujo** - 6 fases del torneo con estados visuales
+- [x] **Categorías sorteadas** - Grid con 6 categorías de ejemplo (Damas/Caballeros)
+- [x] **Programación preview** - Distribución de 72 partidos en 4 días
+- [x] **Bracket preview** - Estructura de fases para 2 categorías ejemplo
+- [x] **Nota informativa** - Indica que son datos estáticos de ejemplo
+- **Nota:** Esta vista es temporal y se puede eliminar cuando ya no sea necesaria
+
 ### ⏳ En Progreso / Pendiente
 - [x] ~~Sistema de Bracket Paraguayo~~ ✅ **COMPLETADO**
 - [x] ~~Programación Inteligente (Backend)~~ ✅ **COMPLETADO**
-- [ ] **Programación Inteligente (Frontend)** - Vista de programación y edición manual
+- [x] ~~Programación Inteligente (Frontend)~~ ✅ **COMPLETADO**
+- [ ] **Testing completo** - Probar flujo con datos de demo
 - [ ] Integración de pagos (Bancard)
 - [ ] Registro de resultados en tiempo real
 - [ ] Rankings automáticos
@@ -520,11 +549,19 @@ src/
 │   │   │   │   ├── ResumenStats.tsx         
 │   │   │   │   ├── ModalConfirmar.tsx       
 │   │   │   │   └── ModalCancelar.tsx        
+│   │   │   ├── bracket/
+│   │   │   │   ├── BracketManager.tsx       ✅ Lista de categorías sorteadas
+│   │   │   │   ├── ConfigurarBracketModal.tsx ✅ Vista previa del sorteo
+│   │   │   │   └── BracketView.tsx          ✅ Visualización del bracket
+│   │   │   ├── programacion/
+│   │   │   │   ├── ProgramacionManager.tsx  ✅ Distribución automática de partidos
+│   │   │   │   ├── ServiceProgramacion.ts   ✅ API service
+│   │   │   │   └── TypesProgramacion.ts     ✅ Tipos TypeScript
 │   │   │   ├── TorneoWizard.tsx             ✅ 5 pasos crear torneo + fondo
 │   │   │   └── SedeAutocomplete.tsx         
 │   │   └── pages/
 │   │       ├── MisTorneosPage.tsx           ✅ Lista + wizard + fondo
-│   │       └── GestionarTorneoPage.tsx      ✅ Tabs gestión + fondo
+│   │       └── GestionarTorneoPage.tsx      ✅ Tabs gestión + fondo (incluye Programación)
 │   ├── tournaments/
 │   │   └── pages/
 │   │       ├── TorneosPublicListPage.tsx    ✅ /torneos + fondo
@@ -566,6 +603,9 @@ src/
 |-----|---------------|--------|
 | Checklist | Cuaderno con tareas y recordatorios | ✅ Visual completo |
 | Inscripciones | Stats, lista por categoría, confirmar/cancelar | ✅ Funcional |
+| Disponibilidad | Configuración de slots por día/cancha | ✅ Funcional |
+| Fixture | Sorteo de bracket (Zona + Ronda + Eliminación) | ✅ Funcional |
+| Programación | Distribución automática de partidos en slots | ✅ Funcional |
 | Comisión | Estado de pago y bloqueo | ✅ |
 | Información | Datos básicos del torneo | ✅ |
 
@@ -804,6 +844,11 @@ Y así sucesivamente...
 - `src/modules/programacion/programacion.controller.ts` - Endpoints REST
 - `src/modules/programacion/programacion.module.ts` - Módulo NestJS
 
+**Frontend:**
+- `frontend/src/features/organizador/components/programacion/ProgramacionManager.tsx` - Componente principal
+- `frontend/src/features/organizador/components/programacion/ServiceProgramacion.ts` - Servicio de API
+- `frontend/src/features/organizador/components/programacion/TypesProgramacion.ts` - Tipos TypeScript
+
 **Documentación:**
 - `docs/sistema-programacion-inteligente.md` - Especificación completa
 
@@ -825,13 +870,14 @@ Y así sucesivamente...
 
 ## 🎯 PRÓXIMOS PASOS SUGERIDOS
 
-### Para mañana (continuación):
-1. **Asignación de horarios/canchas** - Drag & drop para programar partidos en slots
+### Para hoy (testing y refinamiento):
+1. **Testing completo con datos de demo** - Usar sistema demo para probar flujo:
+   - Crear torneo → Llenar con demo → Sortear categorías → Calcular programación → Aplicar
 2. **Registro de resultados** - Formulario para ingresar sets y avanzar ganadores
-3. **Inscripción manual** - Formulario para que organizador inscriba parejas directamente
-4. **Conectar checklist al backend** - Persistencia de tareas y recordatorios
+3. **Conectar checklist al backend** - Persistencia de tareas y recordatorios
 
 ### Futuro cercano:
+4. **Edición manual de programación** - Drag & drop para ajustar partidos
 5. **Calendario de partidos** - Vista semanal con canchas como columnas
 6. **Notificaciones reales** - Conectar con proveedor SMS/email (Tigo, SendGrid)
 7. **Rankings automáticos** - Cálculo de puntos por torneo
@@ -847,8 +893,8 @@ Y así sucesivamente...
 3. Preguntar al usuario qué prioridad tiene para el día
 4. Recordar: un tema a la vez, entregables desplegables
 
-**Estado de ánimo del usuario:** Satisfecho con el sistema completo de bracket. Solicitó herramienta para testear el flujo completo con datos de prueba. Se implementó sistema demo con 400 jugadores y endpoints para llenar/limpiar torneos automáticamente. Listo para probar el flujo real del organizador.
+**Estado de ánimo del usuario:** Satisfecho con el sistema completo de bracket y programación. Backend de programación inteligente implementado con algoritmo de distribución automática. Frontend de programación completado con vista de predicción, distribución por fases y acciones de calcular/aplicar. Sistema listo para testing con datos de demo (400 jugadores disponibles).
 
 ---
 
-*Documento actualizado: 2026-03-11 - Sistema Demo implementado. Backend listo para pruebas con 400 jugadores de prueba y flujo completo de bracket (Zona + Repechaje + Eliminación). Frontend con UI de bracket integrada.*
+*Documento actualizado: 2026-03-12 - Vista Demo implementada con datos estáticos. Muestra flujo completo: stats, timeline, categorías, programación y bracket. Listo para testing con datos de demo.*
