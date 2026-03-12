@@ -8,6 +8,8 @@ import {
   Body,
   Query,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
@@ -544,6 +546,7 @@ export class AdminDisponibilidadController {
    * Body opcional: { canchaIds: string[] } - solo genera slots para esas canchas
    */
   @Post('dias/:diaId/generar-slots')
+  @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
   async generarSlots(
     @Param('id') tournamentId: string, 
     @Param('diaId') diaId: string,
