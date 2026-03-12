@@ -45,16 +45,7 @@ class ConfigurarDiaDto {
   minutosSlot: number = 90;
 }
 
-class GenerarSlotsDto {
-  @IsOptional()
-  @IsDateString()
-  fecha?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  canchaIds?: string[]; // IDs de canchas específicas (opcional)
-}
+import { GenerarSlotsDto } from './dto/generar-slots.dto';
 
 class GetSlotsPorSemanaDto {
   @IsDateString()
@@ -556,21 +547,44 @@ export class AdminDisponibilidadController {
   async generarSlots(
     @Param('id') tournamentId: string, 
     @Param('diaId') diaId: string,
-    @Body() body: { canchaIds?: string[] } = {},
+    @Body() dto: GenerarSlotsDto,
   ) {
     try {
+      // Validar que el día existe y pertenece al torneo
       const dia = await this.prisma.torneoDisponibilidadDia.findFirst({
         where: { id: diaId, tournamentId },
       });
       
       if (!dia) {
-        throw new NotFoundException('Día no encontrado');
+        throw new NotFoundException('Día no encontrado o no pertenece a este torneo');
       }
 
-      // Filtrar canchas: si se proporcionan IDs, usar solo esas
+      // Construir filtro de canchas
       const canchaFilter: any = { tournamentId, activa: true };
-      if (body?.canchaIds && Array.isArray(body.canchaIds) && body.canchaIds.length > 0) {
-        canchaFilter.id = { in: body.canchaIds };
+      
+      // Si se proporcionan canchaIds validados, filtrar por ellas
+      if (dto.canchaIds && dto.canchaIds.length > 0) {
+        // Verificar que todas las canchas existen y pertenecen al torneo
+        const canchasExistentes = await this.prisma.torneoCancha.findMany({
+          where: {
+            id: { in: dto.canchaIds },
+            tournamentId,
+            activa: true,
+          },
+          select: { id: true },
+        });
+
+        const idsExistentes = canchasExistentes.map(c => c.id);
+        const idsInvalidos = dto.canchaIds.filter(id => !idsExistentes.includes(id));
+        
+        if (idsInvalidos.length > 0) {
+          throw new BadRequestException({
+            success: false,
+            message: `Algunas canchas no existen o no pertenecen a este torneo: ${idsInvalidos.join(', ')}`,
+          });
+        }
+
+        canchaFilter.id = { in: idsExistentes };
       }
 
       const canchas = await this.prisma.torneoCancha.findMany({
