@@ -16,12 +16,36 @@
 
 ### Repositorios (GitHub)
 ```bash
-# Backend
+# Backend (este repo)
 https://github.com/herto2007-prog/fairpadel-backend.git
 
-# Frontend  
+# Frontend (repo separado - SIEMPRE CLONAR EN d:\fairpadel\frontend)
 https://github.com/herto2007-prog/fairpadel-frontend.git
 ```
+
+### Estructura de Carpetas del Frontend
+**Ruta local:** `d:\fairpadel\frontend\`
+
+```
+frontend/
+├── src/
+│   ├── features/
+│   │   ├── organizador/          ← Panel de organizador
+│   │   │   ├── components/
+│   │   │   │   ├── bracket/      ← BracketManager, ConfigurarBracketModal
+│   │   │   │   ├── checklist/
+│   │   │   │   ├── disponibilidad/
+│   │   │   │   └── inscripciones/
+│   │   │   └── pages/
+│   │   ├── tournaments/
+│   │   ├── auth/
+│   │   └── ...
+│   ├── components/
+│   ├── pages/
+│   └── services/
+```
+
+**IMPORTANTE:** El frontend NUNCA debe estar dentro de `node_modules/`, `dist/` o `docs/`.
 
 ### Stack Tecnológico
 - **Backend:** NestJS + Prisma + PostgreSQL + TypeScript
