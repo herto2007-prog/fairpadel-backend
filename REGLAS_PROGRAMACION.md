@@ -115,6 +115,69 @@ https://github.com/herto2007-prog/fairpadel-frontend.git
 
 ✅ **SIEMPRE** usar componentes específicos: `GuaraniesInput`, `CityAutocomplete`, `PhoneSelector`.
 
+### 🕐 Manejo de Fechas y Timezone (CRÍTICO)
+
+**Timezone del sistema:** `America/Asuncion` (Paraguay, UTC-3)
+
+**REGLA DE ORO:** Todas las fechas se manejan en hora de Paraguay. NUNCA usar `new Date()` directamente sin considerar el timezone.
+
+#### Backend (NestJS)
+```typescript
+// ✅ CORRECTO - Usar DateService
+import { DateService } from '../../common/services/date.service';
+
+constructor(private dateService: DateService) {}
+
+// Parsear fechas de requests
+const fecha = this.dateService.parse(dto.fecha); // Detecta YYYY-MM-DD o ISO
+
+// Obtener fecha actual en Paraguay
+const ahora = this.dateService.now();
+
+// Formatear para respuesta
+const fechaStr = this.dateService.format(date);
+
+// Rango de fechas
+const fechas = this.dateService.getDatesRange(fechaInicio, fechaFin);
+```
+
+#### Frontend (React)
+```typescript
+// ✅ CORRECTO - Usar utilidades de date.ts
+import { 
+  formatDatePY, 
+  formatDateTimePY, 
+  toISOStringPY,
+  parseDatePY,
+  getDatesRangePY 
+} from '../utils/date';
+
+// Mostrar fecha al usuario
+const fechaStr = formatDatePY(fechaISO); // "12/03/2025"
+
+// Mostrar fecha y hora
+const fechaHora = formatDateTimePY(fechaISO); // "12/03/2025 18:30"
+
+// Enviar al backend (mantiene hora Paraguay)
+const isoPY = toISOStringPY(fechaLocal); 
+
+// Generar rango de fechas
+const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
+```
+
+#### ❌ PROHIBIDO
+```typescript
+// ❌ NUNCA usar directamente sin timezone
+const fecha = new Date(); // Puede dar hora UTC
+const fecha = new Date(dto.fecha); // Puede interpretar mal el timezone
+fecha.toISOString(); // Siempre UTC, pierde hora Paraguay
+```
+
+**Archivos clave:**
+- Backend: `src/common/services/date.service.ts`
+- Backend: `src/common/interceptors/paraguay-timezone.interceptor.ts`
+- Frontend: `src/utils/date.ts`
+
 ---
 
 ## 7. Sistema de Diseño UI/UX

@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-11 16:30
-> **Conversación actual:** Sistema Demo implementado - 400 jugadores de prueba para testear flujo completo
+> **Última actualización:** 2026-03-11 21:30
+> **Conversación actual:** Sistema de fechas/timezone Paraguay implementado - Configurador de disponibilidad con drag-to-paint
 
 ---
 
@@ -23,6 +23,35 @@
 9. **Actitud Kimi:** Preguntar dudas, sugerir mejoras, un tema a la vez
 10. **Separación Responsabilidades:** Usuario NUNCA toca BD directamente
 11. **Deploy Automático:** Dockerfile ejecuta migrate + seed
+
+### 🕐 Manejo de Fechas - Timezone Paraguay (CRÍTICO)
+
+**Timezone:** `America/Asuncion` (UTC-3)
+
+**REGLA:** Todas las fechas en el sistema son hora de Paraguay. **NUNCA** usar `new Date()` sin normalizar.
+
+**Backend:**
+```typescript
+// Usar DateService SIEMPRE
+import { DateService } from '../../common/services/date.service';
+const fecha = this.dateService.parse(dto.fecha); // Parsea como PY
+const ahora = this.dateService.now(); // Ahora en PY
+const rango = this.dateService.getDatesRange(inicio, fin);
+```
+
+**Frontend:**
+```typescript
+// Usar utilidades de date.ts
+import { formatDatePY, toISOStringPY, getDatesRangePY } from '../utils/date';
+const str = formatDatePY(fechaISO); // "12/03/2025"
+const iso = toISOStringPY(fechaLocal); // Envía al backend
+const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
+```
+
+**Archivos:**
+- Backend: `src/common/services/date.service.ts`
+- Backend: `src/common/interceptors/paraguay-timezone.interceptor.ts`
+- Frontend: `src/utils/date.ts`
 
 ---
 
@@ -100,6 +129,13 @@
 
 **Flujo de prueba completo:**
 1. Crear torneo → 2. `POST /admin/demo/torneos/:id/llenar` → 3. Generar bracket → 4. Probar flujo → 5. `DELETE .../limpiar`
+
+### ✅ Completado (2026-03-11) - Sistema de Fechas/Timezone Paraguay
+- [x] **DateService mejorado** - Métodos: parse(), addHours(), addDays(), startOfDay(), endOfDay(), getDatesRange(), compareDates(), getDayName(), getMonthName()
+- [x] **ParaguayTimezoneInterceptor** - Normaliza automáticamente fechas entrantes/salientes
+- [x] **date.utils.ts frontend** - Funciones timezone-aware: formatDatePY(), formatDateTimePY(), toISOStringPY(), parseDatePY(), getDatesRangePY(), isTodayPY(), compareDatesPY()
+- [x] **ConfiguradorSede actualizado** - Usa utilidades de fecha Paraguay
+- [x] **Sistema 100% en hora Paraguay (UTC-3)** - Sin desfases entre frontend y backend
 
 ### ⏳ En Progreso / Pendiente
 - [ ] Integración de pagos (Bancard)
