@@ -88,6 +88,116 @@ export class AdminBracketController {
   }
 
   /**
+   * POST /admin/categorias/:id/cerrar-inscripciones
+   * Cierra las inscripciones para una categoría específica
+   */
+  @Post('categorias/:id/cerrar-inscripciones')
+  async cerrarInscripciones(@Param('id') tournamentCategoryId: string) {
+    try {
+      const categoria = await this.prisma.tournamentCategory.findUnique({
+        where: { id: tournamentCategoryId },
+        include: { category: true },
+      });
+
+      if (!categoria) {
+        throw new NotFoundException('Categoría no encontrada');
+      }
+
+      if (categoria.estado !== 'INSCRIPCIONES_ABIERTAS') {
+        return {
+          success: false,
+          message: `Las inscripciones ya están cerradas o el sorteo ya fue realizado. Estado actual: ${categoria.estado}`,
+          estado: categoria.estado,
+        };
+      }
+
+      // Contar inscripciones confirmadas
+      const inscripcionesCount = await this.prisma.inscripcion.count({
+        where: {
+          tournamentId: categoria.tournamentId,
+          categoryId: categoria.categoryId,
+          estado: {
+            in: ['CONFIRMADA', 'PENDIENTE_PAGO'],
+          },
+        },
+      });
+
+      const MINIMO_PARA_SORTEAR = 8;
+      
+      // Actualizar estado
+      await this.prisma.tournamentCategory.update({
+        where: { id: tournamentCategoryId },
+        data: {
+          estado: 'INSCRIPCIONES_CERRADAS',
+          inscripcionAbierta: false,
+        },
+      });
+
+      return {
+        success: true,
+        message: `Inscripciones cerradas para ${categoria.category.nombre}`,
+        estado: 'INSCRIPCIONES_CERRADAS',
+        totalInscripciones: inscripcionesCount,
+        puedeSortear: inscripcionesCount >= MINIMO_PARA_SORTEAR,
+        minimoRequerido: MINIMO_PARA_SORTEAR,
+      };
+    } catch (error: any) {
+      console.error('[cerrarInscripciones] Error:', error);
+      throw new BadRequestException({
+        success: false,
+        message: error.message || 'Error cerrando inscripciones',
+      });
+    }
+  }
+
+  /**
+   * POST /admin/categorias/:id/abrir-inscripciones
+   * Reabre las inscripciones para una categoría (solo si no hay sorteo aún)
+   */
+  @Post('categorias/:id/abrir-inscripciones')
+  async abrirInscripciones(@Param('id') tournamentCategoryId: string) {
+    try {
+      const categoria = await this.prisma.tournamentCategory.findUnique({
+        where: { id: tournamentCategoryId },
+        include: { category: true },
+      });
+
+      if (!categoria) {
+        throw new NotFoundException('Categoría no encontrada');
+      }
+
+      // Solo se puede reabrir si está cerrada pero sin sorteo
+      if (categoria.estado !== 'INSCRIPCIONES_CERRADAS') {
+        return {
+          success: false,
+          message: `No se pueden reabrir inscripciones en estado ${categoria.estado}. Solo se puede reabrir si están cerradas pero sin sorteo.`,
+          estado: categoria.estado,
+        };
+      }
+
+      await this.prisma.tournamentCategory.update({
+        where: { id: tournamentCategoryId },
+        data: {
+          estado: 'INSCRIPCIONES_ABIERTAS',
+          inscripcionAbierta: true,
+        },
+      });
+
+      return {
+        success: true,
+        message: `Inscripciones reabiertas para ${categoria.category.nombre}`,
+        estado: 'INSCRIPCIONES_ABIERTAS',
+      };
+    } catch (error: any) {
+      console.error('[abrirInscripciones] Error:', error);
+      throw new BadRequestException({
+        success: false,
+        message: error.message || 'Error abriendo inscripciones',
+      });
+    }
+  }
+
+  /**
    * GET /admin/categorias/:id/bracket/config
    * Obtiene la configuración del bracket para una categoría (sistema paraguayo)
    */
@@ -136,11 +246,20 @@ export class AdminBracketController {
         },
       });
 
+      // Validar mínimo de parejas (8 para poder sortear)
+      const MINIMO_PARA_SORTEAR = 8;
+      const puedeSortear = inscripciones.length >= MINIMO_PARA_SORTEAR;
+      const inscripcionesCerradas = categoria.estado !== 'INSCRIPCIONES_ABIERTAS';
+      
       if (inscripciones.length < 3) {
         return {
           success: false,
           message: `Se necesitan al menos 3 parejas para generar bracket. Actual: ${inscripciones.length}`,
           puedeGenerar: false,
+          puedeSortear: false,
+          estado: categoria.estado,
+          inscripcionesCerradas,
+          totalInscripciones: inscripciones.length,
         };
       }
 
@@ -151,6 +270,10 @@ export class AdminBracketController {
       return {
         success: true,
         puedeGenerar: true,
+        puedeSortear,
+        estado: categoria.estado,
+        inscripcionesCerradas,
+        minimoRequerido: MINIMO_PARA_SORTEAR,
         config,
         inscripciones: inscripciones.map((i) => ({
           id: i.id,
@@ -158,6 +281,7 @@ export class AdminBracketController {
           jugador2: i.jugador2,
         })),
         totalInscripciones: inscripciones.length,
+        faltanParaMinimo: Math.max(0, MINIMO_PARA_SORTEAR - inscripciones.length),
       };
     } catch (error: any) {
       console.error('[getBracketConfig] Error:', error);
@@ -220,9 +344,25 @@ export class AdminBracketController {
         },
       });
 
-      if (inscripciones.length < 3) {
+      // Validar mínimo de parejas (8 para sortear)
+      const MINIMO_PARA_SORTEAR = 8;
+      if (inscripciones.length < MINIMO_PARA_SORTEAR) {
         throw new BadRequestException(
-          `Se necesitan al menos 3 parejas para generar bracket. Actual: ${inscripciones.length}`,
+          `Se necesitan al menos ${MINIMO_PARA_SORTEAR} parejas para sortear. Actual: ${inscripciones.length}`,
+        );
+      }
+
+      // Validar que las inscripciones estén cerradas
+      if (categoria.estado === 'INSCRIPCIONES_ABIERTAS') {
+        throw new BadRequestException(
+          'Las inscripciones deben estar cerradas antes de sortear. Use el endpoint de cerrar inscripciones primero.',
+        );
+      }
+
+      // Validar que no haya un sorteo ya publicado
+      if (categoria.estado === 'SORTEO_REALIZADO' && body?.guardar) {
+        throw new BadRequestException(
+          'El sorteo ya fue realizado y publicado. Use "sortear-nuevo" para regenerar.',
         );
       }
 
