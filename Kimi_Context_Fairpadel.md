@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-12 14:00
-> **Conversación actual:** Sistema de Bracket Paraguayo implementado - Fórmula correcta con Ronda de Ajuste, Frontend con separación por género
+> **Última actualización:** 2026-03-12 19:00
+> **Conversación actual:** Módulo de Programación Inteligente implementado - Backend listo con algoritmo de distribución automática de partidos
 
 ---
 
@@ -154,10 +154,29 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 - [x] **ConfiguradorSede actualizado** - Usa utilidades de fecha Paraguay
 - [x] **Sistema 100% en hora Paraguay (UTC-3)** - Sin desfases entre frontend y backend
 
+### ✅ Completado (2026-03-12) - Módulo de Programación Inteligente
+- [x] **Servicio ProgramacionService** - Algoritmo de distribución automática
+- [x] **Distribución por fases:** Zona → Ronda de Ajuste → Bracket (Octavos → Cuartos → Semis → Final)
+- [x] **Validaciones inteligentes:**
+  - Máximo 2 partidos por pareja por día
+  - 4 horas mínimo entre partidos de misma pareja
+  - No sobrepasar slots disponibles
+- [x] **Predicción de recursos:**
+  - Calcula horas necesarias vs disponibles
+  - Detecta déficit antes de aplicar
+  - Sugiere agregar canchas o extender días
+- [x] **Endpoints REST:**
+  - `POST /programacion/torneos/:id/calcular` - Calcula distribución óptima
+  - `POST /programacion/torneos/:id/aplicar` - Aplica la programación
+  - `GET /programacion/torneos/:id/preview` - Vista previa
+- [x] **Integración con disponibilidad** - Usa TorneoSlot configurados
+- [x] **Soporta sorteo por lotes** - Programa categorías a medida que se sortean
+
 ### ⏳ En Progreso / Pendiente
 - [x] ~~Sistema de Bracket Paraguayo~~ ✅ **COMPLETADO**
+- [x] ~~Programación Inteligente (Backend)~~ ✅ **COMPLETADO**
+- [ ] **Programación Inteligente (Frontend)** - Vista de programación y edición manual
 - [ ] Integración de pagos (Bancard)
-- [ ] Asignación de horarios/canchas a partidos (drag & drop)
 - [ ] Registro de resultados en tiempo real
 - [ ] Rankings automáticos
 - [ ] Notificaciones push/SMS (Tigo) - Backend listo, falta provider
@@ -699,6 +718,94 @@ partidoOrigen2Id: String
 - `src/features/organizador/components/bracket/BracketView.tsx` - Visualización del bracket
 - `src/features/organizador/components/inscripciones/InscripcionesManager.tsx` - Agregado botón cerrar/reabrir inscripciones
 - Integrado en `GestionarTorneoPage` como tab "Fixture"
+
+---
+
+## 📅 SISTEMA DE PROGRAMACIÓN INTELIGENTE (IMPLEMENTADO)
+
+### Algoritmo de Distribución
+
+**Objetivo:** Distribuir partidos de múltiples categorías optimizando recursos y tiempos.
+
+**Fases de asignación:**
+```
+1. ZONA (todas las categorías) - Primeros días
+2. RONDA DE AJUSTE - Día después de última zona
+3. BRACKET:
+   ├── OCTAVOS - Sábado mañana (si aplica)
+   ├── CUARTOS - Sábado tarde
+   ├── SEMIS - Domingo mañana
+   └── FINAL - Domingo tarde
+```
+
+**Reglas de negocio:**
+- Jueves/Viernes: Horario 18:00-00:00 (solo noche, amateur trabaja)
+- Sábados: Horario 14:00-00:00 (tarde/noche)
+- Domingos: Horario 08:00-20:00 (todo el día)
+- Máximo 2 partidos por pareja por día
+- 4 horas mínimo entre partidos de la misma pareja
+- Soporte para horarios personalizados (no comunes en PY)
+
+### Predicción de Recursos
+
+```typescript
+// Cálculo automático
+const horasNecesarias = totalPartidos * 1.5; // 90 min promedio
+const horasDisponibles = slots * duracionSlot;
+const deficit = horasNecesarias - horasDisponibles;
+
+// Sugerencias si falta capacidad:
+- Extender días del torneo
+- Agregar canchas adicionales
+- Usar sede alternativa
+```
+
+### Endpoints REST
+
+| Endpoint | Método | Descripción |
+|----------|--------|-------------|
+| `/programacion/torneos/:id/calcular` | POST | Calcula distribución óptima |
+| `/programacion/torneos/:id/aplicar` | POST | Aplica programación a partidos |
+| `/programacion/torneos/:id/preview` | GET | Vista previa sin aplicar |
+
+### Flujo de Trabajo
+
+**Escenario 1: Sorteo completo de una vez**
+```
+1. Cerrar inscripciones de TODAS las categorías
+2. Sortear todas las categorías
+3. POST /programacion/torneos/:id/calcular
+4. Revisar predicción de recursos
+5. Ajustar manualmente si es necesario
+6. POST /programacion/torneos/:id/aplicar
+7. Publicar fixture completo
+```
+
+**Escenario 2: Sorteo por lotes (recomendado)**
+```
+Miércoles 23:59 - Cierra lote 1 (cats A, B, C)
+  → Sistema calcula ZONA/RONDA solo para estas
+  → Jueves - Juegan ZONA cats A, B, C
+
+Jueves 23:59 - Cierra lote 2 (cats D, E, F)
+  → Sistema recalcula considerando:
+     - Partidos de ZONA de A, B, C ya jugados
+     - ZONA/RONDA para D, E, F
+     - Brackets de A, B, C (si tienen resultados)
+  → Viernes - Juegan ZONA cats D, E, F + RONDA
+
+Y así sucesivamente...
+```
+
+### Archivos Creados
+
+**Backend:**
+- `src/modules/programacion/programacion.service.ts` - Algoritmo de distribución
+- `src/modules/programacion/programacion.controller.ts` - Endpoints REST
+- `src/modules/programacion/programacion.module.ts` - Módulo NestJS
+
+**Documentación:**
+- `docs/sistema-programacion-inteligente.md` - Especificación completa
 
 ---
 
