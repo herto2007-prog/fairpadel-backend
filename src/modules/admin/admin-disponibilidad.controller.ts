@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { DateService } from '../../common/services/date.service';
 
 // DTOs
 class AgregarSedeDto {
@@ -61,7 +62,10 @@ class GetSlotsPorSemanaDto {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin', 'organizador')
 export class AdminDisponibilidadController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private dateService: DateService,
+  ) {}
 
   /**
    * GET /admin/torneos/:id/disponibilidad
@@ -172,8 +176,9 @@ export class AdminDisponibilidadController {
       if (!fechaInicioStr || !fechaFinStr) {
         throw new BadRequestException('fechaInicio y fechaFin son requeridos');
       }
-      const fechaInicio = new Date(fechaInicioStr);
-      const fechaFin = new Date(fechaFinStr);
+      // Parsear fechas como hora de Paraguay
+      const fechaInicio = this.dateService.parse(fechaInicioStr);
+      const fechaFin = this.dateService.parse(fechaFinStr);
 
       const dias = await this.prisma.torneoDisponibilidadDia.findMany({
         where: {
@@ -462,7 +467,8 @@ export class AdminDisponibilidadController {
   @Post('dias')
   async configurarDia(@Param('id') tournamentId: string, @Body() dto: ConfigurarDiaDto) {
     try {
-      const fecha = new Date(dto.fecha);
+      // Parsear fecha como hora de Paraguay
+      const fecha = this.dateService.parse(dto.fecha);
 
       // Verificar que la fecha esté dentro del rango del torneo
       const torneo = await this.prisma.tournament.findUnique({
