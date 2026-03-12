@@ -11,7 +11,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, IsArray, Min, Max } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -46,8 +46,14 @@ class ConfigurarDiaDto {
 }
 
 class GenerarSlotsDto {
+  @IsOptional()
   @IsDateString()
-  fecha: string;
+  fecha?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  canchaIds?: string[]; // IDs de canchas específicas (opcional)
 }
 
 class GetSlotsPorSemanaDto {
@@ -544,9 +550,14 @@ export class AdminDisponibilidadController {
   /**
    * POST /admin/torneos/:id/disponibilidad/dias/:diaId/generar-slots
    * Generar los slots para un día específico
+   * Si se proporcionan canchaIds, solo genera slots para esas canchas
    */
   @Post('dias/:diaId/generar-slots')
-  async generarSlots(@Param('id') tournamentId: string, @Param('diaId') diaId: string) {
+  async generarSlots(
+    @Param('id') tournamentId: string, 
+    @Param('diaId') diaId: string,
+    @Body() dto?: GenerarSlotsDto,
+  ) {
     try {
       const dia = await this.prisma.torneoDisponibilidadDia.findFirst({
         where: { id: diaId, tournamentId },
@@ -555,8 +566,14 @@ export class AdminDisponibilidadController {
         throw new NotFoundException('Día no encontrado');
       }
 
+      // Si se proporcionan canchaIds, usar solo esas canchas
+      const canchaFilter: any = { tournamentId, activa: true };
+      if (dto?.canchaIds && dto.canchaIds.length > 0) {
+        canchaFilter.id = { in: dto.canchaIds };
+      }
+
       const canchas = await this.prisma.torneoCancha.findMany({
-        where: { tournamentId, activa: true },
+        where: canchaFilter,
       });
 
       if (canchas.length === 0) {
