@@ -604,7 +604,7 @@ export class AdminDisponibilidadController {
           console.log('[generarSlots] Creating slot:', { disponibilidadId: diaId, torneoCanchaId: cancha.id, horaInicio: horaInicioStr, horaFin: horaFinStr });
 
           try {
-            // Crear slot
+            // Intentar crear slot
             const slot = await this.prisma.torneoSlot.create({
               data: {
                 disponibilidadId: diaId,
@@ -615,9 +615,21 @@ export class AdminDisponibilidadController {
               },
             });
             slotsCreados.push(slot);
+            console.log('[generarSlots] Slot created:', slot.id);
           } catch (createError: any) {
-            console.error('[generarSlots] Error creating slot:', createError);
-            throw createError;
+            // Si el error es de duplicado (P2002), ignorar y continuar
+            if (createError.code === 'P2002') {
+              console.log('[generarSlots] Slot already exists, skipping:', { 
+                disponibilidadId: diaId, 
+                torneoCanchaId: cancha.id, 
+                horaInicio: horaInicioStr 
+              });
+              // Continuar con el siguiente slot sin lanzar error
+            } else {
+              // Si es otro error, lanzarlo
+              console.error('[generarSlots] Error creating slot:', createError);
+              throw createError;
+            }
           }
           
           horaActual = horaFinSlot;
