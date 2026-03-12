@@ -562,8 +562,19 @@ export class AdminDisponibilidadController {
       // Construir filtro de canchas
       const canchaFilter: any = { tournamentId, activa: true };
       
-      // Si se proporcionan canchaIds validados, filtrar por ellas
-      if (dto.canchaIds && dto.canchaIds.length > 0) {
+      // Si se proporcionan canchaIds, filtrar por ellas
+      // Nota: Array vacío [] es válido pero no encontrará canchas (intencional para validación)
+      if (dto.canchaIds !== undefined && dto.canchaIds !== null) {
+        if (dto.canchaIds.length === 0) {
+          // Array vacío explícito: no generar slots (el usuario no quiere canchas para este día)
+          return {
+            success: true,
+            message: 'No se generaron slots (array de canchas vacío)',
+            totalSlots: 0,
+            canchasUsadas: 0,
+          };
+        }
+
         // Verificar que todas las canchas existen y pertenecen al torneo
         const canchasExistentes = await this.prisma.torneoCancha.findMany({
           where: {
@@ -586,6 +597,7 @@ export class AdminDisponibilidadController {
 
         canchaFilter.id = { in: idsExistentes };
       }
+      // Si canchaIds es undefined/null: usar todas las canchas activas del torneo (comportamiento por defecto)
 
       const canchas = await this.prisma.torneoCancha.findMany({
         where: canchaFilter,
