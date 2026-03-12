@@ -276,6 +276,11 @@ export class AdminDisponibilidadController {
       // Verificar que la sede existe
       const sede = await this.prisma.sede.findUnique({
         where: { id: dto.sedeId },
+        include: {
+          canchas: {
+            where: { activa: true },
+          },
+        },
       });
       if (!sede) {
         throw new NotFoundException('Sede no encontrada');
@@ -297,6 +302,7 @@ export class AdminDisponibilidadController {
         };
       }
 
+      // Crear la relación torneo-sede
       const torneoSede = await this.prisma.torneoSede.create({
         data: {
           tournamentId,
@@ -307,10 +313,28 @@ export class AdminDisponibilidadController {
         },
       });
 
+      // Agregar automáticamente todas las canchas activas de la sede al torneo
+      const canchasCreadas = [];
+      for (const cancha of sede.canchas) {
+        try {
+          const torneoCancha = await this.prisma.torneoCancha.create({
+            data: {
+              tournamentId,
+              sedeCanchaId: cancha.id,
+            },
+          });
+          canchasCreadas.push(torneoCancha);
+        } catch (canchaError) {
+          // Si una cancha ya existe, ignorar y continuar
+          console.log(`Cancha ${cancha.id} ya existe en el torneo, saltando...`);
+        }
+      }
+
       return {
         success: true,
-        message: 'Sede agregada al torneo',
+        message: `Sede agregada con ${canchasCreadas.length} canchas`,
         sede: torneoSede.sede,
+        canchasAgregadas: canchasCreadas.length,
       };
     } catch (error: any) {
       throw new BadRequestException({
