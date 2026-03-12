@@ -6,6 +6,7 @@ import {
   UseGuards,
   NotFoundException,
   BadRequestException,
+  Body,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -54,7 +55,7 @@ export class AdminBracketController {
       },
     });
 
-    // Contar inscripciones por categoría
+    // Contar inscripciones confirmadas por categoría
     const inscripcionesCount = await this.prisma.inscripcion.groupBy({
       by: ['categoryId'],
       where: {
@@ -87,13 +88,13 @@ export class AdminBracketController {
   }
 
   /**
-   * POST /admin/categorias/:id/bracket/generar
-   * Generar bracket para una categoría
+   * GET /admin/categorias/:id/bracket/config
+   * Obtiene la configuración del bracket para una categoría (sistema paraguayo)
    */
-  @Post('categorias/:id/bracket/generar')
-  async generarBracket(@Param('id') tournamentCategoryId: string) {
+  @Get('categorias/:id/bracket/config')
+  async getBracketConfig(@Param('id') tournamentCategoryId: string) {
     try {
-      // 1. Obtener la categoría
+      // Obtener la categoría
       const categoria = await this.prisma.tournamentCategory.findUnique({
         where: { id: tournamentCategoryId },
         include: {
@@ -106,7 +107,7 @@ export class AdminBracketController {
         throw new NotFoundException('Categoría no encontrada');
       }
 
-      // 2. Obtener inscripciones confirmadas
+      // Obtener inscripciones confirmadas
       const inscripciones = await this.prisma.inscripcion.findMany({
         where: {
           tournamentId: categoria.tournamentId,
@@ -121,6 +122,7 @@ export class AdminBracketController {
               id: true,
               nombre: true,
               apellido: true,
+              fotoUrl: true,
             },
           },
           jugador2: {
@@ -128,6 +130,91 @@ export class AdminBracketController {
               id: true,
               nombre: true,
               apellido: true,
+              fotoUrl: true,
+            },
+          },
+        },
+      });
+
+      if (inscripciones.length < 3) {
+        return {
+          success: false,
+          message: `Se necesitan al menos 3 parejas para generar bracket. Actual: ${inscripciones.length}`,
+          puedeGenerar: false,
+        };
+      }
+
+      const config = this.bracketService.calcularConfiguracion(
+        inscripciones.length,
+      );
+
+      return {
+        success: true,
+        puedeGenerar: true,
+        config,
+        inscripciones: inscripciones.map((i) => ({
+          id: i.id,
+          jugador1: i.jugador1,
+          jugador2: i.jugador2,
+        })),
+        totalInscripciones: inscripciones.length,
+      };
+    } catch (error: any) {
+      console.error('[getBracketConfig] Error:', error);
+      throw new BadRequestException({
+        success: false,
+        message: error.message || 'Error obteniendo configuración del bracket',
+      });
+    }
+  }
+
+  /**
+   * POST /admin/categorias/:id/bracket/sortear
+   * Realiza el sorteo aleatorio de las parejas (sistema paraguayo: Zona → Repechaje → Bracket)
+   */
+  @Post('categorias/:id/bracket/sortear')
+  async sortearBracket(
+    @Param('id') tournamentCategoryId: string,
+    @Body() body?: { guardar?: boolean; ordenInscripciones?: string[] },
+  ) {
+    try {
+      // Obtener la categoría
+      const categoria = await this.prisma.tournamentCategory.findUnique({
+        where: { id: tournamentCategoryId },
+        include: {
+          tournament: true,
+          category: true,
+        },
+      });
+
+      if (!categoria) {
+        throw new NotFoundException('Categoría no encontrada');
+      }
+
+      // Obtener inscripciones confirmadas
+      const inscripciones = await this.prisma.inscripcion.findMany({
+        where: {
+          tournamentId: categoria.tournamentId,
+          categoryId: categoria.categoryId,
+          estado: {
+            in: ['CONFIRMADA', 'PENDIENTE_PAGO'],
+          },
+        },
+        include: {
+          jugador1: {
+            select: {
+              id: true,
+              nombre: true,
+              apellido: true,
+              fotoUrl: true,
+            },
+          },
+          jugador2: {
+            select: {
+              id: true,
+              nombre: true,
+              apellido: true,
+              fotoUrl: true,
             },
           },
         },
@@ -135,114 +222,100 @@ export class AdminBracketController {
 
       if (inscripciones.length < 3) {
         throw new BadRequestException(
-          `Mínimo 3 parejas para generar bracket. Actual: ${inscripciones.length}`,
+          `Se necesitan al menos 3 parejas para generar bracket. Actual: ${inscripciones.length}`,
         );
       }
 
-      // 3. Calcular configuración
-      const config = this.bracketService.calcularConfiguracion(
-        inscripciones.length,
-      );
+      // Realizar el sorteo aleatorio
+      const ordenSorteo = body?.ordenInscripciones 
+        ? body.ordenInscripciones 
+        : [...inscripciones].sort(() => Math.random() - 0.5).map(i => i.id);
 
-      // 4. Generar bracket (estructura de partidos)
-      const inscripcionIds = inscripciones.map((i) => i.id);
-      const { partidos } = await this.bracketService.generarBracket({
+      // Generar bracket con sistema paraguayo
+      const { config, partidos } = await this.bracketService.generarBracket({
         tournamentCategoryId,
         totalParejas: inscripciones.length,
-        inscripcionIds,
+        inscripcionIds: ordenSorteo,
       });
 
-      // 5. Crear FixtureVersion
-      const definicion = {
-        config: {
-          totalParejas: config.totalParejas,
-          tamanoBracket: config.tamanoBracket,
-          parejasConBye: config.parejasConBye,
-          partidosZona: config.partidosZona,
-          parejasEnRepechaje: config.parejasEnRepechaje,
-          partidosRepechaje: config.partidosRepechaje,
-          ganadoresZona: config.ganadoresZona,
-          ganadoresRepechaje: config.ganadoresRepechaje,
-          perdedoresDirectos: config.perdedoresDirectos,
-          fases: config.fases,
-        },
-        partidos: partidos.map((p) => ({
-          id: p.id,
-          fase: p.fase,
-          orden: p.orden,
-          esBye: p.esBye,
-          tipoEntrada1: p.tipoEntrada1,
-          tipoEntrada2: p.tipoEntrada2,
-          partidoOrigen1Id: p.partidoOrigen1Id,
-          partidoOrigen2Id: p.partidoOrigen2Id,
-          partidoSiguienteId: p.partidoSiguienteId,
-          partidoPerdedorSiguienteId: p.partidoPerdedorSiguienteId,
-          posicionEnSiguiente: p.posicionEnSiguiente,
-          posicionEnPerdedor: p.posicionEnPerdedor,
-        })),
-        inscripciones: inscripciones.map((i) => ({
-          id: i.id,
-          jugador1: i.jugador1,
-          jugador2: i.jugador2,
-        })),
-      };
+      // Crear mapa de inscripciones para lookup
+      const inscripcionesMap = new Map(
+        inscripciones.map((i) => [
+          i.id,
+          {
+            id: i.id,
+            jugador1: i.jugador1,
+            jugador2: i.jugador2,
+          },
+        ]),
+      );
 
-      const fixtureVersion = await this.prisma.fixtureVersion.create({
-        data: {
-          tournamentId: categoria.tournamentId,
-          categoryId: categoria.categoryId,
-          definicion: definicion as any,
-          totalPartidos: partidos.length,
-          estado: 'BORRADOR',
-        },
-      });
+      // Preparar respuesta con datos completos
+      const partidosConDetalle = partidos.map((p) => ({
+        id: p.id,
+        fase: p.fase,
+        orden: p.orden,
+        esBye: p.esBye,
+        tipoEntrada1: p.tipoEntrada1,
+        tipoEntrada2: p.tipoEntrada2,
+      }));
 
-      // 6. Crear los partidos (matches)
-      for (const partido of partidos) {
-        await this.prisma.match.create({
+      let fixtureVersionId: string | undefined;
+
+      // Guardar si se solicita
+      if (body?.guardar) {
+        // Archivar versión anterior si existe
+        if (categoria.fixtureVersionId) {
+          await this.prisma.fixtureVersion.update({
+            where: { id: categoria.fixtureVersionId },
+            data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+          });
+        }
+
+        fixtureVersionId = await this.bracketService.guardarBracket(
+          tournamentCategoryId,
+          config,
+          partidos,
+          inscripciones,
+        );
+
+        // Actualizar categoría
+        await this.prisma.tournamentCategory.update({
+          where: { id: tournamentCategoryId },
           data: {
-            tournamentId: categoria.tournamentId,
-            categoryId: categoria.categoryId,
-            fixtureVersionId: fixtureVersion.id,
-            ronda: partido.fase,
-            numeroRonda: partido.orden,
-            esBye: partido.esBye,
-            tipoEntrada1: partido.tipoEntrada1,
-            tipoEntrada2: partido.tipoEntrada2,
-            partidoOrigen1Id: partido.partidoOrigen1Id,
-            partidoOrigen2Id: partido.partidoOrigen2Id,
-            partidoSiguienteId: partido.partidoSiguienteId,
-            partidoPerdedorSiguienteId: partido.partidoPerdedorSiguienteId,
-            posicionEnSiguiente: partido.posicionEnSiguiente,
-            posicionEnPerdedor: partido.posicionEnPerdedor,
-            estado: 'PROGRAMADO',
+            estado: 'FIXTURE_BORRADOR',
+            fixtureVersionId,
           },
         });
       }
 
-      // 7. Actualizar estado de la categoría
-      await this.prisma.tournamentCategory.update({
-        where: { id: tournamentCategoryId },
-        data: {
-          estado: 'FIXTURE_BORRADOR',
-          fixtureVersionId: fixtureVersion.id,
-        },
-      });
-
       return {
         success: true,
-        message: 'Bracket generado exitosamente',
-        fixtureVersionId: fixtureVersion.id,
+        message: body?.guardar
+          ? 'Sorteo guardado exitosamente'
+          : 'Sorteo realizado (preview)',
+        fixtureVersionId,
         config,
+        ordenSorteo: ordenSorteo.map((id) => inscripcionesMap.get(id)),
+        partidos: partidosConDetalle,
         totalPartidos: partidos.length,
       };
     } catch (error: any) {
-      console.error('[generarBracket] Error:', error);
+      console.error('[sortearBracket] Error:', error);
       throw new BadRequestException({
         success: false,
-        message: error.message || 'Error generando bracket',
+        message: error.message || 'Error realizando sorteo',
       });
     }
+  }
+
+  /**
+   * POST /admin/categorias/:id/bracket/generar
+   * Genera bracket para una categoría (alias de sortear con guardar=true)
+   */
+  @Post('categorias/:id/bracket/generar')
+  async generarBracket(@Param('id') tournamentCategoryId: string) {
+    return this.sortearBracket(tournamentCategoryId, { guardar: true });
   }
 
   /**
@@ -328,20 +401,27 @@ export class AdminBracketController {
           },
         },
         orderBy: [
-          { ronda: 'asc' },
           { numeroRonda: 'asc' },
         ],
       });
 
+      // Obtener información del fixture para la definición
+      const fixtureVersion = await this.prisma.fixtureVersion.findUnique({
+        where: { id: fixtureVersionId },
+        select: { definicion: true, estado: true },
+      });
+
       return {
         success: true,
+        fixtureEstado: fixtureVersion?.estado,
+        definicion: fixtureVersion?.definicion,
         partidos: partidos.map((p) => ({
           id: p.id,
           fase: p.ronda,
           orden: p.numeroRonda,
           esBye: p.esBye,
-          inscripcion1: p.inscripcion1,
-          inscripcion2: p.inscripcion2,
+          pareja1: p.inscripcion1,
+          pareja2: p.inscripcion2,
           ganador: p.inscripcionGanadora,
           resultado:
             p.set1Pareja1 !== null
@@ -378,7 +458,33 @@ export class AdminBracketController {
   @Post('bracket/:fixtureVersionId/publicar')
   async publicarBracket(@Param('fixtureVersionId') fixtureVersionId: string) {
     try {
-      // Actualizar fixture
+      // Verificar que existe el fixture
+      const fixture = await this.prisma.fixtureVersion.findUnique({
+        where: { id: fixtureVersionId },
+        select: { tournamentId: true, categoryId: true, estado: true },
+      });
+
+      if (!fixture) {
+        throw new NotFoundException('Fixture no encontrado');
+      }
+
+      if (fixture.estado !== 'BORRADOR') {
+        throw new BadRequestException(
+          `No se puede publicar un fixture en estado ${fixture.estado}`,
+        );
+      }
+
+      // Archivar versiones anteriores publicadas
+      await this.prisma.fixtureVersion.updateMany({
+        where: {
+          tournamentId: fixture.tournamentId,
+          categoryId: fixture.categoryId,
+          estado: 'PUBLICADO',
+        },
+        data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+      });
+
+      // Publicar nueva versión
       await this.prisma.fixtureVersion.update({
         where: { id: fixtureVersionId },
         data: {
@@ -388,31 +494,84 @@ export class AdminBracketController {
       });
 
       // Actualizar categoría
-      const fixture = await this.prisma.fixtureVersion.findUnique({
-        where: { id: fixtureVersionId },
-        select: { tournamentId: true, categoryId: true },
+      await this.prisma.tournamentCategory.updateMany({
+        where: {
+          tournamentId: fixture.tournamentId,
+          categoryId: fixture.categoryId,
+        },
+        data: {
+          estado: 'SORTEO_REALIZADO',
+        },
       });
-
-      if (fixture) {
-        await this.prisma.tournamentCategory.updateMany({
-          where: {
-            tournamentId: fixture.tournamentId,
-            categoryId: fixture.categoryId,
-          },
-          data: {
-            estado: 'SORTEO_REALIZADO',
-          },
-        });
-      }
 
       return {
         success: true,
         message: 'Bracket publicado exitosamente',
       };
     } catch (error: any) {
+      console.error('[publicarBracket] Error:', error);
       throw new BadRequestException({
         success: false,
-        message: 'Error publicando bracket',
+        message: error.message || 'Error publicando bracket',
+      });
+    }
+  }
+
+  /**
+   * POST /admin/bracket/:fixtureVersionId/sortear-nuevo
+   * Realiza un nuevo sorteo y reemplaza el borrador actual
+   */
+  @Post('bracket/:fixtureVersionId/sortear-nuevo')
+  async reSortearBracket(@Param('fixtureVersionId') fixtureVersionId: string) {
+    try {
+      const fixture = await this.prisma.fixtureVersion.findUnique({
+        where: { id: fixtureVersionId },
+        select: {
+          tournamentId: true,
+          categoryId: true,
+          estado: true,
+        },
+      });
+
+      if (!fixture) {
+        throw new NotFoundException('Fixture no encontrado');
+      }
+
+      if (fixture.estado === 'PUBLICADO') {
+        throw new BadRequestException(
+          'No se puede re-sortear un bracket ya publicado',
+        );
+      }
+
+      // Encontrar la categoría
+      const categoria = await this.prisma.tournamentCategory.findFirst({
+        where: {
+          tournamentId: fixture.tournamentId,
+          categoryId: fixture.categoryId,
+        },
+      });
+
+      if (!categoria) {
+        throw new NotFoundException('Categoría no encontrada');
+      }
+
+      // Eliminar los partidos actuales
+      await this.prisma.match.deleteMany({
+        where: { fixtureVersionId },
+      });
+
+      // Eliminar el fixture
+      await this.prisma.fixtureVersion.delete({
+        where: { id: fixtureVersionId },
+      });
+
+      // Generar nuevo sorteo
+      return this.sortearBracket(categoria.id, { guardar: true });
+    } catch (error: any) {
+      console.error('[reSortearBracket] Error:', error);
+      throw new BadRequestException({
+        success: false,
+        message: error.message || 'Error re-sorteando bracket',
       });
     }
   }

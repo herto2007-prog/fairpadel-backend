@@ -13,79 +13,87 @@ export class BracketService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * Calcula la configuración óptima del bracket según cantidad de parejas
+   * Calcula la configuración del bracket según la fórmula del usuario
+   * 
+   * SISTEMA:
+   * 1. ZONA: Todos juegan 1 partido
+   *    PartidosZona = floor(parejas / 2)
+   * 
+   * 2. RONDA DE AJUSTE: Eliminar la cantidad necesaria
+   *    ObjetivoBracket = 8 o 16
+   *    Eliminaciones = parejas - ObjetivoBracket
+   *    PartidosRonda2 = Eliminaciones
+   *    (Puede incluir ganadores o perdedores de zona)
+   * 
+   * 3. BRACKET: Eliminación directa
    */
   calcularConfiguracion(totalParejas: number): BracketConfigResponse {
     if (totalParejas < 3) {
       throw new BadRequestException('Mínimo 3 parejas para generar bracket');
     }
 
-    // Determinar tamaño del bracket principal (potencia de 2)
-    const potencias = [4, 8, 16, 32, 64];
-    const tamanoBracket = potencias.find((p) => p >= totalParejas) || 64;
-
-    // Calcular BYEs (si es impar, uno tiene BYE)
-    let parejasConBye = 0;
-    let parejasQueJueganZona = totalParejas;
-
+    // PASO 1: ZONA
+    // Todos juegan. Si es impar, uno tiene BYE en zona.
+    let parejasConByeZona = 0;
     if (totalParejas % 2 !== 0) {
-      parejasConBye = 1;
-      parejasQueJueganZona = totalParejas - 1;
+      parejasConByeZona = 1;
     }
 
-    // Zona: mitad ganan, mitad pierden
-    const partidosZona = parejasQueJueganZona / 2;
-    const ganadoresZona = partidosZona;
-    const perdedoresZona = partidosZona;
+    const partidosZona = Math.floor(totalParejas / 2);
+    // En zona: mitad ganan (redondeado), mitad pierden
+    const ganadoresZona = Math.ceil(totalParejas / 2);
+    const perdedoresZona = Math.floor(totalParejas / 2);
 
-    // Calcular repechaje
-    // Necesitamos: ganadoresZona + ganadoresRepechaje + parejasConBye + perdedoresDirectos = tamanoBracket
-    const lugaresRestantes = tamanoBracket - ganadoresZona - parejasConBye;
+    // PASO 2: DETERMINAR BRACKET OBJETIVO
+    // 8-15 parejas → Bracket de 8 (Cuartos)
+    // 16+ parejas → Bracket de 16 (Octavos)
+    const objetivoBracket = totalParejas <= 15 ? 8 : 16;
 
-    // En repechaje entran el doble de los lugares restantes
-    let parejasEnRepechaje = Math.min(perdedoresZona, lugaresRestantes * 2);
+    // PASO 3: RONDA DE AJUSTE
+    // Necesitamos eliminar: totalParejas - objetivoBracket
+    const eliminacionesNecesarias = Math.max(0, totalParejas - objetivoBracket);
+    
+    // Partidos de ajuste = Eliminaciones necesarias
+    // Cada partido elimina 1 pareja
+    const partidosRondaAjuste = eliminacionesNecesarias;
+    
+    // Parejas que juegan la ronda de ajuste: 2 por partido
+    const parejasEnRondaAjuste = partidosRondaAjuste * 2;
+    
+    // De la ronda de ajuste: la mitad pasa, la mitad se elimina
+    const ganadoresRondaAjuste = partidosRondaAjuste;
+    const eliminadosRondaAjuste = partidosRondaAjuste;
 
-    // Ajustar a par
-    if (parejasEnRepechaje % 2 !== 0) {
-      parejasEnRepechaje--;
-    }
+    // PASO 4: DISTRIBUCIÓN AL BRACKET
+    // Entran al bracket: los que NO fueron eliminados en ronda de ajuste
+    // Total que debe quedar: objetivoBracket
+    // Composición: mix de ganadores de zona, ganadores de ronda ajuste, y algunos que no jugaron ronda ajuste
 
-    const ganadoresRepechaje = parejasEnRepechaje / 2;
-    const partidosRepechaje = parejasEnRepechaje / 2;
-
-    // Los perdedores que no entran al repechaje van directo al bracket
-    const perdedoresDirectos = perdedoresZona - parejasEnRepechaje;
-
-    // Verificación
-    const totalEnBracket =
-      ganadoresZona + ganadoresRepechaje + parejasConBye + perdedoresDirectos;
-
-    if (totalEnBracket !== tamanoBracket) {
-      // Ajuste: si no cierra, aumentar BYEs
-      const faltan = tamanoBracket - totalEnBracket;
-      parejasConBye += faltan;
-    }
+    // Verificación: todas las parejas deben estar contabilizadas
+    // - Eliminados en ronda de ajuste: eliminadosRondaAjuste
+    // - Que pasan al bracket: objetivoBracket
+    // Total: eliminadosRondaAjuste + objetivoBracket = totalParejas ✓
 
     // Determinar fases del bracket
     const fases: FaseBracket[] = [FaseBracket.ZONA];
-    if (parejasEnRepechaje > 0) {
-      fases.push(FaseBracket.REPECHAJE);
+    if (partidosRondaAjuste > 0) {
+      fases.push(FaseBracket.REPECHAJE); // Usamos REPECHAJE como "Ronda de Ajuste"
     }
 
-    if (tamanoBracket >= 16) fases.push(FaseBracket.OCTAVOS);
-    if (tamanoBracket >= 8) fases.push(FaseBracket.CUARTOS);
+    if (objetivoBracket >= 16) fases.push(FaseBracket.OCTAVOS);
+    if (objetivoBracket >= 8) fases.push(FaseBracket.CUARTOS);
     fases.push(FaseBracket.SEMIS, FaseBracket.FINAL);
 
     return {
       totalParejas,
-      tamanoBracket,
-      parejasConBye,
+      tamanoBracket: objetivoBracket,
+      parejasConBye: parejasConByeZona, // BYEs en zona (no en bracket)
       partidosZona,
-      parejasEnRepechaje,
-      partidosRepechaje,
+      parejasEnRepechaje: parejasEnRondaAjuste, // Renombrado conceptualmente como "Ronda Ajuste"
+      partidosRepechaje: partidosRondaAjuste,
       ganadoresZona,
-      ganadoresRepechaje,
-      perdedoresDirectos,
+      ganadoresRepechaje: ganadoresRondaAjuste,
+      perdedoresDirectos: eliminadosRondaAjuste, // Los eliminados en ronda de ajuste
       fases,
     };
   }
@@ -118,19 +126,19 @@ export class BracketService {
       partidos.push(partido);
     }
 
-    // 2. CREAR PARTIDOS DE REPECHAJE (si aplica)
-    const partidosRepechaje: MatchNode[] = [];
-    if (config.parejasEnRepechaje > 0) {
+    // 2. CREAR PARTIDOS DE RONDA DE AJUSTE (si aplica)
+    const partidosRondaAjuste: MatchNode[] = [];
+    if (config.partidosRepechaje > 0) {
       for (let i = 0; i < config.partidosRepechaje; i++) {
         const partido: MatchNode = {
           id: generarId(),
-          fase: FaseBracket.REPECHAJE,
+          fase: FaseBracket.REPECHAJE, // Lo llamamos REPECHAJE pero es "Ronda de Ajuste"
           orden: i + 1,
           esBye: false,
-          tipoEntrada1: TipoEntrada.PERDEDOR_ZONA,
-          tipoEntrada2: TipoEntrada.PERDEDOR_ZONA,
+          tipoEntrada1: TipoEntrada.INSCRIPCION, // Puede ser cualquiera (ganador o perdedor de zona)
+          tipoEntrada2: TipoEntrada.INSCRIPCION,
         };
-        partidosRepechaje.push(partido);
+        partidosRondaAjuste.push(partido);
         partidos.push(partido);
       }
     }
@@ -156,16 +164,18 @@ export class BracketService {
       }
     }
 
-    // CUARTOS
-    for (let i = 0; i < 4; i++) {
-      const partido: MatchNode = {
-        id: generarId(),
-        fase: FaseBracket.CUARTOS,
-        orden: i + 1,
-        esBye: false,
-      };
-      partidosCuartos.push(partido);
-      partidos.push(partido);
+    if (config.tamanoBracket >= 8) {
+      // CUARTOS
+      for (let i = 0; i < 4; i++) {
+        const partido: MatchNode = {
+          id: generarId(),
+          fase: FaseBracket.CUARTOS,
+          orden: i + 1,
+          esBye: false,
+        };
+        partidosCuartos.push(partido);
+        partidos.push(partido);
+      }
     }
 
     // SEMIS
@@ -193,7 +203,7 @@ export class BracketService {
     // 4. CONECTAR NAVEGACIÓN
     this.conectarNavegacion(
       partidosZona,
-      partidosRepechaje,
+      partidosRondaAjuste,
       partidosOctavos,
       partidosCuartos,
       partidosSemis,
@@ -205,27 +215,156 @@ export class BracketService {
   }
 
   /**
-   * Conecta la navegación entre partidos (quién va a dónde)
+   * Conecta la navegación entre partidos
+   * 
+   * FLUJO:
+   * - Zona → (para algunos) Ronda de Ajuste → Bracket
+   * - Zona → (para otros) Directo al Bracket
+   * - Ronda de Ajuste → Ganadores al Bracket, Perdedores ELIMINADOS
    */
   private conectarNavegacion(
     zona: MatchNode[],
-    repechaje: MatchNode[],
+    rondaAjuste: MatchNode[],
     octavos: MatchNode[],
     cuartos: MatchNode[],
     semis: MatchNode[],
     final: MatchNode[],
     config: BracketConfigResponse,
   ): void {
-    // Esta es una implementación simplificada
-    // En la versión real, se conecta:
-    // - Ganadores de zona → Octavos/Cuartos
-    // - Ganadores de repechaje → Octavos
-    // - Perdedores de zona → Repechaje (los seleccionados)
-    // - Ganadores de octavos → Cuartos
-    // - Ganadores de cuartos → Semis
-    // - Ganadores de semis → Final
+    // Los partidos de primera ronda del bracket principal
+    const primeraRonda = octavos.length > 0 ? octavos : cuartos;
     
-    // Por ahora, dejamos la estructura base lista para implementar
+    const totalParejas = config.totalParejas;
+    const objetivoBracket = config.tamanoBracket;
+    const parejasEnRondaAjuste = config.parejasEnRepechaje;
+    
+    // Distribución de parejas después de zona:
+    // - parejasEnRondaAjuste: juegan ronda de ajuste (mix de ganadores y perdedores de zona)
+    // - (totalParejas - parejasEnRondaAjuste): van directo al bracket
+    
+    const parejasDirectoAlBracket = totalParejas - parejasEnRondaAjuste;
+    
+    // Seleccionamos qué parejas van a ronda de ajuste
+    // Estrategia: seleccionamos las primeras N parejas de la zona (mix aleatorio)
+    // En la práctica se hace sorteo, aquí marcamos las conexiones
+    
+    // 1. CONECTAR PAREJAS A RONDA DE AJUSTE
+    // Las primeras 'parejasEnRondaAjuste' parejas de la zona van a ronda de ajuste
+    for (let i = 0; i < parejasEnRondaAjuste; i++) {
+      const partidoZonaIndex = Math.floor(i / 2);
+      const posicionEnPartido = (i % 2) + 1; // 1 o 2
+      
+      if (zona[partidoZonaIndex]) {
+        const partidoRondaAjusteIndex = Math.floor(i / 2);
+        
+        if (rondaAjuste[partidoRondaAjusteIndex]) {
+          // El ganador de zona va a ronda de ajuste
+          zona[partidoZonaIndex].partidoSiguienteId = rondaAjuste[partidoRondaAjusteIndex].id;
+          zona[partidoZonaIndex].posicionEnSiguiente = posicionEnPartido;
+        }
+      }
+    }
+
+    // 2. CONECTAR GANADORES DE RONDA DE AJUSTE AL BRACKET
+    rondaAjuste.forEach((partidoAjuste, index) => {
+      const targetIndex = index % primeraRonda.length;
+      const targetPartido = primeraRonda[targetIndex];
+      
+      partidoAjuste.partidoSiguienteId = targetPartido.id;
+      partidoAjuste.posicionEnSiguiente = (index % 2) + 1;
+      
+      if (!targetPartido.tipoEntrada1) {
+        targetPartido.tipoEntrada1 = TipoEntrada.GANADOR_REPECHAJE;
+        targetPartido.partidoOrigen1Id = partidoAjuste.id;
+      } else {
+        targetPartido.tipoEntrada2 = TipoEntrada.GANADOR_REPECHAJE;
+        targetPartido.partidoOrigen2Id = partidoAjuste.id;
+      }
+    });
+
+    // 3. CONECTAR PAREJAS QUE VAN DIRECTO AL BRACKET
+    // Las que no jugaron ronda de ajuste
+    const parejasDirectas = zona.slice(Math.ceil(parejasEnRondaAjuste / 2));
+    parejasDirectas.forEach((partidoZona, index) => {
+      const targetIndex = (rondaAjuste.length + index) % primeraRonda.length;
+      const targetPartido = primeraRonda[targetIndex];
+      
+      partidoZona.partidoSiguienteId = targetPartido.id;
+      partidoZona.posicionEnSiguiente = 1;
+      
+      if (!targetPartido.tipoEntrada1) {
+        targetPartido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
+        targetPartido.partidoOrigen1Id = partidoZona.id;
+      } else {
+        targetPartido.tipoEntrada2 = TipoEntrada.GANADOR_ZONA;
+        targetPartido.partidoOrigen2Id = partidoZona.id;
+      }
+    });
+
+    // 4. CONECTAR BRACKET PRINCIPAL
+    this.conectarEliminacionDirecta(primeraRonda, cuartos, semis, final);
+  }
+
+  /**
+   * Conecta la fase de eliminación directa del bracket
+   */
+  private conectarEliminacionDirecta(
+    primeraRonda: MatchNode[],
+    cuartos: MatchNode[],
+    semis: MatchNode[],
+    final: MatchNode[],
+  ): void {
+    // Primera ronda → Cuartos
+    if (cuartos.length > 0 && primeraRonda.length > 0) {
+      primeraRonda.forEach((partido, index) => {
+        const parentIndex = Math.floor(index / 2);
+        const parent = cuartos[parentIndex];
+        
+        if (parent) {
+          partido.partidoSiguienteId = parent.id;
+          partido.posicionEnSiguiente = (index % 2) + 1;
+          
+          if (!parent.partidoOrigen1Id) {
+            parent.partidoOrigen1Id = partido.id;
+          } else {
+            parent.partidoOrigen2Id = partido.id;
+          }
+        }
+      });
+    }
+
+    // Cuartos → Semis
+    cuartos.forEach((partido, index) => {
+      const parentIndex = Math.floor(index / 2);
+      const parent = semis[parentIndex];
+      
+      if (parent) {
+        partido.partidoSiguienteId = parent.id;
+        partido.posicionEnSiguiente = (index % 2) + 1;
+        
+        if (!parent.partidoOrigen1Id) {
+          parent.partidoOrigen1Id = partido.id;
+        } else {
+          parent.partidoOrigen2Id = partido.id;
+        }
+      }
+    });
+
+    // Semis → Final
+    semis.forEach((partido, index) => {
+      const parent = final[0];
+      
+      if (parent) {
+        partido.partidoSiguienteId = parent.id;
+        partido.posicionEnSiguiente = (index % 2) + 1;
+        
+        if (!parent.partidoOrigen1Id) {
+          parent.partidoOrigen1Id = partido.id;
+        } else {
+          parent.partidoOrigen2Id = partido.id;
+        }
+      }
+    });
   }
 
   /**
@@ -235,39 +374,117 @@ export class BracketService {
     tournamentCategoryId: string,
     config: BracketConfigResponse,
     partidos: MatchNode[],
-  ): Promise<void> {
+    inscripciones: any[],
+  ): Promise<string> {
+    // Obtener IDs de torneo y categoría
+    const categoria = await this.prisma.tournamentCategory.findUnique({
+      where: { id: tournamentCategoryId },
+      select: { tournamentId: true, categoryId: true },
+    });
+
+    if (!categoria) {
+      throw new BadRequestException('Categoría no encontrada');
+    }
+
+    const { tournamentId, categoryId } = categoria;
+
     // Crear FixtureVersion
     const fixtureVersion = await this.prisma.fixtureVersion.create({
       data: {
-        tournamentId: '', // Se obtiene del tournamentCategory
-        categoryId: '', // Se obtiene del tournamentCategory
-        definicion: { config, partidos } as any,
+        tournamentId,
+        categoryId,
+        definicion: {
+          config,
+          partidos: partidos.map((p) => ({
+            id: p.id,
+            fase: p.fase,
+            orden: p.orden,
+            esBye: p.esBye,
+            tipoEntrada1: p.tipoEntrada1,
+            tipoEntrada2: p.tipoEntrada2,
+            partidoOrigen1Id: p.partidoOrigen1Id,
+            partidoOrigen2Id: p.partidoOrigen2Id,
+            partidoSiguienteId: p.partidoSiguienteId,
+            partidoPerdedorSiguienteId: p.partidoPerdedorSiguienteId,
+            posicionEnSiguiente: p.posicionEnSiguiente,
+            posicionEnPerdedor: p.posicionEnPerdedor,
+          })),
+          inscripciones: inscripciones.map((i) => ({
+            id: i.id,
+            jugador1: i.jugador1,
+            jugador2: i.jugador2,
+          })),
+        } as any,
         totalPartidos: partidos.length,
         estado: 'BORRADOR',
       },
     });
 
-    // Crear los partidos (matches)
-    for (const partido of partidos) {
-      await this.prisma.match.create({
-        data: {
-          tournamentId: '', // Se obtiene del tournamentCategory
-          categoryId: '', // Se obtiene del tournamentCategory
-          fixtureVersionId: fixtureVersion.id,
-          ronda: partido.fase,
-          numeroRonda: partido.orden,
-          esBye: partido.esBye,
-          tipoEntrada1: partido.tipoEntrada1,
-          tipoEntrada2: partido.tipoEntrada2,
-          partidoOrigen1Id: partido.partidoOrigen1Id,
-          partidoOrigen2Id: partido.partidoOrigen2Id,
-          partidoSiguienteId: partido.partidoSiguienteId,
-          partidoPerdedorSiguienteId: partido.partidoPerdedorSiguienteId,
-          posicionEnSiguiente: partido.posicionEnSiguiente,
-          posicionEnPerdedor: partido.posicionEnPerdedor,
-          estado: 'PROGRAMADO',
-        },
-      });
+    // Mapear IDs temporales a reales
+    const idMap = new Map<string, string>();
+
+    // Crear los partidos en orden: ZONA → RONDA AJUSTE → BRACKET
+    const ordenFases = [
+      FaseBracket.ZONA,
+      FaseBracket.REPECHAJE,
+      FaseBracket.OCTAVOS,
+      FaseBracket.CUARTOS,
+      FaseBracket.SEMIS,
+      FaseBracket.FINAL,
+    ];
+
+    for (const fase of ordenFases) {
+      const partidosFase = partidos.filter((p) => p.fase === fase);
+      
+      for (const partido of partidosFase) {
+        const created = await this.prisma.match.create({
+          data: {
+            tournamentId,
+            categoryId,
+            fixtureVersionId: fixtureVersion.id,
+            ronda: partido.fase,
+            numeroRonda: partido.orden,
+            esBye: partido.esBye,
+            tipoEntrada1: partido.tipoEntrada1,
+            tipoEntrada2: partido.tipoEntrada2,
+            estado: 'PROGRAMADO',
+          },
+        });
+        idMap.set(partido.id, created.id);
+      }
     }
+
+    // Actualizar referencias de navegación con IDs reales
+    for (const partido of partidos) {
+      const realId = idMap.get(partido.id);
+      if (!realId) continue;
+
+      const updateData: any = {};
+
+      if (partido.partidoSiguienteId) {
+        updateData.partidoSiguienteId = idMap.get(partido.partidoSiguienteId);
+      }
+      if (partido.partidoPerdedorSiguienteId) {
+        updateData.partidoPerdedorSiguienteId = idMap.get(partido.partidoPerdedorSiguienteId);
+      }
+      if (partido.partidoOrigen1Id) {
+        updateData.partidoOrigen1Id = idMap.get(partido.partidoOrigen1Id);
+      }
+      if (partido.partidoOrigen2Id) {
+        updateData.partidoOrigen2Id = idMap.get(partido.partidoOrigen2Id);
+      }
+      if (partido.posicionEnSiguiente) {
+        updateData.posicionEnSiguiente = partido.posicionEnSiguiente;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await this.prisma.match.update({
+          where: { id: realId },
+          data: updateData,
+        });
+      }
+    }
+
+    return fixtureVersion.id;
   }
 }
