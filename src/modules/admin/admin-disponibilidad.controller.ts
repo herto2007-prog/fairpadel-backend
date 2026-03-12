@@ -8,12 +8,10 @@ import {
   Body,
   Query,
   UseGuards,
-  UsePipes,
-  ValidationPipe,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, IsArray, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, Min, Max } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -46,8 +44,6 @@ class ConfigurarDiaDto {
   @Max(180)
   minutosSlot: number = 90;
 }
-
-import { GenerarSlotsDto } from './dto/generar-slots.dto';
 
 class GetSlotsPorSemanaDto {
   @IsDateString()
@@ -546,13 +542,15 @@ export class AdminDisponibilidadController {
    * Body opcional: { canchaIds: string[] } - solo genera slots para esas canchas
    */
   @Post('dias/:diaId/generar-slots')
-  @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false }))
   async generarSlots(
     @Param('id') tournamentId: string, 
     @Param('diaId') diaId: string,
-    @Body() dto: GenerarSlotsDto,
+    @Body() body: any,
   ) {
     try {
+      // Extraer canchaIds del body (si existe)
+      const canchaIds = body?.canchaIds;
+
       // Validar que el día existe y pertenece al torneo
       const dia = await this.prisma.torneoDisponibilidadDia.findFirst({
         where: { id: diaId, tournamentId },
@@ -565,42 +563,11 @@ export class AdminDisponibilidadController {
       // Construir filtro de canchas
       const canchaFilter: any = { tournamentId, activa: true };
       
-      // Si se proporcionan canchaIds, filtrar por ellas
-      // Nota: Array vacío [] es válido pero no encontrará canchas (intencional para validación)
-      if (dto.canchaIds !== undefined && dto.canchaIds !== null) {
-        if (dto.canchaIds.length === 0) {
-          // Array vacío explícito: no generar slots (el usuario no quiere canchas para este día)
-          return {
-            success: true,
-            message: 'No se generaron slots (array de canchas vacío)',
-            totalSlots: 0,
-            canchasUsadas: 0,
-          };
-        }
-
-        // Verificar que todas las canchas existen y pertenecen al torneo
-        const canchasExistentes = await this.prisma.torneoCancha.findMany({
-          where: {
-            id: { in: dto.canchaIds },
-            tournamentId,
-            activa: true,
-          },
-          select: { id: true },
-        });
-
-        const idsExistentes = canchasExistentes.map(c => c.id);
-        const idsInvalidos = dto.canchaIds.filter(id => !idsExistentes.includes(id));
-        
-        if (idsInvalidos.length > 0) {
-          throw new BadRequestException({
-            success: false,
-            message: `Algunas canchas no existen o no pertenecen a este torneo: ${idsInvalidos.join(', ')}`,
-          });
-        }
-
-        canchaFilter.id = { in: idsExistentes };
+      // Si se proporcionan canchaIds válidos, filtrar por ellas
+      if (Array.isArray(canchaIds) && canchaIds.length > 0) {
+        canchaFilter.id = { in: canchaIds };
       }
-      // Si canchaIds es undefined/null: usar todas las canchas activas del torneo (comportamiento por defecto)
+      // Si canchaIds es undefined, null, o []: usar todas las canchas activas del torneo
 
       const canchas = await this.prisma.torneoCancha.findMany({
         where: canchaFilter,
