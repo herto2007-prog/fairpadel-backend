@@ -547,14 +547,18 @@ export class AdminDisponibilidadController {
     @Param('diaId') diaId: string,
     @Body() body: any,
   ) {
+    console.log('[generarSlots] Request received:', { tournamentId, diaId, body });
+    
     try {
       // Extraer canchaIds del body (si existe)
       const canchaIds = body?.canchaIds;
+      console.log('[generarSlots] canchaIds:', canchaIds);
 
       // Validar que el día existe y pertenece al torneo
       const dia = await this.prisma.torneoDisponibilidadDia.findFirst({
         where: { id: diaId, tournamentId },
       });
+      console.log('[generarSlots] dia found:', dia);
       
       if (!dia) {
         throw new NotFoundException('Día no encontrado o no pertenece a este torneo');
@@ -567,11 +571,12 @@ export class AdminDisponibilidadController {
       if (Array.isArray(canchaIds) && canchaIds.length > 0) {
         canchaFilter.id = { in: canchaIds };
       }
-      // Si canchaIds es undefined, null, o []: usar todas las canchas activas del torneo
+      console.log('[generarSlots] canchaFilter:', canchaFilter);
 
       const canchas = await this.prisma.torneoCancha.findMany({
         where: canchaFilter,
       });
+      console.log('[generarSlots] canchas found:', canchas.length);
 
       if (canchas.length === 0) {
         return {
@@ -584,8 +589,10 @@ export class AdminDisponibilidadController {
 
       // Para cada cancha, generar slots según horario
       for (const cancha of canchas) {
+        console.log('[generarSlots] Processing cancha:', cancha.id);
         let horaActual = this.parseHora(dia.horaInicio);
         const horaFin = this.parseHora(dia.horaFin);
+        console.log('[generarSlots] horaInicio:', dia.horaInicio, '->', horaActual, 'horaFin:', dia.horaFin, '->', horaFin, 'minutosSlot:', dia.minutosSlot);
 
         while (horaActual < horaFin) {
           const horaInicioStr = this.formatHora(horaActual);
@@ -594,23 +601,30 @@ export class AdminDisponibilidadController {
           if (horaFinSlot > horaFin) break;
 
           const horaFinStr = this.formatHora(horaFinSlot);
+          console.log('[generarSlots] Creating slot:', { disponibilidadId: diaId, torneoCanchaId: cancha.id, horaInicio: horaInicioStr, horaFin: horaFinStr });
 
-          // Crear slot
-          const slot = await this.prisma.torneoSlot.create({
-            data: {
-              disponibilidadId: diaId,
-              torneoCanchaId: cancha.id,
-              horaInicio: horaInicioStr,
-              horaFin: horaFinStr,
-              estado: 'LIBRE',
-            },
-          });
-
-          slotsCreados.push(slot);
+          try {
+            // Crear slot
+            const slot = await this.prisma.torneoSlot.create({
+              data: {
+                disponibilidadId: diaId,
+                torneoCanchaId: cancha.id,
+                horaInicio: horaInicioStr,
+                horaFin: horaFinStr,
+                estado: 'LIBRE',
+              },
+            });
+            slotsCreados.push(slot);
+          } catch (createError: any) {
+            console.error('[generarSlots] Error creating slot:', createError);
+            throw createError;
+          }
+          
           horaActual = horaFinSlot;
         }
       }
 
+      console.log('[generarSlots] Success:', slotsCreados.length, 'slots created');
       return {
         success: true,
         message: `${slotsCreados.length} slots generados`,
@@ -618,10 +632,13 @@ export class AdminDisponibilidadController {
         canchasUsadas: canchas.length,
       };
     } catch (error: any) {
+      console.error('[generarSlots] Error:', error);
       throw new BadRequestException({
         success: false,
         message: 'Error generando slots',
         error: error.message,
+        code: error.code,
+        meta: error.meta,
       });
     }
   }
