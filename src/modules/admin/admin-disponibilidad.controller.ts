@@ -550,26 +550,27 @@ export class AdminDisponibilidadController {
   /**
    * POST /admin/torneos/:id/disponibilidad/dias/:diaId/generar-slots
    * Generar los slots para un día específico
-   * Si se proporcionan canchaIds, solo genera slots para esas canchas
+   * Body opcional: { canchaIds: string[] } - solo genera slots para esas canchas
    */
   @Post('dias/:diaId/generar-slots')
   async generarSlots(
     @Param('id') tournamentId: string, 
     @Param('diaId') diaId: string,
-    @Body() dto?: GenerarSlotsDto,
+    @Body() body: { canchaIds?: string[] } = {},
   ) {
     try {
       const dia = await this.prisma.torneoDisponibilidadDia.findFirst({
         where: { id: diaId, tournamentId },
       });
+      
       if (!dia) {
         throw new NotFoundException('Día no encontrado');
       }
 
-      // Si se proporcionan canchaIds, usar solo esas canchas
+      // Filtrar canchas: si se proporcionan IDs, usar solo esas
       const canchaFilter: any = { tournamentId, activa: true };
-      if (dto?.canchaIds && dto.canchaIds.length > 0) {
-        canchaFilter.id = { in: dto.canchaIds };
+      if (body?.canchaIds && Array.isArray(body.canchaIds) && body.canchaIds.length > 0) {
+        canchaFilter.id = { in: body.canchaIds };
       }
 
       const canchas = await this.prisma.torneoCancha.findMany({
