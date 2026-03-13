@@ -21,6 +21,7 @@ import { AppController } from './app.controller';
 import { DemoPublicModule } from './modules/demo/demo-public.module';
 import { ResultadosModule } from './modules/resultados/resultados.module';
 import { RankingsModule } from './modules/rankings/rankings.module';
+import { CircuitosModule } from './modules/circuitos/circuitos.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { RankingsModule } from './modules/rankings/rankings.module';
     DemoPublicModule, // Endpoint público para verificar estado de demo
     ResultadosModule, // Registro de resultados y marcador en vivo
     RankingsModule,   // Sistema de rankings y ascensos
+    CircuitosModule,  // Circuitos y ligas de torneos
   ],
   controllers: [AppController],
 })

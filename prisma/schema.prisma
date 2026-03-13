@@ -346,6 +346,11 @@ model User {
   historialCategorias      HistorialCategoria[]
   ascensosPendientes       AscensoPendiente[]
   
+  // NUEVO: Circuitos
+  solicitudesTorneoCircuito  TorneoCircuito[] @relation("SolicitudTorneoCircuito")
+  aprobacionesTorneoCircuito TorneoCircuito[] @relation("AprobacionTorneoCircuito")
+  clasificadosCircuito       ClasificadoCircuito[]
+  
   // NUEVO: Inscripciones directas (reemplaza Pareja)
   inscripcionesJugador1    Inscripcion[] @relation("InscripcionJugador1")
   inscripcionesJugador2    Inscripcion[] @relation("InscripcionJugador2")
@@ -672,25 +677,108 @@ model TorneoAyudante {
 }
 
 model Circuito {
-  id            String          @id @default(uuid())
-  nombre        String          @unique
-  descripcion   String?
-  pais          String          @default("Paraguay")
-  region        String?
-  ciudad        String
-  temporada     String?
-  estado        CircuitoEstado  @default(ACTIVO)
-  fechaInicio   DateTime        @map("fecha_inicio")
-  fechaFin      DateTime?       @map("fecha_fin")
-  logoUrl       String?         @map("logo_url")
-  multiplicador Float           @default(1.0)
-  puntosBase    Int             @default(100) @map("puntos_base")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
+  id                      String          @id @default(uuid())
+  nombre                  String          @unique
+  descripcion             String?         @db.Text
+  slug                    String          @unique
+  pais                    String          @default("Paraguay")
+  region                  String?
+  ciudad                  String
+  temporada               String          @default("2026")
+  estado                  CircuitoEstado  @default(ACTIVO)
+  
+  // Fechas del circuito
+  fechaInicio             DateTime        @map("fecha_inicio")
+  fechaFin                DateTime?       @map("fecha_fin")
+  fechaLimiteInscripcion  DateTime?       @map("fecha_limite_inscripcion")
+  
+  // Configuración visual
+  logoUrl                 String?         @map("logo_url")
+  bannerUrl               String?         @map("banner_url")
+  colorPrimario           String?         @default("#df2531") @map("color_primario")
+  
+  // Configuración del circuito
+  tipoAcumulacion         String          @default("ACUMULATIVO") @map("tipo_acumulacion") // ACUMULATIVO, MEJORES_N
+  torneosMinimosContar    Int?            @map("torneos_minimos_contar") // Si es MEJORES_N
+  torneosParaClasificar   Int             @default(1) @map("torneos_para_clasificar")
+  puntosMinimosClasificar Int?            @map("puntos_minimos_clasificar")
+  multiplicadorGlobal     Float           @default(1.0) @map("multiplicador_global")
+  
+  // Configuración de final
+  tieneFinal              Boolean         @default(false) @map("tiene_final")
+  torneoFinalId           String?         @map("torneo_final_id") @unique
+  
+  // Orden de visualización
+  orden                   Int             @default(0)
+  destacado               Boolean         @default(false)
+  
+  createdAt               DateTime        @default(now()) @map("created_at")
+  updatedAt               DateTime        @updatedAt @map("updated_at")
 
-  torneos       Tournament[]
+  // Relaciones
+  torneos                 TorneoCircuito[]
+  torneoFinal             Tournament?     @relation("CircuitoFinal", fields: [torneoFinalId], references: [id])
+  clasificados            ClasificadoCircuito[]
 
   @@map("circuitos")
+}
+
+// NUEVO: Relación entre Torneo y Circuito (con metadatos)
+model TorneoCircuito {
+  id                String    @id @default(uuid())
+  circuitoId        String    @map("circuito_id")
+  torneoId          String    @map("torneo_id")
+  
+  // Configuración específica de este torneo en el circuito
+  orden             Int       @default(0) // Orden en el circuito (1, 2, 3...)
+  puntosValidos     Boolean   @default(true) @map("puntos_validos") // Si cuenta para el circuito
+  esFinal           Boolean   @default(false) @map("es_final") // Si es la etapa final
+  multiplicador     Float     @default(1.0) // Multiplicador específico para este torneo
+  
+  // Estado de la solicitud
+  estado            String    @default("PENDIENTE") // PENDIENTE, APROBADO, RECHAZADO
+  solicitadoPorId   String    @map("solicitado_por_id")
+  aprobadoPorId     String?   @map("aprobado_por_id")
+  fechaAprobacion   DateTime? @map("fecha_aprobacion")
+  notas             String?   @db.Text
+  
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  
+  // Relaciones
+  circuito          Circuito  @relation(fields: [circuitoId], references: [id], onDelete: Cascade)
+  torneo            Tournament @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+  solicitadoPor     User      @relation("SolicitudTorneoCircuito", fields: [solicitadoPorId], references: [id])
+  aprobadoPor       User?     @relation("AprobacionTorneoCircuito", fields: [aprobadoPorId], references: [id])
+  
+  @@unique([circuitoId, torneoId])
+  @@map("torneo_circuitos")
+}
+
+// NUEVO: Clasificados a la final del circuito
+model ClasificadoCircuito {
+  id                  String    @id @default(uuid())
+  circuitoId          String    @map("circuito_id")
+  jugadorId           String    @map("jugador_id")
+  
+  // Datos de clasificación
+  puntosAcumulados    Int       @map("puntos_acumulados")
+  torneosJugados      Int       @default(0) @map("torneos_jugados")
+  posicionClasificacion Int     @map("posicion_clasificacion")
+  
+  // Estado
+  estado              String    @default("CLASIFICADO") // CLASIFICADO, CONFIRMADO, RECHAZADO
+  confirmadoEn        DateTime? @map("confirmado_en")
+  
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  // Relaciones
+  circuito            Circuito  @relation(fields: [circuitoId], references: [id], onDelete: Cascade)
+  jugador             User      @relation(fields: [jugadorId], references: [id], onDelete: Cascade)
+  
+  @@unique([circuitoId, jugadorId])
+  @@map("clasificados_circuito")
 }
 
 model Tournament {
@@ -712,8 +800,6 @@ model Tournament {
   mapsUrl             String?           @map("maps_url")
   // Nueva relación con Sede
   sedeId              String?           @map("sede_id")
-  // Circuito / Liga
-  circuitoId          String?           @map("circuito_id")
   minutosPorPartido   Int               @default(60) @map("minutos_por_partido")
   precioPelota        Decimal?          @map("precio_pelota") @db.Decimal(10, 2)
   habilitarBancard    Boolean           @default(false) @map("habilitar_bancard")
@@ -726,7 +812,6 @@ model Tournament {
   // Relaciones
   organizador       User                  @relation("OrganizadorTorneos", fields: [organizadorId], references: [id])
   sedePrincipal     Sede?                 @relation("SedePrincipal", fields: [sedeId], references: [id])
-  circuito          Circuito?             @relation(fields: [circuitoId], references: [id], onDelete: SetNull)
   categorias        TournamentCategory[]
   modalidades       TournamentModalidad[]
   torneoSedes       TorneoSede[]
@@ -755,6 +840,10 @@ model Tournament {
   
   // NUEVO: Multiplicador de puntos para rankings
   multiplicadorPuntos  Float        @default(1.0) @map("multiplicador_puntos")
+  
+  // NUEVO: Circuitos
+  circuitosParticipa   TorneoCircuito[]
+  esFinalDeCircuito    Circuito?      @relation("CircuitoFinal")
 
   @@map("tournaments")
 }
