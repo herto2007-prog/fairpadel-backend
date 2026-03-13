@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ResultadosService } from './resultados.service';
 import { RegistrarResultadoDto, RegistrarPuntoDto, IniciarPartidoDto, FinalizarPartidoDto } from './dto/registrar-resultado.dto';
+import { ResultadoEspecialDto } from './dto/resultado-especial.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -26,6 +27,19 @@ export class ResultadosController {
     @Body() dto: RegistrarResultadoDto,
   ) {
     return this.resultadosService.registrarResultado(matchId, dto);
+  }
+
+  /**
+   * Registra un resultado especial (retiro, descalificación, WO)
+   * POST /admin/resultados/matches/:matchId/resultado-especial
+   */
+  @Post('matches/:matchId/resultado-especial')
+  @HttpCode(HttpStatus.OK)
+  async registrarResultadoEspecial(
+    @Param('matchId') matchId: string,
+    @Body() dto: ResultadoEspecialDto,
+  ) {
+    return this.resultadosService.registrarResultadoEspecial(matchId, dto);
   }
 
   // ═══════════════════════════════════════════════════════════

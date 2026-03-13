@@ -108,7 +108,9 @@ enum MatchStatus {
   EN_JUEGO
   FINALIZADO
   SUSPENDIDO
-  WO
+  WO                 // No se presentó
+  RETIRADO           // Se retiró durante el partido (lesión)
+  DESCALIFICADO      // Fue descalificado
   CANCELADO
 }
 
@@ -1015,6 +1017,11 @@ model Match {
   partidoOrigen2Id        String?  @map("partido_origen2_id")  // De qué partido viene entrada2
   
   observaciones      String?      @db.Text
+  
+  // NUEVO: Para retiros/descalificaciones - indica qué pareja (1 o 2)
+  parejaRetirada     Int?         @map("pareja_retirada")  // 1 o 2
+  razonResultado     String?      @map("razon_resultado")   // "lesion", "descalificacion", etc.
+  
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 

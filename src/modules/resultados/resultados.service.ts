@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { FormatoSet3, MatchStatus, Prisma } from '@prisma/client';
 import { RegistrarResultadoDto, RegistrarPuntoDto, IniciarPartidoDto, FinalizarPartidoDto } from './dto/registrar-resultado.dto';
+import { ResultadoEspecialDto, TipoResultadoEspecial } from './dto/resultado-especial.dto';
 import { LiveScore, HistorialPunto, SetCompletado, VALORES_PUNTOS, GAMES_PARA_SET, PUNTOS_TIE_BREAK, PUNTOS_SUPER_TIE_BREAK } from './entities/live-score.entity';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -82,6 +83,106 @@ export class ResultadosService {
           sets: `${setsGanadosP1}-${setsGanadosP2}`,
           ganadorId,
           score: this.formatearScore(dto),
+        },
+      },
+    };
+  }
+
+  /**
+   * Registra un resultado especial (retiro, descalificación, WO)
+   * Usado cuando el partido no se completa normalmente
+   */
+  async registrarResultadoEspecial(matchId: string, dto: ResultadoEspecialDto) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        inscripcion1: true,
+        inscripcion2: true,
+      },
+    });
+
+    if (!match) {
+      throw new NotFoundException('Partido no encontrado');
+    }
+
+    // Validar que haya inscripciones
+    if (!match.esBye && (!match.inscripcion1Id || !match.inscripcion2Id)) {
+      throw new BadRequestException('El partido no tiene ambas parejas asignadas');
+    }
+
+    // Determinar ganador (la pareja que NO es la afectada)
+    const ganadorId = dto.parejaAfectada === 1 
+      ? match.inscripcion2Id 
+      : match.inscripcion1Id;
+    const perdedorId = dto.parejaAfectada === 1
+      ? match.inscripcion1Id
+      : match.inscripcion2Id;
+
+    // Determinar estado según tipo
+    let estado: MatchStatus;
+    switch (dto.tipo) {
+      case TipoResultadoEspecial.RETIRO_LESION:
+      case TipoResultadoEspecial.RETIRO_OTRO:
+        estado = MatchStatus.RETIRADO;
+        break;
+      case TipoResultadoEspecial.DESCALIFICACION:
+        estado = MatchStatus.DESCALIFICADO;
+        break;
+      case TipoResultadoEspecial.WO:
+        estado = MatchStatus.WO;
+        break;
+      default:
+        throw new BadRequestException('Tipo de resultado especial inválido');
+    }
+
+    // Actualizar partido
+    const matchActualizado = await this.prisma.match.update({
+      where: { id: matchId },
+      data: {
+        estado,
+        inscripcionGanadoraId: ganadorId,
+        inscripcionPerdedoraId: perdedorId,
+        parejaRetirada: dto.parejaAfectada,
+        razonResultado: dto.razon || dto.tipo,
+        observaciones: dto.observaciones,
+        duracionMinutos: dto.duracionMinutos,
+        horaFinReal: this.dateService.now(),
+        // En sets guardamos null para indicar que no hubo juego real
+        set1Pareja1: null,
+        set1Pareja2: null,
+        set2Pareja1: null,
+        set2Pareja2: null,
+        set3Pareja1: null,
+        set3Pareja2: null,
+      },
+      include: {
+        inscripcion1: true,
+        inscripcion2: true,
+        inscripcionGanadora: true,
+      },
+    });
+
+    // Avanzar ganador al siguiente partido si existe
+    await this.avanzarGanador(match, ganadorId);
+
+    // Mensaje según tipo
+    const mensajes = {
+      [TipoResultadoEspecial.RETIRO_LESION]: 'Retiro por lesión registrado',
+      [TipoResultadoEspecial.RETIRO_OTRO]: 'Retiro registrado',
+      [TipoResultadoEspecial.DESCALIFICACION]: 'Descalificación registrada',
+      [TipoResultadoEspecial.WO]: 'WO registrado',
+    };
+
+    return {
+      success: true,
+      message: mensajes[dto.tipo],
+      data: {
+        match: matchActualizado,
+        resultado: {
+          tipo: dto.tipo,
+          ganadorId,
+          parejaAfectada: dto.parejaAfectada,
+          razon: dto.razon,
         },
       },
     };
