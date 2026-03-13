@@ -8,6 +8,20 @@ export class PerfilController {
   constructor(private readonly perfilService: PerfilService) {}
 
   /**
+   * GET /users/profile/me
+   * Obtiene el perfil completo del usuario autenticado
+   * Requiere autenticación
+   * 
+   * NOTA: Esta ruta debe ir PRIMERO, antes de profile/:id
+   * para evitar que "me" sea interpretado como un ID
+   */
+  @Get('profile/me')
+  @UseGuards(JwtAuthGuard)
+  async getMiPerfil(@Request() req: any) {
+    return this.perfilService.getMiPerfil(req.user.userId);
+  }
+
+  /**
    * GET /users/profile/:id
    * Obtiene el perfil público de cualquier jugador
    * No requiere autenticación
@@ -16,16 +30,5 @@ export class PerfilController {
   @Public()
   async getPerfilJugador(@Param('id') userId: string) {
     return this.perfilService.getPerfilJugador(userId);
-  }
-
-  /**
-   * GET /users/profile/me
-   * Obtiene el perfil completo del usuario autenticado
-   * Requiere autenticación
-   */
-  @Get('profile/me')
-  @UseGuards(JwtAuthGuard)
-  async getMiPerfil(@Request() req: any) {
-    return this.perfilService.getMiPerfil(req.user.userId);
   }
 }
