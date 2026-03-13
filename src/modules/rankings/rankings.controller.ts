@@ -32,21 +32,21 @@ export class RankingsController {
 
   @Get('admin/config-puntos')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async getConfigPuntos() {
     return this.rankingsService.getConfigPuntos();
   }
 
   @Post('admin/config-puntos')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async createConfigPuntos(@Body() dto: CreateConfigPuntosDto) {
     return this.rankingsService.createConfigPuntos(dto);
   }
 
   @Put('admin/config-puntos/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async updateConfigPuntos(@Param('id') id: string, @Body() dto: UpdateConfigPuntosDto) {
     return this.rankingsService.updateConfigPuntos(id, dto);
   }
@@ -57,21 +57,21 @@ export class RankingsController {
 
   @Get('admin/reglas-ascenso')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async getReglasAscenso() {
     return this.rankingsService.getReglasAscenso();
   }
 
   @Post('admin/reglas-ascenso')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async createReglaAscenso(@Body() dto: CreateReglaAscensoDto) {
     return this.rankingsService.createReglaAscenso(dto);
   }
 
   @Put('admin/reglas-ascenso/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async updateReglaAscenso(@Param('id') id: string, @Body() dto: UpdateReglaAscensoDto) {
     return this.rankingsService.updateReglaAscenso(id, dto);
   }
@@ -82,7 +82,7 @@ export class RankingsController {
 
   @Post('admin/calcular/:tournamentId/:categoryId')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN', 'ORGANIZADOR')
+  @Roles('admin', 'organizador')
   async calcularPuntos(
     @Param('tournamentId') tournamentId: string,
     @Param('categoryId') categoryId: string,
@@ -96,21 +96,21 @@ export class RankingsController {
 
   @Get('admin/ascensos-pendientes')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async getAscensosPendientes() {
     return this.rankingsService.getAscensosPendientes();
   }
 
   @Post('admin/ascensos-calcular')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async calcularAscensos() {
     return this.rankingsService.calcularAscensosPendientes();
   }
 
   @Post('admin/ascensos-procesar/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async procesarAscenso(
     @Param('id') id: string,
     @Body() body: { estado: 'CONFIRMADO' | 'RECHAZADO'; notas?: string },

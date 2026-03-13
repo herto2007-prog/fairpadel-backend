@@ -62,21 +62,21 @@ export class CircuitosController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async create(@Body() dto: CreateCircuitoDto) {
     return this.circuitosService.create(dto);
   }
 
   @Put(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async update(@Param('id') id: string, @Body() dto: UpdateCircuitoDto) {
     return this.circuitosService.update(id, dto);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async remove(@Param('id') id: string) {
     return this.circuitosService.remove(id);
   }
@@ -87,14 +87,14 @@ export class CircuitosController {
 
   @Get('admin/solicitudes-pendientes')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async getSolicitudesPendientes() {
     return this.circuitosService.getSolicitudesPendientes();
   }
 
   @Post('admin/solicitud/:id/procesar')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async procesarSolicitud(
     @Param('id') id: string,
     @Request() req: any,
@@ -105,7 +105,7 @@ export class CircuitosController {
 
   @Post('admin/torneo-circuito/:id/configurar')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async configurarTorneoCircuito(
     @Param('id') id: string,
     @Body() dto: ConfigurarTorneoCircuitoDto,
@@ -119,14 +119,14 @@ export class CircuitosController {
 
   @Post('admin/:id/calcular-clasificados')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async calcularClasificados(@Param('id') id: string) {
     return this.circuitosService.calcularClasificados(id);
   }
 
   @Post('admin/:circuitoId/confirmar-clasificacion/:jugadorId')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   async confirmarClasificacion(
     @Param('circuitoId') circuitoId: string,
     @Param('jugadorId') jugadorId: string,
