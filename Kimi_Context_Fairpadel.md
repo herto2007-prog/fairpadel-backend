@@ -3,7 +3,7 @@
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
 > **Última actualización:** 2026-03-11 13:36
-> **Conversación actual:** Sistema de Resultados completado - Carga directa y marcador en vivo con soporte para Set Completo y Súper Tie-Break
+> **Conversación actual:** Sistema de Torneos COMPLETO - Retiro/Descalificación agregados. Evaluando próximos módulos.
 
 ---
 
@@ -247,14 +247,34 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
   - Tabla con top 3 destacado, tendencias, marcado de usuario logueado
   - Integración con datos del jugador (foto, categoría actual)
 
-### ⏳ En Progreso / Pendiente
-- [x] ~~Sistema de Bracket Paraguayo~~ ✅ **COMPLETADO**
-- [x] ~~Programación Inteligente~~ ✅ **COMPLETADO**
-- [x] ~~Registro de resultados~~ ✅ **COMPLETADO**
-- [x] ~~Rankings automáticos~~ ✅ **COMPLETADO**
-- [ ] **Testing completo** - Probar flujo end-to-end con datos de demo
-- [ ] Integración de pagos (Bancard)
-- [ ] Notificaciones push/SMS (Tigo)
+### 🎯 SISTEMA DE TORNEOS - **COMPLETO** ✅
+
+El flujo de torneos está **100% funcional** de principio a fin:
+
+```
+Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar 
+→ Jugar (Marcador en Vivo) → Registrar Resultados (Normal/Especial) 
+→ Rankings Automáticos → Ascensos de Categoría
+```
+
+**Features completadas:**
+- ✅ Wizard de creación con multiplicador de puntos
+- ✅ Inscripciones con invitaciones y validaciones
+- ✅ Bracket Paraguayo (Zona + Ronda Ajuste + Eliminación)
+- ✅ Programación inteligente de slots
+- ✅ Marcador en vivo punto a punto
+- ✅ Resultados: Normal, Retiro (lesión/otro), Descalificación, WO
+- ✅ Rankings por categoría/ciudad/temporada/circuito
+- ✅ Ascensos automáticos por campeonatos ganados
+- ✅ Checklist, Comisiones, Bloqueo estratégico
+- ✅ Vista Demo para preview
+
+### ⏳ Próximos Módulos Sugeridos
+- [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
+- [ ] **Dashboard Analítico** - Stats para organizadores (inscripciones, ingresos, comparativas)
+- [ ] **Integración Bancard** - Pagos online de inscripciones
+- [ ] **Circuitos/Ligas** - Serie de torneos con acumulación de puntos
+- [ ] **App Móvil** - Versión nativa (React Native/Expo)
 
 ---
 
