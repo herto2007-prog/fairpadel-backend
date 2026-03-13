@@ -3,7 +3,7 @@
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
 > **Última actualización:** 2026-03-11 13:36
-> **Conversación actual:** Sistema de Torneos COMPLETO - Retiro/Descalificación agregados. Evaluando próximos módulos.
+> **Conversación actual:** Módulo de Circuitos/Ligas implementado - Backend y Frontend completos.
 
 ---
 
@@ -269,11 +269,32 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
 - ✅ Checklist, Comisiones, Bloqueo estratégico
 - ✅ Vista Demo para preview
 
+### ✅ Completado (2026-03-13) - Módulo Circuitos/Ligas
+- [x] **Backend - CircuitosModule completo**:
+  - Modelos: `Circuito`, `TorneoCircuito` (relación con metadatos), `ClasificadoCircuito`
+  - CRUD de circuitos con slug, colores, banner, configuración de clasificación
+  - Sistema de solicitudes: Organizador solicita → Admin aprueba/configura
+  - Ranking por circuito (puntos acumulativos de torneos aprobados)
+  - Cálculo de clasificados a la final
+  - Endpoints públicos y admin completos
+- [x] **Frontend - Páginas públicas**:
+  - `/circuitos` - Lista de circuitos con cards destacadas
+  - `/circuitos/:slug` - Detalle del circuito con:
+    - Banner personalizado con color del circuito
+    - Tab Información: reglas de clasificación, final
+    - Tab Ranking: tabla con top 3 destacados (medallas)
+    - Tab Torneos: lista con orden, indicador de final, si cuenta para puntos
+- [x] **Flujo implementado**:
+  1. Admin crea circuito
+  2. Organizador solicita incluir su torneo
+  3. Admin aprueba y configura (orden, si cuenta para puntos, si es final)
+  4. Jugadores juegan torneos, puntos se acumulan automáticamente
+  5. Los mejores N clasifican a la final del circuito
+
 ### ⏳ Próximos Módulos Sugeridos
 - [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
 - [ ] **Dashboard Analítico** - Stats para organizadores (inscripciones, ingresos, comparativas)
 - [ ] **Integración Bancard** - Pagos online de inscripciones
-- [ ] **Circuitos/Ligas** - Serie de torneos con acumulación de puntos
 - [ ] **App Móvil** - Versión nativa (React Native/Expo)
 
 ---
