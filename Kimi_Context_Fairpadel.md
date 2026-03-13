@@ -287,7 +287,11 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
 - [x] **Flujo implementado**:
   1. Admin crea circuito
   2. Organizador solicita incluir su torneo
-  3. Admin aprueba y configura (orden, si cuenta para puntos, si es final)
+  3. Admin aprueba y configura:
+     - **Orden**: Secuencia del torneo en el circuito (1°, 2°, 3°...)
+     - Permite mostrar progreso visual y orden cronológico correcto
+     - **Puntos válidos**: Si el torneo cuenta para el acumulado del circuito
+     - **Es final**: Si es la etapa final del circuito
   4. Jugadores juegan torneos, puntos se acumulan automáticamente
   5. Los mejores N clasifican a la final del circuito
 
