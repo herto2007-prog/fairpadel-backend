@@ -291,4 +291,124 @@ export class PerfilService {
     }
     return edad;
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // MÉTODOS DE ACTUALIZACIÓN
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Actualiza los datos del perfil del usuario
+   */
+  async updatePerfil(userId: string, dto: any) {
+    const updateData: any = {};
+
+    if (dto.bio !== undefined) updateData.bio = dto.bio;
+    if (dto.ciudad !== undefined) updateData.ciudad = dto.ciudad;
+    if (dto.pais !== undefined) updateData.pais = dto.pais;
+    if (dto.telefono !== undefined) updateData.telefono = dto.telefono;
+    if (dto.fechaNacimiento !== undefined) {
+      updateData.fechaNacimiento = new Date(dto.fechaNacimiento);
+    }
+    if (dto.instagram !== undefined) updateData.instagram = dto.instagram;
+    if (dto.facebook !== undefined) updateData.facebook = dto.facebook;
+
+    const usuario = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        nombre: true,
+        apellido: true,
+        bio: true,
+        ciudad: true,
+        pais: true,
+        telefono: true,
+        fechaNacimiento: true,
+        instagram: true,
+        facebook: true,
+        fotoUrl: true,
+        bannerUrl: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Perfil actualizado correctamente',
+      data: usuario,
+    };
+  }
+
+  /**
+   * Actualiza la foto de perfil
+   */
+  async updateFoto(userId: string, fotoUrl: string) {
+    const usuario = await this.prisma.user.update({
+      where: { id: userId },
+      data: { fotoUrl },
+      select: { id: true, fotoUrl: true },
+    });
+
+    return {
+      success: true,
+      message: 'Foto de perfil actualizada',
+      data: usuario,
+    };
+  }
+
+  /**
+   * Actualiza el banner del perfil
+   */
+  async updateBanner(userId: string, bannerUrl: string) {
+    const usuario = await this.prisma.user.update({
+      where: { id: userId },
+      data: { bannerUrl },
+      select: { id: true, bannerUrl: true },
+    });
+
+    return {
+      success: true,
+      message: 'Banner actualizado',
+      data: usuario,
+    };
+  }
+
+  /**
+   * Cambia la contraseña del usuario
+   */
+  async updatePassword(userId: string, passwordActual: string, passwordNuevo: string) {
+    // Verificar contraseña actual
+    const usuario = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Importar bcrypt para comparar contraseñas
+    const bcrypt = require('bcrypt');
+    const passwordValida = await bcrypt.compare(passwordActual, usuario.password);
+
+    if (!passwordValida) {
+      return {
+        success: false,
+        message: 'Contraseña actual incorrecta',
+      };
+    }
+
+    // Hashear nueva contraseña
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(passwordNuevo, salt);
+
+    // Actualizar
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+
+    return {
+      success: true,
+      message: 'Contraseña actualizada correctamente',
+    };
+  }
 }

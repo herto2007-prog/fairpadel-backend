@@ -323,6 +323,10 @@ model User {
   ciudad                  String?
   pais                    String       @default("Paraguay")
   fotoUrl                 String?      @map("foto_url")
+  bannerUrl               String?      @map("banner_url")
+  bio                     String?      @db.Text
+  instagram               String?
+  facebook                String?
   estado                  UserStatus   @default(NO_VERIFICADO)
   categoriaActualId       String?      @map("categoria_actual_id")
   esPremium               Boolean      @default(false) @map("es_premium")
