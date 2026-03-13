@@ -173,6 +173,93 @@ async function main() {
     console.log(`✅ Item checklist: ${item.titulo}`);
   }
 
+  // ═══════════════════════════════════════════════════════
+  // CONFIGURACIÓN DE PUNTOS PARA RANKINGS
+  // ═══════════════════════════════════════════════════════
+  const configPuntos = [
+    { posicion: '1ro', descripcion: 'Campeón', puntosBase: 100, orden: 1 },
+    { posicion: '2do', descripcion: 'Subcampeón', puntosBase: 70, orden: 2 },
+    { posicion: '3ro-4to', descripcion: 'Semifinalistas', puntosBase: 45, orden: 3 },
+    { posicion: '5to-8vo', descripcion: 'Cuartos de final', puntosBase: 25, orden: 4 },
+    { posicion: '9no-16to', descripcion: 'Octavos de final', puntosBase: 15, orden: 5 },
+    { posicion: '17mo-32do', descripcion: 'Fase de grupos', puntosBase: 10, orden: 6 },
+    { posicion: 'participacion', descripcion: 'Participación', puntosBase: 5, orden: 7 },
+  ];
+
+  for (const config of configPuntos) {
+    await prisma.configuracionPuntos.upsert({
+      where: { posicion: config.posicion },
+      update: {},
+      create: config,
+    });
+    console.log(`🏆 Config puntos: ${config.descripcion} = ${config.puntosBase} pts`);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // REGLAS DE ASCENSO POR DEFECTO (basado en FEPARPA)
+  // ═══════════════════════════════════════════════════════
+  const reglasAscenso = [
+    // Damas y Caballeros misma lógica
+    { origen: 'Principiante', destino: '8ª Categoría', campeonatos: 3 },
+    { origen: '8ª Categoría', destino: '7ª Categoría', campeonatos: 4 },
+    { origen: '7ª Categoría', destino: '6ª Categoría', campeonatos: 4 },
+    { origen: '6ª Categoría', destino: '5ª Categoría', campeonatos: 4 },
+    { origen: '5ª Categoría', destino: '4ª Categoría', campeonatos: 3 },
+    { origen: '4ª Categoría', destino: '3ª Categoría', campeonatos: 3 },
+    { origen: '3ª Categoría', destino: '2ª Categoría', campeonatos: 3 },
+    { origen: '2ª Categoría', destino: '1ª Categoría', campeonatos: 3 },
+  ];
+
+  for (const regla of reglasAscenso) {
+    // Buscar IDs de categorías
+    const catOrigen = await prisma.category.findUnique({ where: { nombre: regla.origen } });
+    const catDestino = await prisma.category.findUnique({ where: { nombre: regla.destino } });
+    
+    if (catOrigen && catDestino) {
+      await prisma.reglaAscenso.upsert({
+        where: { 
+          categoriaOrigenId_categoriaDestinoId: {
+            categoriaOrigenId: catOrigen.id,
+            categoriaDestinoId: catDestino.id,
+          }
+        },
+        update: {},
+        create: {
+          categoriaOrigenId: catOrigen.id,
+          categoriaDestinoId: catDestino.id,
+          campeonatosRequeridos: regla.campeonatos,
+          tipoConteo: 'ALTERNADOS',
+          mesesVentana: 12,
+        },
+      });
+      console.log(`⬆️  Regla ascenso: ${regla.origen} → ${regla.destino} (${regla.campeonatos} campeonatos)`);
+    }
+    
+    // También para femenino
+    const catOrigenF = await prisma.category.findUnique({ where: { nombre: `${regla.origen} Femenino` } });
+    const catDestinoF = await prisma.category.findUnique({ where: { nombre: `${regla.destino} Femenina` } });
+    
+    if (catOrigenF && catDestinoF) {
+      await prisma.reglaAscenso.upsert({
+        where: { 
+          categoriaOrigenId_categoriaDestinoId: {
+            categoriaOrigenId: catOrigenF.id,
+            categoriaDestinoId: catDestinoF.id,
+          }
+        },
+        update: {},
+        create: {
+          categoriaOrigenId: catOrigenF.id,
+          categoriaDestinoId: catDestinoF.id,
+          campeonatosRequeridos: regla.campeonatos,
+          tipoConteo: 'ALTERNADOS',
+          mesesVentana: 12,
+        },
+      });
+      console.log(`⬆️  Regla ascenso: ${catOrigenF.nombre} → ${catDestinoF.nombre} (${regla.campeonatos} campeonatos)`);
+    }
+  }
+
   console.log('✨ Seed completado!');
 }
 

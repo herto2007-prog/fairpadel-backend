@@ -499,7 +499,8 @@ model Category {
   usuariosActuales  User[]              @relation("CategoriaActualUsuarios")
   reglasOrigen      ReglaAscenso[]      @relation("CategoriaOrigen")
   reglasDestino     ReglaAscenso[]      @relation("CategoriaDestino")
-  ascensosPendientes AscensoPendiente[] @relation("AscensoPendienteNueva")
+  ascensosPendientesActual AscensoPendiente[] @relation("CategoriaActualAscensos")
+  ascensosPendientesNueva  AscensoPendiente[] @relation("AscensoPendienteNueva")
 
   @@map("categories")
 }
@@ -749,6 +750,9 @@ model Tournament {
   
   // NUEVO: Disponibilidad de días para sorteo de slots
   disponibilidadDias   TorneoDisponibilidadDia[]
+  
+  // NUEVO: Multiplicador de puntos para rankings
+  multiplicadorPuntos  Float        @default(1.0) @map("multiplicador_puntos")
 
   @@map("tournaments")
 }
@@ -1068,8 +1072,10 @@ model HistorialPuntos {
   jugadorId     String   @map("jugador_id")
   tournamentId  String   @map("tournament_id")
   categoryId    String   @map("category_id")
-  posicionFinal String   @map("posicion_final")
-  puntosGanados Int      @map("puntos_ganados")
+  posicionFinal String   @map("posicion_final") // "1ro", "2do", etc.
+  puntosGanados Int      @map("puntos_ganados") // Ya con multiplicador aplicado
+  puntosBase    Int      @map("puntos_base")    // Sin multiplicador
+  multiplicadorAplicado Float @default(1.0) @map("multiplicador_aplicado")
   fechaTorneo   DateTime @map("fecha_torneo") @db.Date
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -1081,10 +1087,12 @@ model HistorialPuntos {
 }
 
 model ConfiguracionPuntos {
-  id            String  @id @default(uuid())
-  posicion      String  @unique
-  puntosBase    Int     @map("puntos_base")
-  multiplicador Float   @default(1.0)
+  id            String   @id @default(uuid())
+  posicion      String   @unique  // "1ro", "2do", "3ro", "3ro-4to" (semis), "5to-8vo" (cuartos), etc.
+  descripcion   String?           // "Campeón", "Subcampeón", etc.
+  puntosBase    Int      @map("puntos_base")
+  orden         Int               // 1, 2, 3, 4... para ordenar
+  activo        Boolean  @default(true)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -1451,9 +1459,22 @@ model ReglaAscenso {
   id                       String   @id @default(uuid())
   categoriaOrigenId        String   @map("categoria_origen_id")
   categoriaDestinoId       String   @map("categoria_destino_id")
-  campeonatosConsecutivos  Int?     @map("campeonatos_consecutivos")
-  campeonatosAlternados    Int?     @map("campeonatos_alternados")
+  
+  // Cantidad de campeonatos requeridos
+  campeonatosRequeridos    Int      @map("campeonatos_requeridos")
+  
+  // Tipo de conteo: CONSECUTIVOS o ALTERNADOS
+  tipoConteo               String   @default("ALTERNADOS") @map("tipo_conteo")
+  
+  // Período de validez (normalmente 12 meses)
+  mesesVentana             Int      @default(12) @map("meses_ventana")
+  
+  // Si ser finalista también cuenta (para categorías altas)
   finalistaCalifica        Boolean  @default(false) @map("finalista_califica")
+  
+  // Restricciones adicionales
+  minimoTorneosJugados     Int      @default(0) @map("minimo_torneos_jugados")
+  
   activa                   Boolean  @default(true)
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @updatedAt @map("updated_at")
@@ -1484,20 +1505,25 @@ model HistorialCategoria {
 model AscensoPendiente {
   id                  String              @id @default(uuid())
   userId              String              @map("user_id")
-  categoriaAnteriorId String?             @map("categoria_anterior_id")
+  categoriaActualId   String              @map("categoria_actual_id")
   categoriaNuevaId    String              @map("categoria_nueva_id")
-  tipo                TipoCambioCategoria
-  motivo              String              @db.Text
-  tournamentId        String?             @map("tournament_id")
+  
+  // Evidencia de cumplimiento
+  torneosGanadosIds   String[]            @map("torneos_ganados_ids")
+  fechaCalculo        DateTime            @map("fecha_calculo")
+  
+  // Estado del ascenso
   estado              EstadoAscenso       @default(PENDIENTE)
-  motivoRechazo       String?             @map("motivo_rechazo") @db.Text
-  revisadoPor         String?             @map("revisado_por")
-  revisadoEn          DateTime?           @map("revisado_en")
+  revisadoPorId       String?             @map("revisado_por_id")
+  fechaRevision       DateTime?           @map("fecha_revision")
+  notasRevision       String?             @map("notas_revision") @db.Text
+  
   createdAt           DateTime            @default(now()) @map("created_at")
   updatedAt           DateTime            @updatedAt @map("updated_at")
 
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categoriaNueva Category @relation("AscensoPendienteNueva", fields: [categoriaNuevaId], references: [id])
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoriaActual Category @relation("CategoriaActualAscensos", fields: [categoriaActualId], references: [id])
+  categoriaNueva  Category @relation("AscensoPendienteNueva", fields: [categoriaNuevaId], references: [id])
 
   @@map("ascensos_pendientes")
 }

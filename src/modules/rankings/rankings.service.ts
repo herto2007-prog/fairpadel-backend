@@ -1,51 +1,107 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TipoRanking, MatchStatus } from '@prisma/client';
-
-// Sistema de puntos por puesto en torneo
-const PUNTOS_POR_PUESTO = {
-  CAMPEON: 100,
-  FINALISTA: 70,
-  SEMIFINALISTA: 50,
-  CUARTOS: 30,
-  OCTAVOS: 20,
-  PARTICIPACION: 10, // Solo por participar
-};
-
-// Puntos adicionales por partido ganado
-const PUNTOS_POR_PARTIDO_GANADO = 5;
-
-interface ResultadoTorneo {
-  jugadorId: string;
-  inscripcionId: string;
-  puesto: number;
-  esCampeon: boolean;
-  esFinalista: boolean;
-  esSemifinalista: boolean;
-  partidosGanados: number;
-  partidosPerdidos: number;
-  categoryId: string;
-  genero?: string;
-}
+import { DateService } from '../../common/services/date.service';
+import { QueryRankingsDto } from './dto/query-rankings.dto';
+import { CreateConfigPuntosDto, UpdateConfigPuntosDto } from './dto/create-config-puntos.dto';
+import { CreateReglaAscensoDto, UpdateReglaAscensoDto } from './dto/create-regla-ascenso.dto';
 
 @Injectable()
 export class RankingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private dateService: DateService,
+  ) {}
 
-  /**
-   * Actualiza los rankings de todos los jugadores de un torneo/categoría
-   * Llamar cuando el torneo finaliza
-   */
-  async actualizarRankingsPorTorneo(tournamentId: string, categoryId: string) {
-    // Obtener todos los partidos finalizados de la categoría
+  // ═══════════════════════════════════════════════════════════
+  // CONFIGURACIÓN DE PUNTOS (Admin)
+  // ═══════════════════════════════════════════════════════════
+
+  async getConfigPuntos() {
+    const configs = await this.prisma.configuracionPuntos.findMany({
+      orderBy: { orden: 'asc' },
+    });
+    return { success: true, data: configs };
+  }
+
+  async createConfigPuntos(dto: CreateConfigPuntosDto) {
+    const config = await this.prisma.configuracionPuntos.create({
+      data: dto,
+    });
+    return { success: true, data: config };
+  }
+
+  async updateConfigPuntos(id: string, dto: UpdateConfigPuntosDto) {
+    const config = await this.prisma.configuracionPuntos.update({
+      where: { id },
+      data: dto,
+    });
+    return { success: true, data: config };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // REGLAS DE ASCENSO (Admin)
+  // ═══════════════════════════════════════════════════════════
+
+  async getReglasAscenso() {
+    const reglas = await this.prisma.reglaAscenso.findMany({
+      include: {
+        categoriaOrigen: true,
+        categoriaDestino: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return { success: true, data: reglas };
+  }
+
+  async createReglaAscenso(dto: CreateReglaAscensoDto) {
+    const regla = await this.prisma.reglaAscenso.create({
+      data: {
+        ...dto,
+        tipoConteo: dto.tipoConteo || 'ALTERNADOS',
+        mesesVentana: dto.mesesVentana || 12,
+      },
+      include: {
+        categoriaOrigen: true,
+        categoriaDestino: true,
+      },
+    });
+    return { success: true, data: regla };
+  }
+
+  async updateReglaAscenso(id: string, dto: UpdateReglaAscensoDto) {
+    const regla = await this.prisma.reglaAscenso.update({
+      where: { id },
+      data: dto,
+      include: {
+        categoriaOrigen: true,
+        categoriaDestino: true,
+      },
+    });
+    return { success: true, data: regla };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // CÁLCULO DE PUNTOS (Cuando finaliza un torneo)
+  // ═══════════════════════════════════════════════════════════
+
+  async calcularPuntosTorneo(tournamentId: string, categoryId: string) {
+    // Obtener torneo con multiplicador
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { multiplicadorPuntos: true, nombre: true },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    // Obtener partidos finalizados de esta categoría
     const partidos = await this.prisma.match.findMany({
       where: {
         tournamentId,
         categoryId,
-        estado: MatchStatus.FINALIZADO,
-        ronda: {
-          in: ['FINAL', 'SEMIS', 'CUARTOS', 'OCTAVOS'],
-        },
+        estado: 'FINALIZADO',
+        inscripcionGanadoraId: { not: null },
       },
       include: {
         inscripcionGanadora: {
@@ -63,357 +119,414 @@ export class RankingsService {
       },
     });
 
-    // Calcular resultados por jugador
-    const resultadosPorJugador = new Map<string, ResultadoTorneo>();
+    // Determinar posiciones según la fase del bracket
+    const resultados = await this.determinarPosiciones(partidos, tournamentId, categoryId);
 
-    // Inicializar con todas las inscripciones confirmadas
-    const inscripciones = await this.prisma.inscripcion.findMany({
+    // Aplicar puntos según configuración
+    const configs = await this.prisma.configuracionPuntos.findMany({
+      where: { activo: true },
+    });
+
+    const puntosCalculados = [];
+
+    for (const resultado of resultados) {
+      const config = this.encontrarConfigParaPosicion(configs, resultado.posicion);
+      if (config) {
+        const puntosFinales = Math.round(config.puntosBase * torneo.multiplicadorPuntos);
+        
+        // Guardar en historial
+        for (const jugadorId of resultado.jugadoresIds) {
+          const historial = await this.prisma.historialPuntos.create({
+            data: {
+              jugadorId,
+              tournamentId,
+              categoryId,
+              posicionFinal: resultado.posicion,
+              puntosGanados: puntosFinales,
+              puntosBase: config.puntosBase,
+              multiplicadorAplicado: torneo.multiplicadorPuntos,
+              fechaTorneo: this.dateService.now(),
+            },
+          });
+          puntosCalculados.push(historial);
+        }
+      }
+    }
+
+    // Actualizar rankings
+    await this.actualizarRankings(categoryId);
+
+    return {
+      success: true,
+      message: 'Puntos calculados y guardados',
+      data: {
+        torneo: torneo.nombre,
+        multiplicador: torneo.multiplicadorPuntos,
+        puntosAsignados: puntosCalculados.length,
+      },
+    };
+  }
+
+  private async determinarPosiciones(partidos: any[], tournamentId: string, categoryId: string) {
+    // Obtener fixture para entender la estructura
+    const fixtureVersion = await this.prisma.fixtureVersion.findFirst({
       where: {
         tournamentId,
         categoryId,
-        estado: 'CONFIRMADA',
-      },
-      include: {
-        jugador1: true,
-        jugador2: true,
+        estado: 'PUBLICADO',
       },
     });
 
-    for (const insc of inscripciones) {
-      // Jugador 1
-      if (!resultadosPorJugador.has(insc.jugador1Id)) {
-        resultadosPorJugador.set(insc.jugador1Id, {
-          jugadorId: insc.jugador1Id,
-          inscripcionId: insc.id,
-          puesto: 999,
-          esCampeon: false,
-          esFinalista: false,
-          esSemifinalista: false,
-          partidosGanados: 0,
-          partidosPerdidos: 0,
-          categoryId,
-        });
-      }
-      // Jugador 2 (si existe)
-      if (insc.jugador2Id && !resultadosPorJugador.has(insc.jugador2Id)) {
-        resultadosPorJugador.set(insc.jugador2Id, {
-          jugadorId: insc.jugador2Id,
-          inscripcionId: insc.id,
-          puesto: 999,
-          esCampeon: false,
-          esFinalista: false,
-          esSemifinalista: false,
-          partidosGanados: 0,
-          partidosPerdidos: 0,
-          categoryId,
-        });
-      }
-    }
+    const resultados = [];
 
-    // Procesar partidos para determinar puestos
+    // Encontrar final
     const final = partidos.find(p => p.ronda === 'FINAL');
-    const semis = partidos.filter(p => p.ronda === 'SEMIS');
-    const cuartos = partidos.filter(p => p.ronda === 'CUARTOS');
-
-    // Campeón y finalista
-    if (final?.inscripcionGanadora) {
-      const ganador = resultadosPorJugador.get(final.inscripcionGanadora.jugador1Id);
-      if (ganador) {
-        ganador.esCampeon = true;
-        ganador.puesto = 1;
-        ganador.partidosGanados++;
-      }
-      if (final.inscripcionGanadora.jugador2Id) {
-        const ganador2 = resultadosPorJugador.get(final.inscripcionGanadora.jugador2Id);
-        if (ganador2) {
-          ganador2.esCampeon = true;
-          ganador2.puesto = 1;
-          ganador2.partidosGanados++;
-        }
-      }
-    }
-
-    if (final?.inscripcionPerdedora) {
-      const perdedor = resultadosPorJugador.get(final.inscripcionPerdedora.jugador1Id);
-      if (perdedor) {
-        perdedor.esFinalista = true;
-        perdedor.puesto = 2;
-        perdedor.partidosPerdidos++;
-      }
-      if (final.inscripcionPerdedora.jugador2Id) {
-        const perdedor2 = resultadosPorJugador.get(final.inscripcionPerdedora.jugador2Id);
-        if (perdedor2) {
-          perdedor2.esFinalista = true;
-          perdedor2.puesto = 2;
-          perdedor2.partidosPerdidos++;
-        }
-      }
+    if (final) {
+      // Campeón
+      resultados.push({
+        posicion: '1ro',
+        jugadoresIds: [
+          final.inscripcionGanadora.jugador1Id,
+          final.inscripcionGanadora.jugador2Id,
+        ].filter(Boolean),
+      });
+      // Subcampeón
+      resultados.push({
+        posicion: '2do',
+        jugadoresIds: [
+          final.inscripcionPerdedora.jugador1Id,
+          final.inscripcionPerdedora.jugador2Id,
+        ].filter(Boolean),
+      });
     }
 
     // Semifinalistas (3ro-4to)
+    const semis = partidos.filter(p => p.ronda === 'SEMIS');
     for (const semi of semis) {
-      if (semi.inscripcionPerdedora) {
-        const perdedor = resultadosPorJugador.get(semi.inscripcionPerdedora.jugador1Id);
-        if (perdedor) {
-          perdedor.esSemifinalista = true;
-          perdedor.puesto = Math.min(perdedor.puesto, 3);
-          perdedor.partidosPerdidos++;
-        }
-        if (semi.inscripcionPerdedora.jugador2Id) {
-          const perdedor2 = resultadosPorJugador.get(semi.inscripcionPerdedora.jugador2Id);
-          if (perdedor2) {
-            perdedor2.esSemifinalista = true;
-            perdedor2.puesto = Math.min(perdedor2.puesto, 3);
-            perdedor2.partidosPerdidos++;
-          }
-        }
-      }
-      // Los ganadores de semis ya fueron contados (finalistas/campeón)
-      if (semi.inscripcionGanadora) {
-        const ganador = resultadosPorJugador.get(semi.inscripcionGanadora.jugador1Id);
-        if (ganador) ganador.partidosGanados++;
-        if (semi.inscripcionGanadora.jugador2Id) {
-          const ganador2 = resultadosPorJugador.get(semi.inscripcionGanadora.jugador2Id);
-          if (ganador2) ganador2.partidosGanados++;
-        }
-      }
+      resultados.push({
+        posicion: '3ro-4to',
+        jugadoresIds: [
+          semi.inscripcionPerdedora.jugador1Id,
+          semi.inscripcionPerdedora.jugador2Id,
+        ].filter(Boolean),
+      });
     }
 
     // Cuartos (5to-8vo)
+    const cuartos = partidos.filter(p => p.ronda === 'CUARTOS');
     for (const cuarto of cuartos) {
-      if (cuarto.inscripcionPerdedora) {
-        const perdedor = resultadosPorJugador.get(cuarto.inscripcionPerdedora.jugador1Id);
-        if (perdedor) {
-          perdedor.puesto = Math.min(perdedor.puesto, 5);
-          perdedor.partidosPerdidos++;
-        }
-        if (cuarto.inscripcionPerdedora.jugador2Id) {
-          const perdedor2 = resultadosPorJugador.get(cuarto.inscripcionPerdedora.jugador2Id);
-          if (perdedor2) {
-            perdedor2.puesto = Math.min(perdedor2.puesto, 5);
-            perdedor2.partidosPerdidos++;
-          }
-        }
-      }
-      if (cuarto.inscripcionGanadora) {
-        const ganador = resultadosPorJugador.get(cuarto.inscripcionGanadora.jugador1Id);
-        if (ganador) ganador.partidosGanados++;
-        if (cuarto.inscripcionGanadora.jugador2Id) {
-          const ganador2 = resultadosPorJugador.get(cuarto.inscripcionGanadora.jugador2Id);
-          if (ganador2) ganador2.partidosGanados++;
-        }
-      }
-    }
-
-    // Actualizar rankings en la base de datos
-    for (const resultado of resultadosPorJugador.values()) {
-      await this.actualizarRankingJugador(resultado);
-    }
-
-    return {
-      mensaje: 'Rankings actualizados correctamente',
-      jugadoresActualizados: resultadosPorJugador.size,
-    };
-  }
-
-  /**
-   * Actualiza el ranking de un jugador específico
-   */
-  private async actualizarRankingJugador(resultado: ResultadoTorneo) {
-    // Calcular puntos
-    let puntosTorneo = 0;
-
-    if (resultado.esCampeon) {
-      puntosTorneo = PUNTOS_POR_PUESTO.CAMPEON;
-    } else if (resultado.esFinalista) {
-      puntosTorneo = PUNTOS_POR_PUESTO.FINALISTA;
-    } else if (resultado.esSemifinalista) {
-      puntosTorneo = PUNTOS_POR_PUESTO.SEMIFINALISTA;
-    } else if (resultado.puesto <= 8) {
-      puntosTorneo = PUNTOS_POR_PUESTO.CUARTOS;
-    } else if (resultado.puesto <= 16) {
-      puntosTorneo = PUNTOS_POR_PUESTO.OCTAVOS;
-    } else {
-      puntosTorneo = PUNTOS_POR_PUESTO.PARTICIPACION;
-    }
-
-    // Puntos por partidos ganados
-    puntosTorneo += resultado.partidosGanados * PUNTOS_POR_PARTIDO_GANADO;
-
-    const temporada = new Date().getFullYear().toString();
-
-    // Obtener género del jugador si no está disponible
-    if (!resultado.genero) {
-      const jugador = await this.prisma.user.findUnique({
-        where: { id: resultado.jugadorId },
-        select: { genero: true },
+      resultados.push({
+        posicion: '5to-8vo',
+        jugadoresIds: [
+          cuarto.inscripcionPerdedora.jugador1Id,
+          cuarto.inscripcionPerdedora.jugador2Id,
+        ].filter(Boolean),
       });
-      resultado.genero = jugador?.genero || 'MASCULINO';
     }
 
-    // Actualizar ranking GLOBAL
-    await this.upsertRanking({
-      jugadorId: resultado.jugadorId,
-      tipoRanking: TipoRanking.GLOBAL,
-      puntos: puntosTorneo,
-      resultado,
-      temporada,
-      genero: resultado.genero,
-    });
+    // Octavos (9no-16to)
+    const octavos = partidos.filter(p => p.ronda === 'OCTAVOS');
+    for (const octavo of octavos) {
+      resultados.push({
+        posicion: '9no-16to',
+        jugadoresIds: [
+          octavo.inscripcionPerdedora.jugador1Id,
+          octavo.inscripcionPerdedora.jugador2Id,
+        ].filter(Boolean),
+      });
+    }
 
-    // Actualizar ranking por CATEGORÍA
-    await this.upsertRanking({
-      jugadorId: resultado.jugadorId,
-      tipoRanking: TipoRanking.CATEGORIA,
-      alcance: resultado.categoryId,
-      puntos: puntosTorneo,
-      resultado,
-      temporada,
-      genero: resultado.genero,
-    });
+    return resultados;
   }
 
-  /**
-   * Crea o actualiza un registro de ranking
-   */
-  private async upsertRanking(data: {
-    jugadorId: string;
-    tipoRanking: TipoRanking;
-    alcance?: string;
-    puntos: number;
-    resultado: ResultadoTorneo;
-    temporada: string;
-    genero: string;
-  }) {
-    const existing = await this.prisma.ranking.findFirst({
-      where: {
-        jugadorId: data.jugadorId,
-        tipoRanking: data.tipoRanking,
-        alcance: data.alcance || null,
-        temporada: data.temporada,
-      },
+  private encontrarConfigParaPosicion(configs: any[], posicion: string) {
+    // Buscar coincidencia exacta primero
+    let config = configs.find(c => c.posicion === posicion);
+    
+    // Si no hay, buscar rangos
+    if (!config) {
+      if (posicion.startsWith('3ro') || posicion.startsWith('4to')) {
+        config = configs.find(c => c.posicion === '3ro-4to');
+      } else if (['5to', '6to', '7mo', '8vo'].some(p => posicion.startsWith(p))) {
+        config = configs.find(c => c.posicion === '5to-8vo');
+      } else if (['9no', '10mo', '11vo', '12do', '13ro', '14to', '15to', '16to'].some(p => posicion.startsWith(p))) {
+        config = configs.find(c => c.posicion === '9no-16to');
+      }
+    }
+
+    return config;
+  }
+
+  private async actualizarRankings(categoryId: string) {
+    // Obtener todos los jugadores con historial en esta categoría
+    const historiales = await this.prisma.historialPuntos.groupBy({
+      by: ['jugadorId'],
+      where: { categoryId },
+      _sum: { puntosGanados: true },
+      _count: { id: true },
     });
 
-    if (existing) {
-      // Actualizar
-      await this.prisma.ranking.update({
-        where: { id: existing.id },
-        data: {
-          puntosTotales: existing.puntosTotales + data.puntos,
-          torneosJugados: existing.torneosJugados + 1,
-          victorias: existing.victorias + data.resultado.partidosGanados,
-          derrotas: existing.derrotas + data.resultado.partidosPerdidos,
-          campeonatos: existing.campeonatos + (data.resultado.esCampeon ? 1 : 0),
-          mejorPosicion: existing.mejorPosicion 
-            ? Math.min(existing.mejorPosicion, data.resultado.puesto)
-            : data.resultado.puesto,
+    // Ordenar por puntos y asignar posiciones
+    const ordenados = historiales.sort((a, b) => (b._sum.puntosGanados || 0) - (a._sum.puntosGanados || 0));
+
+    for (let i = 0; i < ordenados.length; i++) {
+      const { jugadorId, _sum, _count } = ordenados[i];
+      const puntosTotales = _sum.puntosGanados || 0;
+      const torneosJugados = _count.id;
+
+      await this.prisma.ranking.upsert({
+        where: {
+          jugadorId_tipoRanking_alcance_temporada: {
+            jugadorId,
+            tipoRanking: 'CATEGORIA',
+            alcance: categoryId,
+            temporada: new Date().getFullYear().toString(),
+          },
         },
-      });
-    } else {
-      // Crear nuevo
-      await this.prisma.ranking.create({
-        data: {
-          jugadorId: data.jugadorId,
-          tipoRanking: data.tipoRanking,
-          alcance: data.alcance || '',
-          genero: data.genero as any,
-          posicion: data.resultado.puesto,
-          puntosTotales: data.puntos,
-          torneosJugados: 1,
-          victorias: data.resultado.partidosGanados,
-          derrotas: data.resultado.partidosPerdidos,
-          campeonatos: data.resultado.esCampeon ? 1 : 0,
-          mejorPosicion: data.resultado.puesto,
-          temporada: data.temporada,
+        update: {
+          puntosTotales,
+          posicion: i + 1,
+          torneosJugados,
+          ultimaActualizacion: this.dateService.now(),
+        },
+        create: {
+          jugadorId,
+          tipoRanking: 'CATEGORIA',
+          alcance: categoryId,
+          genero: 'MASCULINO', // Se actualizará con el género real
+          puntosTotales,
+          posicion: i + 1,
+          torneosJugados,
+          temporada: new Date().getFullYear().toString(),
         },
       });
     }
   }
 
-  /**
-   * Obtiene el ranking global
-   */
-  async getRankingGlobal(temporada?: string) {
-    const temp = temporada || new Date().getFullYear().toString();
+  // ═══════════════════════════════════════════════════════════
+  // CONSULTA DE RANKINGS (Público)
+  // ═══════════════════════════════════════════════════════════
 
-    return this.prisma.ranking.findMany({
-      where: {
-        tipoRanking: TipoRanking.GLOBAL,
-        temporada: temp,
-      },
-      orderBy: { puntosTotales: 'desc' },
+  async getRankings(query: QueryRankingsDto) {
+    const where: any = {};
+
+    if (query.categoriaId) {
+      where.alcance = query.categoriaId;
+      where.tipoRanking = 'CATEGORIA';
+    } else if (query.ciudad) {
+      where.alcance = query.ciudad;
+      where.tipoRanking = 'CIUDAD';
+    } else if (query.circuitoId) {
+      where.alcance = query.circuitoId;
+      where.tipoRanking = 'LIGA';
+    } else {
+      where.tipoRanking = 'GLOBAL';
+    }
+
+    if (query.genero) {
+      where.genero = query.genero;
+    }
+
+    where.temporada = query.temporada || new Date().getFullYear().toString();
+
+    const rankings = await this.prisma.ranking.findMany({
+      where,
       include: {
         jugador: {
           select: {
             id: true,
             nombre: true,
             apellido: true,
-            documento: true,
+            fotoUrl: true,
+            categoriaActual: {
+              select: { nombre: true },
+            },
           },
         },
       },
+      orderBy: { posicion: 'asc' },
       take: 100,
     });
+
+    return { success: true, data: rankings };
   }
 
-  /**
-   * Obtiene el ranking por categoría
-   */
-  async getRankingPorCategoria(categoryId: string, temporada?: string) {
-    const temp = temporada || new Date().getFullYear().toString();
-
-    return this.prisma.ranking.findMany({
-      where: {
-        tipoRanking: TipoRanking.CATEGORIA,
-        alcance: categoryId,
-        temporada: temp,
-      },
-      orderBy: { puntosTotales: 'desc' },
-      include: {
-        jugador: {
-          select: {
-            id: true,
-            nombre: true,
-            apellido: true,
-            documento: true,
-          },
-        },
-      },
-      take: 100,
-    });
-  }
-
-  /**
-   * Obtiene el ranking de un jugador específico
-   */
   async getRankingJugador(jugadorId: string) {
-    return this.prisma.ranking.findMany({
-      where: { jugadorId },
-      orderBy: [
-        { temporada: 'desc' },
-        { puntosTotales: 'desc' },
-      ],
-    });
-  }
-
-  /**
-   * Obtiene estadísticas de un jugador
-   */
-  async getEstadisticasJugador(jugadorId: string) {
     const rankings = await this.prisma.ranking.findMany({
       where: { jugadorId },
+      include: {
+        jugador: {
+          select: {
+            nombre: true,
+            apellido: true,
+            fotoUrl: true,
+          },
+        },
+      },
+      orderBy: { ultimaActualizacion: 'desc' },
     });
 
-    const global = rankings.find(r => r.tipoRanking === TipoRanking.GLOBAL);
+    const historial = await this.prisma.historialPuntos.findMany({
+      where: { jugadorId },
+      include: {
+        tournament: { select: { nombre: true, fechaInicio: true } },
+        category: { select: { nombre: true } },
+      },
+      orderBy: { fechaTorneo: 'desc' },
+      take: 20,
+    });
+
+    return { success: true, data: { rankings, historial } };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ASCENSOS
+  // ═══════════════════════════════════════════════════════════
+
+  async calcularAscensosPendientes() {
+    // Obtener todas las reglas activas
+    const reglas = await this.prisma.reglaAscenso.findMany({
+      where: { activa: true },
+      include: {
+        categoriaOrigen: true,
+        categoriaDestino: true,
+      },
+    });
+
+    const ascensosDetectados = [];
+
+    for (const regla of reglas) {
+      // Buscar jugadores que cumplen la regla
+      const jugadoresCandidatos = await this.buscarCandidatosAscenso(regla);
+      
+      for (const candidato of jugadoresCandidatos) {
+        // Verificar si ya existe un ascenso pendiente
+        const existente = await this.prisma.ascensoPendiente.findFirst({
+          where: {
+            userId: candidato.jugadorId,
+            categoriaActualId: regla.categoriaOrigenId,
+            categoriaNuevaId: regla.categoriaDestinoId,
+            estado: { in: ['PENDIENTE', 'CONFIRMADO'] },
+          },
+        });
+
+        if (!existente) {
+          const ascenso = await this.prisma.ascensoPendiente.create({
+            data: {
+              userId: candidato.jugadorId,
+              categoriaActualId: regla.categoriaOrigenId,
+              categoriaNuevaId: regla.categoriaDestinoId,
+              torneosGanadosIds: candidato.torneosGanados,
+              fechaCalculo: this.dateService.now(),
+              estado: 'PENDIENTE',
+            },
+            include: {
+              user: { select: { nombre: true, apellido: true } },
+              categoriaActual: true,
+              categoriaNueva: true,
+            },
+          });
+          ascensosDetectados.push(ascenso);
+        }
+      }
+    }
 
     return {
-      puntosTotales: global?.puntosTotales || 0,
-      torneosJugados: global?.torneosJugados || 0,
-      victorias: global?.victorias || 0,
-      derrotas: global?.derrotas || 0,
-      campeonatos: global?.campeonatos || 0,
-      mejorPuesto: global?.mejorPosicion || null,
-      rankingsPorCategoria: rankings.filter(r => r.tipoRanking === TipoRanking.CATEGORIA),
+      success: true,
+      message: `${ascensosDetectados.length} ascensos detectados`,
+      data: ascensosDetectados,
     };
+  }
+
+  private async buscarCandidatosAscenso(regla: any) {
+    const fechaDesde = new Date();
+    fechaDesde.setMonth(fechaDesde.getMonth() - regla.mesesVentana);
+
+    // Buscar jugadores que ganaron campeonatos en la categoría origen
+    const campeones = await this.prisma.historialPuntos.groupBy({
+      by: ['jugadorId'],
+      where: {
+        categoryId: regla.categoriaOrigenId,
+        posicionFinal: '1ro',
+        fechaTorneo: { gte: fechaDesde },
+      },
+      _count: { id: true },
+    });
+
+    const candidatos = [];
+
+    for (const campeon of campeones) {
+      if (campeon._count.id >= regla.campeonatosRequeridos) {
+        // Obtener IDs de torneos ganados
+        const torneos = await this.prisma.historialPuntos.findMany({
+          where: {
+            jugadorId: campeon.jugadorId,
+            categoryId: regla.categoriaOrigenId,
+            posicionFinal: '1ro',
+            fechaTorneo: { gte: fechaDesde },
+          },
+          select: { tournamentId: true },
+          take: regla.campeonatosRequeridos,
+        });
+
+        candidatos.push({
+          jugadorId: campeon.jugadorId,
+          torneosGanados: torneos.map(t => t.tournamentId),
+        });
+      }
+    }
+
+    return candidatos;
+  }
+
+  async getAscensosPendientes() {
+    const ascensos = await this.prisma.ascensoPendiente.findMany({
+      where: { estado: 'PENDIENTE' },
+      include: {
+        user: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+        categoriaActual: true,
+        categoriaNueva: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return { success: true, data: ascensos };
+  }
+
+  async procesarAscenso(ascensoId: string, estado: 'CONFIRMADO' | 'RECHAZADO', adminId: string, notas?: string) {
+    const ascenso = await this.prisma.ascensoPendiente.update({
+      where: { id: ascensoId },
+      data: {
+        estado,
+        revisadoPorId: adminId,
+        fechaRevision: this.dateService.now(),
+        notasRevision: notas,
+      },
+      include: {
+        user: true,
+        categoriaNueva: true,
+      },
+    });
+
+    if (estado === 'CONFIRMADO') {
+      // Actualizar categoría del jugador
+      await this.prisma.user.update({
+        where: { id: ascenso.userId },
+        data: { categoriaActualId: ascenso.categoriaNuevaId },
+      });
+
+      // Crear historial de categoría
+      await this.prisma.historialCategoria.create({
+        data: {
+          userId: ascenso.userId,
+          categoriaAnteriorId: ascenso.categoriaActualId,
+          categoriaNuevaId: ascenso.categoriaNuevaId,
+          tipo: 'ASCENSO_AUTOMATICO',
+          motivo: `Ascenso por cumplir ${ascenso.torneosGanadosIds.length} campeonatos`,
+          realizadoPor: adminId,
+        },
+      });
+    }
+
+    return { success: true, data: ascenso };
   }
 }

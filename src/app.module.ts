@@ -7,7 +7,6 @@ import { TournamentsModule } from './modules/tournaments/tournaments.module';
 import { InscripcionesModule } from './modules/inscripciones/inscripciones.module';
 import { FixtureModule } from './modules/fixture/fixture.module';
 import { MatchesModule } from './modules/matches/matches.module';
-import { RankingsModule } from './modules/rankings/rankings.module';
 import { SedesModule } from './modules/sedes/sedes.module';
 import { AlquileresModule } from './modules/alquileres/alquileres.module';
 import { InstructoresModule } from './modules/instructores/instructores.module';
@@ -21,6 +20,7 @@ import { NotificacionesModule } from './modules/notificaciones/notificaciones.mo
 import { AppController } from './app.controller';
 import { DemoPublicModule } from './modules/demo/demo-public.module';
 import { ResultadosModule } from './modules/resultados/resultados.module';
+import { RankingsModule } from './modules/rankings/rankings.module';
 
 @Module({
   imports: [
@@ -45,6 +45,7 @@ import { ResultadosModule } from './modules/resultados/resultados.module';
     SeedModule, // Seed automático al iniciar
     DemoPublicModule, // Endpoint público para verificar estado de demo
     ResultadosModule, // Registro de resultados y marcador en vivo
+    RankingsModule,   // Sistema de rankings y ascensos
   ],
   controllers: [AppController],
 })

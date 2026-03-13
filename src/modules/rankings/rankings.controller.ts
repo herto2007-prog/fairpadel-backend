@@ -1,58 +1,121 @@
-import { Controller, Get, Param, Query, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { RankingsService } from './rankings.service';
+import { QueryRankingsDto } from './dto/query-rankings.dto';
+import { CreateConfigPuntosDto, UpdateConfigPuntosDto } from './dto/create-config-puntos.dto';
+import { CreateReglaAscensoDto, UpdateReglaAscensoDto } from './dto/create-regla-ascenso.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { GetUser } from '../auth/decorators/get-user.decorator';
-import { User } from '@prisma/client';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Request } from '@nestjs/common';
 
 @Controller('rankings')
 export class RankingsController {
   constructor(private readonly rankingsService: RankingsService) {}
 
-  @Get('global')
-  getRankingGlobal(@Query('temporada') temporada?: string) {
-    return this.rankingsService.getRankingGlobal(temporada);
-  }
+  // ═══════════════════════════════════════════════════════════
+  // RUTAS PÚBLICAS
+  // ═══════════════════════════════════════════════════════════
 
-  @Get('categoria/:categoryId')
-  getRankingPorCategoria(
-    @Param('categoryId') categoryId: string,
-    @Query('temporada') temporada?: string,
-  ) {
-    return this.rankingsService.getRankingPorCategoria(categoryId, temporada);
+  @Get()
+  async getRankings(@Query() query: QueryRankingsDto) {
+    return this.rankingsService.getRankings(query);
   }
 
   @Get('jugador/:jugadorId')
-  getRankingJugador(@Param('jugadorId') jugadorId: string) {
+  async getRankingJugador(@Param('jugadorId') jugadorId: string) {
     return this.rankingsService.getRankingJugador(jugadorId);
   }
 
-  @Get('estadisticas/:jugadorId')
-  getEstadisticasJugador(@Param('jugadorId') jugadorId: string) {
-    return this.rankingsService.getEstadisticasJugador(jugadorId);
+  // ═══════════════════════════════════════════════════════════
+  // CONFIGURACIÓN DE PUNTOS (Admin)
+  // ═══════════════════════════════════════════════════════════
+
+  @Get('admin/config-puntos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getConfigPuntos() {
+    return this.rankingsService.getConfigPuntos();
   }
 
-  @Get('me')
-  @UseGuards(JwtAuthGuard)
-  getMiRanking(@GetUser() user: User) {
-    return this.rankingsService.getRankingJugador(user.id);
+  @Post('admin/config-puntos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async createConfigPuntos(@Body() dto: CreateConfigPuntosDto) {
+    return this.rankingsService.createConfigPuntos(dto);
   }
 
-  @Get('estadisticas/me')
-  @UseGuards(JwtAuthGuard)
-  getMisEstadisticas(@GetUser() user: User) {
-    return this.rankingsService.getEstadisticasJugador(user.id);
+  @Put('admin/config-puntos/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async updateConfigPuntos(@Param('id') id: string, @Body() dto: UpdateConfigPuntosDto) {
+    return this.rankingsService.updateConfigPuntos(id, dto);
   }
 
-  @Post('actualizar-torneo')
-  @UseGuards(JwtAuthGuard)
-  actualizarRankingsPorTorneo(
-    @Body() data: { tournamentId: string; categoryId: string },
-    @GetUser() user: User,
+  // ═══════════════════════════════════════════════════════════
+  // REGLAS DE ASCENSO (Admin)
+  // ═══════════════════════════════════════════════════════════
+
+  @Get('admin/reglas-ascenso')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getReglasAscenso() {
+    return this.rankingsService.getReglasAscenso();
+  }
+
+  @Post('admin/reglas-ascenso')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async createReglaAscenso(@Body() dto: CreateReglaAscensoDto) {
+    return this.rankingsService.createReglaAscenso(dto);
+  }
+
+  @Put('admin/reglas-ascenso/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async updateReglaAscenso(@Param('id') id: string, @Body() dto: UpdateReglaAscensoDto) {
+    return this.rankingsService.updateReglaAscenso(id, dto);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // CÁLCULO DE PUNTOS (Organizador/Admin)
+  // ═══════════════════════════════════════════════════════════
+
+  @Post('admin/calcular/:tournamentId/:categoryId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'ORGANIZADOR')
+  async calcularPuntos(
+    @Param('tournamentId') tournamentId: string,
+    @Param('categoryId') categoryId: string,
   ) {
-    // TODO: Verificar que el usuario es organizador del torneo
-    return this.rankingsService.actualizarRankingsPorTorneo(
-      data.tournamentId,
-      data.categoryId,
-    );
+    return this.rankingsService.calcularPuntosTorneo(tournamentId, categoryId);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ASCENSOS PENDIENTES (Admin)
+  // ═══════════════════════════════════════════════════════════
+
+  @Get('admin/ascensos-pendientes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getAscensosPendientes() {
+    return this.rankingsService.getAscensosPendientes();
+  }
+
+  @Post('admin/ascensos-calcular')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async calcularAscensos() {
+    return this.rankingsService.calcularAscensosPendientes();
+  }
+
+  @Post('admin/ascensos-procesar/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async procesarAscenso(
+    @Param('id') id: string,
+    @Body() body: { estado: 'CONFIRMADO' | 'RECHAZADO'; notas?: string },
+    @Request() req: any,
+  ) {
+    return this.rankingsService.procesarAscenso(id, body.estado, req.user.userId, body.notas);
   }
 }
