@@ -20,6 +20,7 @@ import { InvitacionesModule } from './modules/invitaciones/invitaciones.module';
 import { NotificacionesModule } from './modules/notificaciones/notificaciones.module';
 import { AppController } from './app.controller';
 import { DemoPublicModule } from './modules/demo/demo-public.module';
+import { ResultadosModule } from './modules/resultados/resultados.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { DemoPublicModule } from './modules/demo/demo-public.module';
     EmailModule,
     SeedModule, // Seed automático al iniciar
     DemoPublicModule, // Endpoint público para verificar estado de demo
+    ResultadosModule, // Registro de resultados y marcador en vivo
   ],
   controllers: [AppController],
 })

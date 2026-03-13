@@ -112,6 +112,18 @@ enum MatchStatus {
   CANCELADO
 }
 
+enum FormatoSet3 {
+  SUPER_TIE_BREAK
+  SET_COMPLETO
+}
+
+enum TipoPunto {
+  PUNTO
+  FALTA_DIRECTA
+  ACE
+  DOBLE_FALTA
+}
+
 enum TipoRanking {
   GLOBAL
   PAIS
@@ -973,6 +985,17 @@ model Match {
   set2Pareja2        Int?         @map("set2_pareja2")
   set3Pareja1        Int?         @map("set3_pareja1")
   set3Pareja2        Int?         @map("set3_pareja2")
+  
+  // NUEVO: Formato del set 3
+  formatoSet3        FormatoSet3? @default(SET_COMPLETO) @map("formato_set3")
+  
+  // NUEVO: Marcador en vivo (JSON flexible)
+  liveScore          Json?        @map("live_score") // { setActual: 1, gameP1: 2, gameP2: 3, puntoP1: 30, puntoP2: 40, saque: 1, historial: [...] }
+  
+  // NUEVO: Duración del partido
+  duracionMinutos    Int?         @map("duracion_minutos")
+  horaInicioReal     DateTime?    @map("hora_inicio_real")
+  horaFinReal        DateTime?    @map("hora_fin_real")
   
   // Navegación en bracket
   partidoSiguienteId      String?  @map("partido_siguiente_id")
