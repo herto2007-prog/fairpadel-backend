@@ -3,7 +3,7 @@
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
 > **Última actualización:** 2026-03-11 13:36
-> **Conversación actual:** Vista Demo agregada - Tab con datos estáticos para visualizar flujo completo del torneo
+> **Conversación actual:** Sistema de Resultados completado - Carga directa y marcador en vivo con soporte para Set Completo y Súper Tie-Break
 
 ---
 
@@ -200,15 +200,37 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 - [x] **Nota informativa** - Indica que son datos estáticos de ejemplo
 - **Nota:** Esta vista es temporal y se puede eliminar cuando ya no sea necesaria
 
+### ✅ Completado (2026-03-12) - Sistema de Resultados y Marcador en Vivo
+- [x] **Schema Prisma extendido** - `formatoSet3`, `liveScore`, `duracionMinutos`
+- [x] **ResultadosModule (Backend)**:
+  - `POST /admin/resultados/matches/:id/resultado` - Carga directa post-partido
+  - `POST /admin/resultados/matches/:id/iniciar` - Iniciar partido en vivo
+  - `POST /admin/resultados/matches/:id/punto` - Registrar punto
+  - `POST /admin/resultados/matches/:id/deshacer` - Deshacer último punto
+  - `POST /admin/resultados/matches/:id/finalizar` - Finalizar y avanzar ganador
+  - `GET /admin/resultados/matches/:id/marcador` - Obtener marcador actual
+- [x] **Lógica de juego completa**:
+  - Sets 1 y 2: games 0-6/7 con diferencia de 2
+  - Set 3 modo **Set Completo**: games 0-6/7
+  - Set 3 modo **Súper Tie-Break**: puntos hasta 10 con diferencia de 2
+  - Avance automático del ganador al siguiente partido del bracket
+- [x] **RegistroResultadoModal (Frontend)** - Formulario post-partido con selección de formato set3
+- [x] **MarcadorEnVivo (Frontend)** - Pantalla de marcador punto a punto con:
+  - Contadores de games y puntos (0, 15, 30, 40, AD)
+  - Indicador de quién saca
+  - Estados especiales: SET_POINT, MATCH_POINT, TIE_BREAK, SUPER_TIE_BREAK
+  - Botones para sumar punto a cada pareja
+  - Botón deshacer para correcciones
+- [x] **Integración en BracketView** - Botones "En Vivo" y "Resultado" en cada partido
+
 ### ⏳ En Progreso / Pendiente
 - [x] ~~Sistema de Bracket Paraguayo~~ ✅ **COMPLETADO**
-- [x] ~~Programación Inteligente (Backend)~~ ✅ **COMPLETADO**
-- [x] ~~Programación Inteligente (Frontend)~~ ✅ **COMPLETADO**
-- [ ] **Testing completo** - Probar flujo con datos de demo
+- [x] ~~Programación Inteligente~~ ✅ **COMPLETADO**
+- [x] ~~Registro de resultados~~ ✅ **COMPLETADO**
+- [ ] **Testing completo** - Probar flujo end-to-end con datos de demo
+- [ ] Rankings automáticos (cálculo de puntos)
 - [ ] Integración de pagos (Bancard)
-- [ ] Registro de resultados en tiempo real
-- [ ] Rankings automáticos
-- [ ] Notificaciones push/SMS (Tigo) - Backend listo, falta provider
+- [ ] Notificaciones push/SMS (Tigo)
 
 ---
 
@@ -897,4 +919,4 @@ Y así sucesivamente...
 
 ---
 
-*Documento actualizado: 2026-03-12 - Vista Demo implementada con datos estáticos. Muestra flujo completo: stats, timeline, categorías, programación y bracket. Listo para testing con datos de demo.*
+*Documento actualizado: 2026-03-12 - Sistema de Resultados implementado. Backend con lógica completa de juego (sets, tie-breaks, súper tie-break) y avance automático de ganadores. Frontend con modal de registro post-partido y marcador en vivo punto a punto. Listo para testing.*
