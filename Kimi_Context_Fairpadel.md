@@ -204,6 +204,7 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 - [x] **Schema Prisma extendido** - `formatoSet3`, `liveScore`, `duracionMinutos`
 - [x] **ResultadosModule (Backend)**:
   - `POST /admin/resultados/matches/:id/resultado` - Carga directa post-partido
+  - `POST /admin/resultados/matches/:id/resultado-especial` - Retiro/Descalificación/WO
   - `POST /admin/resultados/matches/:id/iniciar` - Iniciar partido en vivo
   - `POST /admin/resultados/matches/:id/punto` - Registrar punto
   - `POST /admin/resultados/matches/:id/deshacer` - Deshacer último punto
@@ -214,13 +215,16 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
   - Set 3 modo **Set Completo**: games 0-6/7
   - Set 3 modo **Súper Tie-Break**: puntos hasta 10 con diferencia de 2
   - Avance automático del ganador al siguiente partido del bracket
-- [x] **RegistroResultadoModal (Frontend)** - Formulario post-partido con selección de formato set3
-- [x] **MarcadorEnVivo (Frontend)** - Pantalla de marcador punto a punto con:
-  - Contadores de games y puntos (0, 15, 30, 40, AD)
-  - Indicador de quién saca
-  - Estados especiales: SET_POINT, MATCH_POINT, TIE_BREAK, SUPER_TIE_BREAK
-  - Botones para sumar punto a cada pareja
-  - Botón deshacer para correcciones
+- [x] **Resultados especiales**:
+  - Nuevos estados: `RETIRADO`, `DESCALIFICADO`, `WO`
+  - Campos: `parejaRetirada` (1 o 2), `razonResultado`
+  - Tipos: Retiro por lesión, Retiro otro, Descalificación, No se presentó (WO)
+  - La pareja NO afectada avanza automáticamente como ganadora
+- [x] **RegistroResultadoModal (Frontend)** - Tabs: Resultado Normal / Retiro-Descalif.
+  - Formulario para resultado normal con selección de formato set3
+  - Formulario para incidencias con selección de tipo y pareja afectada
+  - Visualización destacada de la pareja afectada (borde rojo)
+- [x] **MarcadorEnVivo (Frontend)** - Pantalla de marcador punto a punto
 - [x] **Integración en BracketView** - Botones "En Vivo" y "Resultado" en cada partido
 
 ### ✅ Completado (2026-03-13) - Sistema de Rankings y Ascensos
