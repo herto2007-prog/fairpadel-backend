@@ -223,12 +223,32 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
   - Botón deshacer para correcciones
 - [x] **Integración en BracketView** - Botones "En Vivo" y "Resultado" en cada partido
 
+### ✅ Completado (2026-03-13) - Sistema de Rankings y Ascensos
+- [x] **Schema Prisma extendido**:
+  - `ConfiguracionPuntos` - Configuración base de puntos por posición
+  - `ReglaAscenso` - Reglas configurables de ascenso por categoría
+  - `AscensoPendiente` - Tracking de ascensos detectados
+  - `multiplicadorPuntos` en Tournament
+- [x] **RankingsModule (Backend)**:
+  - Endpoints públicos: `/rankings`, `/rankings/jugador/:id`
+  - Endpoints admin: config puntos, reglas ascenso, cálculo de puntos
+  - Cálculo automático de puntos al finalizar torneo
+  - Detección automática de ascensos por campeonatos ganados
+  - Procesamiento de ascensos (confirmar/rechazar)
+- [x] **Seed de configuración**:
+  - Puntos base: 1ro=100, 2do=70, 3ro-4to=45, 5to-8vo=25, 9no-16to=15, participación=5
+  - Reglas de ascenso basadas en FEPARPA (3-4 campeonatos según categoría)
+- [x] **RankingsPage (Frontend)**:
+  - Filtros: categoría, género, temporada, ciudad
+  - Tabla con top 3 destacado, tendencias, marcado de usuario logueado
+  - Integración con datos del jugador (foto, categoría actual)
+
 ### ⏳ En Progreso / Pendiente
 - [x] ~~Sistema de Bracket Paraguayo~~ ✅ **COMPLETADO**
 - [x] ~~Programación Inteligente~~ ✅ **COMPLETADO**
 - [x] ~~Registro de resultados~~ ✅ **COMPLETADO**
+- [x] ~~Rankings automáticos~~ ✅ **COMPLETADO**
 - [ ] **Testing completo** - Probar flujo end-to-end con datos de demo
-- [ ] Rankings automáticos (cálculo de puntos)
 - [ ] Integración de pagos (Bancard)
 - [ ] Notificaciones push/SMS (Tigo)
 
