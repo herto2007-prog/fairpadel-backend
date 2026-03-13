@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-11 13:36
-> **Conversación actual:** Módulo de Circuitos/Ligas implementado - Backend y Frontend completos.
+> **Última actualización:** 2026-03-13 15:45
+> **Conversación actual:** Perfil de Jugador implementado con estadísticas reales, logros calculados dinámicamente y diseño "absurdamente brutal". Backend completo con endpoints público y privado.
 
 ---
 
@@ -294,6 +294,88 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
      - **Es final**: Si es la etapa final del circuito
   4. Jugadores juegan torneos, puntos se acumulan automáticamente
   5. Los mejores N clasifican a la final del circuito
+
+### ✅ Completado (2026-03-13) - Correcciones Críticas
+- [x] **Estandarización de Roles** - Todos los controllers ahora usan minúsculas ('admin', 'organizador', 'ayudante')
+- [x] **Protección de ruta /admin** - Solo usuarios con rol 'admin' pueden acceder al panel
+
+### ✅ Completado (2026-03-13) - Perfil de Jugador (Absurdamente Brutal)
+
+**Mockup Visual:** `PerfilMockupPage` - Demo estática con diseño moderno, minimalista y tecnológico
+
+**Backend - PerfilModule completo:**
+- [x] **Endpoints:**
+  - `GET /users/profile/:id` - Perfil público de cualquier jugador (sin auth)
+  - `GET /users/profile/me` - Mi perfil con datos privados (requiere auth)
+- [x] **Estadísticas calculadas dinámicamente:**
+  - Torneos: jugados, ganados, finales, semifinales
+  - Partidos: ganados, perdidos, efectividad (%), racha actual
+  - Rankings: por tipo y alcance con posición y puntos
+  - Historial: últimos 10 torneos con puntos ganados
+- [x] **Sistema de Logros calculados:**
+  - 🏆 Campeón (oro/plata/bronce según cantidad)
+  - 🥈 Finalista
+  - 🏟️ Veterano (50+ torneos)
+  - 🔥 Racha Perfecta (victorias seguidas)
+  - ⭐ Ascenso
+  - 🎯 Precisión (efectividad > 60%)
+- [x] **Actividad reciente:** Últimos torneos jugados + ascensos logrados
+
+**Frontend - PerfilPage conectada a datos reales:**
+- [x] **Rutas:**
+  - `/perfil` - Mi propio perfil (detecta usuario logueado)
+  - `/perfil/:id` - Perfil de otro jugador
+  - `/perfil-mockup` - Demo estática (se mantiene para referencia)
+- [x] **Hero Section:**
+  - Banner personalizable (gradiente por defecto)
+  - Foto de perfil con hover para cambiar (solo mi perfil)
+  - Badge Premium animado
+  - Indicador "En línea"
+  - Info: Nombre, username, categoría, ubicación, edad
+  - Bio personalizable
+  - Stats sociales: seguidores, siguiendo, torneos
+- [x] **Stats Cards (4 cards animadas):**
+  - Torneos Ganados (amarillo)
+  - Partidos Jugados (azul)
+  - Puntos Totales (morado)
+  - Racha Actual (rojo)
+- [x] **Historial de Puntos:**
+  - Lista de últimos torneos con posición, puntos, fecha
+  - Visualización de medallas (oro/plata/bronce)
+- [x] **Efectividad (3 donuts charts):**
+  - Victorias (%)
+  - Sets Ganados
+  - Torneos Ganados
+- [x] **Actividad Reciente:**
+  - Timeline con íconos dinámicos según tipo
+  - Campeonatos, subcampeonatos, ascensos
+  - Fechas formateadas
+- [x] **Logros (Sidebar):**
+  - 6 logros con iconos emoji
+  - Niveles: oro, plata, bronce, especial
+  - Barras de progreso
+  - "Ver todos los logros" link
+- [x] **Ranking Info:**
+  - Mejor posición actual
+  - Puntos totales
+  - Victorias y torneos jugados
+- [x] **Inscripciones Pendientes (solo mi perfil):**
+  - Alerta visual si hay inscripciones sin pagar/confirmar
+- [x] **Acciones inteligentes:**
+  - Botón "Editar Perfil" solo en mi perfil
+  - Botón "Seguir" solo en perfiles ajenos
+  - Configuración y compartir accesibles
+
+**Diseño Visual:**
+- Glassmorphism: `bg-[#151921]/50` + `backdrop-blur` + bordes `white/5`
+- Gradientes: Rojos FairPadel + acentos azules/morados
+- Animaciones: Framer Motion (entrada, hover, counting)
+- Layout: Responsive (grid cambia en mobile)
+- Tipografía: Inter moderna, blanco con opacidades
+
+**Commits:**
+- Backend: `26456bc` - feat(perfil): implementar backend y frontend
+- Frontend: `851a107` - feat(perfil): página de perfil conectada a backend
 
 ### ⏳ Próximos Módulos Sugeridos
 - [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
@@ -984,7 +1066,7 @@ Y así sucesivamente...
 3. Preguntar al usuario qué prioridad tiene para el día
 4. Recordar: un tema a la vez, entregables desplegables
 
-**Estado de ánimo del usuario:** Satisfecho con el sistema completo de bracket y programación. Backend de programación inteligente implementado con algoritmo de distribución automática. Frontend de programación completado con vista de predicción, distribución por fases y acciones de calcular/aplicar. Sistema listo para testing con datos de demo (400 jugadores disponibles).
+**Estado de ánimo del usuario:** Muy satisfecho con el perfil de jugador implementado. Describe el resultado como "absurdamente brutal". Sistema de torneos completo y funcional. Perfil de jugador con estadísticas reales, logros calculados dinámicamente y diseño moderno glassmorphism. Listo para producción.
 
 ---
 
