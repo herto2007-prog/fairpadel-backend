@@ -22,6 +22,7 @@ import { DemoPublicModule } from './modules/demo/demo-public.module';
 import { ResultadosModule } from './modules/resultados/resultados.module';
 import { RankingsModule } from './modules/rankings/rankings.module';
 import { CircuitosModule } from './modules/circuitos/circuitos.module';
+import { PerfilModule } from './modules/perfil/perfil.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { CircuitosModule } from './modules/circuitos/circuitos.module';
     ResultadosModule, // Registro de resultados y marcador en vivo
     RankingsModule,   // Sistema de rankings y ascensos
     CircuitosModule,  // Circuitos y ligas de torneos
+    PerfilModule,     // Perfiles de jugadores
   ],
   controllers: [AppController],
 })
