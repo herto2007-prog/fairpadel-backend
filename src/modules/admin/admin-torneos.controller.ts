@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   BadRequestException,
   NotFoundException,
@@ -959,7 +960,311 @@ export class AdminTorneosController {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // OVERVIEW / DASHBOARD DEL TORNEO
+    // ═══════════════════════════════════════════════════════════
+  // INSCRIPCIÓN MANUAL (Organizador)
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * GET /admin/torneos/:id/jugadores/buscar
+   * Buscar jugadores para inscripción manual
+   */
+  @Get(':id/jugadores/buscar')
+  async buscarJugadores(
+    @Param('id') tournamentId: string,
+    @Query('q') query: string,
+  ) {
+    if (!query || query.length < 2) {
+      throw new BadRequestException('Mínimo 2 caracteres para buscar');
+    }
+
+    const jugadores = await this.prisma.user.findMany({
+      where: {
+        estado: 'ACTIVO',
+        OR: [
+          { nombre: { contains: query, mode: 'insensitive' } },
+          { apellido: { contains: query, mode: 'insensitive' } },
+          { email: { contains: query, mode: 'insensitive' } },
+          { documento: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        nombre: true,
+        apellido: true,
+        email: true,
+        telefono: true,
+        documento: true,
+        fotoUrl: true,
+        categoriaActual: { select: { id: true, nombre: true, tipo: true } },
+      },
+      take: 10,
+    });
+
+    return { success: true, jugadores };
+  }
+
+  /**
+   * POST /admin/torneos/:id/inscripciones/manual
+   * Crear inscripción manual por organizador
+   */
+  @Post(':id/inscripciones/manual')
+  async crearInscripcionManual(
+    @Param('id') tournamentId: string,
+    @Body() body: {
+      categoryId: string;
+      jugador1Id: string;
+      jugador2Id?: string;
+      jugador2Temp?: {
+        nombre: string;
+        apellido: string;
+        email: string;
+        telefono?: string;
+        documento?: string;
+      };
+      modoPago?: 'COMPLETO' | 'INDIVIDUAL';
+      montoPagado?: number;
+      notas?: string;
+    },
+    @Request() req,
+  ) {
+    const {
+      categoryId,
+      jugador1Id,
+      jugador2Id,
+      jugador2Temp,
+      modoPago = 'COMPLETO',
+      montoPagado = 0,
+      notas,
+    } = body;
+
+    // Validar torneo
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: { categorias: { include: { category: true } } },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    // Validar categoría
+    const categoria = torneo.categorias.find(c => c.categoryId === categoryId);
+    if (!categoria) {
+      throw new BadRequestException('Categoría no válida para este torneo');
+    }
+
+    // Verificar si jugador1 ya está inscrito
+    const existeJugador1 = await this.prisma.inscripcion.findFirst({
+      where: {
+        tournamentId,
+        categoryId,
+        OR: [
+          { jugador1Id },
+          { jugador2Id: jugador1Id },
+        ],
+        estado: { not: 'CANCELADA' },
+      },
+    });
+
+    if (existeJugador1) {
+      throw new BadRequestException('El jugador 1 ya está inscrito en esta categoría');
+    }
+
+    // Verificar jugador2 si existe
+    if (jugador2Id) {
+      const existeJugador2 = await this.prisma.inscripcion.findFirst({
+        where: {
+          tournamentId,
+          categoryId,
+          OR: [
+            { jugador1Id: jugador2Id },
+            { jugador2Id },
+          ],
+          estado: { not: 'CANCELADA' },
+        },
+      });
+
+      if (existeJugador2) {
+        throw new BadRequestException('El jugador 2 ya está inscrito en esta categoría');
+      }
+    }
+
+    // Crear inscripción
+    const inscripcion = await this.prisma.inscripcion.create({
+      data: {
+        tournamentId,
+        categoryId,
+        jugador1Id,
+        jugador2Id,
+        jugador2Email: jugador2Temp?.email,
+        jugador2Documento: jugador2Temp?.documento,
+        estado: montoPagado > 0 ? 'CONFIRMADA' : 'PENDIENTE_PAGO',
+        modoPago,
+        notas: notas,
+      },
+      include: {
+        jugador1: { select: { id: true, nombre: true, apellido: true, email: true, telefono: true } },
+        jugador2: { select: { id: true, nombre: true, apellido: true, email: true, telefono: true } },
+        category: true,
+      },
+    });
+
+    // Crear pago si corresponde
+    if (montoPagado > 0) {
+      await this.prisma.pago.create({
+        data: {
+          inscripcionId: inscripcion.id,
+          monto: montoPagado,
+          comision: 0,
+          estado: 'CONFIRMADO',
+          metodoPago: 'EFECTIVO',
+          jugadorId: req.user.userId,
+          fechaPago: new Date(),
+          fechaConfirm: new Date(),
+        },
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Inscripción creada correctamente',
+      inscripcion,
+    };
+  }
+
+  // 
+  // ═══════════════════════════════════════════════════════════
+  // EDITAR INSCRIPCIÓN Y MOVER DE CATEGORÍA
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * PUT /admin/torneos/:id/inscripciones/:inscripcionId
+   * Editar datos de una inscripción
+   */
+  @Put(':id/inscripciones/:inscripcionId')
+  async editarInscripcion(
+    @Param('id') tournamentId: string,
+    @Param('inscripcionId') inscripcionId: string,
+    @Body() body: {
+      jugador2Id?: string;
+      jugador2Temp?: {
+        nombre?: string;
+        apellido?: string;
+        email?: string;
+        telefono?: string;
+        documento?: string;
+      };
+      modoPago?: 'COMPLETO' | 'INDIVIDUAL';
+      notas?: string;
+    },
+  ) {
+    const inscripcion = await this.prisma.inscripcion.update({
+      where: { id: inscripcionId, tournamentId },
+      data: {
+        jugador2Id: body.jugador2Id,
+        jugador2Email: body.jugador2Temp?.email,
+        jugador2Documento: body.jugador2Temp?.documento,
+        modoPago: body.modoPago,
+        notas: body.notas,
+      },
+      include: {
+        jugador1: { select: { id: true, nombre: true, apellido: true, email: true, telefono: true } },
+        jugador2: { select: { id: true, nombre: true, apellido: true, email: true, telefono: true } },
+        category: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Inscripción actualizada',
+      inscripcion,
+    };
+  }
+
+  /**
+   * PUT /admin/torneos/:id/inscripciones/:inscripcionId/cambiar-categoria
+   * Mover inscripción a otra categoría
+   */
+  @Put(':id/inscripciones/:inscripcionId/cambiar-categoria')
+  async cambiarCategoria(
+    @Param('id') tournamentId: string,
+    @Param('inscripcionId') inscripcionId: string,
+    @Body('nuevaCategoriaId') nuevaCategoriaId: string,
+  ) {
+    // Validar que la nueva categoría existe en el torneo
+    const categoriaExiste = await this.prisma.tournamentCategory.findFirst({
+      where: { tournamentId, categoryId: nuevaCategoriaId },
+    });
+
+    if (!categoriaExiste) {
+      throw new BadRequestException('La categoría no existe en este torneo');
+    }
+
+    // Obtener inscripción actual
+    const inscripcionActual = await this.prisma.inscripcion.findUnique({
+      where: { id: inscripcionId, tournamentId },
+      select: { jugador1Id: true, jugador2Id: true },
+    });
+
+    if (!inscripcionActual) {
+      throw new NotFoundException('Inscripción no encontrada');
+    }
+
+    // Verificar que ninguno de los jugadores esté ya en la nueva categoría
+    if (inscripcionActual.jugador1Id) {
+      const existe = await this.prisma.inscripcion.findFirst({
+        where: {
+          tournamentId,
+          categoryId: nuevaCategoriaId,
+          OR: [
+            { jugador1Id: inscripcionActual.jugador1Id },
+            { jugador2Id: inscripcionActual.jugador1Id },
+          ],
+          estado: { not: 'CANCELADA' },
+          id: { not: inscripcionId },
+        },
+      });
+      if (existe) {
+        throw new BadRequestException('El jugador 1 ya está inscrito en la categoría destino');
+      }
+    }
+
+    if (inscripcionActual.jugador2Id) {
+      const existe = await this.prisma.inscripcion.findFirst({
+        where: {
+          tournamentId,
+          categoryId: nuevaCategoriaId,
+          OR: [
+            { jugador1Id: inscripcionActual.jugador2Id },
+            { jugador2Id: inscripcionActual.jugador2Id },
+          ],
+          estado: { not: 'CANCELADA' },
+          id: { not: inscripcionId },
+        },
+      });
+      if (existe) {
+        throw new BadRequestException('El jugador 2 ya está inscrito en la categoría destino');
+      }
+    }
+
+    const inscripcion = await this.prisma.inscripcion.update({
+      where: { id: inscripcionId, tournamentId },
+      data: { categoryId: nuevaCategoriaId },
+      include: {
+        jugador1: { select: { id: true, nombre: true, apellido: true } },
+        jugador2: { select: { id: true, nombre: true, apellido: true } },
+        category: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Inscripción movida a ' + inscripcion.category.nombre,
+      inscripcion,
+    };
+  }
+
+  // // OVERVIEW / DASHBOARD DEL TORNEO
   // ═══════════════════════════════════════════════════════════
 
   /**
