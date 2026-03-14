@@ -572,7 +572,7 @@ export class ProgramacionService {
       await this.prisma.match.update({
         where: { id: asignacion.partidoId },
         data: {
-          fechaProgramada: new Date(asignacion.fecha),
+          fechaProgramada: new Date(asignacion.fecha + 'T00:00:00.000Z'),
           horaProgramada: asignacion.horaInicio,
           torneoCanchaId: asignacion.torneoCanchaId,
           estado: 'PROGRAMADO',

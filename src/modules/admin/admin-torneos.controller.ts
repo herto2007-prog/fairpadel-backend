@@ -354,9 +354,9 @@ export class AdminTorneosController {
         const torneoData: any = {
           nombre: dto.nombre,
           descripcion: dto.descripcion || '',
-          fechaInicio: new Date(dto.fechaInicio),
-          fechaFin: new Date(dto.fechaFin),
-          fechaLimiteInscr: new Date(dto.fechaLimiteInscripcion || dto.fechaInicio),
+          fechaInicio: new Date(dto.fechaInicio + 'T00:00:00.000Z'),
+          fechaFin: new Date(dto.fechaFin + 'T00:00:00.000Z'),
+          fechaLimiteInscr: new Date((dto.fechaLimiteInscripcion || dto.fechaInicio) + 'T00:00:00.000Z'),
           ciudad: dto.ciudad,
           costoInscripcion: dto.costoInscripcion, // Prisma maneja Decimal desde number
           organizador: { connect: { id: user.userId } },
@@ -704,7 +704,7 @@ export class AdminTorneosController {
     const item = await this.prisma.checklistItem.update({
       where: { id: itemId, tournamentId },
       data: {
-        fechaRecordatorio: new Date(dto.fechaRecordatorio),
+        fechaRecordatorio: new Date(dto.fechaRecordatorio + 'T00:00:00.000Z'),
         recordatorioEnviado: false,
       },
     });

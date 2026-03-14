@@ -68,7 +68,7 @@ export class AuthService {
         apellido: dto.apellido,
         documento: dto.documento,
         telefono: dto.telefono,
-        fechaNacimiento: new Date(dto.fechaNacimiento),
+        fechaNacimiento: new Date(dto.fechaNacimiento + 'T00:00:00.000Z'),
         genero: dto.genero,
         ciudad: dto.ciudad,
         fotoUrl: dto.fotoUrl,

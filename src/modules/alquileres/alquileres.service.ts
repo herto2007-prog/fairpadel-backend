@@ -36,7 +36,8 @@ export class AlquileresService {
   // ============ DISPONIBILIDAD ============
 
   async consultarDisponibilidad(sedeId: string, fecha: string, sedeCanchaId?: string) {
-    const fechaDate = new Date(fecha);
+    // Usar UTC 00:00:00 para consistencia con almacenamiento
+    const fechaDate = new Date(fecha + 'T00:00:00.000Z');
     const diaSemana = fechaDate.getDay();
 
     // Obtener canchas de la sede
@@ -162,7 +163,7 @@ export class AlquileresService {
     }
 
     // Verificar disponibilidad
-    const fecha = new Date(createDto.fecha);
+    const fecha = new Date(createDto.fecha + 'T00:00:00.000Z');
     const diaSemana = fecha.getDay();
 
     const disponibilidad = await this.prisma.alquilerDisponibilidad.findFirst({
@@ -238,7 +239,7 @@ export class AlquileresService {
     };
 
     if (fecha) {
-      where.fecha = new Date(fecha);
+      where.fecha = new Date(fecha + 'T00:00:00.000Z');
     }
 
     return this.prisma.reservaCancha.findMany({
