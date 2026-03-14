@@ -485,18 +485,24 @@ export class AdminDisponibilidadController {
    */
   @Post('dias')
   async configurarDia(@Param('id') tournamentId: string, @Body() dto: ConfigurarDiaDto) {
+    console.log('[Disponibilidad] Configurando día:', { tournamentId, dto });
     try {
-      // Parsear fecha como hora de Paraguay
-      const fecha = this.dateService.parse(dto.fecha);
-
-      // Verificar que la fecha esté dentro del rango del torneo
+      // Validar que el torneo existe
       const torneo = await this.prisma.tournament.findUnique({
         where: { id: tournamentId },
-        select: { fechaInicio: true, fechaFin: true },
+        select: { id: true, nombre: true, fechaInicio: true, fechaFin: true },
       });
+      
       if (!torneo) {
+        console.error('[Disponibilidad] Torneo no encontrado:', tournamentId);
         throw new NotFoundException('Torneo no encontrado');
       }
+      
+      console.log('[Disponibilidad] Torneo encontrado:', torneo.nombre);
+
+      // Parsear fecha como hora de Paraguay
+      const fecha = this.dateService.parse(dto.fecha);
+      console.log('[Disponibilidad] Fecha parseada:', fecha);
 
       // Crear o actualizar la disponibilidad del día
       const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
@@ -521,12 +527,14 @@ export class AdminDisponibilidadController {
         },
       });
 
+      console.log('[Disponibilidad] Día configurado:', disponibilidad.id);
       return {
         success: true,
         message: 'Día configurado correctamente',
         dia: disponibilidad,
       };
     } catch (error: any) {
+      console.error('[Disponibilidad] Error configurando día:', error);
       throw new BadRequestException({
         success: false,
         message: 'Error configurando día',

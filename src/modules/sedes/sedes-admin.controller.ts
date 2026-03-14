@@ -160,6 +160,8 @@ export class SedesAdminController {
   @Roles('admin')
   async create(@Body() dto: CreateSedeDto) {
     try {
+      console.log('[SedesAdmin] Creando sede con datos:', dto);
+      
       const sede = await this.prisma.sede.create({
         data: {
           nombre: dto.nombre,
@@ -171,12 +173,14 @@ export class SedesAdminController {
         },
       });
 
+      console.log('[SedesAdmin] Sede creada:', sede.id);
       return {
         success: true,
         message: 'Sede creada correctamente',
         sede,
       };
     } catch (error) {
+      console.error('[SedesAdmin] Error creando sede:', error);
       return {
         success: false,
         message: 'Error creando sede',
