@@ -377,9 +377,80 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
 - Backend: `26456bc` - feat(perfil): implementar backend y frontend
 - Frontend: `851a107` - feat(perfil): página de perfil conectada a backend
 
+### ✅ Completado (2026-03-14) - Dashboard Maquiavélico + Overview Organizador
+
+**Dashboard Post-Login Unificado:**
+- [x] **HomeDashboardPage** - Reemplaza NovedadesPage vacía
+- [x] **FOMO Social** - Feed "¿Te están pasando?" con actividad de otros jugadores
+- [x] **Urgencia** - Torneos que cierran pronto con badges pulsantes
+- [x] **Ego Validation** - Stats rápidos (racha, victorias, ranking, torneos)
+- [x] **Progreso** - Barra hacia siguiente categoría
+- [x] **Redirección automática** - Landing → Dashboard si hay sesión
+
+**Overview Tab (Organizador):**
+- [x] **Progreso del torneo** - Barra 0-100% con checklist visual
+- [x] **Stats cards** - Inscripciones, ingresos, checklist, estado
+- [x] **Tareas pendientes** - Alertas por prioridad (urgente/advertencia/info)
+- [x] **Inscripciones por categoría** - Gráfico de barras
+- [x] **Link público** - Copiar y ver página del torneo
+
+### ✅ Completado (2026-03-14) - Módulo Inscripciones 100% Funcional
+
+**Backend:**
+- [x] `GET /admin/torneos/:id/overview` - Resumen ejecutivo del torneo
+- [x] `GET /admin/torneos/:id/jugadores/buscar` - Buscar jugadores registrados
+- [x] `POST /admin/torneos/:id/inscripciones/manual` - Crear inscripción manual
+- [x] `PUT /admin/torneos/:id/inscripciones/:inscId` - Editar inscripción
+- [x] `PUT /admin/torneos/:id/inscripciones/:inscId/cambiar-categoria` - Mover de categoría
+
+**Frontend - InscripcionesManager Pro:**
+- [x] **Vista doble** - Cards y Tabla
+- [x] **Filtros avanzados** - Por estado, fecha, categoría, búsqueda
+- [x] **Ordenamiento** - Por fecha, nombre, estado, monto
+- [x] **Exportar CSV** - Descarga Excel-compatible
+- [x] **Selección múltiple** - Acciones masivas
+- [x] **Confirmar/Cancelar** - Con modal de confirmación
+
+**ModalInscripcionManual (Wizard 3 pasos):**
+- [x] Paso 1: Buscar jugador 1 (registrado)
+- [x] Paso 2: Buscar jugador 2 (registrado/temporal/sin pareja)
+- [x] Paso 3: Seleccionar categoría, modo pago, monto, notas
+
+**ModalEditarInscripcion:**
+- [x] Cambiar jugador 2 (buscar registrado o ingresar temporal)
+- [x] Cambiar modo de pago
+- [x] Editar notas
+
+**ModalCambiarCategoria:**
+- [x] Listado de categorías disponibles
+- [x] Validación de jugadores no duplicados
+- [x] Confirmación antes de mover
+
+**Acciones en cards:**
+- [x] Botón editar (ícono lápiz)
+- [x] Botón cambiar categoría (ícono flechas)
+
+### ✅ Completado (2026-03-14) - Módulo Canchas (Disponibilidad) - Mejorado
+
+**Problemas resueltos:**
+- [x] **Vista unificada** - Elimina sub-tabs Configurar/Ver, ahora es una sola interfaz fluida
+- [x] **Stats de capacidad** - 4 cards: Total Slots, Libres, Ocupados, Canchas
+- [x] **Copiar configuración de día** - Seleccionar día origen y destino
+
+**CanchasManager (nuevo componente unificado):**
+- [x] Stats cards con ocupación porcentual
+- [x] Botón "Copiar Configuración" para duplicar días
+- [x] Vista semana tipo calendario con grid de slots
+- [x] Filtro de canchas por colores
+- [x] Toggle vista Semana/Lista
+- [x] Navegación por semanas
+
+**Cambios en GestionarTorneoPage:**
+- [x] Elimina sub-tabs de disponibilidad
+- [x] Usa CanchasManager directamente
+
 ### ⏳ Próximos Módulos Sugeridos
 - [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
-- [ ] **Dashboard Analítico** - Stats para organizadores (inscripciones, ingresos, comparativas)
 - [ ] **Integración Bancard** - Pagos online de inscripciones
 - [ ] **App Móvil** - Versión nativa (React Native/Expo)
 
