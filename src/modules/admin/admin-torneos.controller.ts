@@ -957,4 +957,236 @@ export class AdminTorneosController {
       });
     }
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // OVERVIEW / DASHBOARD DEL TORNEO
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * GET /admin/torneos/:id/overview
+   * Resumen ejecutivo del torneo con progreso y tareas pendientes
+   */
+  @Get(':id/overview')
+  async getOverview(@Param('id') tournamentId: string) {
+    const [
+      torneo,
+      inscripciones,
+      categorias,
+      comision,
+      checklist,
+      fixtureVersions,
+      disponibilidad,
+    ] = await Promise.all([
+      this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        include: {
+          sedePrincipal: true,
+          categorias: { include: { category: true } },
+          modalidades: { include: { modalidadConfig: true } },
+          organizador: {
+            select: { id: true, nombre: true, apellido: true, email: true },
+          },
+        },
+      }),
+      this.prisma.inscripcion.findMany({
+        where: { tournamentId },
+        include: {
+          category: true,
+          pagos: { where: { estado: 'CONFIRMADO' } },
+        },
+      }),
+      this.prisma.tournamentCategory.findMany({
+        where: { tournamentId },
+        include: { category: true },
+      }),
+      this.prisma.torneoComision.findUnique({
+        where: { tournamentId },
+      }),
+      this.prisma.checklistItem.findMany({
+        where: { tournamentId },
+      }),
+      this.prisma.fixtureVersion.findMany({
+        where: { tournamentId },
+      }),
+      this.prisma.torneoDisponibilidadDia.findMany({
+        where: { tournamentId },
+      }),
+    ]);
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    const ahora = new Date();
+    const fechaInicio = torneo.fechaInicio ? new Date(torneo.fechaInicio) : null;
+    const fechaLimite = torneo.fechaLimiteInscr ? new Date(torneo.fechaLimiteInscr) : null;
+    const diasHastaInicio = fechaInicio ? Math.ceil((fechaInicio.getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24)) : null;
+    const diasHastaCierre = fechaLimite ? Math.ceil((fechaLimite.getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24)) : null;
+
+    const inscripcionesStats = {
+      total: inscripciones.length,
+      confirmadas: inscripciones.filter(i => i.estado === 'CONFIRMADA').length,
+      pendientesPago: inscripciones.filter(i => i.estado === 'PENDIENTE_PAGO').length,
+      pendientesConfirmacion: inscripciones.filter(i => i.estado === 'PENDIENTE_CONFIRMACION').length,
+      incompletas: inscripciones.filter(i => !i.jugador2Id).length,
+      ingresos: inscripciones
+        .filter(i => i.estado === 'CONFIRMADA')
+        .reduce((sum, i: any) => sum + (i.pagos?.reduce((pSum: number, p: any) => pSum + Number(p.monto || 0), 0) || 0), 0),
+    };
+
+    const inscripcionesPorCategoria = categorias.map(cat => {
+      const insc = inscripciones.filter(i => i.categoryId === cat.categoryId);
+      return {
+        categoriaId: cat.categoryId,
+        nombre: cat.category.nombre,
+        tipo: cat.category.tipo,
+        total: insc.length,
+        confirmadas: insc.filter(i => i.estado === 'CONFIRMADA').length,
+        pendientes: insc.filter(i => i.estado === 'PENDIENTE_PAGO' || i.estado === 'PENDIENTE_CONFIRMACION').length,
+      };
+    });
+
+    const checklistTotal = checklist.length || 10;
+    const checklistCompletados = checklist.filter(c => c.completado).length;
+    const checklistProgress = Math.round((checklistCompletados / checklistTotal) * 100);
+
+    const tareasPendientes: any[] = [];
+
+    if (!torneo.flyerUrl) {
+      tareasPendientes.push({
+        id: 'flyer',
+        tipo: 'advertencia',
+        titulo: 'Subir flyer del torneo',
+        descripcion: 'Un buen flyer atrae mas inscripciones',
+        accion: { texto: 'Subir flyer', link: 'configuracion' },
+      });
+    }
+
+    if (!torneo.sedeId) {
+      tareasPendientes.push({
+        id: 'sede',
+        tipo: 'urgente',
+        titulo: 'Asignar sede principal',
+        descripcion: 'Los jugadores necesitan saber donde jugar',
+        accion: { texto: 'Asignar sede', link: 'disponibilidad' },
+      });
+    }
+
+    if (comision?.bloqueoActivo) {
+      tareasPendientes.push({
+        id: 'comision',
+        tipo: 'urgente',
+        titulo: 'Pagar comision para desbloquear',
+        descripcion: `Debes pagar Gs. ${comision.montoEstimado?.toLocaleString('es-PY')} para acceder al fixture`,
+        accion: { texto: 'Pagar comision', link: 'comision' },
+      });
+    }
+
+    const tieneFixture = fixtureVersions.length > 0;
+    if (!tieneFixture && inscripcionesStats.confirmadas >= 4) {
+      tareasPendientes.push({
+        id: 'fixture',
+        tipo: diasHastaInicio && diasHastaInicio <= 2 ? 'urgente' : 'advertencia',
+        titulo: 'Sortear fixture',
+        descripcion: `Tienes ${inscripcionesStats.confirmadas} inscripciones confirmadas. Es hora de sortear!`,
+        accion: { texto: 'Sortear', link: 'bracket' },
+      });
+    }
+
+    if (tieneFixture && disponibilidad.length === 0) {
+      tareasPendientes.push({
+        id: 'disponibilidad',
+        tipo: diasHastaInicio && diasHastaInicio <= 3 ? 'urgente' : 'advertencia',
+        titulo: 'Configurar disponibilidad de canchas',
+        descripcion: 'Necesitas definir cuando y donde se juegan los partidos',
+        accion: { texto: 'Configurar', link: 'disponibilidad' },
+      });
+    }
+
+    if (diasHastaCierre !== null && diasHastaCierre <= 2 && diasHastaCierre > 0) {
+      tareasPendientes.push({
+        id: 'cierre',
+        tipo: 'info',
+        titulo: 'Cierre de inscripciones proximo',
+        descripcion: `Faltan ${diasHastaCierre} dias para cerrar inscripciones`,
+        accion: { texto: 'Ver inscripciones', link: 'inscripciones' },
+      });
+    }
+
+    if (inscripcionesStats.pendientesPago > 0) {
+      tareasPendientes.push({
+        id: 'pendientes',
+        tipo: 'advertencia',
+        titulo: `${inscripcionesStats.pendientesPago} inscripciones pendientes de pago`,
+        descripcion: 'Algunos jugadores completaron el registro pero no pagaron',
+        accion: { texto: 'Revisar', link: 'inscripciones' },
+      });
+    }
+
+    const requisitos = [
+      { nombre: 'flyer', completado: !!torneo.flyerUrl, peso: 10 },
+      { nombre: 'sede', completado: !!torneo.sedeId, peso: 15 },
+      { nombre: 'comision', completado: !comision?.bloqueoActivo, peso: 15 },
+      { nombre: 'fixture', completado: tieneFixture, peso: 25 },
+      { nombre: 'disponibilidad', completado: disponibilidad.length > 0, peso: 20 },
+      { nombre: 'inscripciones', completado: inscripcionesStats.confirmadas >= 4, peso: 15 },
+    ];
+
+    const progresoGeneral = Math.round(
+      requisitos.reduce((acc, r) => acc + (r.completado ? r.peso : 0), 0)
+    );
+
+    let estadoTorneo: 'configuracion' | 'inscripciones' | 'sorteo' | 'programacion' | 'en_curso' | 'finalizado';
+    if (torneo.estado === 'FINALIZADO') {
+      estadoTorneo = 'finalizado';
+    } else if (fechaInicio && fechaInicio <= ahora) {
+      estadoTorneo = 'en_curso';
+    } else if (tieneFixture && disponibilidad.length > 0) {
+      estadoTorneo = 'programacion';
+    } else if (tieneFixture) {
+      estadoTorneo = 'sorteo';
+    } else if (torneo.estado === 'PUBLICADO') {
+      estadoTorneo = 'inscripciones';
+    } else {
+      estadoTorneo = 'configuracion';
+    }
+
+    return {
+      success: true,
+      data: {
+        torneo: {
+          id: torneo.id,
+          nombre: torneo.nombre,
+          slug: torneo.slug,
+          estado: torneo.estado,
+          estadoProceso: estadoTorneo,
+          fechaInicio: torneo.fechaInicio,
+          fechaFin: torneo.fechaFin,
+          fechaLimiteInscr: torneo.fechaLimiteInscr,
+          ciudad: torneo.ciudad,
+          flyerUrl: torneo.flyerUrl,
+          sede: torneo.sedePrincipal,
+          diasHastaInicio,
+          diasHastaCierre,
+        },
+        progreso: {
+          general: progresoGeneral,
+          checklist: checklistProgress,
+          detalle: requisitos,
+        },
+        inscripciones: {
+          ...inscripcionesStats,
+          porCategoria: inscripcionesPorCategoria,
+        },
+        comision: comision ? {
+          estado: comision.estado,
+          bloqueoActivo: comision.bloqueoActivo,
+          montoEstimado: comision.montoEstimado,
+          montoPagado: comision.montoPagado,
+        } : null,
+        tareasPendientes: tareasPendientes.slice(0, 5),
+        linkPublico: `/t/${torneo.slug}`,
+      },
+    };
+  }
 }
