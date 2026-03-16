@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-14 08:30
-> **Conversación actual:** Perfil de Jugador implementado con estadísticas reales, logros calculados dinámicamente y diseño "absurdamente brutal". Backend completo con endpoints público y privado.
+> **Última actualización:** 2026-03-16 20:30
+> **Conversación actual:** Mejoras visuales en el fixture/bracket: fotos de jugadores superpuestas con bordes rojizos en BracketView, MarcadorEnVivo y RegistroResultadoModal para identificación rápida de parejas.
 
 ---
 
@@ -209,12 +209,21 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
   - `POST /admin/resultados/matches/:id/punto` - Registrar punto
   - `POST /admin/resultados/matches/:id/deshacer` - Deshacer último punto
   - `POST /admin/resultados/matches/:id/finalizar` - Finalizar y avanzar ganador
+  - `POST /admin/resultados/matches/:id/configuracion` - Cambiar formato set3/modo punto
   - `GET /admin/resultados/matches/:id/marcador` - Obtener marcador actual
 - [x] **Lógica de juego completa**:
   - Sets 1 y 2: games 0-6/7 con diferencia de 2
   - Set 3 modo **Set Completo**: games 0-6/7
   - Set 3 modo **Súper Tie-Break**: puntos hasta 10 con diferencia de 2
+  - **Punto de Oro**: Opción configurable (default en amateur PY)
+  - **Ventaja**: Opción configurable (para profesional)
   - Avance automático del ganador al siguiente partido del bracket
+- [x] **Sistema de Saque Profesional (Reglamento FIP)**:
+  - Configuración inicial: seleccionar qué jugador de cada pareja saca primero
+  - Durante un game: el mismo jugador saca TODOS los puntos
+  - Al cambiar de game: cambia la pareja que saca + alterna jugador dentro de la pareja
+  - Indicador visual de quién saca con nombre del jugador
+  - Tie-break: cambia cada 2 puntos
 - [x] **Resultados especiales**:
   - Nuevos estados: `RETIRADO`, `DESCALIFICADO`, `WO`
   - Campos: `parejaRetirada` (1 o 2), `razonResultado`
@@ -224,8 +233,16 @@ const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
   - Formulario para resultado normal con selección de formato set3
   - Formulario para incidencias con selección de tipo y pareja afectada
   - Visualización destacada de la pareja afectada (borde rojo)
+  - **Carga de resultado existente**: Si el partido ya tiene resultado, lo muestra en el formulario
 - [x] **MarcadorEnVivo (Frontend)** - Pantalla de marcador punto a punto
+  - **Configuración previa**: Formato del set 3, modo de punto (oro/ventaja), selección de saque
+  - **Punto de Oro visual**: En 40-40 con modo punto de oro, puntos cambian a color amarillo/dorado con banner "⚡ PUNTO DE ORO ⚡"
+  - **Súper Tie-Break**: Muestra puntos numéricos (1, 2, 3...) en lugar de 15-30-40
+  - **Botón "Guardar Resultado" prominente**: Cuando el partido termina (2 sets ganados), aparece trofeo amarillo con botón verde para persistir en BD
 - [x] **Integración en BracketView** - Botones "En Vivo" y "Resultado" en cada partido
+  - Muestra resultado completo: Set 1 | Set 2 | Set 3 (si aplica)
+  - Badge "Finalizado" en partidos terminados
+  - Ganador destacado en verde
 
 ### ✅ Completado (2026-03-13) - Sistema de Rankings y Ascensos
 - [x] **Schema Prisma extendido**:
@@ -448,6 +465,23 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
 **Cambios en GestionarTorneoPage:**
 - [x] Elimina sub-tabs de disponibilidad
 - [x] Usa CanchasManager directamente
+
+### ✅ Completado (2026-03-16) - Fotos de Jugadores en Fixture
+
+**Nuevo Componente: `ParejaAvatar`**
+- Ubicación: `frontend/src/components/ui/ParejaAvatar.tsx`
+- Muestra fotos de ambos jugadores de una pareja superpuestas
+- Bordes rojizos (`#df2531`) según el tono de FairPadel
+- Fallback con iniciales cuando no hay foto
+- Tamaños: `sm`, `md`, `lg`
+
+**Archivos actualizados:**
+- `BracketView.tsx` - Fotos en cada tarjeta de partido
+- `MarcadorEnVivo.tsx` - Fotos en el header del modal
+- `RegistroResultadoModal.tsx` - Fotos en el header y selección de parejas
+
+**Backend:**
+- `admin-bracket.controller.ts` - Agregado `fotoUrl` en la consulta de `inscripcionGanadora`
 
 ### ⏳ Próximos Módulos Sugeridos
 - [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
@@ -1141,4 +1175,4 @@ Y así sucesivamente...
 
 ---
 
-*Documento actualizado: 2026-03-12 - Sistema de Resultados implementado. Backend con lógica completa de juego (sets, tie-breaks, súper tie-break) y avance automático de ganadores. Frontend con modal de registro post-partido y marcador en vivo punto a punto. Listo para testing.*
+*Documento actualizado: 2026-03-14 - Sistema de Resultados y Marcador en Vivo 100% funcional. Implementado: reglamento FIP de saque (rotación por games), punto de oro/ventaja configurable, súper tie-break con puntos numéricos, visualización dorada en 40-40, botón "Guardar Resultado" prominente al finalizar. Sincronización completa entre marcador en vivo y bracket. Testing exitoso.*

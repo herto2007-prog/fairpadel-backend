@@ -531,6 +531,7 @@ export class AdminBracketController {
                   id: true,
                   nombre: true,
                   apellido: true,
+                  fotoUrl: true,
                 },
               },
               jugador2: {
@@ -538,6 +539,7 @@ export class AdminBracketController {
                   id: true,
                   nombre: true,
                   apellido: true,
+                  fotoUrl: true,
                 },
               },
             },
