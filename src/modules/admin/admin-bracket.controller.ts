@@ -299,7 +299,7 @@ export class AdminBracketController {
   @Post('categorias/:id/bracket/sortear')
   async sortearBracket(
     @Param('id') tournamentCategoryId: string,
-    @Body() body?: { guardar?: boolean; ordenInscripciones?: string[] },
+    @Body() body?: { guardar?: boolean; ordenInscripciones?: string[]; usarSemillas?: boolean },
   ) {
     try {
       // Obtener la categoría
@@ -366,10 +366,21 @@ export class AdminBracketController {
         );
       }
 
-      // Realizar el sorteo aleatorio
-      const ordenSorteo = body?.ordenInscripciones 
-        ? body.ordenInscripciones 
-        : [...inscripciones].sort(() => Math.random() - 0.5).map(i => i.id);
+      // Determinar método de sorteo
+      const usarSemillas = body?.usarSemillas ?? false;
+      
+      let ordenSorteo: string[];
+      
+      if (body?.ordenInscripciones) {
+        // Usar orden proporcionado manualmente
+        ordenSorteo = body.ordenInscripciones;
+      } else if (usarSemillas) {
+        // Sorteo con semillas basado en ranking
+        ordenSorteo = await this.realizarSorteoConSemillas(inscripciones, categoria);
+      } else {
+        // Sorteo aleatorio puro
+        ordenSorteo = [...inscripciones].sort(() => Math.random() - 0.5).map(i => i.id);
+      }
 
       // Generar bracket con sistema paraguayo
       const { config, partidos } = await this.bracketService.generarBracket({
@@ -714,5 +725,101 @@ export class AdminBracketController {
         message: error.message || 'Error re-sorteando bracket',
       });
     }
+  }
+
+  /**
+   * Realiza sorteo con semillas basado en ranking del circuito
+   * Las parejas se ordenan por ranking y se distribuyen en el bracket
+   * para evitar que los mejores se encuentren antes de las finales
+   */
+  private async realizarSorteoConSemillas(
+    inscripciones: any[],
+    categoria: any,
+  ): Promise<string[]> {
+    // Obtener rankings de los jugadores para esta categoría
+    const jugadorIds = [...new Set(inscripciones.flatMap(i => [i.jugador1Id, i.jugador2Id].filter(Boolean)))];
+    
+    // Consultar rankings de tipo CATEGORIA para esta categoría específica
+    const rankings = await this.prisma.ranking.findMany({
+      where: {
+        jugadorId: { in: jugadorIds },
+        tipoRanking: 'CATEGORIA',
+        alcance: categoria.categoryId,
+        temporada: new Date().getFullYear().toString(),
+      },
+    });
+
+    // Crear mapa de rankings por jugador
+    const rankingMap = new Map(rankings.map(r => [r.jugadorId, r]));
+
+    // Calcular semilla para cada pareja
+    // La semilla se calcula sumando la posición inversa de ambos jugadores
+    // (menor número = mejor semilla)
+    const parejasConSemilla = inscripciones.map(inscripcion => {
+      const rankingJ1 = rankingMap.get(inscripcion.jugador1Id);
+      const rankingJ2 = rankingMap.get(inscripcion.jugador2Id);
+      
+      // Calcular puntos de semilla (más alto = mejor)
+      // Si no tiene ranking, asignar 0 puntos (será considerado como sin semilla)
+      const puntosJ1 = rankingJ1 ? (1000 - rankingJ1.posicion) : 0;
+      const puntosJ2 = rankingJ2 ? (1000 - rankingJ2.posicion) : 0;
+      
+      // La semilla es la suma de puntos de ambos jugadores
+      // Si ambos tienen 0, se asigna -1 para identificar que no tienen semilla
+      const semilla = (puntosJ1 === 0 && puntosJ2 === 0) ? -1 : (puntosJ1 + puntosJ2);
+      
+      return {
+        inscripcionId: inscripcion.id,
+        semilla,
+        tieneRanking: semilla !== -1,
+      };
+    });
+
+    // Separar parejas con y sin ranking
+    const conRanking = parejasConSemilla.filter(p => p.tieneRanking).sort((a, b) => b.semilla - a.semilla);
+    const sinRanking = parejasConSemilla.filter(p => !p.tieneRanking);
+
+    // Mezclar las sin ranking aleatoriamente
+    const sinRankingMezcladas = sinRanking.sort(() => Math.random() - 0.5);
+
+    // Orden final: primero las con ranking (de mejor a peor), luego las sin ranking (aleatorio)
+    const ordenFinal = [...conRanking, ...sinRankingMezcladas].map(p => p.inscripcionId);
+
+    // Aplicar algoritmo de distribución de semillas
+    // Esto asegura que las mejores parejas estén en posiciones opuestas del bracket
+    return this.distribuirSemillasEnBracket(ordenFinal);
+  }
+
+  /**
+   * Distribuye las semillas en el bracket para que los mejores
+   * no se encuentren hasta las rondas finales
+   * Algoritmo: posición 1, 2, luego distribuir el resto
+   */
+  private distribuirSemillasEnBracket(orden: string[]): string[] {
+    if (orden.length <= 2) return orden;
+
+    const resultado: string[] = new Array(orden.length);
+    const mitad = Math.floor(orden.length / 2);
+
+    // Cabeza de serie #1 va a posición 0
+    resultado[0] = orden[0];
+    // Cabeza de serie #2 va a última posición
+    resultado[orden.length - 1] = orden[1];
+
+    // El resto se distribuye alternando entre primera y segunda mitad
+    let idxIzquierda = 1;
+    let idxDerecha = orden.length - 2;
+
+    for (let i = 2; i < orden.length; i++) {
+      if (i % 2 === 0) {
+        // Par: poner en mitad izquierda
+        resultado[idxIzquierda++] = orden[i];
+      } else {
+        // Impar: poner en mitad derecha
+        resultado[idxDerecha--] = orden[i];
+      }
+    }
+
+    return resultado;
   }
 }
