@@ -125,6 +125,20 @@ export class BracketService {
       partidosZona.push(partido);
       partidos.push(partido);
     }
+    
+    // Si hay número impar de parejas, crear un partido BYE adicional para la última pareja
+    if (dto.totalParejas % 2 !== 0) {
+      const partidoBye: MatchNode = {
+        id: generarId(),
+        fase: FaseBracket.ZONA,
+        orden: config.partidosZona + 1,
+        esBye: true,
+        tipoEntrada1: TipoEntrada.INSCRIPCION,
+        tipoEntrada2: TipoEntrada.INSCRIPCION,
+      };
+      partidosZona.push(partidoBye);
+      partidos.push(partidoBye);
+    }
 
     // 2. CREAR PARTIDOS DE RONDA DE AJUSTE (si aplica)
     const partidosRondaAjuste: MatchNode[] = [];
@@ -455,14 +469,26 @@ export class BracketService {
         };
 
         // Asignar inscripciones a partidos de ZONA
-        if (fase === FaseBracket.ZONA && !partido.esBye) {
-          if (indiceInscripcion < inscripcionesZona.length) {
+        if (fase === FaseBracket.ZONA) {
+          // Siempre asignar 2 inscripciones por partido de zona (incluso si es BYE)
+          // para asegurar que todas las parejas queden asignadas exactamente una vez
+          const tienePareja1 = indiceInscripcion < inscripcionesZona.length;
+          const tienePareja2 = indiceInscripcion + 1 < inscripcionesZona.length;
+          
+          if (tienePareja1) {
             createData.inscripcion1Id = inscripcionesZona[indiceInscripcion].id;
             indiceInscripcion++;
           }
-          if (indiceInscripcion < inscripcionesZona.length) {
+          if (tienePareja2) {
             createData.inscripcion2Id = inscripcionesZona[indiceInscripcion].id;
             indiceInscripcion++;
+          }
+          
+          // Si solo hay una pareja en este partido, es un BYE efectivo
+          // La pareja pasa automáticamente
+          if (tienePareja1 && !tienePareja2) {
+            createData.esBye = true;
+            createData.inscripcionGanadoraId = createData.inscripcion1Id;
           }
         }
 
