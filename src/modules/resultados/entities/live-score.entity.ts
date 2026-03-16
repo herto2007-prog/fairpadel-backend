@@ -6,7 +6,10 @@ export interface LiveScore {
   gameP2: number;
   puntoP1: number | string; // 0, 15, 30, 40, 'AD' o número para tie-break
   puntoP2: number | string;
-  saque: number; // 1 o 2 - quién saca
+  saque: number; // 1 o 2 - qué pareja saca
+  jugadorSacaP1: 1 | 2; // Qué jugador de la pareja 1 saca (1 = jugador1, 2 = jugador2)
+  jugadorSacaP2: 1 | 2; // Qué jugador de la pareja 2 saca
+  puntosConsecutivos: number; // Puntos jugados con el mismo jugador sacando (cambia cada 2)
   historial: HistorialPunto[];
   setsCompletados: SetCompletado[];
   estado: 'EN_JUEGO' | 'SET_POINT' | 'MATCH_POINT' | 'TIE_BREAK' | 'SUPER_TIE_BREAK' | 'FINALIZADO';

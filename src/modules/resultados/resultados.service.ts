@@ -215,7 +215,10 @@ export class ResultadosService {
       gameP2: 0,
       puntoP1: 0,
       puntoP2: 0,
-      saque: 1, // Pareja 1 saca primero
+      saque: dto.saqueInicial || 1, // Pareja que saca primero (configurable)
+      jugadorSacaP1: dto.jugadorSacaP1 || 1, // Por defecto jugador 1 de la pareja 1
+      jugadorSacaP2: dto.jugadorSacaP2 || 1, // Por defecto jugador 1 de la pareja 2
+      puntosConsecutivos: 0, // Contador de puntos con el mismo saque
       historial: [],
       setsCompletados: [],
       estado: 'EN_JUEGO',
@@ -411,6 +414,7 @@ export class ResultadosService {
     // Actualizar marcador según ganador
     const esTieBreak = this.esTieBreak(liveScore);
     const esSuperTieBreak = liveScore.setActual === 3 && match.formatoSet3 === FormatoSet3.SUPER_TIE_BREAK;
+    const gameAntes = liveScore.gameP1 + liveScore.gameP2;
 
     if (esSuperTieBreak) {
       this.actualizarSuperTieBreak(liveScore, dto.ganador);
@@ -422,6 +426,9 @@ export class ResultadosService {
 
     // Verificar si se ganó el set o el partido
     this.verificarGanadorSet(liveScore, match.formatoSet3);
+
+    // Actualizar el saque (cambia cada 2 puntos, o al cambiar de game cambia la pareja)
+    this.actualizarSaque(liveScore, gameAntes);
 
     // Guardar cambios
     await this.prisma.match.update({
@@ -762,9 +769,17 @@ export class ResultadosService {
       liveScore.puntoP2 = 0;
     }
 
-    // Cambio de saque cada 2 puntos en tie-break
+    // Cambio de saque cada 2 puntos en tie-break, y también cambia el jugador
     const totalPuntos = p1 + p2;
-    liveScore.saque = (totalPuntos % 4 < 2) ? 1 : 2;
+    if (totalPuntos % 2 === 0 && totalPuntos > 0) {
+      // Cambiar de jugador dentro de la misma pareja
+      if (liveScore.saque === 1) {
+        liveScore.jugadorSacaP1 = liveScore.jugadorSacaP1 === 1 ? 2 : 1;
+      } else {
+        liveScore.jugadorSacaP2 = liveScore.jugadorSacaP2 === 1 ? 2 : 1;
+      }
+    }
+    liveScore.saque = (Math.floor(totalPuntos / 2) % 2 === 0) ? 1 : 2;
   }
 
   private actualizarSuperTieBreak(liveScore: LiveScore, ganador: number) {
@@ -788,6 +803,49 @@ export class ResultadosService {
       liveScore.gameP2 = 1;
       liveScore.puntoP1 = p1;
       liveScore.puntoP2 = p2;
+    }
+
+    // En súper tie-break el saque cambia cada 2 puntos
+    const totalPuntos = p1 + p2;
+    if (totalPuntos % 2 === 0 && totalPuntos > 0) {
+      // Cambiar de jugador dentro de la misma pareja
+      if (liveScore.saque === 1) {
+        liveScore.jugadorSacaP1 = liveScore.jugadorSacaP1 === 1 ? 2 : 1;
+      } else {
+        liveScore.jugadorSacaP2 = liveScore.jugadorSacaP2 === 1 ? 2 : 1;
+      }
+    }
+    // Cambiar de pareja cada 2 puntos también
+    liveScore.saque = (Math.floor(totalPuntos / 2) % 2 === 0) ? 1 : 2;
+  }
+
+  /**
+   * Actualiza el saque según las reglas del pádel:
+   * - El mismo jugador saca durante 2 puntos consecutivos
+   * - Luego cambia al otro jugador de la misma pareja
+   * - Al cambiar de game, cambia la pareja que saca
+   */
+  private actualizarSaque(liveScore: LiveScore, gameAntes: number) {
+    const gameDespues = liveScore.gameP1 + liveScore.gameP2;
+    
+    // Si cambió de game, cambia la pareja que saca y resetea contador
+    if (gameDespues > gameAntes) {
+      liveScore.saque = liveScore.saque === 1 ? 2 : 1;
+      liveScore.puntosConsecutivos = 0;
+      return;
+    }
+
+    // Incrementar contador de puntos consecutivos
+    liveScore.puntosConsecutivos++;
+
+    // Si ya jugó 2 puntos con el mismo saque, cambiar de jugador
+    if (liveScore.puntosConsecutivos >= 2) {
+      if (liveScore.saque === 1) {
+        liveScore.jugadorSacaP1 = liveScore.jugadorSacaP1 === 1 ? 2 : 1;
+      } else {
+        liveScore.jugadorSacaP2 = liveScore.jugadorSacaP2 === 1 ? 2 : 1;
+      }
+      liveScore.puntosConsecutivos = 0;
     }
   }
 

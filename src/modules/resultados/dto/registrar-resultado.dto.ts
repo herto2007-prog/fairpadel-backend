@@ -69,6 +69,24 @@ export class IniciarPartidoDto {
   @IsOptional()
   @IsEnum(['VENTAJA', 'PUNTO_ORO'], { message: 'Modo de punto inválido' })
   modoPunto?: 'VENTAJA' | 'PUNTO_ORO';
+
+  @IsOptional()
+  @IsInt({ message: 'Jugador que saca P1 debe ser 1 o 2' })
+  @Min(1)
+  @Max(2)
+  jugadorSacaP1?: 1 | 2;
+
+  @IsOptional()
+  @IsInt({ message: 'Jugador que saca P2 debe ser 1 o 2' })
+  @Min(1)
+  @Max(2)
+  jugadorSacaP2?: 1 | 2;
+
+  @IsOptional()
+  @IsInt({ message: 'Saque inicial debe ser 1 o 2' })
+  @Min(1)
+  @Max(2)
+  saqueInicial?: 1 | 2;
 }
 
 export class CambiarConfiguracionDto {
