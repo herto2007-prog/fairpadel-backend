@@ -423,11 +423,16 @@ export class AdminBracketController {
           });
         }
 
+        // Ordenar inscripciones según el sorteo para asignar correctamente a los partidos
+        const inscripcionesOrdenadas = ordenSorteo
+          .map(id => inscripciones.find(i => i.id === id))
+          .filter(Boolean); // Eliminar undefineds
+
         fixtureVersionId = await this.bracketService.guardarBracket(
           tournamentCategoryId,
           config,
           partidos,
-          inscripciones,
+          inscripcionesOrdenadas,
         );
 
         // Actualizar categoría
@@ -571,8 +576,8 @@ export class AdminBracketController {
           fase: p.ronda,
           orden: p.numeroRonda,
           esBye: p.esBye,
-          pareja1: p.inscripcion1,
-          pareja2: p.inscripcion2,
+          inscripcion1: p.inscripcion1,
+          inscripcion2: p.inscripcion2,
           ganador: p.inscripcionGanadora,
           resultado:
             p.set1Pareja1 !== null
