@@ -709,7 +709,7 @@ export class ResultadosService {
         liveScore.gameP1++;
         liveScore.puntoP1 = 0;
         liveScore.puntoP2 = 0;
-        liveScore.saque = 2; // Cambio de saque
+        // NOTA: El cambio de saque lo maneja actualizarSaque()
       } else if (liveScore.puntoP2 === 'AD') {
         // Deuce - volvemos a 40-40
         liveScore.puntoP1 = 40;
@@ -719,7 +719,7 @@ export class ResultadosService {
         liveScore.gameP1++;
         liveScore.puntoP1 = 0;
         liveScore.puntoP2 = 0;
-        liveScore.saque = 2;
+        // NOTA: El cambio de saque lo maneja actualizarSaque()
       } else {
         liveScore.puntoP1 = VALORES_PUNTOS[idxP1 + 1];
       }
@@ -729,7 +729,7 @@ export class ResultadosService {
         liveScore.gameP2++;
         liveScore.puntoP1 = 0;
         liveScore.puntoP2 = 0;
-        liveScore.saque = 1; // Cambio de saque
+        // NOTA: El cambio de saque lo maneja actualizarSaque()
       } else if (liveScore.puntoP1 === 'AD') {
         // Deuce - volvemos a 40-40
         liveScore.puntoP1 = 40;
@@ -739,7 +739,7 @@ export class ResultadosService {
         liveScore.gameP2++;
         liveScore.puntoP1 = 0;
         liveScore.puntoP2 = 0;
-        liveScore.saque = 1;
+        // NOTA: El cambio de saque lo maneja actualizarSaque()
       } else {
         liveScore.puntoP2 = VALORES_PUNTOS[idxP2 + 1];
       }
