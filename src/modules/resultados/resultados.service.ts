@@ -15,6 +15,25 @@ export class ResultadosService {
   ) {}
 
   // ═══════════════════════════════════════════════════════════
+  // VALIDACIONES PRIVADAS
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Valida que el partido esté programado (tenga cancha, fecha y hora asignadas)
+   * antes de permitir cargar resultados o iniciar el partido
+   */
+  private validarPartidoProgramado(match: any): void {
+    // Permitir resultados especiales (WO, retiro antes de jugar) sin programación
+    // ya que pueden ocurrir antes de que el partido esté programado
+    if (match.estado === 'PROGRAMADO' && (!match.torneoCanchaId || !match.fechaProgramada || !match.horaProgramada)) {
+      throw new BadRequestException(
+        'El partido debe estar programado antes de cargar resultados. ' +
+        'Ve al tab "Programación" para asignar fecha, hora y cancha.'
+      );
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // MÉTODOS PÚBLICOS - CARGA DIRECTA DE RESULTADOS
   // ═══════════════════════════════════════════════════════════
 
@@ -39,6 +58,9 @@ export class ResultadosService {
     if (!match.esBye && (!match.inscripcion1Id || !match.inscripcion2Id)) {
       throw new BadRequestException('El partido no tiene ambas parejas asignadas');
     }
+
+    // Validar que el partido esté programado
+    this.validarPartidoProgramado(match);
 
     // Validar resultado lógico
     this.validarResultado(dto);
@@ -109,6 +131,9 @@ export class ResultadosService {
     if (!match.esBye && (!match.inscripcion1Id || !match.inscripcion2Id)) {
       throw new BadRequestException('El partido no tiene ambas parejas asignadas');
     }
+
+    // Validar que el partido esté programado
+    this.validarPartidoProgramado(match);
 
     // Determinar ganador (la pareja que NO es la afectada)
     const ganadorId = dto.parejaAfectada === 1 
@@ -208,6 +233,9 @@ export class ResultadosService {
     if (match.estado === MatchStatus.FINALIZADO) {
       throw new BadRequestException('El partido ya está finalizado');
     }
+
+    // Validar que el partido esté programado antes de iniciar
+    this.validarPartidoProgramado(match);
 
     const liveScore: LiveScore = {
       setActual: 1,

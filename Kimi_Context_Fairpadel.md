@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-16 20:30
-> **Conversación actual:** Mejoras visuales en el fixture/bracket: fotos de jugadores superpuestas con bordes rojizos en BracketView, MarcadorEnVivo y RegistroResultadoModal para identificación rápida de parejas.
+> **Última actualización:** 2026-03-16 21:00
+> **Conversación actual:** Validación de flujo cronológico: ahora los partidos deben estar programados (fecha, hora, cancha) antes de poder cargar resultados. Banner informativo en BracketView y validación backend en resultados.service.ts.
 
 ---
 
@@ -482,6 +482,33 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
 
 **Backend:**
 - `admin-bracket.controller.ts` - Agregado `fotoUrl` en la consulta de `inscripcionGanadora`
+
+### ✅ Completado (2026-03-16) - Validación de Flujo Cronológico
+
+**Problema:** Se podían cargar resultados en partidos no programados (sin fecha/hora/cancha)
+
+**Solución implementada (Opción A):**
+
+**Backend - `resultados.service.ts`:**
+- Nuevo método privado `validarPartidoProgramado()` 
+- Valida que el partido tenga `torneoCanchaId`, `fechaProgramada` y `horaProgramada`
+- Aplicado en: `registrarResultado()`, `registrarResultadoEspecial()`, `iniciarPartido()`
+- Mensaje claro: *"El partido debe estar programado antes de cargar resultados. Ve al tab 'Programación'..."*
+
+**Frontend - `BracketView.tsx`:**
+- Banner amarillo informativo cuando hay partidos sin programar
+- Botones "En Vivo" y "Resultado" deshabilitados si no está programado
+- Nuevo estado visual: "Pendiente de programación" con indicador
+- Campos agregados a la interfaz: `torneoCanchaId`, `fechaProgramada`, `horaProgramada`
+
+**Flujo correcto ahora:**
+1. ✅ Inscripciones
+2. ✅ Configurar canchas
+3. ✅ Cerrar categorías  
+4. ✅ Sortear
+5. ⏳ **Programar** partidos (obligatorio antes de resultados)
+6. ⏳ Jugar
+7. ⏳ Cargar resultados
 
 ### ⏳ Próximos Módulos Sugeridos
 - [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
