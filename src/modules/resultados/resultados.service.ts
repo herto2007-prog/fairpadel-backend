@@ -545,6 +545,13 @@ export class ResultadosService {
     const set2 = liveScore.setsCompletados.find(s => s.numero === 2);
     const set3 = liveScore.setsCompletados.find(s => s.numero === 3);
 
+    console.log('[finalizarPartido] Sets extraídos:', {
+      set1: set1 ? [set1.gamesP1, set1.gamesP2] : null,
+      set2: set2 ? [set2.gamesP1, set2.gamesP2] : null,
+      set3: set3 ? [set3.gamesP1, set3.gamesP2] : null,
+      ganadorId,
+    });
+
     // Actualizar partido
     const matchActualizado = await this.prisma.match.update({
       where: { id: matchId },
@@ -566,6 +573,14 @@ export class ResultadosService {
 
     // Avanzar ganador
     await this.avanzarGanador(match, ganadorId);
+
+    console.log('[finalizarPartido] Partido actualizado:', {
+      id: matchActualizado.id,
+      set1: [matchActualizado.set1Pareja1, matchActualizado.set1Pareja2],
+      set2: [matchActualizado.set2Pareja1, matchActualizado.set2Pareja2],
+      set3: [matchActualizado.set3Pareja1, matchActualizado.set3Pareja2],
+      estado: matchActualizado.estado,
+    });
 
     return {
       success: true,
