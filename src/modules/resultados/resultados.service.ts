@@ -822,28 +822,65 @@ export class ResultadosService {
   /**
    * Actualiza el saque según las reglas del pádel:
    * - El mismo jugador saca durante 2 puntos consecutivos
-   * - Luego cambia al otro jugador de la misma pareja
-   * - Al cambiar de game, cambia la pareja que saca
+   * - Punto 1: Pareja X - Jugador 1
+   * - Punto 2: Pareja X - Jugador 2
+   * - Punto 3: Pareja Y - Jugador 1
+   * - Punto 4: Pareja Y - Jugador 2
+   * - Y se reinicia el ciclo
+   * Al cambiar de game, cambia la pareja que saca
    */
   private actualizarSaque(liveScore: LiveScore, gameAntes: number) {
     const gameDespues = liveScore.gameP1 + liveScore.gameP2;
     
-    // Si cambió de game, cambia la pareja que saca y resetea contador
+    // Si cambió de game, cambia la pareja que saca
     if (gameDespues > gameAntes) {
       liveScore.saque = liveScore.saque === 1 ? 2 : 1;
+      // Al cambiar de game, reiniciamos: el primer punto del nuevo game lo saca el jugador 1
+      liveScore.jugadorSacaP1 = 1;
+      liveScore.jugadorSacaP2 = 1;
       liveScore.puntosConsecutivos = 0;
       return;
     }
 
-    // Incrementar contador de puntos consecutivos
+    // Incrementar contador de puntos jugados en este ciclo
     liveScore.puntosConsecutivos++;
 
-    // Si ya jugó 2 puntos con el mismo saque, cambiar de jugador
-    if (liveScore.puntosConsecutivos >= 2) {
+    // Ciclo de 4 puntos:
+    // 1: Pareja actual - Jugador 1
+    // 2: Pareja actual - Jugador 2
+    // 3: Cambia pareja - Jugador 1
+    // 4: Misma pareja (la del punto 3) - Jugador 2
+    // Reinicia ciclo
+    
+    if (liveScore.puntosConsecutivos === 1) {
+      // Punto 2 del ciclo: misma pareja, jugador 2
       if (liveScore.saque === 1) {
-        liveScore.jugadorSacaP1 = liveScore.jugadorSacaP1 === 1 ? 2 : 1;
+        liveScore.jugadorSacaP1 = 2;
       } else {
-        liveScore.jugadorSacaP2 = liveScore.jugadorSacaP2 === 1 ? 2 : 1;
+        liveScore.jugadorSacaP2 = 2;
+      }
+    } else if (liveScore.puntosConsecutivos === 2) {
+      // Punto 3 del ciclo: cambia pareja, jugador 1
+      liveScore.saque = liveScore.saque === 1 ? 2 : 1;
+      if (liveScore.saque === 1) {
+        liveScore.jugadorSacaP1 = 1;
+      } else {
+        liveScore.jugadorSacaP2 = 1;
+      }
+    } else if (liveScore.puntosConsecutivos === 3) {
+      // Punto 4 del ciclo: misma pareja (la del punto 3), jugador 2
+      if (liveScore.saque === 1) {
+        liveScore.jugadorSacaP1 = 2;
+      } else {
+        liveScore.jugadorSacaP2 = 2;
+      }
+    } else if (liveScore.puntosConsecutivos >= 4) {
+      // Reinicia ciclo: vuelve a la primera pareja, jugador 1
+      liveScore.saque = liveScore.saque === 1 ? 2 : 1;
+      if (liveScore.saque === 1) {
+        liveScore.jugadorSacaP1 = 1;
+      } else {
+        liveScore.jugadorSacaP2 = 1;
       }
       liveScore.puntosConsecutivos = 0;
     }
