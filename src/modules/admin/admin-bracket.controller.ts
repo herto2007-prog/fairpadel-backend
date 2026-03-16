@@ -561,6 +561,13 @@ export class AdminBracketController {
         ],
       });
 
+      // Debug: Log para verificar que los sets vienen en la respuesta
+      console.log('[getPartidosBracket] Primer partido sets:', {
+        set1: partidos[0] ? [partidos[0].set1Pareja1, partidos[0].set1Pareja2] : null,
+        set2: partidos[0] ? [partidos[0].set2Pareja1, partidos[0].set2Pareja2] : null,
+        estado: partidos[0]?.estado,
+      });
+
       // Obtener información del fixture para la definición
       const fixtureVersion = await this.prisma.fixtureVersion.findUnique({
         where: { id: fixtureVersionId },
