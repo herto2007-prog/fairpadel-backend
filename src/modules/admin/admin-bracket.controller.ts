@@ -673,7 +673,10 @@ export class AdminBracketController {
    * Realiza un nuevo sorteo y reemplaza el borrador actual
    */
   @Post('bracket/:fixtureVersionId/sortear-nuevo')
-  async reSortearBracket(@Param('fixtureVersionId') fixtureVersionId: string) {
+  async reSortearBracket(
+    @Param('fixtureVersionId') fixtureVersionId: string,
+    @Body() body?: { usarSemillas?: boolean },
+  ) {
     try {
       const fixture = await this.prisma.fixtureVersion.findUnique({
         where: { id: fixtureVersionId },
@@ -717,7 +720,10 @@ export class AdminBracketController {
       });
 
       // Generar nuevo sorteo
-      return this.sortearBracket(categoria.id, { guardar: true });
+      return this.sortearBracket(categoria.id, { 
+        guardar: true,
+        usarSemillas: body?.usarSemillas ?? false,
+      });
     } catch (error: any) {
       console.error('[reSortearBracket] Error:', error);
       throw new BadRequestException({
