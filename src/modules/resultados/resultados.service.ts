@@ -220,6 +220,8 @@ export class ResultadosService {
       setsCompletados: [],
       estado: 'EN_JUEGO',
       iniciadoAt: this.dateService.now().toISOString(),
+      modoPunto: dto.modoPunto || 'PUNTO_ORO', // Por defecto punto de oro (amateur)
+      formatoSet3: dto.formatoSet3 || 'SET_COMPLETO',
     };
 
     const matchActualizado = await this.prisma.match.update({
@@ -307,6 +309,60 @@ export class ResultadosService {
       data: {
         estado: match.estado,
         mensaje: 'El partido aún no ha comenzado',
+      },
+    };
+  }
+
+  /**
+   * Cambia la configuración del partido durante el juego
+   * Solo permite cambiar el formato del set 3 si aún no se ha jugado
+   */
+  async cambiarConfiguracion(matchId: string, dto: { formatoSet3?: 'SET_COMPLETO' | 'SUPER_TIE_BREAK'; modoPunto?: 'VENTAJA' | 'PUNTO_ORO' }) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+    });
+
+    if (!match) {
+      throw new NotFoundException('Partido no encontrado');
+    }
+
+    if (match.estado !== MatchStatus.EN_JUEGO) {
+      throw new BadRequestException('El partido no está en juego');
+    }
+
+    if (!match.liveScore) {
+      throw new BadRequestException('No hay marcador iniciado');
+    }
+
+    const liveScore = match.liveScore as unknown as LiveScore;
+
+    // Validar que no se puede cambiar el formato del set 3 si ya se está jugando el set 3
+    if (dto.formatoSet3 && liveScore.setActual === 3 && liveScore.setsCompletados.length < 2) {
+      throw new BadRequestException('No se puede cambiar el formato del set 3 una vez iniciado');
+    }
+
+    // Actualizar liveScore
+    if (dto.modoPunto) {
+      liveScore.modoPunto = dto.modoPunto;
+    }
+    if (dto.formatoSet3) {
+      liveScore.formatoSet3 = dto.formatoSet3;
+    }
+
+    const matchActualizado = await this.prisma.match.update({
+      where: { id: matchId },
+      data: {
+        liveScore: liveScore as unknown as Prisma.InputJsonValue,
+        formatoSet3: dto.formatoSet3 || match.formatoSet3,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Configuración actualizada',
+      data: {
+        liveScore,
+        formatoSet3: matchActualizado.formatoSet3,
       },
     };
   }
@@ -638,6 +694,7 @@ export class ResultadosService {
   private actualizarPuntoNormal(liveScore: LiveScore, ganador: number) {
     const idxP1 = VALORES_PUNTOS.indexOf(liveScore.puntoP1 as typeof VALORES_PUNTOS[number]);
     const idxP2 = VALORES_PUNTOS.indexOf(liveScore.puntoP2 as typeof VALORES_PUNTOS[number]);
+    const esPuntoOro = liveScore.modoPunto === 'PUNTO_ORO';
 
     if (ganador === 1) {
       if (liveScore.puntoP1 === 40 && liveScore.puntoP2 !== 40 && liveScore.puntoP2 !== 'AD') {
@@ -647,9 +704,15 @@ export class ResultadosService {
         liveScore.puntoP2 = 0;
         liveScore.saque = 2; // Cambio de saque
       } else if (liveScore.puntoP2 === 'AD') {
-        // Deuce
+        // Deuce - volvemos a 40-40
         liveScore.puntoP1 = 40;
         liveScore.puntoP2 = 40;
+      } else if (liveScore.puntoP1 === 40 && liveScore.puntoP2 === 40 && esPuntoOro) {
+        // PUNTO DE ORO: a 40-40, el siguiente punto gana el game
+        liveScore.gameP1++;
+        liveScore.puntoP1 = 0;
+        liveScore.puntoP2 = 0;
+        liveScore.saque = 2;
       } else {
         liveScore.puntoP1 = VALORES_PUNTOS[idxP1 + 1];
       }
@@ -661,9 +724,15 @@ export class ResultadosService {
         liveScore.puntoP2 = 0;
         liveScore.saque = 1; // Cambio de saque
       } else if (liveScore.puntoP1 === 'AD') {
-        // Deuce
+        // Deuce - volvemos a 40-40
         liveScore.puntoP1 = 40;
         liveScore.puntoP2 = 40;
+      } else if (liveScore.puntoP1 === 40 && liveScore.puntoP2 === 40 && esPuntoOro) {
+        // PUNTO DE ORO: a 40-40, el siguiente punto gana el game
+        liveScore.gameP2++;
+        liveScore.puntoP1 = 0;
+        liveScore.puntoP2 = 0;
+        liveScore.saque = 1;
       } else {
         liveScore.puntoP2 = VALORES_PUNTOS[idxP2 + 1];
       }

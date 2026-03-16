@@ -1,6 +1,6 @@
 import { Controller, Post, Get, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ResultadosService } from './resultados.service';
-import { RegistrarResultadoDto, RegistrarPuntoDto, IniciarPartidoDto, FinalizarPartidoDto } from './dto/registrar-resultado.dto';
+import { RegistrarResultadoDto, RegistrarPuntoDto, IniciarPartidoDto, FinalizarPartidoDto, CambiarConfiguracionDto } from './dto/registrar-resultado.dto';
 import { ResultadoEspecialDto } from './dto/resultado-especial.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -102,5 +102,19 @@ export class ResultadosController {
     @Body() dto: FinalizarPartidoDto,
   ) {
     return this.resultadosService.finalizarPartido(matchId, dto);
+  }
+
+  /**
+   * Cambia la configuración del partido durante el juego
+   * (formato del set 3, modo de punto)
+   * POST /admin/resultados/matches/:matchId/configuracion
+   */
+  @Post('matches/:matchId/configuracion')
+  @HttpCode(HttpStatus.OK)
+  async cambiarConfiguracion(
+    @Param('matchId') matchId: string,
+    @Body() dto: CambiarConfiguracionDto,
+  ) {
+    return this.resultadosService.cambiarConfiguracion(matchId, dto);
   }
 }

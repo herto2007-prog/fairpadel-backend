@@ -11,6 +11,8 @@ export interface LiveScore {
   setsCompletados: SetCompletado[];
   estado: 'EN_JUEGO' | 'SET_POINT' | 'MATCH_POINT' | 'TIE_BREAK' | 'SUPER_TIE_BREAK' | 'FINALIZADO';
   iniciadoAt: string; // ISO string
+  modoPunto: 'VENTAJA' | 'PUNTO_ORO'; // Nuevo: sistema de puntuación
+  formatoSet3: 'SET_COMPLETO' | 'SUPER_TIE_BREAK'; // Nuevo: formato del set 3
 }
 
 export interface HistorialPunto {

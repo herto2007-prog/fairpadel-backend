@@ -65,6 +65,20 @@ export class IniciarPartidoDto {
   @IsOptional()
   @IsEnum(FormatoSet3, { message: 'Formato del set 3 inválido' })
   formatoSet3?: FormatoSet3;
+
+  @IsOptional()
+  @IsEnum(['VENTAJA', 'PUNTO_ORO'], { message: 'Modo de punto inválido' })
+  modoPunto?: 'VENTAJA' | 'PUNTO_ORO';
+}
+
+export class CambiarConfiguracionDto {
+  @IsOptional()
+  @IsEnum(FormatoSet3, { message: 'Formato del set 3 inválido' })
+  formatoSet3?: FormatoSet3;
+
+  @IsOptional()
+  @IsEnum(['VENTAJA', 'PUNTO_ORO'], { message: 'Modo de punto inválido' })
+  modoPunto?: 'VENTAJA' | 'PUNTO_ORO';
 }
 
 export class FinalizarPartidoDto {
