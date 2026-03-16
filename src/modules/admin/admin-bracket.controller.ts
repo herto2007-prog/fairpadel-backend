@@ -590,12 +590,13 @@ export class AdminBracketController {
                       : undefined,
                 }
               : undefined,
+          formatoSet3: p.formatoSet3,
+          estado: p.estado,
           fecha: p.fechaProgramada,
           hora: p.horaProgramada,
           cancha: p.torneoCancha
             ? `${p.torneoCancha.sedeCancha.sede.nombre} - ${p.torneoCancha.sedeCancha.nombre}`
             : undefined,
-          estado: p.estado,
         })),
       };
     } catch (error: any) {
