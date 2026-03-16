@@ -423,6 +423,11 @@ export class BracketService {
     // Mapear IDs temporales a reales
     const idMap = new Map<string, string>();
 
+    // Preparar asignación de inscripciones a partidos de ZONA
+    // Las inscripciones vienen ordenadas por el sorteo
+    const inscripcionesZona = [...inscripciones]; // Copia del orden del sorteo
+    let indiceInscripcion = 0;
+
     // Crear los partidos en orden: ZONA → RONDA AJUSTE → BRACKET
     const ordenFases = [
       FaseBracket.ZONA,
@@ -437,18 +442,32 @@ export class BracketService {
       const partidosFase = partidos.filter((p) => p.fase === fase);
       
       for (const partido of partidosFase) {
+        const createData: any = {
+          tournamentId,
+          categoryId,
+          fixtureVersionId: fixtureVersion.id,
+          ronda: partido.fase,
+          numeroRonda: partido.orden,
+          esBye: partido.esBye,
+          tipoEntrada1: partido.tipoEntrada1,
+          tipoEntrada2: partido.tipoEntrada2,
+          estado: 'PROGRAMADO',
+        };
+
+        // Asignar inscripciones a partidos de ZONA
+        if (fase === FaseBracket.ZONA && !partido.esBye) {
+          if (indiceInscripcion < inscripcionesZona.length) {
+            createData.inscripcion1Id = inscripcionesZona[indiceInscripcion].id;
+            indiceInscripcion++;
+          }
+          if (indiceInscripcion < inscripcionesZona.length) {
+            createData.inscripcion2Id = inscripcionesZona[indiceInscripcion].id;
+            indiceInscripcion++;
+          }
+        }
+
         const created = await this.prisma.match.create({
-          data: {
-            tournamentId,
-            categoryId,
-            fixtureVersionId: fixtureVersion.id,
-            ronda: partido.fase,
-            numeroRonda: partido.orden,
-            esBye: partido.esBye,
-            tipoEntrada1: partido.tipoEntrada1,
-            tipoEntrada2: partido.tipoEntrada2,
-            estado: 'PROGRAMADO',
-          },
+          data: createData,
         });
         idMap.set(partido.id, created.id);
       }
