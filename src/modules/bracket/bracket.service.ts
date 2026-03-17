@@ -489,6 +489,8 @@ export class BracketService {
     const ordenFases = [
       FaseBracket.ZONA,
       FaseBracket.REPECHAJE,
+      FaseBracket.TREINTAYDOSAVOS,
+      FaseBracket.DIECISEISAVOS,
       FaseBracket.OCTAVOS,
       FaseBracket.CUARTOS,
       FaseBracket.SEMIS,
