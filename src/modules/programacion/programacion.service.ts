@@ -781,7 +781,7 @@ export class ProgramacionService {
       await this.prisma.match.update({
         where: { id: asignacion.partidoId },
         data: {
-          fechaProgramada: new Date(asignacion.fecha + 'T00:00:00.000Z'),
+          fechaProgramada: new Date(asignacion.fecha + 'T03:00:00.000Z'),
           horaProgramada: asignacion.horaInicio,
           torneoCanchaId: asignacion.torneoCanchaId,
           estado: 'PROGRAMADO',
@@ -793,7 +793,7 @@ export class ProgramacionService {
         where: {
           torneoCanchaId: asignacion.torneoCanchaId,
           disponibilidad: {
-            fecha: new Date(asignacion.fecha + 'T00:00:00.000Z'),
+            fecha: new Date(asignacion.fecha + 'T03:00:00.000Z'),
           },
           horaInicio: asignacion.horaInicio,
         },
@@ -857,7 +857,7 @@ export class ProgramacionService {
     await this.prisma.match.update({
       where: { id: partidoId },
       data: {
-        fechaProgramada: new Date(fecha + 'T00:00:00.000Z'),
+        fechaProgramada: new Date(fecha + 'T03:00:00.000Z'),
         horaProgramada: horaInicio,
         torneoCanchaId: torneoCanchaId,
         estado: 'PROGRAMADO',
@@ -938,7 +938,7 @@ export class ProgramacionService {
       where: {
         torneoCanchaId,
         disponibilidad: {
-          fecha: new Date(fecha + 'T00:00:00.000Z'),
+          fecha: new Date(fecha + 'T03:00:00.000Z'),
         },
         horaInicio,
       },
@@ -958,7 +958,7 @@ export class ProgramacionService {
       where: {
         torneoCanchaId,
         disponibilidad: {
-          fecha: new Date(fecha + 'T00:00:00.000Z'),
+          fecha: new Date(fecha + 'T03:00:00.000Z'),
         },
         horaInicio,
       },

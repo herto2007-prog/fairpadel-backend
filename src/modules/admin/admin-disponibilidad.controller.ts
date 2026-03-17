@@ -178,8 +178,8 @@ export class AdminDisponibilidadController {
         throw new BadRequestException('fechaInicio y fechaFin son requeridos');
       }
       // Parsear fechas como UTC 00:00:00 para consistencia con el guardado
-      const fechaInicio = new Date(fechaInicioStr + 'T00:00:00.000Z');
-      const fechaFin = new Date(fechaFinStr + 'T00:00:00.000Z');
+      const fechaInicio = new Date(fechaInicioStr + 'T03:00:00.000Z');
+      const fechaFin = new Date(fechaFinStr + 'T03:00:00.000Z');
 
       const dias = await this.prisma.torneoDisponibilidadDia.findMany({
         where: {
@@ -508,7 +508,7 @@ export class AdminDisponibilidadController {
 
       // Crear fecha como UTC 00:00:00 para evitar desplazamientos de timezone
       // La fecha YYYY-MM-DD se guarda tal cual sin conversión de hora
-      const fecha = new Date(dto.fecha + 'T00:00:00.000Z');
+      const fecha = new Date(dto.fecha + 'T03:00:00.000Z');
       console.log('[Disponibilidad] Fecha parseada (UTC):', fecha);
 
       // Crear o actualizar la disponibilidad del día

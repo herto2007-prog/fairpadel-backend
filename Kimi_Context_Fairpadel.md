@@ -2,7 +2,7 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-17 23:30
+> **Última actualización:** 2026-03-18 00:15 - Fix crítico de timezone: Todas las fechas ahora se guardan como T03:00:00.000Z para evitar bug de día anterior en Paraguay (UTC-3)
 > **Conversación actual:** Correcciones críticas al flujo de canchas: toggleCancha, eliminación de días, botón Configurar para finales, y fix de creación de torneos (fechaLimiteInscripcion). Todos los errores encontrados en la investigación exhaustiva han sido corregidos y pusheados a producción.
 
 ---
@@ -29,6 +29,19 @@
 **Timezone:** `America/Asuncion` (UTC-3)
 
 **REGLA:** Todas las fechas en el sistema son hora de Paraguay. **NUNCA** usar `new Date()` sin normalizar.
+
+**REGLA CRÍTICA DE ALMACENAMIENTO (Anti-Bug de Fechas):**
+Cuando se convierte fecha YYYY-MM-DD a Date para PostgreSQL, SIEMPRE usar `T03:00:00.000Z` (NO `T00:00:00.000Z`).
+
+```typescript
+// ✅ CORRECTO - 03:00 UTC = 00:00 Paraguay
+new Date('2026-03-22' + 'T03:00:00.000Z') // Muestra "22/03/2026"
+
+// ❌ INCORRECTO - Causa bug de día anterior
+new Date('2026-03-22' + 'T00:00:00.000Z') // Muestra "21/03/2026"
+```
+
+**Por qué:** Paraguay es UTC-3. Medianoche PY (00:00) = 03:00 UTC. Si guardamos 00:00 UTC, al mostrar en PY da 21:00 del día anterior.
 
 **Backend:**
 ```typescript

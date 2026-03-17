@@ -232,7 +232,7 @@ export class InstructoresService {
     }
 
     // Usar UTC 00:00:00 para consistencia con almacenamiento
-    const fecha = new Date(createDto.fecha + 'T00:00:00.000Z');
+    const fecha = new Date(createDto.fecha + 'T03:00:00.000Z');
 
     // Verificar disponibilidad (simplificado - se puede mejorar)
     const reservaConflicto = await this.prisma.reservaInstructor.findFirst({
@@ -374,7 +374,7 @@ export class InstructoresService {
     }
 
     // Usar UTC 00:00:00 para consistencia con almacenamiento
-    const fecha = new Date(createDto.fecha + 'T00:00:00.000Z');
+    const fecha = new Date(createDto.fecha + 'T03:00:00.000Z');
 
     return this.prisma.pagoInstructor.create({
       data: {

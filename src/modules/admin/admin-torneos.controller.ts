@@ -340,10 +340,10 @@ export class AdminTorneosController {
         const torneoData: any = {
           nombre: dto.nombre,
           descripcion: dto.descripcion || '',
-          fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio + 'T00:00:00.000Z') : null,
-          fechaFin: new Date(dto.fechaFin + 'T00:00:00.000Z'),
-          fechaFinales: dto.fechaFinales ? new Date(dto.fechaFinales + 'T00:00:00.000Z') : null,
-          fechaLimiteInscr: new Date((dto.fechaLimiteInscripcion || dto.fechaInicio || dto.fechaFinales) + 'T00:00:00.000Z'),
+          fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio + 'T03:00:00.000Z') : null,
+          fechaFin: new Date(dto.fechaFin + 'T03:00:00.000Z'),
+          fechaFinales: dto.fechaFinales ? new Date(dto.fechaFinales + 'T03:00:00.000Z') : null,
+          fechaLimiteInscr: new Date((dto.fechaLimiteInscripcion || dto.fechaInicio || dto.fechaFinales) + 'T03:00:00.000Z'),
           ciudad: dto.ciudad,
           costoInscripcion: dto.costoInscripcion, // Prisma maneja Decimal desde number
           organizador: { connect: { id: user.userId } },
@@ -508,7 +508,7 @@ export class AdminTorneosController {
 
           try {
             // 1. Crear o actualizar el día de disponibilidad para finales
-            const fechaDate = new Date(fechaStr + 'T00:00:00.000Z');
+            const fechaDate = new Date(fechaStr + 'T03:00:00.000Z');
             const diaFinales = await this.prisma.torneoDisponibilidadDia.upsert({
               where: {
                 tournamentId_fecha: {
@@ -801,7 +801,7 @@ export class AdminTorneosController {
     const item = await this.prisma.checklistItem.update({
       where: { id: itemId, tournamentId },
       data: {
-        fechaRecordatorio: new Date(dto.fechaRecordatorio + 'T00:00:00.000Z'),
+        fechaRecordatorio: new Date(dto.fechaRecordatorio + 'T03:00:00.000Z'),
         recordatorioEnviado: false,
       },
     });

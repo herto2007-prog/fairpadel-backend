@@ -145,6 +145,23 @@ frontend/
 
 **REGLA DE ORO:** Todas las fechas se manejan en hora de Paraguay. NUNCA usar `new Date()` directamente sin considerar el timezone.
 
+**REGLA CRÍTICA DE ALMACENAMIENTO (Anti-Bug de Fechas):**
+Cuando se convierte una fecha YYYY-MM-DD a Date para PostgreSQL, SIEMPRE usar `T03:00:00.000Z` en lugar de `T00:00:00.000Z`.
+
+```typescript
+// ✅ CORRECTO - Guarda como 03:00 UTC = 00:00 Paraguay (UTC-3)
+const fecha = new Date('2026-03-22' + 'T03:00:00.000Z');
+// En BD: 2026-03-22 03:00:00+00 (UTC)
+// Al mostrar en Paraguay: 2026-03-22 00:00:00 (PY) → "22/03/2026" ✓
+
+// ❌ INCORRECTO - Causa el bug de día anterior
+const fecha = new Date('2026-03-22' + 'T00:00:00.000Z');
+// En BD: 2026-03-22 00:00:00+00 (UTC)
+// Al mostrar en Paraguay: 2026-03-21 21:00:00 (PY) → "21/03/2026" ✗
+```
+
+**Explicación:** Paraguay es UTC-3. Medianoche en Paraguay (00:00) es 03:00 UTC. Si guardamos 00:00 UTC, al convertir a hora Paraguay da 21:00 del día anterior, mostrando el día equivocado.
+
 #### Backend (NestJS)
 ```typescript
 // ✅ CORRECTO - Usar DateService
