@@ -63,9 +63,12 @@ export interface ResultadoProgramacion {
 }
 
 export interface Conflicto {
-  tipo: 'MISMA_PAREJA' | 'CANCHA_OCUPADA' | 'SIN_DISPONIBILIDAD';
+  tipo: 'MISMA_PAREJA' | 'CANCHA_OCUPADA' | 'SIN_DISPONIBILIDAD' | 'ADVERTENCIA';
+  severidad: 'BLOQUEANTE' | 'ADVERTENCIA';
   partidoId: string;
   mensaje: string;
+  sugerencia?: string;
+  accion?: 'AGREGAR_DIAS' | 'EXTENDER_HORARIOS' | 'REDUCIR_PARTIDOS_DIA' | 'ACEPTAR_RIESGO';
 }
 
 /**
@@ -121,8 +124,11 @@ export class ProgramacionService {
         distribucion: [],
         conflictos: [{
           tipo: 'SIN_DISPONIBILIDAD',
+          severidad: 'BLOQUEANTE',
           partidoId: '',
           mensaje: 'No hay suficientes slots disponibles para programar todos los partidos',
+          sugerencia: 'Agrega más días de disponibilidad o más canchas',
+          accion: 'AGREGAR_DIAS',
         }],
       };
     }
@@ -673,18 +679,37 @@ export class ProgramacionService {
   }
 
   /**
-   * Valida conflictos en la distribución
+   * Valida conflictos y advertencias en la distribución
+   * 
+   * BLOQUEANTE: Impide aplicar la programación
+   * ADVERTENCIA: Informa al usuario pero permite aplicar con confirmación
    */
-  private validarConflictos(distribucion: DistribucionDia[]) {
+  private validarConflictos(distribucion: DistribucionDia[]): Conflicto[] {
     const conflictos: Conflicto[] = [];
     
-    // Revisar si hay días con muchos partidos
+    // Revisar si hay días con muchos partidos (>90% ocupado)
     for (const dia of distribucion) {
-      if (dia.slotsAsignados > dia.slotsDisponibles * 0.9) {
+      const porcentajeOcupado = (dia.slotsAsignados / dia.slotsDisponibles) * 100;
+      
+      if (porcentajeOcupado >= 100) {
+        // Día 100% saturado - ADVERTENCIA (no bloqueante, pero riesgoso)
         conflictos.push({
-          tipo: 'SIN_DISPONIBILIDAD',
+          tipo: 'ADVERTENCIA',
+          severidad: 'ADVERTENCIA',
           partidoId: '',
-          mensaje: `El día ${dia.fecha} está casi saturado (${dia.slotsAsignados}/${dia.slotsDisponibles} slots)`,
+          mensaje: `El día ${dia.fecha} está completamente saturado (${dia.slotsAsignados}/${dia.slotsDisponibles} slots)`,
+          sugerencia: 'Considera agregar otro día de disponibilidad o extender el horario',
+          accion: 'AGREGAR_DIAS',
+        });
+      } else if (porcentajeOcupado >= 90) {
+        // Día casi saturado - ADVERTENCIA
+        conflictos.push({
+          tipo: 'ADVERTENCIA',
+          severidad: 'ADVERTENCIA',
+          partidoId: '',
+          mensaje: `El día ${dia.fecha} está casi saturado (${dia.slotsAsignados}/${dia.slotsDisponibles} slots, ${Math.round(porcentajeOcupado)}%)`,
+          sugerencia: 'El día tiene poco margen para retrasos o cambios',
+          accion: 'ACEPTAR_RIESGO',
         });
       }
     }
