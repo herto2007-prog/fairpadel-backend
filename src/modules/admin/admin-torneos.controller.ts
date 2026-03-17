@@ -455,7 +455,7 @@ export class AdminTorneosController {
       // Verificar que el torneo existe
       const torneo = await this.prisma.tournament.findUnique({
         where: { id: torneoId },
-        select: { id: true, organizadorId: true },
+        select: { id: true, organizadorId: true, fechaFinales: true, minutosPorPartido: true } as any,
       });
       
       if (!torneo) {
@@ -486,6 +486,93 @@ export class AdminTorneosController {
           ...(dto.horaInicioFinales !== undefined && { horaInicioFinales: dto.horaInicioFinales }),
         },
       });
+
+      // Crear automáticamente día y slots para finales si se configuran canchas
+      if (dto.canchasFinales !== undefined && dto.canchasFinales.length > 0) {
+        // @ts-ignore
+        const fechaFinales = torneoActualizado.fechaFinales || torneo.fechaFinales;
+        // @ts-ignore
+        const horaInicio = dto.horaInicioFinales || torneoActualizado.horaInicioFinales || '18:00';
+        
+        if (fechaFinales) {
+          const fechaStr = fechaFinales.toISOString().split('T')[0]; // YYYY-MM-DD
+          // @ts-ignore
+          const minutosSlot: number = torneoActualizado.minutosPorPartido || torneo.minutosPorPartido || 120;
+          
+          console.log('[UpdateTorneo] Creando día de finales automáticamente:', {
+            torneoId,
+            fecha: fechaStr,
+            horaInicio,
+            canchas: dto.canchasFinales,
+          });
+
+          try {
+            // 1. Crear o actualizar el día de disponibilidad para finales
+            const fechaDate = new Date(fechaStr + 'T00:00:00.000Z');
+            const diaFinales = await this.prisma.torneoDisponibilidadDia.upsert({
+              where: {
+                tournamentId_fecha: {
+                  tournamentId: torneoId,
+                  fecha: fechaDate,
+                },
+              },
+              update: {
+                horaInicio,
+                horaFin: '23:00', // Horario extendido para finales
+                minutosSlot,
+                activo: true,
+              },
+              create: {
+                tournamentId: torneoId,
+                fecha: fechaDate,
+                horaInicio,
+                horaFin: '23:00',
+                minutosSlot,
+              },
+            });
+
+            console.log('[UpdateTorneo] Día de finales creado/actualizado:', diaFinales.id);
+
+            // 2. Generar slots para cada cancha seleccionada
+            const slotsCreados = [];
+            for (const torneoCanchaId of dto.canchasFinales) {
+              let horaActual = this.parseHora(horaInicio);
+              const horaFin = this.parseHora('23:00');
+
+              while (horaActual < horaFin) {
+                const horaInicioStr = this.formatHora(horaActual);
+                const horaFinSlot = horaActual + minutosSlot;
+                const horaFinStr = this.formatHora(horaFinSlot);
+
+                try {
+                  const slot = await this.prisma.torneoSlot.create({
+                    data: {
+                      disponibilidadId: diaFinales.id,
+                      torneoCanchaId,
+                      horaInicio: horaInicioStr,
+                      horaFin: horaFinStr,
+                      estado: 'LIBRE',
+                    },
+                  });
+                  slotsCreados.push(slot);
+                } catch (createError: any) {
+                  // Si el error es de duplicado (P2002), ignorar y continuar
+                  if (createError.code !== 'P2002') {
+                    throw createError;
+                  }
+                }
+
+                horaActual = horaFinSlot;
+              }
+            }
+
+            console.log('[UpdateTorneo] Slots creados para finales:', slotsCreados.length);
+          } catch (error: any) {
+            console.error('[UpdateTorneo] Error creando día/slots para finales:', error);
+            // No lanzamos el error para no fallar la actualización del torneo
+          }
+        }
+      }
 
       return {
         success: true,
@@ -1600,5 +1687,20 @@ export class AdminTorneosController {
         linkPublico: `/t/${torneo.slug}`,
       },
     };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // HELPERS
+  // ═══════════════════════════════════════════════════════════
+
+  private parseHora(hora: string): number {
+    const [h, m] = hora.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  private formatHora(minutos: number): string {
+    const h = Math.floor(minutos / 60);
+    const m = minutos % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
 }
