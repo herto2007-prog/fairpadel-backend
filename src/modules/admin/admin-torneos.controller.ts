@@ -10,6 +10,7 @@ import {
   UseGuards,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
   Request,
 } from '@nestjs/common';
 import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, ValidateNested } from 'class-validator';
@@ -471,9 +472,30 @@ export class AdminTorneosController {
   async update(
     @Param('id') torneoId: string,
     @Body() dto: Partial<CreateTorneoDto> & { canchasFinales?: string[]; horaInicioFinales?: string },
+    @Request() req,
   ) {
     try {
-      const torneo = await this.prisma.tournament.update({
+      const user = req.user;
+      
+      // Verificar que el torneo existe
+      const torneo = await this.prisma.tournament.findUnique({
+        where: { id: torneoId },
+        select: { id: true, organizadorId: true },
+      });
+      
+      if (!torneo) {
+        throw new NotFoundException('Torneo no encontrado');
+      }
+      
+      // Si es organizador (no admin), verificar que sea el dueño del torneo
+      const esAdmin = user.roles?.includes('admin');
+      const esOrganizador = user.roles?.includes('organizador');
+      
+      if (!esAdmin && esOrganizador && torneo.organizadorId !== user.userId) {
+        throw new ForbiddenException('No tienes permiso para editar este torneo');
+      }
+
+      const torneoActualizado = await this.prisma.tournament.update({
         where: { id: torneoId },
         data: {
           ...(dto.nombre && { nombre: dto.nombre }),
@@ -493,7 +515,7 @@ export class AdminTorneosController {
       return {
         success: true,
         message: 'Torneo actualizado',
-        torneo,
+        torneo: torneoActualizado,
       };
     } catch (error) {
       return {
