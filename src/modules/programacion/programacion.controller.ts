@@ -6,6 +6,9 @@ import {
   UseGuards,
   Get,
   Query,
+  Put,
+  Delete,
+  BadRequestException,
 } from '@nestjs/common';
 import { ProgramacionService, ResultadoProgramacion, PartidoAsignado } from './programacion.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -79,5 +82,62 @@ export class ProgramacionController {
       tournamentId,
       categoriasSorteadas,
     );
+  }
+
+  /**
+   * PUT /programacion/partidos/:partidoId
+   * Actualiza la programación de un partido específico
+   */
+  @Put('partidos/:partidoId')
+  async actualizarProgramacionPartido(
+    @Param('partidoId') partidoId: string,
+    @Body() dto: {
+      fecha: string;
+      horaInicio: string;
+      torneoCanchaId: string;
+    },
+  ) {
+    if (!dto.fecha || !dto.horaInicio || !dto.torneoCanchaId) {
+      throw new BadRequestException('Fecha, hora y cancha son requeridos');
+    }
+
+    await this.programacionService.actualizarProgramacionPartido(
+      partidoId,
+      dto.fecha,
+      dto.horaInicio,
+      dto.torneoCanchaId,
+    );
+
+    return {
+      success: true,
+      message: 'Partido actualizado correctamente',
+    };
+  }
+
+  /**
+   * DELETE /programacion/partidos/:partidoId
+   * Desprograma un partido (limpia fecha, hora y cancha)
+   */
+  @Delete('partidos/:partidoId')
+  async desprogramarPartido(
+    @Param('partidoId') partidoId: string,
+  ) {
+    await this.programacionService.desprogramarPartido(partidoId);
+
+    return {
+      success: true,
+      message: 'Partido desprogramado correctamente',
+    };
+  }
+
+  /**
+   * GET /programacion/torneos/:id/canchas
+   * Obtiene las canchas disponibles para el torneo con sus horarios
+   */
+  @Get('torneos/:id/canchas')
+  async getCanchasDisponibles(
+    @Param('id') tournamentId: string,
+  ) {
+    return this.programacionService.getCanchasDisponibles(tournamentId);
   }
 }

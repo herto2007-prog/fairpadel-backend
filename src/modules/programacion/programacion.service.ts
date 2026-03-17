@@ -609,4 +609,162 @@ export class ProgramacionService {
     const date = new Date(fecha);
     return dias[date.getDay()];
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // MÉTODOS PARA EDICIÓN INDIVIDUAL (FASE 2)
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Actualiza la programación de un partido específico
+   */
+  async actualizarProgramacionPartido(
+    partidoId: string,
+    fecha: string,
+    horaInicio: string,
+    torneoCanchaId: string,
+  ): Promise<void> {
+    // Verificar que el partido existe
+    const partido = await this.prisma.match.findUnique({
+      where: { id: partidoId },
+    });
+
+    if (!partido) {
+      throw new BadRequestException('Partido no encontrado');
+    }
+
+    // Si el partido ya estaba programado, liberar el slot anterior
+    if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
+      await this.liberarSlot(
+        partido.torneoCanchaId,
+        partido.fechaProgramada.toISOString().split('T')[0],
+        partido.horaProgramada,
+      );
+    }
+
+    // Calcular hora fin (aproximadamente 1.5h después)
+    const horaFin = this.calcularHoraFin(horaInicio);
+
+    // Actualizar el partido
+    await this.prisma.match.update({
+      where: { id: partidoId },
+      data: {
+        fechaProgramada: new Date(fecha + 'T00:00:00.000Z'),
+        horaProgramada: horaInicio,
+        torneoCanchaId: torneoCanchaId,
+        estado: 'PROGRAMADO',
+      },
+    });
+
+    // Marcar nuevo slot como ocupado
+    await this.ocuparSlot(torneoCanchaId, fecha, horaInicio);
+  }
+
+  /**
+   * Desprograma un partido (limpia fecha, hora y cancha)
+   */
+  async desprogramarPartido(partidoId: string): Promise<void> {
+    const partido = await this.prisma.match.findUnique({
+      where: { id: partidoId },
+    });
+
+    if (!partido) {
+      throw new BadRequestException('Partido no encontrado');
+    }
+
+    // Liberar el slot si estaba programado
+    if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
+      await this.liberarSlot(
+        partido.torneoCanchaId,
+        partido.fechaProgramada.toISOString().split('T')[0],
+        partido.horaProgramada,
+      );
+    }
+
+    // Limpiar la programación del partido
+    await this.prisma.match.update({
+      where: { id: partidoId },
+      data: {
+        fechaProgramada: null,
+        horaProgramada: null,
+        torneoCanchaId: null,
+        estado: 'PROGRAMADO',
+      },
+    });
+  }
+
+  /**
+   * Obtiene las canchas disponibles para un torneo
+   */
+  async getCanchasDisponibles(tournamentId: string) {
+    const canchas = await this.prisma.torneoCancha.findMany({
+      where: { tournamentId },
+      include: {
+        sedeCancha: {
+          include: {
+            sede: { select: { nombre: true } },
+          },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      canchas: canchas.map(c => ({
+        id: c.id,
+        nombre: c.sedeCancha.nombre,
+        sede: c.sedeCancha.sede.nombre,
+      })),
+    };
+  }
+
+  /**
+   * Libera un slot (lo marca como LIBRE)
+   */
+  private async liberarSlot(
+    torneoCanchaId: string,
+    fecha: string,
+    horaInicio: string,
+  ): Promise<void> {
+    await this.prisma.torneoSlot.updateMany({
+      where: {
+        torneoCanchaId,
+        disponibilidad: {
+          fecha: new Date(fecha + 'T00:00:00.000Z'),
+        },
+        horaInicio,
+      },
+      data: { estado: 'LIBRE' },
+    });
+  }
+
+  /**
+   * Ocupa un slot (lo marca como OCUPADO)
+   */
+  private async ocuparSlot(
+    torneoCanchaId: string,
+    fecha: string,
+    horaInicio: string,
+  ): Promise<void> {
+    await this.prisma.torneoSlot.updateMany({
+      where: {
+        torneoCanchaId,
+        disponibilidad: {
+          fecha: new Date(fecha + 'T00:00:00.000Z'),
+        },
+        horaInicio,
+      },
+      data: { estado: 'OCUPADO' },
+    });
+  }
+
+  /**
+   * Calcula la hora de fin aproximada (1.5h después del inicio)
+   */
+  private calcularHoraFin(horaInicio: string): string {
+    const [h, m] = horaInicio.split(':').map(Number);
+    const totalMinutos = h * 60 + m + 90; // 90 minutos = 1.5 horas
+    const horaFin = Math.floor(totalMinutos / 60);
+    const minutosFin = totalMinutos % 60;
+    return `${horaFin.toString().padStart(2, '0')}:${minutosFin.toString().padStart(2, '0')}`;
+  }
 }
