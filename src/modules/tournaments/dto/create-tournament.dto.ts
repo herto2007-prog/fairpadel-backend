@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, IsNumber, IsEnum, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsEnum, IsArray, Matches } from 'class-validator';
 import { TournamentStatus } from '@prisma/client';
 
 export class CreateTournamentDto {
@@ -9,14 +9,14 @@ export class CreateTournamentDto {
   @IsOptional()
   descripcion?: string;
 
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaInicio debe tener formato YYYY-MM-DD' })
   fechaInicio: string;
 
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaFin debe tener formato YYYY-MM-DD' })
   fechaFin: string;
 
-  @IsDateString()
   @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaLimiteInscripcion debe tener formato YYYY-MM-DD' })
   fechaLimiteInscripcion?: string;
 
   @IsString()
@@ -49,8 +49,8 @@ export class CreateTournamentDto {
   @IsOptional()
   sedeId?: string;
 
-  @IsDateString()
   @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaFinales debe tener formato YYYY-MM-DD' })
   fechaFinales?: string;
 
   @IsArray()
