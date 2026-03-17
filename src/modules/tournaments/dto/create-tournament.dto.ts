@@ -37,6 +37,10 @@ export class CreateTournamentDto {
   @IsNumber()
   costoInscripcion: number;
 
+  @IsNumber()
+  @IsOptional()
+  minutosPorPartido?: number;
+
   @IsEnum(TournamentStatus)
   @IsOptional()
   estado?: TournamentStatus;
