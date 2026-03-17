@@ -1567,6 +1567,8 @@ export class AdminTorneosController {
           estadoProceso: estadoTorneo,
           fechaInicio: torneo.fechaInicio,
           fechaFin: torneo.fechaFin,
+          // @ts-ignore
+          fechaFinales: torneo.fechaFinales,
           fechaLimiteInscr: torneo.fechaLimiteInscr,
           // @ts-ignore
           canchasFinales: torneo.canchasFinales,
