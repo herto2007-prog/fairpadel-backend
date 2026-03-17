@@ -1401,6 +1401,7 @@ export class AdminTorneosController {
           fechaLimiteInscr: true,
           ciudad: true,
           flyerUrl: true,
+          sedeId: true,
           // @ts-ignore - campos nuevos en schema
           canchasFinales: true,
           // @ts-ignore
