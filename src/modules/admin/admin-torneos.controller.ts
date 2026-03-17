@@ -13,7 +13,7 @@ import {
   ForbiddenException,
   Request,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, ValidateNested, Matches } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -29,43 +29,18 @@ class CreateTorneoDto {
   @IsOptional()
   descripcion?: string;
 
-  @IsDateString()
-  @Transform(({ value }) => {
-    // Si viene como YYYY-MM-DD, agregar tiempo para hacerlo ISO-8601
-    if (value && typeof value === 'string' && value.length === 10) {
-      return `${value}T00:00:00.000Z`;
-    }
-    return value;
-  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaInicio debe tener formato YYYY-MM-DD' })
   fechaInicio: string;
 
-  @IsDateString()
-  @Transform(({ value }) => {
-    if (value && typeof value === 'string' && value.length === 10) {
-      return `${value}T23:59:59.999Z`;
-    }
-    return value;
-  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaFin debe tener formato YYYY-MM-DD' })
   fechaFin: string;
 
-  @IsDateString()
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value && typeof value === 'string' && value.length === 10) {
-      return `${value}T23:59:59.999Z`;
-    }
-    return value;
-  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaFinales debe tener formato YYYY-MM-DD' })
   fechaFinales?: string;
 
-  @IsDateString()
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value && typeof value === 'string' && value.length === 10) {
-      return `${value}T23:59:59.999Z`;
-    }
-    return value;
-  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaLimiteInscripcion debe tener formato YYYY-MM-DD' })
   fechaLimiteInscripcion?: string;
 
   @IsString()
