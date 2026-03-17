@@ -1004,6 +1004,78 @@ export class AdminTorneosController {
   }
 
   /**
+   * GET /admin/torneos/:id/partidos
+   * Obtener todos los partidos del torneo para programación
+   */
+  @Get(':id/partidos')
+  async getPartidos(@Param('id') tournamentId: string) {
+    const partidos = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        fixtureVersionId: { not: null },
+      },
+      include: {
+        fixtureVersion: {
+          include: {
+            tournamentCategory: {
+              include: {
+                category: {
+                  select: { id: true, nombre: true },
+                },
+              },
+            },
+          },
+        },
+        inscripcion1: {
+          include: {
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+          },
+        },
+        inscripcion2: {
+          include: {
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+          },
+        },
+        torneoCancha: {
+          include: {
+            sedeCancha: {
+              include: {
+                sede: { select: { nombre: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [
+        { ronda: 'asc' },
+        { numeroRonda: 'asc' },
+      ],
+    });
+
+    return {
+      success: true,
+      partidos: partidos.map(p => ({
+        id: p.id,
+        fase: p.ronda,
+        orden: p.numeroRonda,
+        categoriaId: p.fixtureVersion?.tournamentCategory?.category?.id,
+        categoriaNombre: p.fixtureVersion?.tournamentCategory?.category?.nombre,
+        esBye: p.esBye,
+        estado: p.estado,
+        fechaProgramada: p.fechaProgramada,
+        horaProgramada: p.horaProgramada,
+        torneoCanchaId: p.torneoCanchaId,
+        canchaNombre: p.torneoCancha?.sedeCancha?.nombre,
+        sedeNombre: p.torneoCancha?.sedeCancha?.sede?.nombre,
+        inscripcion1: p.inscripcion1,
+        inscripcion2: p.inscripcion2,
+      })),
+    };
+  }
+
+  /**
    * POST /admin/torneos/:id/inscripciones/manual
    * Crear inscripción manual por organizador
    */
