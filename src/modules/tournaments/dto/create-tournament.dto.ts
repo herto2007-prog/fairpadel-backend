@@ -16,7 +16,8 @@ export class CreateTournamentDto {
   fechaFin: string;
 
   @IsDateString()
-  fechaLimiteInscripcion: string;
+  @IsOptional()
+  fechaLimiteInscripcion?: string;
 
   @IsString()
   @IsOptional()
