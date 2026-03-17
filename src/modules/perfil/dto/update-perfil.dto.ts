@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, Length } from 'class-validator';
+import { IsString, IsOptional, IsDateString, Length, Matches } from 'class-validator';
 
 export class UpdatePerfilDto {
   @IsString()
@@ -18,8 +18,8 @@ export class UpdatePerfilDto {
   @IsOptional()
   telefono?: string;
 
-  @IsDateString()
   @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaNacimiento debe tener formato YYYY-MM-DD' })
   fechaNacimiento?: string;
 
   @IsString()

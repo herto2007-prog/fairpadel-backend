@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, IsInt, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsInt, IsEnum, Matches } from 'class-validator';
 import { TipoClase } from '@prisma/client';
 
 export class CreateReservaInstructorDto {
@@ -8,7 +8,7 @@ export class CreateReservaInstructorDto {
   @IsEnum(TipoClase)
   tipo: TipoClase;
 
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe tener formato YYYY-MM-DD' })
   fecha: string;
 
   @IsString()

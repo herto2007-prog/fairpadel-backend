@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsEnum, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsEnum, IsDateString, Matches } from 'class-validator';
 import { MetodoPagoInstructor, ConceptoPago } from '@prisma/client';
 
 export class CreatePagoInstructorDto {
@@ -35,7 +35,7 @@ export class CreatePagoInstructorDto {
   @IsOptional()
   descripcion?: string;
 
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe tener formato YYYY-MM-DD' })
   fecha: string;
 
   @IsInt()

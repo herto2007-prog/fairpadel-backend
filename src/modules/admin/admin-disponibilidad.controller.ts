@@ -11,7 +11,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, Min, Max, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, Min, Max, IsArray, Matches } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,7 +30,7 @@ class AgregarCanchaDto {
 }
 
 class ConfigurarDiaDto {
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe tener formato YYYY-MM-DD' })
   fecha: string;
 
   @IsString()
@@ -51,10 +51,10 @@ class ConfigurarDiaDto {
 }
 
 class GetSlotsPorSemanaDto {
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaInicio debe tener formato YYYY-MM-DD' })
   fechaInicio: string;
 
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaFin debe tener formato YYYY-MM-DD' })
   fechaFin: string;
 }
 

@@ -1,10 +1,10 @@
-import { IsString, IsDateString, IsOptional } from 'class-validator';
+import { IsString, IsDateString, IsOptional, Matches } from 'class-validator';
 
 export class ConsultarDisponibilidadDto {
   @IsString()
   sedeId: string;
 
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe tener formato YYYY-MM-DD' })
   fecha: string;
 
   @IsString()

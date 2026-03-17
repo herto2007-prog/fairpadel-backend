@@ -1,11 +1,11 @@
-import { IsString, IsOptional, IsDateString, IsInt, IsEnum, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsInt, IsEnum, IsBoolean, Matches } from 'class-validator';
 import { MetodoPagoAlquiler } from '@prisma/client';
 
 export class CreateReservaDto {
   @IsString()
   sedeCanchaId: string;
 
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe tener formato YYYY-MM-DD' })
   fecha: string;
 
   @IsString()
