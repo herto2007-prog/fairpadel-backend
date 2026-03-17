@@ -1391,7 +1391,20 @@ export class AdminTorneosController {
     ] = await Promise.all([
       this.prisma.tournament.findUnique({
         where: { id: tournamentId },
-        include: {
+        select: {
+          id: true,
+          nombre: true,
+          slug: true,
+          estado: true,
+          fechaInicio: true,
+          fechaFin: true,
+          fechaLimiteInscr: true,
+          ciudad: true,
+          flyerUrl: true,
+          // @ts-ignore - campos nuevos en schema
+          canchasFinales: true,
+          // @ts-ignore
+          horaInicioFinales: true,
           sedePrincipal: true,
           categorias: { include: { category: true } },
           modalidades: { include: { modalidadConfig: true } },
@@ -1575,11 +1588,13 @@ export class AdminTorneosController {
           fechaInicio: torneo.fechaInicio,
           fechaFin: torneo.fechaFin,
           fechaLimiteInscr: torneo.fechaLimiteInscr,
-          fechaFinales: (torneo as any).fechaFinales,
-          canchasFinales: (torneo as any).canchasFinales,
-          horaInicioFinales: (torneo as any).horaInicioFinales,
+          // @ts-ignore
+          canchasFinales: torneo.canchasFinales,
+          // @ts-ignore
+          horaInicioFinales: torneo.horaInicioFinales,
           ciudad: torneo.ciudad,
           flyerUrl: torneo.flyerUrl,
+          // @ts-ignore
           sede: torneo.sedePrincipal,
           diasHastaInicio,
           diasHastaCierre,
