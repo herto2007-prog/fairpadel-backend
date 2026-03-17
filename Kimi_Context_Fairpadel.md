@@ -2,7 +2,7 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-16 20:30
+> **Última actualización:** 2026-03-17 22:00
 > **Conversación actual:** Soporte extendido para 16avos (32 parejas) y 32avos (64 parejas) en el sistema de bracket. Fórmula actualizada: `objetivoBracket = (parejas <= 15) ? 8 : (parejas <= 31) ? 16 : (parejas <= 63) ? 32 : 64`. Commits realizados en backend y frontend.
 
 ---
@@ -1316,3 +1316,71 @@ parejas ≥ 64  → 64 equipos (bracket de 64)
 ---
 
 *Documento actualizado: 2026-03-16 - Soporte extendido para 16avos y 32avos en sistema de bracket. Backend y frontend compilando correctamente. Cambios pusheados a producción.*
+
+
+---
+
+## ✅ Completado (2026-03-17) - Configuración de Finales + Eliminación de Días
+
+### Conexión de `fechaFinales` al Algoritmo de Programación
+
+**Backend - `programacion.service.ts`:**
+- [x] La fecha de finales (`fechaFinales`) ahora es **ancla obligatoria** para el algoritmo
+- [x] SEMIS y FINAL siempre se asignan al día de `fechaFinales`
+- [x] Las demás fases se distribuyen **hacia atrás** desde esa fecha
+- [x] Ejemplo: Si finals=Sábado con 4 días → Miércoles ZONA, Jueves 16vos, Viernes 8vos+4tos, Sábado SEMIS+FINAL
+
+**Campos nuevos en Schema:**
+```prisma
+model Tournament {
+  canchasFinales    String[]  // IDs de TorneoCancha para finales
+  horaInicioFinales String?   // Ej: "18:00"
+}
+```
+
+**Algoritmo de asignación:**
+- Fases finales (SEMIS, FINAL) usan **solo** las canchas configuradas en `canchasFinales`
+- Respetan la `horaInicioFinales` como hora mínima de inicio
+- Fases intermedias usan todas las canchas disponibles
+
+### Guardado de Configuración de Finales
+
+**Backend:**
+- [x] Endpoint `PUT /admin/torneos/:id` acepta `canchasFinales` y `horaInicioFinales`
+- [x] Validación de permisos: Admin puede editar cualquier torneo, Organizador solo sus torneos
+- [x] Endpoint `GET /admin/torneos/:id/overview` devuelve los campos de finales
+
+**Frontend - `CanchasManager.tsx`:**
+- [x] Modal "Configurar" para seleccionar múltiples canchas para finales
+- [x] Selector de hora de inicio para finales
+- [x] Guardado via `disponibilidadService.actualizarFinales()`
+- [x] Carga de configuración guardada al iniciar (no sobreescribe con sugerencias automáticas)
+- [x] Visualización de canchas seleccionadas en el header (ej: "Cancha 1, Cancha 2")
+
+### Eliminación de Días con Validación
+
+**Backend - `admin-disponibilidad.controller.ts`:**
+```typescript
+DELETE /admin/torneos/:id/disponibilidad/dias/:diaId
+```
+- [x] **Lógica inteligente:**
+  - Si hay slots **OCUPADOS** (con partidos): elimina solo los **LIBRES**, mantiene el día
+  - Si **no hay** slots ocupados: elimina todo (slots + día)
+- [x] Respuesta indica si fue eliminación parcial o total:
+  ```json
+  { "parcial": true, "eliminados": 5, "preservados": 2 }
+  ```
+
+**Frontend - `VistaLista`:**
+- [x] Botón "Eliminar día" en cada día de la lista
+- [x] Mensaje de confirmación diferente según haya partidos ocupados o no
+- [x] Recarga automática de datos tras eliminación
+- [x] Logs de debug en consola para troubleshooting
+
+### TypeScript Fixes
+- [x] Múltiples `// @ts-ignore` para campos nuevos del schema que Prisma client local no reconoce
+- [x] Verificación de build local antes de cada push (aprendizaje reforzado)
+
+---
+
+**Última actualización:** 2026-03-17 22:00
