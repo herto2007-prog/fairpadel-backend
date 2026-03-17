@@ -552,23 +552,69 @@ export class AdminDisponibilidadController {
   /**
    * DELETE /admin/torneos/:id/disponibilidad/dias/:diaId
    * Eliminar un día de disponibilidad
+   * 
+   * Lógica:
+   * - Si hay slots OCUPADOS (con partidos asignados): elimina solo los LIBRES, mantiene el día
+   * - Si no hay slots ocupados: elimina todos los slots y el día
    */
   @Delete('dias/:diaId')
   async eliminarDia(@Param('id') tournamentId: string, @Param('diaId') diaId: string) {
     try {
-      await this.prisma.torneoDisponibilidadDia.update({
-        where: { id: diaId },
-        data: { activo: false },
+      // Verificar que el día existe y pertenece al torneo
+      const dia = await this.prisma.torneoDisponibilidadDia.findFirst({
+        where: { id: diaId, tournamentId },
+        include: {
+          slots: true,
+        },
       });
+
+      if (!dia) {
+        throw new NotFoundException('Día no encontrado');
+      }
+
+      const slotsOcupados = dia.slots.filter(s => s.estado === 'OCUPADO' || s.matchId !== null);
+      const slotsLibres = dia.slots.filter(s => s.estado === 'LIBRE');
+
+      // Si hay slots ocupados, solo eliminar los libres y mantener el día
+      if (slotsOcupados.length > 0) {
+        // Eliminar solo slots libres
+        const deleted = await this.prisma.torneoSlot.deleteMany({
+          where: {
+            disponibilidadId: diaId,
+            estado: 'LIBRE',
+          },
+        });
+
+        return {
+          success: true,
+          message: `Se eliminaron ${deleted.count} slots libres. ${slotsOcupados.length} slots con partidos permanecen activos.`,
+          parcial: true,
+          eliminados: deleted.count,
+          preservados: slotsOcupados.length,
+        };
+      }
+
+      // Si no hay slots ocupados, eliminar todo (slots + día)
+      await this.prisma.$transaction([
+        // Primero eliminar todos los slots (todos están libres)
+        this.prisma.torneoSlot.deleteMany({
+          where: { disponibilidadId: diaId },
+        }),
+        // Luego eliminar el día
+        this.prisma.torneoDisponibilidadDia.delete({
+          where: { id: diaId },
+        }),
+      ]);
 
       return {
         success: true,
-        message: 'Día desactivado',
+        message: 'Día y slots eliminados completamente',
+        parcial: false,
       };
     } catch (error: any) {
       throw new BadRequestException({
         success: false,
-        message: 'Error desactivando día',
+        message: 'Error eliminando día',
         error: error.message,
       });
     }
