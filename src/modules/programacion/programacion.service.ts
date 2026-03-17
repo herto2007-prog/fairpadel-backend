@@ -793,7 +793,7 @@ export class ProgramacionService {
         where: {
           torneoCanchaId: asignacion.torneoCanchaId,
           disponibilidad: {
-            fecha: asignacion.fecha,
+            fecha: new Date(asignacion.fecha + 'T00:00:00.000Z'),
           },
           horaInicio: asignacion.horaInicio,
         },
