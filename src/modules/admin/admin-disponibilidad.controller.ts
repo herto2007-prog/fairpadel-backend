@@ -619,11 +619,14 @@ export class AdminDisponibilidadController {
         let horaActual = this.parseHora(dia.horaInicio);
         const horaFin = this.parseHora(dia.horaFin);
 
-        while (horaActual < horaFin) {
+        while (horaActual <= horaFin) {
           const horaInicioStr = this.formatHora(horaActual);
           const horaFinSlot = horaActual + dia.minutosSlot;
           
-          if (horaFinSlot > horaFin) break;
+          // El slot puede terminar DESPUÉS de la horaFin configurada
+          // Ej: si horaFin es 23:00, el último slot puede ser 22:30-00:00
+          // Lo importante es que INICIE antes o a la horaFin
+          if (horaActual > horaFin) break;
 
           const horaFinStr = this.formatHora(horaFinSlot);
 
