@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, IsNumber, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsEnum, IsArray } from 'class-validator';
 import { TournamentStatus } from '@prisma/client';
 
 export class CreateTournamentDto {
@@ -43,4 +43,17 @@ export class CreateTournamentDto {
   @IsString()
   @IsOptional()
   sedeId?: string;
+
+  @IsDateString()
+  @IsOptional()
+  fechaFinales?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  canchasFinales?: string[];
+
+  @IsString()
+  @IsOptional()
+  horaInicioFinales?: string;
 }

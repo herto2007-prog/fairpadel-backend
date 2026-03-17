@@ -91,6 +91,17 @@ export class TournamentsService {
       data.sedeId = dto.sedeId;
     }
     
+    // Configuración de finales
+    if (dto.fechaFinales) {
+      data.fechaFinales = dto.fechaFinales;
+    }
+    if (dto.canchasFinales) {
+      data.canchasFinales = dto.canchasFinales;
+    }
+    if (dto.horaInicioFinales) {
+      data.horaInicioFinales = dto.horaInicioFinales;
+    }
+    
     return this.prisma.tournament.create({ data });
   }
 

@@ -18,6 +18,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 interface CalcularProgramacionDto {
   categoriasSorteadas: string[];
   fechaInicio?: string;
+  canchasFinales?: string[];
+  horaInicioFinales?: string;
 }
 
 interface AplicarProgramacionDto {
@@ -43,6 +45,8 @@ export class ProgramacionController {
       tournamentId,
       dto.categoriasSorteadas,
       dto.fechaInicio,
+      dto.canchasFinales,
+      dto.horaInicioFinales,
     );
   }
 

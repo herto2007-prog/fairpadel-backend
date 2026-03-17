@@ -849,6 +849,10 @@ model Tournament {
   // NUEVO: Circuitos
   circuitosParticipa   TorneoCircuito[]
   esFinalDeCircuito    Circuito?      @relation("CircuitoFinal")
+  
+  // NUEVO: Configuración de Finales (canchas y hora de inicio)
+  canchasFinales       String[]       @map("canchas_finales") // Array de TorneoCancha IDs
+  horaInicioFinales    String?        @map("hora_inicio_finales") // Ej: "09:00"
 
   @@map("tournaments")
 }

@@ -107,6 +107,8 @@ export class ProgramacionService {
     tournamentId: string,
     categoriasSorteadas: string[],
     fechaInicio?: string,
+    canchasFinales?: string[],
+    horaInicioFinales?: string,
   ): Promise<ResultadoProgramacion> {
     // 1. Obtener partidos de las categorías sorteadas
     const partidos = await this.obtenerPartidos(tournamentId, categoriasSorteadas);
@@ -114,10 +116,19 @@ export class ProgramacionService {
     // 2. Obtener slots disponibles
     const slots = await this.obtenerSlotsDisponibles(tournamentId);
     
-    // 3. Calcular predicción de recursos
+    // 3. Obtener fechaFinales del torneo
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      // @ts-ignore - fechaFinales fue agregado al schema
+      select: { fechaFinales: true }
+    });
+    // @ts-ignore
+    const fechaFinales = torneo?.fechaFinales ? torneo.fechaFinales.toISOString().split('T')[0] : undefined;
+    
+    // 4. Calcular predicción de recursos
     const prediccion = this.calcularPrediccion(partidos, slots);
     
-    // 4. Si no hay suficientes recursos, retornar temprano
+    // 5. Si no hay suficientes recursos, retornar temprano
     if (!prediccion.suficiente) {
       return {
         prediccion,
@@ -133,10 +144,17 @@ export class ProgramacionService {
       };
     }
 
-    // 5. Distribuir partidos con orden cronológico garantizado
-    const distribucion = await this.distribuirPartidosPorFases(partidos, slots, fechaInicio);
+    // 6. Distribuir partidos con orden cronológico garantizado
+    const distribucion = await this.distribuirPartidosPorFases(
+      partidos, 
+      slots, 
+      fechaInicio, 
+      fechaFinales,
+      canchasFinales,
+      horaInicioFinales,
+    );
     
-    // 6. Validar conflictos
+    // 7. Validar conflictos
     const conflictos = this.validarConflictos(distribucion);
 
     return {
@@ -343,6 +361,9 @@ export class ProgramacionService {
     partidos: PartidoProgramar[],
     slots: SlotDisponible[],
     fechaInicio?: string,
+    fechaFinales?: string,
+    canchasFinales?: string[],
+    horaInicioFinales?: string,
   ): Promise<DistribucionDia[]> {
     // 1. Agrupar slots por fecha y ordenar cronológicamente
     const slotsPorFecha = this.agruparSlotsPorFecha(slots);
@@ -371,30 +392,29 @@ export class ProgramacionService {
     const tieneZona = fasesExistentes.includes('ZONA');
     const tieneFinales = FASES_FINALES.some(f => fasesExistentes.includes(f));
     
-    // 4. Calcular distribución de fases por día
-    const totalDias = fechasOrdenadas.length;
+    // 4. Si hay fechaFinales configurada, usarla como ancla
+    let fechaFinalesReal: string | undefined;
+    if (fechaFinales && fechasOrdenadas.includes(fechaFinales)) {
+      fechaFinalesReal = fechaFinales;
+    } else if (tieneFinales) {
+      // Si no hay fechaFinales específica, usar el último día
+      fechaFinalesReal = fechasOrdenadas[fechasOrdenadas.length - 1];
+    }
+    
+    // 5. Calcular distribución de fases por día respetando fechaFinales
     const distribucionFasesPorDia = this.calcularDistribucionFases(
       fasesExistentes, 
-      totalDias
+      fechasOrdenadas.length,
+      fechasOrdenadas,
+      fechaFinalesReal
     );
 
-    // 5. Asignar días a cada grupo de fases
+    // 6. Asignar días a cada grupo de fases
     const asignacionDias: Record<string, string[]> = {};
-    let diaIndex = 0;
     
-    for (const grupoFases of distribucionFasesPorDia) {
-      // Buscar fechas disponibles para este grupo
-      const fechasGrupo: string[] = [];
-      for (const fase of grupoFases) {
-        if (diaIndex < fechasOrdenadas.length) {
-          fechasGrupo.push(fechasOrdenadas[diaIndex]);
-          diaIndex++;
-        }
-      }
-      
-      // Asignar estas fechas a todas las fases del grupo
-      for (const fase of grupoFases) {
-        asignacionDias[fase] = fechasGrupo;
+    for (const grupo of distribucionFasesPorDia) {
+      for (const fase of grupo.fases) {
+        asignacionDias[fase] = grupo.fechas;
       }
     }
 
@@ -406,6 +426,15 @@ export class ProgramacionService {
     for (const fase of fasesExistentes) {
       const fechasFase = asignacionDias[fase] || [];
       
+      // Para finales: usar canchas y hora específicas
+      const esFaseFinal = FASES_FINALES.includes(fase as any);
+      const canchasPermitidas = esFaseFinal && canchasFinales?.length > 0 
+        ? canchasFinales 
+        : undefined;
+      const horaMinima = esFaseFinal && horaInicioFinales 
+        ? horaInicioFinales 
+        : undefined;
+      
       for (const partido of partidosPorFase[fase]) {
         const asignacion = this.encontrarSlotEnRango(
           partido,
@@ -413,6 +442,8 @@ export class ProgramacionService {
           slotsPorFecha,
           slotsAsignados,
           asignaciones,
+          canchasPermitidas,
+          horaMinima,
         );
         
         if (asignacion) {
@@ -447,14 +478,17 @@ export class ProgramacionService {
 
   /**
    * Calcula la distribución de fases por día usando lógica "de atrás para adelante"
+   * con fechaFinales como ancla obligatoria
    * 
-   * Ejemplo 4 días: [['ZONA'], ['DIECISEISAVOS', 'REPECHAJE'], ['OCTAVOS', 'CUARTOS'], ['SEMIS', 'FINAL']]
-   * Ejemplo 5 días: [['ZONA'], ['REPECHAJE'], ['DIECISEISAVOS', 'OCTAVOS'], ['CUARTOS'], ['SEMIS', 'FINAL']]
+   * Las fases finales (SEMIS, FINAL) SIEMPRE van en fechaFinales
+   * Las demás fases se distribuyen hacia atrás desde esa fecha
    */
   private calcularDistribucionFases(
     fasesExistentes: readonly string[],
     totalDias: number,
-  ): string[][] {
+    fechasOrdenadas: string[],
+    fechaFinales?: string,
+  ): { fases: string[]; fechas: string[] }[] {
     // Separar fases en grupos
     const faseZona = fasesExistentes.includes('ZONA') ? ['ZONA'] : [];
     const fasesFinales = FASES_FINALES.filter(f => fasesExistentes.includes(f));
@@ -462,35 +496,37 @@ export class ProgramacionService {
       f !== 'ZONA' && !(FASES_FINALES as readonly string[]).includes(f)
     );
 
-    // Días disponibles para fases medias
-    const diasParaMedias = totalDias - faseZona.length - (fasesFinales.length > 0 ? 1 : 0);
+    const distribucion: { fases: string[]; fechas: string[] }[] = [];
 
-    const distribucion: string[][] = [];
-
-    // Día 1: ZONA (si existe)
-    if (faseZona.length > 0) {
-      distribucion.push(faseZona);
+    // Encontrar el índice de fechaFinales en fechasOrdenadas
+    let indiceFinales = fechaFinales ? fechasOrdenadas.indexOf(fechaFinales) : fechasOrdenadas.length - 1;
+    if (indiceFinales === -1) {
+      // Si no se encuentra, usar el último día
+      indiceFinales = fechasOrdenadas.length - 1;
     }
 
-    // Distribuir fases medias de atrás para adelante
-    // Agrupar de a 2, pero si sobran días, distribuir de a 1
+    // Días disponibles antes de las finales
+    const diasAntesFinales = indiceFinales;
+    const diasParaMedias = diasAntesFinales;
+
+    // Distribuir fases medias de atrás para adelante (antes de las finales)
     if (fasesMedias.length > 0 && diasParaMedias > 0) {
       const gruposDeDos = Math.floor(fasesMedias.length / 2);
       const sobranFases = fasesMedias.length % 2;
-      const sobranDias = diasParaMedias - gruposDeDos - (sobranFases > 0 ? 1 : 0);
+      const totalGruposNecesarios = gruposDeDos + (sobranFases > 0 ? 1 : 0);
+      
+      // Calcular cuántos días usar para fases medias
+      const diasUsar = Math.min(diasParaMedias, totalGruposNecesarios + Math.max(0, fasesMedias.length - diasParaMedias));
 
-      // Índice para recorrer fases medias desde el final (de atrás para adelante)
+      // Crear grupos desde el final (cerca de las finales)
       let indiceFase = fasesMedias.length - 1;
-
-      // Crear grupos desde el final
       const gruposMedios: string[][] = [];
       
-      // Primero los grupos de 2 (desde el final)
+      // Primero los grupos de 2 (desde el final - más cerca de finales)
       for (let i = 0; i < gruposDeDos && indiceFase >= 1; i++) {
-        // Tomar 2 fases consecutivas desde el final
         const fase1 = fasesMedias[indiceFase];
         const fase2 = fasesMedias[indiceFase - 1];
-        gruposMedios.unshift([fase2, fase1]); // Unshift para mantener orden
+        gruposMedios.unshift([fase2, fase1]);
         indiceFase -= 2;
       }
 
@@ -500,31 +536,36 @@ export class ProgramacionService {
         indiceFase--;
       }
 
-      // Si sobran días, distribuir los grupos de 2 en grupos de 1
-      // (desde el principio de los grupos medios)
-      if (sobranDias > 0) {
-        const gruposExpandidos: string[][] = [];
-        let diasExtras = sobranDias;
-
-        for (const grupo of gruposMedios) {
-          if (grupo.length === 2 && diasExtras > 0) {
-            // Separar en 2 grupos de 1
-            gruposExpandidos.push([grupo[0]]);
-            gruposExpandidos.push([grupo[1]]);
-            diasExtras--;
-          } else {
-            gruposExpandidos.push(grupo);
-          }
+      // Distribuir grupos en los días antes de las finales
+      const diasParaAsignar = Math.min(gruposMedios.length, diasParaMedias);
+      for (let i = 0; i < diasParaAsignar; i++) {
+        const fechaIndex = diasAntesFinales - diasParaAsignar + i;
+        if (fechaIndex >= 0 && fechaIndex < fechasOrdenadas.length) {
+          distribucion.push({
+            fases: gruposMedios[i],
+            fechas: [fechasOrdenadas[fechaIndex]]
+          });
         }
-        distribucion.push(...gruposExpandidos);
-      } else {
-        distribucion.push(...gruposMedios);
       }
     }
 
-    // Último día: SEMIS + FINAL (si existen)
+    // Día de ZONA (si existe) - siempre al inicio
+    if (faseZona.length > 0) {
+      // Buscar el primer día disponible antes de las fases medias
+      let fechaZona = fechasOrdenadas[0];
+      // Si hay espacio, usar el primer día; si no, usar el día más temprano posible
+      distribucion.unshift({
+        fases: faseZona,
+        fechas: [fechaZona]
+      });
+    }
+
+    // Día de FINALES (obligatoriamente en fechaFinales)
     if (fasesFinales.length > 0) {
-      distribucion.push(fasesFinales);
+      distribucion.push({
+        fases: fasesFinales,
+        fechas: [fechasOrdenadas[indiceFinales]]
+      });
     }
 
     return distribucion;
@@ -627,9 +668,21 @@ export class ProgramacionService {
     slotsPorFecha: Record<string, SlotDisponible[]>,
     slotsAsignados: Set<string>,
     asignacionesExistentes: PartidoAsignado[],
+    canchasPermitidas?: string[],
+    horaMinima?: string,
   ): PartidoAsignado | null {
     for (const fecha of fechas) {
-      const slotsDelDia = slotsPorFecha[fecha] || [];
+      let slotsDelDia = slotsPorFecha[fecha] || [];
+      
+      // Filtrar por canchas permitidas (para finales)
+      if (canchasPermitidas && canchasPermitidas.length > 0) {
+        slotsDelDia = slotsDelDia.filter(s => canchasPermitidas.includes(s.torneoCanchaId));
+      }
+      
+      // Filtrar por hora mínima (para finales)
+      if (horaMinima) {
+        slotsDelDia = slotsDelDia.filter(s => s.horaInicio >= horaMinima);
+      }
       
       for (const slot of slotsDelDia) {
         const slotKey = `${fecha}-${slot.torneoCanchaId}-${slot.horaInicio}`;
