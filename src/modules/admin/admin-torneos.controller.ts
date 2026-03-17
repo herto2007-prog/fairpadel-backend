@@ -1373,6 +1373,8 @@ export class AdminTorneosController {
           estado: true,
           fechaInicio: true,
           fechaFin: true,
+          // @ts-ignore
+          fechaFinales: true,
           fechaLimiteInscr: true,
           ciudad: true,
           flyerUrl: true,
