@@ -11,7 +11,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsBoolean, Min, Max, IsArray } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -43,6 +43,11 @@ class ConfigurarDiaDto {
   @Min(30)
   @Max(180)
   minutosSlot: number = 90;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  canchaIds?: string[]; // IDs de canchas a usar (undefined = todas)
 }
 
 class GetSlotsPorSemanaDto {
