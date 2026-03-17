@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-17 22:00
-> **Conversación actual:** Soporte extendido para 16avos (32 parejas) y 32avos (64 parejas) en el sistema de bracket. Fórmula actualizada: `objetivoBracket = (parejas <= 15) ? 8 : (parejas <= 31) ? 16 : (parejas <= 63) ? 32 : 64`. Commits realizados en backend y frontend.
+> **Última actualización:** 2026-03-17 23:30
+> **Conversación actual:** Correcciones críticas al flujo de canchas: toggleCancha, eliminación de días, botón Configurar para finales, y fix de creación de torneos (fechaLimiteInscripcion). Todos los errores encontrados en la investigación exhaustiva han sido corregidos y pusheados a producción.
 
 ---
 
@@ -559,6 +559,45 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
 - `GET /programacion/torneos/:id/canchas` - Canchas disponibles
 - `PUT /programacion/partidos/:id` - Actualizar programación
 - `DELETE /programacion/partidos/:id` - Desprogramar
+
+### ✅ Completado (2026-03-17) - Correcciones Críticas al Flujo de Canchas
+
+**Investigación exhaustiva del flujo de canchas + correcciones de errores encontrados:**
+
+#### Errores Corregidos en Disponibilidad/Canchar:
+- [x] **Fix: toggleCancha en DisponibilidadConfig.tsx** - Función no encontraba el torneoCanchaId correcto
+  - Backend: Agregado `sedeCanchaId` a la respuesta de `/admin/torneos/:id/disponibilidad`
+  - Frontend: Actualizada lógica para usar `sedeCanchaId` en lugar de comparar por nombre
+  
+- [x] **Fix: ConfirmModal faltante en VistaLista** - Modal de confirmación no aparecía al eliminar días
+  - Agregado `<ConfirmModal />` al componente VistaLista dentro de CanchasManager
+  - El hook `useConfirm` requiere renderizar el componente para funcionar
+  
+- [x] **Fix: Eliminación de días con slots ocupados** - Lógica inconsistente entre frontend y backend
+  - Backend: Unificado criterio de "ocupado" = `matchId !== null` (no solo estado)
+  - Backend: Corregida condición de loop en generación de slots (`<=` por `<`)
+  - Backend: Corregida conversión de fecha en programación de partidos
+  
+- [x] **Fix: Botón Configurar (Canchas para Finales)** - Mejoras UX y funcionalidad
+  - Agregado feedback con `showSuccess` tras guardar correctamente
+  - Verificar `result.success` antes de cerrar modal
+  - Recargar datos con `loadTorneoInfo()` tras guardar exitosamente
+  - Reemplazado `alert()` por `showError` consistente
+  - Prevenir sobrescritura de datos cuando modal está abierto
+  
+- [x] **Fix: Export CanchasManager** - Agregado a `index.ts` de disponibilidad
+
+#### Errores Corregidos en Creación de Torneos:
+- [x] **Fix: Error 400 al crear torneo** - `fechaLimiteInscripcion` era requerido pero frontend no lo enviaba
+  - Backend: Campo ahora es `@IsOptional()` en CreateTournamentDto
+  - El backend ya tenía fallback: usa `fechaInicio` o `fechaFinales` si no se proporciona
+
+#### Mejoras de Timezone:
+- [x] **Frontend:** Usar `getDateOnlyPY()` para enviar fechas al backend (consistencia con timezone Paraguay)
+
+**Commits:**
+- Backend: `ffa52cb`, `9700549`, `47c11df`
+- Frontend: `cdebc66`, `bcd60a0`, `1bc1294`
 
 ### ⏳ Próximos Módulos Sugeridos
 - [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
