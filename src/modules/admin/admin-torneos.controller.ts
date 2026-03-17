@@ -470,7 +470,7 @@ export class AdminTorneosController {
   @Put(':id')
   async update(
     @Param('id') torneoId: string,
-    @Body() dto: Partial<CreateTorneoDto>,
+    @Body() dto: Partial<CreateTorneoDto> & { canchasFinales?: string[]; horaInicioFinales?: string },
   ) {
     try {
       const torneo = await this.prisma.tournament.update({
@@ -485,6 +485,8 @@ export class AdminTorneosController {
           ...(dto.costoInscripcion !== undefined && { costoInscripcion: dto.costoInscripcion }),
           ...(dto.sedeId !== undefined && { sedeId: dto.sedeId }),
           ...(dto.flyerUrl !== undefined && { flyerUrl: dto.flyerUrl }),
+          ...(dto.canchasFinales !== undefined && { canchasFinales: dto.canchasFinales }),
+          ...(dto.horaInicioFinales !== undefined && { horaInicioFinales: dto.horaInicioFinales }),
         },
       });
 
@@ -1551,6 +1553,9 @@ export class AdminTorneosController {
           fechaInicio: torneo.fechaInicio,
           fechaFin: torneo.fechaFin,
           fechaLimiteInscr: torneo.fechaLimiteInscr,
+          fechaFinales: (torneo as any).fechaFinales,
+          canchasFinales: (torneo as any).canchasFinales,
+          horaInicioFinales: (torneo as any).horaInicioFinales,
           ciudad: torneo.ciudad,
           flyerUrl: torneo.flyerUrl,
           sede: torneo.sedePrincipal,
