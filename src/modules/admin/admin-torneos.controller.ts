@@ -55,6 +55,16 @@ class CreateTorneoDto {
     }
     return value;
   })
+  fechaFinales?: string;
+
+  @IsDateString()
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value && typeof value === 'string' && value.length === 10) {
+      return `${value}T23:59:59.999Z`;
+    }
+    return value;
+  })
   fechaLimiteInscripcion?: string;
 
   @IsString()
@@ -354,9 +364,10 @@ export class AdminTorneosController {
         const torneoData: any = {
           nombre: dto.nombre,
           descripcion: dto.descripcion || '',
-          fechaInicio: new Date(dto.fechaInicio + 'T00:00:00.000Z'),
+          fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio + 'T00:00:00.000Z') : null,
           fechaFin: new Date(dto.fechaFin + 'T00:00:00.000Z'),
-          fechaLimiteInscr: new Date((dto.fechaLimiteInscripcion || dto.fechaInicio) + 'T00:00:00.000Z'),
+          fechaFinales: dto.fechaFinales ? new Date(dto.fechaFinales + 'T00:00:00.000Z') : null,
+          fechaLimiteInscr: new Date((dto.fechaLimiteInscripcion || dto.fechaInicio || dto.fechaFinales) + 'T00:00:00.000Z'),
           ciudad: dto.ciudad,
           costoInscripcion: dto.costoInscripcion, // Prisma maneja Decimal desde number
           organizador: { connect: { id: user.userId } },

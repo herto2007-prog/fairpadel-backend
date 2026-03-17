@@ -794,6 +794,7 @@ model Tournament {
   ciudad              String
   fechaInicio         DateTime          @map("fecha_inicio")
   fechaFin            DateTime          @map("fecha_fin")
+  fechaFinales        DateTime?         @map("fecha_finales") // Día D - Finales del torneo
   fechaLimiteInscr    DateTime          @map("fecha_limite_inscr")
   flyerUrl            String            @map("flyer_url")
   estado              TournamentStatus  @default(BORRADOR)
