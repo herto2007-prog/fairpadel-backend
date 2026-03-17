@@ -573,17 +573,17 @@ export class AdminDisponibilidadController {
         throw new NotFoundException('Día no encontrado');
       }
 
-      // Un slot está ocupado si tiene un partido asignado (matchId)
-      const slotsOcupados = dia.slots.filter(s => s.matchId !== null);
-      const slotsLibres = dia.slots.filter(s => s.matchId === null);
+      // Un slot está ocupado si tiene un partido asignado (matchId) o estado OCUPADO
+      const slotsOcupados = dia.slots.filter(s => s.matchId !== null || s.estado === 'OCUPADO');
+      const slotsLibres = dia.slots.filter(s => s.matchId === null && s.estado !== 'OCUPADO');
 
       // Si hay slots ocupados, solo eliminar los libres y mantener el día
       if (slotsOcupados.length > 0) {
-        // Eliminar solo slots libres
+        // Eliminar solo slots libres (sin match asignado)
         const deleted = await this.prisma.torneoSlot.deleteMany({
           where: {
             disponibilidadId: diaId,
-            estado: 'LIBRE',
+            matchId: null,
           },
         });
 
