@@ -68,6 +68,31 @@ export interface Conflicto {
   mensaje: string;
 }
 
+/**
+ * Orden de fases para programación
+ * Las fases más tempranas van primero
+ */
+const ORDEN_FASES = [
+  'ZONA',
+  'REPECHAJE',
+  'TREINTAYDOSAVOS',
+  'DIECISEISAVOS',
+  'OCTAVOS',
+  'CUARTOS',
+  'SEMIS',
+  'FINAL',
+] as const;
+
+/**
+ * Fases que deben ir obligatoriamente en los últimos días
+ */
+const FASES_FINALES = ['SEMIS', 'FINAL'];
+
+/**
+ * Fases que pueden compartir días entre sí pero deben ir después de las fases iniciales
+ */
+const FASES_INTERMEDIAS = ['CUARTOS'];
+
 @Injectable()
 export class ProgramacionService {
   constructor(private prisma: PrismaService) {}
@@ -102,8 +127,8 @@ export class ProgramacionService {
       };
     }
 
-    // 5. Distribuir partidos
-    const distribucion = await this.distribuirPartidos(partidos, slots, fechaInicio);
+    // 5. Distribuir partidos con orden cronológico garantizado
+    const distribucion = await this.distribuirPartidosPorFases(partidos, slots, fechaInicio);
     
     // 6. Validar conflictos
     const conflictos = this.validarConflictos(distribucion);
@@ -302,172 +327,132 @@ export class ProgramacionService {
   }
 
   /**
-   * Distribuye los partidos en los slots disponibles
+   * Distribuye los partidos en los slots disponibles respetando:
+   * 1. Orden cronológico de días (independiente del orden de creación)
+   * 2. Fases iniciales en días primeros
+   * 3. Fases finales (SEMIS/FINAL) obligatoriamente en últimos días
    */
-  private async distribuirPartidos(
+  private async distribuirPartidosPorFases(
     partidos: PartidoProgramar[],
     slots: SlotDisponible[],
     fechaInicio?: string,
   ): Promise<DistribucionDia[]> {
-    // Agrupar slots por fecha
+    // 1. Agrupar slots por fecha y ordenar cronológicamente
     const slotsPorFecha = this.agruparSlotsPorFecha(slots);
-    
-    // Ordenar fechas
-    const fechasOrdenadas = Object.keys(slotsPorFecha).sort();
+    let fechasOrdenadas = Object.keys(slotsPorFecha).sort();
     
     // Si hay fecha de inicio específica, filtrar desde ahí
-    let fechasUsar = fechasOrdenadas;
     if (fechaInicio) {
-      fechasUsar = fechasOrdenadas.filter(f => f >= fechaInicio);
+      fechasOrdenadas = fechasOrdenadas.filter(f => f >= fechaInicio);
     }
 
-    // Separar partidos por fase
-    const partidosZona = partidos.filter(p => p.fase === 'ZONA');
-    const partidosRonda = partidos.filter(p => p.fase === 'REPECHAJE');
-    const partidos32avos = partidos.filter(p => p.fase === 'TREINTAYDOSAVOS');
-    const partidos16avos = partidos.filter(p => p.fase === 'DIECISEISAVOS');
-    const partidosOctavos = partidos.filter(p => p.fase === 'OCTAVOS');
-    const partidosCuartos = partidos.filter(p => p.fase === 'CUARTOS');
-    const partidosSemis = partidos.filter(p => p.fase === 'SEMIS');
-    const partidosFinal = partidos.filter(p => p.fase === 'FINAL');
+    if (fechasOrdenadas.length === 0) {
+      return [];
+    }
+
+    // 2. Separar partidos por fase
+    const partidosPorFase: Record<string, PartidoProgramar[]> = {};
+    ORDEN_FASES.forEach(fase => {
+      partidosPorFase[fase] = partidos.filter(p => p.fase === fase);
+    });
+
+    // 3. Calcular cuántos días reservar para fases finales
+    const partidosFinales = FASES_FINALES.flatMap(f => partidosPorFase[f] || []);
+    const partidosIntermedios = FASES_INTERMEDIAS.flatMap(f => partidosPorFase[f] || []);
+    const partidosIniciales = ORDEN_FASES
+      .filter(f => !FASES_FINALES.includes(f) && !FASES_INTERMEDIAS.includes(f))
+      .flatMap(f => partidosPorFase[f] || []);
+
+    // Calcular slots promedio por día
+    const slotsPorDiaPromedio = Math.max(1, 
+      Math.floor(slots.length / fechasOrdenadas.length)
+    );
+
+    // Días necesarios para fases finales (mínimo 1 día, máximo 2)
+    const diasParaFinales = Math.min(2, Math.max(1, 
+      Math.ceil(partidosFinales.length / slotsPorDiaPromedio)
+    ));
+
+    // Días necesarios para fases intermedias
+    const diasParaIntermedios = Math.min(1, Math.max(0,
+      Math.ceil(partidosIntermedios.length / slotsPorDiaPromedio)
+    ));
+
+    // 4. Asignar rangos de días a cada bloque de fases
+    const totalDias = fechasOrdenadas.length;
+    
+    // Índices de días para cada bloque
+    const diasFinales = fechasOrdenadas.slice(-diasParaFinales); // Últimos días
+    const diasIntermedios = diasParaIntermedios > 0 && totalDias > diasParaFinales
+      ? fechasOrdenadas.slice(-diasParaFinales - diasParaIntermedios, -diasParaFinales)
+      : [];
+    const diasIniciales = fechasOrdenadas.slice(0, Math.max(1, totalDias - diasParaFinales - diasParaIntermedios));
 
     const distribucion: DistribucionDia[] = [];
     const slotsAsignados = new Set<string>();
     const asignaciones: PartidoAsignado[] = [];
 
-    // Distribuir ZONA (primera prioridad)
-    let fechaIndex = 0;
-    for (const partido of partidosZona) {
-      const asignacion = this.encontrarSlot(
-        partido,
-        fechasUsar,
-        slotsPorFecha,
-        slotsAsignados,
-        asignaciones,
-      );
-      
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+    // 5. Distribuir fases INICIALES en días primeros (en orden cronológico)
+    for (const fase of ORDEN_FASES.filter(f => 
+      !FASES_FINALES.includes(f) && !FASES_INTERMEDIAS.includes(f)
+    )) {
+      for (const partido of partidosPorFase[fase] || []) {
+        const asignacion = this.encontrarSlotEnRango(
+          partido,
+          diasIniciales,
+          slotsPorFecha,
+          slotsAsignados,
+          asignaciones,
+        );
+        
+        if (asignacion) {
+          asignaciones.push(asignacion);
+          slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+        }
       }
     }
 
-    // Distribuir RONDA DE AJUSTE
-    for (const partido of partidosRonda) {
-      const asignacion = this.encontrarSlot(
-        partido,
-        fechasUsar,
-        slotsPorFecha,
-        slotsAsignados,
-        asignaciones,
-      );
-      
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+    // 6. Distribuir fases INTERMEDIAS
+    for (const fase of FASES_INTERMEDIAS) {
+      for (const partido of partidosPorFase[fase] || []) {
+        // Intentar primero en días intermedios, si no hay, en días iniciales
+        let asignacion = this.encontrarSlotEnRango(
+          partido,
+          diasIntermedios.length > 0 ? diasIntermedios : diasIniciales,
+          slotsPorFecha,
+          slotsAsignados,
+          asignaciones,
+        );
+        
+        if (asignacion) {
+          asignaciones.push(asignacion);
+          slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+        }
       }
     }
 
-    // Distribuir 32AVOS
-    for (const partido of partidos32avos) {
-      const asignacion = this.encontrarSlot(
-        partido,
-        fechasUsar,
-        slotsPorFecha,
-        slotsAsignados,
-        asignaciones,
-      );
-      
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+    // 7. Distribuir fases FINALES obligatoriamente en últimos días
+    for (const fase of FASES_FINALES) {
+      for (const partido of partidosPorFase[fase] || []) {
+        const asignacion = this.encontrarSlotEnRango(
+          partido,
+          diasFinales,
+          slotsPorFecha,
+          slotsAsignados,
+          asignaciones,
+        );
+        
+        if (asignacion) {
+          asignaciones.push(asignacion);
+          slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+        }
       }
     }
 
-    // Distribuir 16AVOS
-    for (const partido of partidos16avos) {
-      const asignacion = this.encontrarSlot(
-        partido,
-        fechasUsar,
-        slotsPorFecha,
-        slotsAsignados,
-        asignaciones,
-      );
-      
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
-      }
-    }
-
-    // Distribuir OCTAVOS
-    for (const partido of partidosOctavos) {
-      const asignacion = this.encontrarSlot(
-        partido,
-        fechasUsar,
-        slotsPorFecha,
-        slotsAsignados,
-        asignaciones,
-      );
-      
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
-      }
-    }
-
-    // Distribuir CUARTOS
-    for (const partido of partidosCuartos) {
-      const asignacion = this.encontrarSlot(
-        partido,
-        fechasUsar,
-        slotsPorFecha,
-        slotsAsignados,
-        asignaciones,
-      );
-      
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
-      }
-    }
-
-    // Distribuir SEMIS
-    for (const partido of partidosSemis) {
-      const asignacion = this.encontrarSlot(
-        partido,
-        fechasUsar,
-        slotsPorFecha,
-        slotsAsignados,
-        asignaciones,
-      );
-      
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
-      }
-    }
-
-    // Distribuir FINAL
-    for (const partido of partidosFinal) {
-      const asignacion = this.encontrarSlot(
-        partido,
-        fechasUsar,
-        slotsPorFecha,
-        slotsAsignados,
-        asignaciones,
-      );
-      
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
-      }
-    }
-
-    // Agrupar por fecha para la respuesta
+    // 8. Construir distribución final en orden cronológico
     const asignacionesPorFecha = this.agruparAsignacionesPorFecha(asignaciones);
     
-    for (const fecha of fechasUsar) {
+    for (const fecha of fechasOrdenadas) {
       const partidosDelDia = asignacionesPorFecha[fecha] || [];
       if (partidosDelDia.length === 0) continue;
 
@@ -576,9 +561,69 @@ export class ProgramacionService {
   }
 
   /**
+   * Encuentra un slot disponible para un partido en un rango de días específico
+   */
+  private encontrarSlotEnRango(
+    partido: PartidoProgramar,
+    fechas: string[],
+    slotsPorFecha: Record<string, SlotDisponible[]>,
+    slotsAsignados: Set<string>,
+    asignacionesExistentes: PartidoAsignado[],
+  ): PartidoAsignado | null {
+    for (const fecha of fechas) {
+      const slotsDelDia = slotsPorFecha[fecha] || [];
+      
+      for (const slot of slotsDelDia) {
+        const slotKey = `${fecha}-${slot.torneoCanchaId}-${slot.horaInicio}`;
+        
+        // Verificar si el slot ya está asignado
+        if (slotsAsignados.has(slotKey)) continue;
+        
+        // Verificar si alguna de las parejas ya juega ese día
+        const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
+        const partidosMismaPareja = asignacionesExistentes.filter(a => 
+          a.fecha === fecha && (
+            parejaIds.includes(a.pareja1 || '') || 
+            parejaIds.includes(a.pareja2 || '')
+          )
+        );
+        
+        // Máximo 2 partidos por pareja por día
+        if (partidosMismaPareja.length >= 2) continue;
+        
+        // Verificar 4h de descanso entre partidos
+        const horaSlot = this.parseHora(slot.horaInicio);
+        const conflictoHorario = partidosMismaPareja.some(p => {
+          const horaPartido = this.parseHora(p.horaInicio);
+          return Math.abs(horaSlot - horaPartido) < 4;
+        });
+        
+        if (conflictoHorario) continue;
+        
+        // Slot válido encontrado
+        return {
+          partidoId: partido.id,
+          fecha,
+          horaInicio: slot.horaInicio,
+          horaFin: slot.horaFin,
+          torneoCanchaId: slot.torneoCanchaId,
+          sedeNombre: slot.sedeNombre,
+          canchaNombre: slot.canchaNombre,
+          fase: partido.fase,
+          categoriaNombre: partido.categoriaNombre,
+          pareja1: partido.pareja1 ? `${partido.pareja1.jugador1.nombre}/${partido.pareja1.jugador2?.nombre || '?'}` : undefined,
+          pareja2: partido.pareja2 ? `${partido.pareja2.jugador1.nombre}/${partido.pareja2.jugador2?.nombre || '?'}` : undefined,
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  /**
    * Valida conflictos en la distribución
    */
-  private validarConflictos(distribucion: DistribucionDia[]): Conflicto[] {
+  private validarConflictos(distribucion: DistribucionDia[]) {
     const conflictos: Conflicto[] = [];
     
     // Revisar si hay días con muchos partidos
