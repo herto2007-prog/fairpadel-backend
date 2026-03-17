@@ -11,6 +11,8 @@ export enum TipoEntrada {
 export enum FaseBracket {
   ZONA = 'ZONA',
   REPECHAJE = 'REPECHAJE',
+  TREINTAYDOSAVOS = 'TREINTAYDOSAVOS',
+  DIECISEISAVOS = 'DIECISEISAVOS',
   OCTAVOS = 'OCTAVOS',
   CUARTOS = 'CUARTOS',
   SEMIS = 'SEMIS',

@@ -324,6 +324,8 @@ export class ProgramacionService {
     // Separar partidos por fase
     const partidosZona = partidos.filter(p => p.fase === 'ZONA');
     const partidosRonda = partidos.filter(p => p.fase === 'REPECHAJE');
+    const partidos32avos = partidos.filter(p => p.fase === 'TREINTAYDOSAVOS');
+    const partidos16avos = partidos.filter(p => p.fase === 'DIECISEISAVOS');
     const partidosOctavos = partidos.filter(p => p.fase === 'OCTAVOS');
     const partidosCuartos = partidos.filter(p => p.fase === 'CUARTOS');
     const partidosSemis = partidos.filter(p => p.fase === 'SEMIS');
@@ -352,6 +354,38 @@ export class ProgramacionService {
 
     // Distribuir RONDA DE AJUSTE
     for (const partido of partidosRonda) {
+      const asignacion = this.encontrarSlot(
+        partido,
+        fechasUsar,
+        slotsPorFecha,
+        slotsAsignados,
+        asignaciones,
+      );
+      
+      if (asignacion) {
+        asignaciones.push(asignacion);
+        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+      }
+    }
+
+    // Distribuir 32AVOS
+    for (const partido of partidos32avos) {
+      const asignacion = this.encontrarSlot(
+        partido,
+        fechasUsar,
+        slotsPorFecha,
+        slotsAsignados,
+        asignaciones,
+      );
+      
+      if (asignacion) {
+        asignaciones.push(asignacion);
+        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+      }
+    }
+
+    // Distribuir 16AVOS
+    for (const partido of partidos16avos) {
       const asignacion = this.encontrarSlot(
         partido,
         fechasUsar,

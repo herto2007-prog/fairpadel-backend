@@ -46,8 +46,19 @@ export class BracketService {
 
     // PASO 2: DETERMINAR BRACKET OBJETIVO
     // 8-15 parejas → Bracket de 8 (Cuartos)
-    // 16+ parejas → Bracket de 16 (Octavos)
-    const objetivoBracket = totalParejas <= 15 ? 8 : 16;
+    // 16-31 parejas → Bracket de 16 (Octavos)
+    // 32-63 parejas → Bracket de 32 (16avos)
+    // 64+ parejas → Bracket de 64 (32avos)
+    let objetivoBracket: number;
+    if (totalParejas <= 15) {
+      objetivoBracket = 8;
+    } else if (totalParejas <= 31) {
+      objetivoBracket = 16;
+    } else if (totalParejas <= 63) {
+      objetivoBracket = 32;
+    } else {
+      objetivoBracket = 64;
+    }
 
     // PASO 3: RONDA DE AJUSTE
     // Necesitamos eliminar: totalParejas - objetivoBracket
@@ -80,6 +91,8 @@ export class BracketService {
       fases.push(FaseBracket.REPECHAJE); // Usamos REPECHAJE como "Ronda de Ajuste"
     }
 
+    if (objetivoBracket >= 64) fases.push(FaseBracket.TREINTAYDOSAVOS);
+    if (objetivoBracket >= 32) fases.push(FaseBracket.DIECISEISAVOS);
     if (objetivoBracket >= 16) fases.push(FaseBracket.OCTAVOS);
     if (objetivoBracket >= 8) fases.push(FaseBracket.CUARTOS);
     fases.push(FaseBracket.SEMIS, FaseBracket.FINAL);
@@ -158,12 +171,42 @@ export class BracketService {
     }
 
     // 3. CREAR BRACKET PRINCIPAL
+    const partidos32avos: MatchNode[] = [];
+    const partidos16avos: MatchNode[] = [];
     const partidosOctavos: MatchNode[] = [];
     const partidosCuartos: MatchNode[] = [];
     const partidosSemis: MatchNode[] = [];
     const partidosFinal: MatchNode[] = [];
 
     // Crear estructura según tamaño del bracket
+    if (config.tamanoBracket >= 64) {
+      // 32AVOS (para bracket de 64)
+      for (let i = 0; i < 32; i++) {
+        const partido: MatchNode = {
+          id: generarId(),
+          fase: FaseBracket.TREINTAYDOSAVOS,
+          orden: i + 1,
+          esBye: false,
+        };
+        partidos32avos.push(partido);
+        partidos.push(partido);
+      }
+    }
+
+    if (config.tamanoBracket >= 32) {
+      // 16AVOS (para bracket de 32)
+      for (let i = 0; i < 16; i++) {
+        const partido: MatchNode = {
+          id: generarId(),
+          fase: FaseBracket.DIECISEISAVOS,
+          orden: i + 1,
+          esBye: false,
+        };
+        partidos16avos.push(partido);
+        partidos.push(partido);
+      }
+    }
+
     if (config.tamanoBracket >= 16) {
       // OCTAVOS
       for (let i = 0; i < 8; i++) {
@@ -218,6 +261,8 @@ export class BracketService {
     this.conectarNavegacion(
       partidosZona,
       partidosRondaAjuste,
+      partidos32avos,
+      partidos16avos,
       partidosOctavos,
       partidosCuartos,
       partidosSemis,
@@ -239,6 +284,8 @@ export class BracketService {
   private conectarNavegacion(
     zona: MatchNode[],
     rondaAjuste: MatchNode[],
+    treintaydosavos: MatchNode[],
+    dieciseisavos: MatchNode[],
     octavos: MatchNode[],
     cuartos: MatchNode[],
     semis: MatchNode[],
@@ -246,7 +293,17 @@ export class BracketService {
     config: BracketConfigResponse,
   ): void {
     // Los partidos de primera ronda del bracket principal
-    const primeraRonda = octavos.length > 0 ? octavos : cuartos;
+    // Determinar cuál es la primera ronda según el tamaño del bracket
+    let primeraRonda: MatchNode[];
+    if (treintaydosavos.length > 0) {
+      primeraRonda = treintaydosavos;
+    } else if (dieciseisavos.length > 0) {
+      primeraRonda = dieciseisavos;
+    } else if (octavos.length > 0) {
+      primeraRonda = octavos;
+    } else {
+      primeraRonda = cuartos;
+    }
     
     const totalParejas = config.totalParejas;
     const objetivoBracket = config.tamanoBracket;
@@ -316,23 +373,35 @@ export class BracketService {
     });
 
     // 4. CONECTAR BRACKET PRINCIPAL
-    this.conectarEliminacionDirecta(primeraRonda, cuartos, semis, final);
+    this.conectarEliminacionDirecta(
+      treintaydosavos,
+      dieciseisavos,
+      octavos,
+      cuartos,
+      semis,
+      final,
+    );
   }
 
   /**
    * Conecta la fase de eliminación directa del bracket
+   * Conecta todas las rondas en cadena: 32avos → 16avos → Octavos → Cuartos → Semis → Final
    */
   private conectarEliminacionDirecta(
-    primeraRonda: MatchNode[],
+    treintaydosavos: MatchNode[],
+    dieciseisavos: MatchNode[],
+    octavos: MatchNode[],
     cuartos: MatchNode[],
     semis: MatchNode[],
     final: MatchNode[],
   ): void {
-    // Primera ronda → Cuartos
-    if (cuartos.length > 0 && primeraRonda.length > 0) {
-      primeraRonda.forEach((partido, index) => {
+    // Helper para conectar una ronda con la siguiente
+    const conectarRonda = (rondaActual: MatchNode[], rondaSiguiente: MatchNode[]) => {
+      if (rondaActual.length === 0 || rondaSiguiente.length === 0) return;
+      
+      rondaActual.forEach((partido, index) => {
         const parentIndex = Math.floor(index / 2);
-        const parent = cuartos[parentIndex];
+        const parent = rondaSiguiente[parentIndex];
         
         if (parent) {
           partido.partidoSiguienteId = parent.id;
@@ -345,40 +414,14 @@ export class BracketService {
           }
         }
       });
-    }
+    };
 
-    // Cuartos → Semis
-    cuartos.forEach((partido, index) => {
-      const parentIndex = Math.floor(index / 2);
-      const parent = semis[parentIndex];
-      
-      if (parent) {
-        partido.partidoSiguienteId = parent.id;
-        partido.posicionEnSiguiente = (index % 2) + 1;
-        
-        if (!parent.partidoOrigen1Id) {
-          parent.partidoOrigen1Id = partido.id;
-        } else {
-          parent.partidoOrigen2Id = partido.id;
-        }
-      }
-    });
-
-    // Semis → Final
-    semis.forEach((partido, index) => {
-      const parent = final[0];
-      
-      if (parent) {
-        partido.partidoSiguienteId = parent.id;
-        partido.posicionEnSiguiente = (index % 2) + 1;
-        
-        if (!parent.partidoOrigen1Id) {
-          parent.partidoOrigen1Id = partido.id;
-        } else {
-          parent.partidoOrigen2Id = partido.id;
-        }
-      }
-    });
+    // Conectar todas las rondas en orden
+    conectarRonda(treintaydosavos, dieciseisavos);  // 32avos → 16avos
+    conectarRonda(dieciseisavos, octavos);          // 16avos → Octavos
+    conectarRonda(octavos, cuartos);                // Octavos → Cuartos
+    conectarRonda(cuartos, semis);                  // Cuartos → Semis
+    conectarRonda(semis, final);                    // Semis → Final
   }
 
   /**
