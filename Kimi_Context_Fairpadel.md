@@ -2,8 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-16 21:00
-> **Conversación actual:** Validación de flujo cronológico: ahora los partidos deben estar programados (fecha, hora, cancha) antes de poder cargar resultados. Banner informativo en BracketView y validación backend en resultados.service.ts.
+> **Última actualización:** 2026-03-16 20:30
+> **Conversación actual:** Soporte extendido para 16avos (32 parejas) y 32avos (64 parejas) en el sistema de bracket. Fórmula actualizada: `objetivoBracket = (parejas <= 15) ? 8 : (parejas <= 31) ? 16 : (parejas <= 63) ? 32 : 64`. Commits realizados en backend y frontend.
 
 ---
 
@@ -509,6 +509,56 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
 5. ⏳ **Programar** partidos (obligatorio antes de resultados)
 6. ⏳ Jugar
 7. ⏳ Cargar resultados
+
+### ✅ Completado (2026-03-16) - Módulo Programación 100% Funcional
+
+**Refactor completo del módulo con 4 vistas diferentes:**
+
+**📋 FASE 1 - Vista Lista:**
+- Stats cards: Total, Programados, Pendientes
+- Filtros por categoría, fase, estado (programados/pendientes)
+- Búsqueda por nombre de jugador
+- Lista con fotos de parejas superpuestas
+- Indicadores visuales (verde=programado, ámbar=pendiente)
+- Botón editar en cada partido
+- Recarga de datos
+
+**📅 FASE 2 - Edición Individual:**
+- Modal `ModalEditarProgramacion` con fecha, hora, cancha
+- Selector de canchas configuradas
+- Botón "Desprogramar" para liberar slots
+- Endpoints backend: `PUT /programacion/partidos/:id` y `DELETE /programacion/partidos/:id`
+- Actualización en tiempo real de la vista
+
+**📆 FASE 3 - Vista Calendario Grid:**
+- Vista tipo grilla: horarios (filas) x canchas (columnas)
+- Selector de fecha con navegación
+- Partidos mostrados en sus celdas correspondientes
+- Fotos de parejas en cada celda
+- Click para editar partido existente
+- Click en celda vacía para programar nuevo
+- Panel de partidos pendientes abajo
+
+**🎯 FASE 4 - Vista Drag & Drop:**
+- Librería `@dnd-kit/core` instalada
+- Panel lateral con partidos pendientes (draggables)
+- Grid de slots disponibles (droppables)
+- Arrastrar y soltar para programar
+- Visualización de ocupación en tiempo real
+- Indicadores de hover y drop válido
+- Overlay animado al arrastrar
+
+**Nuevos archivos:**
+- `VistaCalendario.tsx` - Vista grid
+- `VistaDragDrop.tsx` - Vista arrastrar y soltar
+- `ModalEditarProgramacion.tsx` - Modal de edición
+- `programacionService.ts` - Servicio API
+
+**Endpoints backend nuevos:**
+- `GET /admin/torneos/:id/partidos` - Lista completa
+- `GET /programacion/torneos/:id/canchas` - Canchas disponibles
+- `PUT /programacion/partidos/:id` - Actualizar programación
+- `DELETE /programacion/partidos/:id` - Desprogramar
 
 ### ⏳ Próximos Módulos Sugeridos
 - [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
@@ -1203,3 +1253,66 @@ Y así sucesivamente...
 ---
 
 *Documento actualizado: 2026-03-14 - Sistema de Resultados y Marcador en Vivo 100% funcional. Implementado: reglamento FIP de saque (rotación por games), punto de oro/ventaja configurable, súper tie-break con puntos numéricos, visualización dorada en 40-40, botón "Guardar Resultado" prominente al finalizar. Sincronización completa entre marcador en vivo y bracket. Testing exitoso.*
+
+
+## 🆕 ENTREGABLES HOY (2026-03-16) - Soporte 16avos y 32avos
+
+### ✅ Backend - Extensión del Sistema de Bracket
+
+**Problema:** El sistema solo soportaba hasta Octavos (16 parejas, bracket de 8). Torneos grandes con 32-64 parejas no podían generar bracket completo.
+
+**Solución:** Fórmula escalable para determinar tamaño de bracket:
+```
+parejas ≤ 15  → Octavos (bracket de 8)
+parejas ≤ 31  → 16avos (bracket de 16)
+parejas ≤ 63  → 32avos (bracket de 32)
+parejas ≥ 64  → 64 equipos (bracket de 64)
+```
+
+**Cambios en Backend:**
+- [x] **Enum FaseBracket extendido** - Agregados `DIECISEISAVOS` y `TREINTAYDOSAVOS`
+- [x] **BracketService actualizado** - `calcularConfiguracion()` usa nueva fórmula
+- [x] **Generación de partidos** - Crea 16 partidos para 16avos, 32 partidos para 32avos
+- [x] **Conexión de navegación** - 32avos → 16avos → Octavos → Cuartos → Semis → Final
+- [x] **ProgramaciónService** - Filtros para nuevas fases en distribución de slots
+
+**Commits:**
+- Backend: `b71cd4f` - feat: soporte para 16avos y 32avos en sistema de bracket
+
+### ✅ Frontend - Utilitario Compartido de Colores
+
+**Problema:** Función `getColorFase` duplicada en múltiples componentes, difícil de mantener y sin soporte para nuevas fases.
+
+**Solución:** Centralizar en utilitario compartido.
+
+**Cambios en Frontend:**
+- [x] **Nuevo archivo** - `src/features/organizador/utils/faseColors.ts`
+  - `getColorFase(fase)` - Devuelve clases Tailwind para cada fase
+  - `FASES_ORDENADAS` - Array con orden correcto de fases
+  - Colores: Zona(azul), Repechaje(ámbar), 32avos(índigo), 16avos(violeta), Octavos(púrpura), Cuartos(rosa), Semis(naranja), Final(rojo)
+- [x] **Componentes actualizados:**
+  - `BracketView.tsx` - Usa FASES_ORDENADAS, elimina función local
+  - `ProgramacionManager.tsx` - Importa getColorFase desde utilidad
+  - `ModalEditarProgramacion.tsx` - Importa getColorFase desde utilidad
+  - `VistaCalendario.tsx` - Importa getColorFase desde utilidad
+  - `VistaDragDrop.tsx` - Importa getColorFase desde utilidad
+
+**Commits:**
+- Frontend: `d6bc5ed` - feat: soporte visual para 16avos y 32avos en bracket y programación
+
+### ✅ Estado de Builds
+
+| Repo | Build | Estado |
+|------|-------|--------|
+| Backend | `npx tsc --noEmit` | ✅ Sin errores |
+| Frontend | `npm run build` | ✅ Sin errores |
+
+### ✅ Deploy
+
+- Backend push: `git push` → https://github.com/herto2007-prog/fairpadel-backend.git
+- Frontend push: `git push` → https://github.com/herto2007-prog/fairpadel-frontend.git
+- Railway deploy: Automático desde main
+
+---
+
+*Documento actualizado: 2026-03-16 - Soporte extendido para 16avos y 32avos en sistema de bracket. Backend y frontend compilando correctamente. Cambios pusheados a producción.*
