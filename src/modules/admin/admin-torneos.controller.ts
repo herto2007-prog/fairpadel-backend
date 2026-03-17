@@ -495,7 +495,7 @@ export class AdminTorneosController {
         const horaInicio = dto.horaInicioFinales || torneoActualizado.horaInicioFinales || '18:00';
         
         if (fechaFinales) {
-          const fechaStr = fechaFinales.toISOString().split('T')[0]; // YYYY-MM-DD
+          const fechaStr = (fechaFinales as Date).toISOString().split('T')[0]; // YYYY-MM-DD
           // @ts-ignore
           const minutosSlot: number = torneoActualizado.minutosPorPartido || torneo.minutosPorPartido || 120;
           
