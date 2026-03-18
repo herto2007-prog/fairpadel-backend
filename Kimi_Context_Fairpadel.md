@@ -2,12 +2,13 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-17 22:30 - DEPLOY COMPLETADO: Fix crítico de timezone aplicado en producción
+> **Última actualización:** 2026-03-17 22:50 - FIX COMPLETO DE TIMEZONE EN PRODUCCIÓN
 > - Schema: `TorneoDisponibilidadDia.fecha` cambiado de `@db.Date` a `@db.Timestamptz(3)`
-> - Dockerfile corregido: usa `migrate deploy` en lugar de `db push --accept-data-loss`
+> - Baseline de migraciones completado en BD de producción
+> - Dockerfile: usa `migrate deploy` correctamente
+> - Migración aplicada: `20260317224647_fix_fecha_timezone_timestamptz`
 > - Backend: Todas las fechas usan `T03:00:00.000Z` para Paraguay UTC-3
-> - Migración aplicada: `20260317222108_fix_disponibilidad_fecha_timezone`
-> **Conversación actual:** Deploy de fixes críticos de timezone a producción completado.
+> **ESTADO:** Bug de "off-by-one-day" en Step 2 CanchasManager CORREGIDO
 
 ---
 
