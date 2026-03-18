@@ -1696,9 +1696,14 @@ if (esFaseFinal && !fechasDisponibles.includes(fechaFinales)) {
 - `frontend/src/features/organizador/components/programacion/ProgramacionManager.tsx` - Modo edición híbrido
 
 ### Commits
-- Backend: Refactorización del servicio de programación
-- Frontend: Modo edición híbrida para programación
+- Backend: `42e424b` - refactor(programacion): algoritmo simplificado con modo edicion hibrida
+- Frontend: `f1b8517` - feat(programacion): modo edicion hibrida para distribucion de partidos
+
+### Deploy
+- ✅ Backend push: https://github.com/herto2007-prog/fairpadel-backend.git
+- ✅ Frontend push: https://github.com/herto2007-prog/fairpadel-frontend.git
+- 🚀 Railway deploy: Automático desde main
 
 ---
 
-**Última actualización:** 2026-03-18 - Sistema de programación refactorizado y listo para producción
+**Última actualización:** 2026-03-18 - Sistema de programación refactorizado y desplegado
