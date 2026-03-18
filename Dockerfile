@@ -39,6 +39,6 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-# Flujo CORREGIDO: 1) Aplicar migraciones 2) Seed si es necesario 3) Iniciar app
-# REGLA: Usar migrate deploy, NUNCA db push --accept-data-loss en prod
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && exec node dist/main.js"]
+# EMERGENCY FIX: Volver a db push temporalmente - la BD no tiene historial de migraciones
+# TODO: Hacer baseline de migraciones para poder usar migrate deploy
+CMD ["sh", "-c", "npx prisma db push && npx prisma db seed && exec node dist/main.js"]

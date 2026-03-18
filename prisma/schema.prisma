@@ -618,7 +618,7 @@ model TorneoCanchaHorario {
 model TorneoDisponibilidadDia {
   id            String   @id @default(uuid())
   tournamentId  String   @map("tournament_id")
-  fecha         DateTime @db.Timestamptz(3) // Timestamp con timezone para Paraguay UTC-3
+  fecha         DateTime @db.Date // Fecha específica: 2025-05-15
   horaInicio    String   @map("hora_inicio") // "18:00"
   horaFin       String   @map("hora_fin")    // "23:00"
   minutosSlot   Int      @default(90) @map("minutos_slot") // Duración de cada partido
