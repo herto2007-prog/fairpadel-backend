@@ -116,6 +116,10 @@ export class ProgramacionService {
     canchasFinales?: string[],
     horaInicioFinales?: string,
   ): Promise<ResultadoProgramacion> {
+    console.log('[Programacion] ===== INICIAR CÁLCULO =====');
+    console.log('[Programacion] tournamentId:', tournamentId);
+    console.log('[Programacion] categoriasSorteadas:', categoriasSorteadas);
+    
     // 1. Validar categorías sorteadas
     if (!categoriasSorteadas?.length) {
       return {
@@ -251,11 +255,17 @@ export class ProgramacionService {
     // 9. Validar conflictos adicionales
     const conflictosAdicionales = this.validarConflictos(distribucion, partidos);
 
-    return {
+    const resultado = {
       prediccion,
       distribucion,
       conflictos: [...conflictos, ...conflictosAdicionales],
     };
+    
+    console.log('[Programacion] ===== CÁLCULO COMPLETADO =====');
+    console.log('[Programacion] Total partidos:', resultado.prediccion.totalPartidos);
+    console.log('[Programacion] Distribución días:', resultado.distribucion.length);
+    
+    return resultado;
   }
 
   /**
