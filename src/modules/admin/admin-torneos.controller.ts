@@ -369,6 +369,27 @@ export class AdminTorneosController {
           data: torneoData,
         });
 
+        // Si hay sede, copiar sus canchas activas como TorneoCancha
+        if (dto.sedeId) {
+          const canchasSede = await tx.sedeCancha.findMany({
+            where: {
+              sedeId: dto.sedeId,
+              activa: true,
+            },
+          });
+
+          for (const cancha of canchasSede) {
+            await tx.torneoCancha.create({
+              data: {
+                tournamentId: torneo.id,
+                sedeCanchaId: cancha.id,
+              },
+            });
+          }
+
+          console.log(`[CreateTorneo] ${canchasSede.length} canchas copiadas de la sede`);
+        }
+
         // Crear registro de comisión
         await tx.torneoComision.create({
           data: {
