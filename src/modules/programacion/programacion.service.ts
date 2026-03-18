@@ -278,22 +278,11 @@ export class ProgramacionService {
     console.log('[Programacion] Buscando partidos para tournamentId:', tournamentId);
     console.log('[Programacion] categoriasSorteadas:', categoriasSorteadas);
 
-    // Obtener fixtureVersions de las categorías sorteadas
+    // Obtener fixtureVersions de las categorías sorteadas (directo por categoryId)
     const fixtureVersions = await this.prisma.fixtureVersion.findMany({
       where: {
-        tournamentCategory: {
-          tournamentId,
-          categoryId: { in: categoriasSorteadas },
-        },
-      },
-      include: {
-        tournamentCategory: {
-          include: {
-            category: {
-              select: { id: true, nombre: true },
-            },
-          },
-        },
+        tournamentId,
+        categoryId: { in: categoriasSorteadas },
       },
     });
 
@@ -307,6 +296,14 @@ export class ProgramacionService {
     }
 
     const fixtureVersionIds = fixtureVersions.map(fv => fv.id);
+    
+    // Map de categoryId para obtener nombres
+    const categoryIds = [...new Set(fixtureVersions.map(fv => fv.categoryId))];
+    const categorias = await this.prisma.category.findMany({
+      where: { id: { in: categoryIds } },
+      select: { id: true, nombre: true },
+    });
+    const categoriaMap = new Map(categorias.map(c => [c.id, c.nombre]));
     const fixtureVersionMap = new Map(fixtureVersions.map(fv => [fv.id, fv]));
 
     // Obtener partidos de esos fixtureVersions
@@ -341,12 +338,13 @@ export class ProgramacionService {
 
     return partidos.map(p => {
       const fv = fixtureVersionMap.get(p.fixtureVersionId);
+      const categoryId = fv?.categoryId || '';
       return {
         id: p.id,
         fase: p.ronda,
         orden: p.numeroRonda,
-        categoriaId: fv?.tournamentCategory.category.id || '',
-        categoriaNombre: fv?.tournamentCategory.category.nombre || 'Sin categoría',
+        categoriaId: categoryId,
+        categoriaNombre: categoriaMap.get(categoryId) || 'Sin categoría',
         pareja1: p.inscripcion1 || undefined,
         pareja2: p.inscripcion2 || undefined,
         inscripcion1Id: p.inscripcion1Id || undefined,
