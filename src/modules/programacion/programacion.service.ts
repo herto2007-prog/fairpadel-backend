@@ -278,15 +278,26 @@ export class ProgramacionService {
     console.log('[Programacion] Buscando partidos para tournamentId:', tournamentId);
     console.log('[Programacion] categoriasSorteadas:', categoriasSorteadas);
 
+    // Eliminar duplicados
+    const categoriasUnicas = [...new Set(categoriasSorteadas)];
+    console.log('[Programacion] categoriasUnicas:', categoriasUnicas);
+
     // Obtener fixtureVersions de las categorías sorteadas (directo por categoryId)
     const fixtureVersions = await this.prisma.fixtureVersion.findMany({
       where: {
         tournamentId,
-        categoryId: { in: categoriasSorteadas },
+        categoryId: { in: categoriasUnicas },
       },
     });
 
     console.log('[Programacion] fixtureVersions encontrados:', fixtureVersions.length);
+    
+    // DEBUG: Ver todos los fixtureVersions del torneo
+    const todosLosFixtureVersions = await this.prisma.fixtureVersion.findMany({
+      where: { tournamentId },
+      select: { id: true, categoryId: true, version: true },
+    });
+    console.log('[Programacion] TODOS los fixtureVersions del torneo:', todosLosFixtureVersions);
     if (fixtureVersions.length > 0) {
       console.log('[Programacion] IDs de fixtureVersions:', fixtureVersions.map(fv => fv.id));
     }
