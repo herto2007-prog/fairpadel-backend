@@ -2,11 +2,12 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-18 - SISTEMA ESTABLE Y FUNCIONAL
+> **Última actualización:** 2026-03-18 - PROGRAMACIÓN REFACTORIZADA
 > - Timezone: Todos los fixes aplicados (frontend y backend)
 > - Wizard: Creación de torneos funcional con fechas correctas
 > - Canchas: Copia automática de sede, configuración de finales operativa
 > - Inscripciones: Cierre/apertura con feedback completo
+> - **Programación (NUEVO):** Sistema refactorizado con modo híbrido (auto-calcular + editar manual)
 > **ESTADO:** Listo para producción - seguir haciendo pruebas
 
 ---
@@ -1524,3 +1525,180 @@ DELETE /admin/torneos/:id/disponibilidad/dias/:diaId
 ---
 
 **Última actualización:** 2026-03-18 - Sistema estable y listo para producción
+
+
+---
+
+## ✅ Completado (2026-03-18) - Refactorización del Sistema de Programación
+
+### Resumen Ejecutivo
+> **Estado:** Sistema de programación refactorizado con enfoque híbrido (auto-calcular + edición manual).
+> **Flujo:** Canchas (crear slots) → Fixture (sortear) → Programación (asignar horario/cancha)
+
+### Cambios en Backend - `programacion.service.ts`
+
+#### 1. Algoritmo Simplificado y Robusto
+**Antes:**
+- Lógica compleja de "distribución de atrás para adelante"
+- Agrupación de fases en días (ZONA → 16vos+8vos → 4tos → SEMIS+FINAL)
+- Problemas con extracción de fechas de slots
+
+**Después:**
+```typescript
+// Orden cronológico simple
+const ORDEN_FASES = [
+  'ZONA', 'REPECHAJE', 'TREINTAYDOSAVOS', 'DIECISEISAVOS', 
+  'OCTAVOS', 'CUARTOS', 'SEMIS', 'FINAL'
+];
+
+// Distribución secuencial por fase
+for (const partido of partidosOrdenados) {
+  const esFaseFinal = FASES_FINALES.includes(partido.fase);
+  const fechasPermitidas = esFaseFinal 
+    ? [fechaFinalesReal]           // Finales solo en fechaFinales
+    : fechasNoFinales;              // Otras fases en cualquier otro día
+  // Encontrar primer slot disponible...
+}
+```
+
+#### 2. Validación de Recursos
+- Verifica que `fechaFinales` exista en los slots configurados
+- Retorna error `SIN_FECHA_FINALES` si no hay disponibilidad para finales
+- Calcula predicción de horas necesarias vs disponibles
+
+#### 3. Conflictos de Parejas
+```typescript
+// Máximo 2 partidos por pareja por día
+if (partidosMismaFecha.length >= 2) continue;
+
+// Mínimo 4 horas de descanso entre partidos
+const conflictoHorario = Math.abs(horaSlot - horaPartido) < 4;
+```
+
+#### 4. Endpoints Mejorados
+| Endpoint | Descripción |
+|----------|-------------|
+| `POST /programacion/torneos/:id/calcular` | Calcula distribución respetando fechaFinales |
+| `POST /programacion/torneos/:id/aplicar` | Aplica asignaciones a partidos y marca slots como OCUPADO |
+| `PUT /programacion/partidos/:id` | Edición individual de un partido |
+| `DELETE /programacion/partidos/:id` | Desprograma un partido |
+
+### Cambios en Frontend - `ProgramacionManager.tsx`
+
+#### 1. Modo Edición Híbrida
+```typescript
+const [modoEdicion, setModoEdicion] = useState(false);
+const [asignacionesEditadas, setAsignacionesEditadas] = useState<PartidoAsignado[]>([]);
+```
+
+**Flujo de trabajo:**
+1. Usuario hace clic en "Calcular Automáticamente"
+2. Sistema muestra distribución sugerida
+3. Usuario puede:
+   - **Aplicar directamente** (usar distribución calculada)
+   - **Activar Modo Edición** y ajustar individualmente
+4. En modo edición:
+   - Clic en cualquier partido → abre modal de edición
+   - Puede cambiar fecha, hora y cancha
+   - Los cambios se guardan en estado local
+   - Al finalizar, "Aplicar Cambios" persiste todo
+
+#### 2. UI de Modo Edición
+```
+┌─────────────────────────────────────────────────────────┐
+│ Programación                              [Recalcular]  │
+│                                            [Modo Edición]│
+│                                                         │
+│ Distribución por Día                                    │
+│ ⚡ Modo edición activo - Haz clic en un partido para   │
+│    editar                                               │
+│                                                         │
+│ ┌─ Lunes, 20/03/2025 ───────────────────────────────┐  │
+│ │ ▼ 18:00 - 23:00 • 8 partidos                        │  │
+│ │                                                     │  │
+│ │ ┌─────────────────────────────────────────────┐    │  │
+│ │ │ 18:00 │ [ZONA] │ Cat A │ Pareja1 vs Pareja2 │ ✏️ │  │
+│ │ └─────────────────────────────────────────────┘    │  │
+│ │ ┌─────────────────────────────────────────────┐    │  │
+│ │ │ 19:30 │ [ZONA] │ Cat B │ Pareja3 vs Pareja4 │ ✏️ │  │
+│ │ └─────────────────────────────────────────────┘    │  │
+│ └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### 3. Modal de Edición de Slot
+```typescript
+interface ModalEditarSlotProps {
+  partido: PartidoAsignado;      // Partido a editar
+  canchas: Cancha[];              // Canchas disponibles
+  onGuardar: (partidoId, fecha, hora, canchaId) => void;
+}
+```
+
+### Reglas del Sistema
+
+#### 1. Solo Slots Pre-configurados
+- **NUNCA** se crean días nuevos en programación
+- Solo usa slots creados en tab **Canchas**
+- Si faltan días, usuario debe agregarlos en Canchas primero
+
+#### 2. Finales Obligatorias en fechaFinales
+```typescript
+// SEMIS y FINAL siempre en fechaFinales
+if (esFaseFinal && !fechasDisponibles.includes(fechaFinales)) {
+  throw new Error('La fecha de finales no está configurada en Canchas');
+}
+```
+
+#### 3. Distribución Cronológica
+- ZONA → REPECHAJE → 32avos → 16avos → OCTAVOS → CUARTOS → SEMIS → FINAL
+- Las fases se distribuyen en orden, llenando slots uno tras otro
+- No hay agrupación forzada de fases (pueden mezclarse naturalmente)
+
+#### 4. Sin Solapamiento de Parejas
+- Una pareja no puede jugar más de 2 partidos por día
+- Mínimo 4 horas de descanso entre partidos de la misma pareja
+
+### Testing Recomendado
+
+#### Caso 1: Torneo Simple (8 parejas)
+```
+1. Crear torneo con 2 días configurados en Canchas
+2. Sortear categoría (genera: ZONA → OCTAVOS → CUARTOS → SEMIS → FINAL)
+3. Calcular programación
+4. Verificar: SEMIS y FINAL en día 2 (fechaFinales)
+```
+
+#### Caso 2: Múltiples Categorías
+```
+1. Crear torneo con 3 días
+2. Sortear 3 categorías diferentes
+3. Calcular programación para todas
+4. Verificar: distribución balanceada entre días
+```
+
+#### Caso 3: Edición Manual
+```
+1. Calcular programación
+2. Activar Modo Edición
+3. Cambiar fecha/hora de un partido
+4. Aplicar cambios
+5. Verificar persistencia en base de datos
+```
+
+### Archivos Modificados
+
+**Backend:**
+- `src/modules/programacion/programacion.service.ts` - Algoritmo refactorizado
+- `src/modules/programacion/programacion.controller.ts` - Endpoints (sin cambios)
+
+**Frontend:**
+- `frontend/src/features/organizador/components/programacion/ProgramacionManager.tsx` - Modo edición híbrido
+
+### Commits
+- Backend: Refactorización del servicio de programación
+- Frontend: Modo edición híbrida para programación
+
+---
+
+**Última actualización:** 2026-03-18 - Sistema de programación refactorizado y listo para producción
