@@ -39,6 +39,6 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-# EMERGENCY FIX: Volver a db push temporalmente - la BD no tiene historial de migraciones
-# TODO: Hacer baseline de migraciones para poder usar migrate deploy
-CMD ["sh", "-c", "npx prisma db push && npx prisma db seed && exec node dist/main.js"]
+# Flujo: 1) Aplicar migraciones formales 2) Seed 3) Iniciar app
+# Baseline completado - BD ya tiene historial de migraciones
+CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && exec node dist/main.js"]
