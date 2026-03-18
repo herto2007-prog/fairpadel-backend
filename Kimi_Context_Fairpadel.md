@@ -1707,3 +1707,114 @@ if (esFaseFinal && !fechasDisponibles.includes(fechaFinales)) {
 ---
 
 **Última actualización:** 2026-03-18 - Sistema de programación refactorizado y desplegado
+
+
+---
+
+## ✅ Completado (2026-03-18) - horaFin Configurable y Distribución Balanceada
+
+### Resumen Ejecutivo
+> **Estado:** Sistema de programación ahora permite configurar hora de fin y distribuye partidos balanceadamente.
+
+### Cambios en Backend
+
+#### 1. Schema Prisma - Nuevo campo `horaFinFinales`
+```prisma
+model Tournament {
+  horaFinFinales  String?  @map("hora_fin_finales")  // Ej: "23:00"
+}
+```
+
+#### 2. Algoritmo de Distribución Balanceada
+**Antes:** Llenaba días cronológicamente (saturaba primeros días)
+
+**Después:**
+```typescript
+// Calcular capacidad de cada día
+const capacidadPorDia = calcularSlotsDisponiblesPorDia();
+
+// Distribuir proporcionalmente
+for (const partido of partidos) {
+  // Asignar al día con más capacidad restante
+  // Evita saturar los primeros días
+}
+```
+
+#### 3. Orden de Finales por Categoría
+```typescript
+// SEMIS y FINAL se ordenan: categorías bajas primero, altas al final
+// Esto deja el "show" de categorías altas para el final del día D
+const partidosFinalesOrdenados = partidosFinales.sort((a, b) => {
+  const ordenCatA = getOrdenCategoria(a.categoriaNombre);
+  const ordenCatB = getOrdenCategoria(b.categoriaNombre);
+  return ordenCatA - ordenCatB; // 5ª, 6ª, 7ª, 8ª, 1ª, 2ª, 3ª, 4ª
+});
+```
+
+#### 4. Archivos Modificados
+- `prisma/schema.prisma` - Nuevo campo horaFinFinales
+- `prisma/migrations/20250319000000_add_hora_fin_finales/migration.sql`
+- `src/modules/programacion/programacion.service.ts` - Algoritmo balanceado
+- `src/modules/programacion/programacion.controller.ts` - Nuevo parámetro
+- `src/modules/admin/admin-torneos.controller.ts` - Guardar horaFinFinales
+
+### Cambios en Frontend
+
+#### 1. CanchasManager - Configuración de hora fin
+```typescript
+// Nuevo estado
+const [horaFinFinales, setHoraFinFinales] = useState('23:00');
+
+// Nuevo input en UI
+<input type="time" value={horaFinFinales} ... />
+```
+
+#### 2. Archivos Modificados
+- `frontend/src/features/organizador/components/disponibilidad/CanchasManager.tsx`
+- `frontend/src/services/disponibilidad.service.ts`
+
+### Migración Base de Datos
+```sql
+ALTER TABLE "tournaments" ADD COLUMN IF NOT EXISTS "hora_fin_finales" TEXT;
+```
+
+### Testing Recomendado
+
+#### Caso 1: Distribución Balanceada
+```
+1. Crear torneo con 4 días
+2. Configurar diferentes capacidades (slots) por día
+3. Sortear muchas categorías (100+ partidos)
+4. Calcular programación
+5. Verificar: días con más capacidad tienen más partidos
+```
+
+#### Caso 2: Finales por Categoría
+```
+1. Sortear 8 categorías (5ª a 8ª fem y 5ª a 8ª masc)
+2. Verificar tab Programación
+3. Confirmar: SEMIS de 5ª/6ª/7ª/8ª van antes que 1ª/2ª/3ª/4ª
+4. Confirmar: FINAL de 5ª/6ª/7ª/8ª van antes que 1ª/2ª/3ª/4ª
+```
+
+#### Caso 3: Hora Fin Configurable
+```
+1. Ir a tab Canchas
+2. Configurar hora fin = 22:00 (en lugar de 23:00)
+3. Guardar
+4. Verificar en BD: hora_fin_finales = "22:00"
+5. Calcular programación: último slot debe ser <= 22:00
+```
+
+### Commits
+- Backend: `43cc9cc` - migrate: agregar horaFinFinales a tournaments
+- Frontend: `0fffd34` - feat(canchas): agregar horaFinFinales configurable
+
+### Deploy
+- ✅ Backend: https://github.com/herto2007-prog/fairpadel-backend.git
+- ✅ Frontend: https://github.com/herto2007-prog/fairpadel-frontend.git
+- 🚀 Railway: Automático desde main (con migración)
+
+---
+
+**Última actualización:** 2026-03-18 - Sistema con distribución balanceada y hora fin configurable
