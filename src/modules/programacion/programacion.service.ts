@@ -280,13 +280,31 @@ export class ProgramacionService {
 
     // Eliminar duplicados
     const categoriasUnicas = [...new Set(categoriasSorteadas)];
-    console.log('[Programacion] categoriasUnicas:', categoriasUnicas);
+    console.log('[Programacion] categoriasUnicas (TournamentCategory IDs):', categoriasUnicas);
 
-    // Obtener fixtureVersions de las categorías sorteadas (directo por categoryId)
+    // PASO 1: Obtener los categoryId reales de los TournamentCategory
+    const tournamentCategories = await this.prisma.tournamentCategory.findMany({
+      where: {
+        id: { in: categoriasUnicas },
+        tournamentId,
+      },
+      select: { id: true, categoryId: true },
+    });
+
+    console.log('[Programacion] tournamentCategories encontradas:', tournamentCategories);
+
+    const categoryIdsReales = tournamentCategories.map(tc => tc.categoryId);
+    console.log('[Programacion] categoryIdsReales:', categoryIdsReales);
+
+    if (categoryIdsReales.length === 0) {
+      return [];
+    }
+
+    // PASO 2: Obtener fixtureVersions por los categoryId reales
     const fixtureVersions = await this.prisma.fixtureVersion.findMany({
       where: {
         tournamentId,
-        categoryId: { in: categoriasUnicas },
+        categoryId: { in: categoryIdsReales },
       },
     });
 
@@ -309,12 +327,17 @@ export class ProgramacionService {
     const fixtureVersionIds = fixtureVersions.map(fv => fv.id);
     
     // Map de categoryId para obtener nombres
-    const categoryIds = [...new Set(fixtureVersions.map(fv => fv.categoryId))];
-    const categorias = await this.prisma.category.findMany({
-      where: { id: { in: categoryIds } },
-      select: { id: true, nombre: true },
-    });
-    const categoriaMap = new Map(categorias.map(c => [c.id, c.nombre]));
+    // Crear map de categoryId -> nombre
+    const categoryIdToNombre = new Map<string, string>();
+    for (const tc of tournamentCategories) {
+      const categoria = await this.prisma.category.findUnique({
+        where: { id: tc.categoryId },
+        select: { nombre: true },
+      });
+      if (categoria) {
+        categoryIdToNombre.set(tc.categoryId, categoria.nombre);
+      }
+    }
     const fixtureVersionMap = new Map(fixtureVersions.map(fv => [fv.id, fv]));
 
     // Obtener partidos de esos fixtureVersions
@@ -355,7 +378,7 @@ export class ProgramacionService {
         fase: p.ronda,
         orden: p.numeroRonda,
         categoriaId: categoryId,
-        categoriaNombre: categoriaMap.get(categoryId) || 'Sin categoría',
+        categoriaNombre: categoryIdToNombre.get(categoryId) || 'Sin categoría',
         pareja1: p.inscripcion1 || undefined,
         pareja2: p.inscripcion2 || undefined,
         inscripcion1Id: p.inscripcion1Id || undefined,
