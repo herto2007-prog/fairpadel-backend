@@ -2,12 +2,12 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-17 23:30 - FIXES COMPLETADOS Y DOCUMENTADOS
-> - Timezone: Schema cambiado a `@db.Timestamptz(3)`, baseline completado
-> - Bracket: Frontend soporta 8/16/32/64 parejas, fases ZONA/REPECHAJE visibles
-> - Cerrar Inscripciones: Transacciones Prisma, manejo correcto de errores
-> - Deploy: Sistema de migraciones corregido (`migrate deploy` funcional)
-> **ESTADO:** Sistema de torneos 100% alineado y documentado
+> **Última actualización:** 2026-03-18 - SISTEMA ESTABLE Y FUNCIONAL
+> - Timezone: Todos los fixes aplicados (frontend y backend)
+> - Wizard: Creación de torneos funcional con fechas correctas
+> - Canchas: Copia automática de sede, configuración de finales operativa
+> - Inscripciones: Cierre/apertura con feedback completo
+> **ESTADO:** Listo para producción - seguir haciendo pruebas
 
 ---
 
@@ -1472,3 +1472,55 @@ DELETE /admin/torneos/:id/disponibilidad/dias/:diaId
 ---
 
 **Última actualización:** 2026-03-17 23:30
+
+
+---
+
+## ✅ Completado (2026-03-18) - Fixes Masivos de Timezone y Flujo de Torneos
+
+### Resumen Ejecutivo
+> **Estado:** Sistema de torneos 100% funcional. Todos los bugs críticos corregidos.
+
+### 1. Fixes de Timezone (CRÍTICO)
+
+#### Backend
+- [x] **ProgramacionService:** Usa `DateService.getDateOnly()` en lugar de `toISOString().split('T')[0]`
+- [x] **AdminTorneosController:** Usa `DateService.getDateOnly()` para extracción de fechas
+- [x] **Transacciones Prisma:** Agregadas a cerrar/abrir inscripciones
+
+#### Frontend
+- [x] **date.ts:** `formatDatePY()` ahora detecta YYYY-MM-DD y usa `parseDatePY()`
+- [x] **parseDatePY():** Crea Date con offset `-03:00` para fechas sin hora
+- [x] **TorneoWizard:** Usa `formatDatePY()` en lugar de `new Date().toLocaleDateString()`
+- [x] **ProgramacionManager:** Usa `formatDatePY()` y `parseDatePY()`
+- [x] **VistaCalendario:** Usa utilidades de fecha correctas
+- [x] **VistaDragDrop:** Usa `parseDatePY()`
+
+**Problema resuelto:** Fechas mostradas un día antes (off-by-one-day) debido a conversión UTC→Paraguay.
+
+### 2. Fixes de Wizard de Creación de Torneos
+
+- [x] **Payload limpio:** `fechaInicio` y `fechaFin` siempre tienen valor (usando `fechaFinales` como fallback)
+- [x] **Validación backend:** Evita error "debe tener formato YYYY-MM-DD" al enviar strings vacíos
+
+### 3. Fixes de Canchas para Finales
+
+- [x] **Eliminada duplicación:** Frontend ya no crea slots manualmente (backend lo hace automáticamente)
+- [x] **Race condition:** Corregida carga de canchas seleccionadas en Step 1
+- [x] **Copia automática:** Al crear torneo, se copian canchas de la sede como `TorneoCancha`
+
+**Problema resuelto:** Canchas no aparecían después de crear torneo.
+
+### 4. Fixes de Cerrar Inscripciones
+
+- [x] **Manejo de errores:** Frontend ahora maneja `success: false` del backend
+- [x] **Feedback visual:** Mensajes de éxito al cerrar/reabrir
+- [x] **Cierre múltiple:** Verifica `data.success` de cada respuesta individual
+
+### Commits del Día
+- Backend: `6de33cd`, `3308ae8`, `f0b272b`, `bdca619`
+- Frontend: `ed5fdbd`, `99146e3`, `b1d9c2e`, `c84fd67`, `1d207f9`, `bbdeb24`
+
+---
+
+**Última actualización:** 2026-03-18 - Sistema estable y listo para producción
