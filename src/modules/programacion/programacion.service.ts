@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DateService } from '../../common/services/date.service';
 
 export interface SlotDisponible {
   id: string;
@@ -98,7 +99,10 @@ const FASES_INTERMEDIAS: string[] = ['CUARTOS'];
 
 @Injectable()
 export class ProgramacionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private dateService: DateService,
+  ) {}
 
   /**
    * Calcula la programación inteligente para un torneo
@@ -123,7 +127,7 @@ export class ProgramacionService {
       select: { fechaFinales: true }
     });
     // @ts-ignore
-    const fechaFinales = torneo?.fechaFinales ? torneo.fechaFinales.toISOString().split('T')[0] : undefined;
+    const fechaFinales = torneo?.fechaFinales ? this.dateService.getDateOnly(torneo.fechaFinales) : undefined;
     
     // 4. Calcular predicción de recursos
     const prediccion = this.calcularPrediccion(partidos, slots);
@@ -283,7 +287,7 @@ export class ProgramacionService {
         const cancha = canchaMap.get(s.torneoCanchaId);
         return {
           id: s.id,
-          fecha: disp.fecha.toISOString().split('T')[0], // Convertir Date a string YYYY-MM-DD
+          fecha: this.dateService.getDateOnly(disp.fecha), // Convertir Date a string YYYY-MM-DD en timezone Paraguay
           horaInicio: s.horaInicio,
           horaFin: s.horaFin,
           torneoCanchaId: s.torneoCanchaId,
@@ -845,7 +849,7 @@ export class ProgramacionService {
     if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
       await this.liberarSlot(
         partido.torneoCanchaId,
-        partido.fechaProgramada.toISOString().split('T')[0],
+        this.dateService.getDateOnly(partido.fechaProgramada),
         partido.horaProgramada,
       );
     }
@@ -884,7 +888,7 @@ export class ProgramacionService {
     if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
       await this.liberarSlot(
         partido.torneoCanchaId,
-        partido.fechaProgramada.toISOString().split('T')[0],
+        this.dateService.getDateOnly(partido.fechaProgramada),
         partido.horaProgramada,
       );
     }

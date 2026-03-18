@@ -16,6 +16,7 @@ import {
 import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, ValidateNested, Matches } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DateService } from '../../common/services/date.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -135,7 +136,10 @@ class ConfigurarRecordatorioDto {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin', 'organizador')
 export class AdminTorneosController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private dateService: DateService,
+  ) {}
 
   // ═══════════════════════════════════════════════════════════
   // CRUD BÁSICO
@@ -495,7 +499,7 @@ export class AdminTorneosController {
         const horaInicio = dto.horaInicioFinales || torneoActualizado.horaInicioFinales || '18:00';
         
         if (fechaFinales) {
-          const fechaStr = (fechaFinales as Date).toISOString().split('T')[0]; // YYYY-MM-DD
+          const fechaStr = this.dateService.getDateOnly(fechaFinales as Date); // YYYY-MM-DD en timezone Paraguay
           // @ts-ignore
           const minutosSlot: number = torneoActualizado.minutosPorPartido || torneo.minutosPorPartido || 120;
           
