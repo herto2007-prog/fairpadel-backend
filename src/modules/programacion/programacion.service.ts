@@ -258,7 +258,7 @@ export class ProgramacionService {
     });
 
     // 8. Distribuir partidos cronológicamente
-    const distribucion = this.distribuirPartidosCronologicamente(
+    const distribucion = await this.distribuirPartidosCronologicamente(
       partidos, 
       slots, 
       fechaInicio, 
@@ -525,7 +525,7 @@ export class ProgramacionService {
    * 3. Para SEMIS/FINAL: solo usar fechaFinales
    * 4. Para otras fases: usar cualquier fecha excepto fechaFinales (si tiene finales)
    */
-  private distribuirPartidosCronologicamente(
+  private async distribuirPartidosCronologicamente(
     partidos: PartidoProgramar[],
     slots: SlotDisponible[],
     fechaInicio?: string,
@@ -534,7 +534,7 @@ export class ProgramacionService {
     horaInicioFinales?: string,
     horaFinFinales?: string,
     tournamentCategories?: { id: string; categoryId: string }[],
-  ): DistribucionDia[] {
+  ): Promise<DistribucionDia[]> {
     // 1. Agrupar slots por fecha
     const slotsPorFecha = this.agruparSlotsPorFecha(slots);
     let fechasOrdenadas = Object.keys(slotsPorFecha).sort();
@@ -552,8 +552,8 @@ export class ProgramacionService {
     const fechaFinalesReal = fechaFinales || fechasOrdenadas[fechasOrdenadas.length - 1];
     const fechasNoFinales = fechasOrdenadas.filter(f => f !== fechaFinalesReal);
 
-    // 3. Obtener orden de categorías para ordenar finales (bajas primero, altas después)
-    const ordenCategorias = this.obtenerOrdenCategorias(tournamentCategories);
+    // 3. Obtener orden de categorías para ordenar finales (8ª → 1ª)
+    const ordenCategorias = await this.obtenerOrdenCategorias(tournamentCategories);
 
     // 4. Separar partidos por tipo: finales vs normales
     const partidosFinales = partidos.filter(p => FASES_FINALES.includes(p.fase));
@@ -567,14 +567,16 @@ export class ProgramacionService {
       return a.orden - b.orden;
     });
 
-    // 6. Ordenar finales: SEMIS primero, luego FINAL, y dentro de cada una categorías bajas primero
+    // 6. Ordenar finales: SEMIS primero, luego FINAL
+    // Dentro de cada fase: categorías bajas primero (8ª → 1ª)
+    // Así la final de 1ª es lo último del día D (el gran show)
     const partidosFinalesOrdenados = [...partidosFinales].sort((a, b) => {
       // Primero SEMIS, luego FINAL
       const ordenFaseA = ORDEN_FASES.indexOf(a.fase);
       const ordenFaseB = ORDEN_FASES.indexOf(b.fase);
       if (ordenFaseA !== ordenFaseB) return ordenFaseA - ordenFaseB;
       
-      // Dentro de la misma fase, categorías bajas primero
+      // Dentro de la misma fase: 8ª → 7ª → 6ª → 5ª → 4ª → 3ª → 2ª → 1ª
       const ordenCatA = ordenCategorias.get(a.categoriaId) || 999;
       const ordenCatB = ordenCategorias.get(b.categoriaId) || 999;
       return ordenCatA - ordenCatB;
@@ -692,35 +694,44 @@ export class ProgramacionService {
 
   /**
    * Obtiene el orden de categorías para ordenar finales
-   * Categorías bajas (5ª, 6ª, 7ª, 8ª) primero, luego altas (1ª, 2ª, 3ª, 4ª)
+   * Categorías bajas primero (8ª → 1ª), dejando lo mejor para el final
+   * Retorna Map<categoryId, orden> donde menor orden = va primero
    */
-  private obtenerOrdenCategorias(
+  private async obtenerOrdenCategorias(
     tournamentCategories?: { id: string; categoryId: string }[],
-  ): Map<string, number> {
+  ): Promise<Map<string, number>> {
     const ordenMap = new Map<string, number>();
     
-    if (!tournamentCategories) return ordenMap;
+    if (!tournamentCategories || tournamentCategories.length === 0) {
+      return ordenMap;
+    }
 
-    // Mapa de palabras clave a orden numérico (menor = más baja)
+    // Obtener nombres de categorías
+    const categoryIds = tournamentCategories.map(tc => tc.categoryId);
+    const categorias = await this.prisma.category.findMany({
+      where: { id: { in: categoryIds } },
+      select: { id: true, nombre: true },
+    });
+
+    // Mapa de palabras clave a orden numérico (menor = más baja = va primero)
     const extractOrder = (nombre: string): number => {
       const lower = nombre.toLowerCase();
-      // Buscar números romanos o arábigos
-      if (lower.includes('8') || lower.includes('octava')) return 8;
-      if (lower.includes('7') || lower.includes('septima')) return 7;
-      if (lower.includes('6') || lower.includes('sexta')) return 6;
-      if (lower.includes('5') || lower.includes('quinta')) return 5;
-      if (lower.includes('4') || lower.includes('cuarta')) return 4;
-      if (lower.includes('3') || lower.includes('tercera')) return 3;
-      if (lower.includes('2') || lower.includes('segunda')) return 2;
-      if (lower.includes('1') || lower.includes('primera')) return 1;
-      return 999; // Sin orden definido
+      // 8ª (octava) más baja = orden 1 (va primero)
+      // 1ª (primera) más alta = orden 8 (va último)
+      if (lower.includes('8') || lower.includes('octava')) return 1;
+      if (lower.includes('7') || lower.includes('septima')) return 2;
+      if (lower.includes('6') || lower.includes('sexta')) return 3;
+      if (lower.includes('5') || lower.includes('quinta')) return 4;
+      if (lower.includes('4') || lower.includes('cuarta')) return 5;
+      if (lower.includes('3') || lower.includes('tercera')) return 6;
+      if (lower.includes('2') || lower.includes('segunda')) return 7;
+      if (lower.includes('1') || lower.includes('primera')) return 8;
+      return 999; // Sin orden definido = al final
     };
 
     // Asignar orden basado en el nombre de la categoría
-    for (const tc of tournamentCategories) {
-      // Por ahora usamos un orden por defecto basado en el ID
-      // En producción deberíamos obtener los nombres de categoría
-      ordenMap.set(tc.categoryId, 0);
+    for (const cat of categorias) {
+      ordenMap.set(cat.id, extractOrder(cat.nombre));
     }
 
     return ordenMap;
