@@ -2,8 +2,12 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-18 00:15 - Fix crítico de timezone: Todas las fechas ahora se guardan como T03:00:00.000Z para evitar bug de día anterior en Paraguay (UTC-3)
-> **Conversación actual:** Correcciones críticas al flujo de canchas: toggleCancha, eliminación de días, botón Configurar para finales, y fix de creación de torneos (fechaLimiteInscripcion). Todos los errores encontrados en la investigación exhaustiva han sido corregidos y pusheados a producción.
+> **Última actualización:** 2026-03-17 22:30 - DEPLOY COMPLETADO: Fix crítico de timezone aplicado en producción
+> - Schema: `TorneoDisponibilidadDia.fecha` cambiado de `@db.Date` a `@db.Timestamptz(3)`
+> - Dockerfile corregido: usa `migrate deploy` en lugar de `db push --accept-data-loss`
+> - Backend: Todas las fechas usan `T03:00:00.000Z` para Paraguay UTC-3
+> - Migración aplicada: `20260317222108_fix_disponibilidad_fecha_timezone`
+> **Conversación actual:** Deploy de fixes críticos de timezone a producción completado.
 
 ---
 
