@@ -265,6 +265,9 @@ export class ProgramacionService {
     tournamentId: string,
     categoriasSorteadas: string[],
   ): Promise<PartidoProgramar[]> {
+    console.log('[Programacion] Buscando partidos para tournamentId:', tournamentId);
+    console.log('[Programacion] categoriasSorteadas:', categoriasSorteadas);
+
     // Obtener fixtureVersions de las categorías sorteadas
     const fixtureVersions = await this.prisma.fixtureVersion.findMany({
       where: {
@@ -283,6 +286,11 @@ export class ProgramacionService {
         },
       },
     });
+
+    console.log('[Programacion] fixtureVersions encontrados:', fixtureVersions.length);
+    if (fixtureVersions.length > 0) {
+      console.log('[Programacion] IDs de fixtureVersions:', fixtureVersions.map(fv => fv.id));
+    }
 
     if (fixtureVersions.length === 0) {
       return [];
@@ -318,6 +326,8 @@ export class ProgramacionService {
         { numeroRonda: 'asc' },
       ],
     });
+
+    console.log('[Programacion] Partidos encontrados:', partidos.length);
 
     return partidos.map(p => {
       const fv = fixtureVersionMap.get(p.fixtureVersionId);
