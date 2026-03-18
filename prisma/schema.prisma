@@ -853,6 +853,7 @@ model Tournament {
   // NUEVO: Configuración de Finales (canchas y hora de inicio)
   canchasFinales       String[]       @map("canchas_finales") // Array de TorneoCancha IDs
   horaInicioFinales    String?        @map("hora_inicio_finales") // Ej: "09:00"
+  horaFinFinales       String?        @map("hora_fin_finales")   // Ej: "23:00"
 
   @@map("tournaments")
 }

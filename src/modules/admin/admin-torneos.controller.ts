@@ -471,7 +471,7 @@ export class AdminTorneosController {
   @Put(':id')
   async update(
     @Param('id') torneoId: string,
-    @Body() dto: Partial<CreateTorneoDto> & { canchasFinales?: string[]; horaInicioFinales?: string },
+    @Body() dto: Partial<CreateTorneoDto> & { canchasFinales?: string[]; horaInicioFinales?: string; horaFinFinales?: string },
     @Request() req,
   ) {
     try {
@@ -509,6 +509,8 @@ export class AdminTorneosController {
           ...(dto.flyerUrl !== undefined && { flyerUrl: dto.flyerUrl }),
           ...(dto.canchasFinales !== undefined && { canchasFinales: dto.canchasFinales }),
           ...(dto.horaInicioFinales !== undefined && { horaInicioFinales: dto.horaInicioFinales }),
+          // @ts-ignore - campo nuevo
+          ...(dto.horaFinFinales !== undefined && { horaFinFinales: dto.horaFinFinales }),
         },
       });
 
@@ -518,6 +520,8 @@ export class AdminTorneosController {
         const fechaFinales = torneoActualizado.fechaFinales || torneo.fechaFinales;
         // @ts-ignore
         const horaInicio = dto.horaInicioFinales || torneoActualizado.horaInicioFinales || '18:00';
+        // @ts-ignore
+        const horaFin = dto.horaFinFinales || torneoActualizado.horaFinFinales || '23:00';
         
         if (fechaFinales) {
           const fechaStr = this.dateService.getDateOnly(fechaFinales as Date); // YYYY-MM-DD en timezone Paraguay
@@ -543,7 +547,7 @@ export class AdminTorneosController {
               },
               update: {
                 horaInicio,
-                horaFin: '23:00', // Horario extendido para finales
+                horaFin, // Horario configurable para finales
                 minutosSlot,
                 activo: true,
               },
@@ -551,7 +555,7 @@ export class AdminTorneosController {
                 tournamentId: torneoId,
                 fecha: fechaDate,
                 horaInicio,
-                horaFin: '23:00',
+                horaFin,
                 minutosSlot,
               },
             });
@@ -560,11 +564,11 @@ export class AdminTorneosController {
 
             // 2. Generar slots para cada cancha seleccionada
             const slotsCreados = [];
+            const horaFinNum = this.parseHora(horaFin);
             for (const torneoCanchaId of dto.canchasFinales) {
               let horaActual = this.parseHora(horaInicio);
-              const horaFin = this.parseHora('23:00');
 
-              while (horaActual < horaFin) {
+              while (horaActual < horaFinNum) {
                 const horaInicioStr = this.formatHora(horaActual);
                 const horaFinSlot = horaActual + minutosSlot;
                 const horaFinStr = this.formatHora(horaFinSlot);
@@ -1495,6 +1499,8 @@ export class AdminTorneosController {
           canchasFinales: true,
           // @ts-ignore
           horaInicioFinales: true,
+          // @ts-ignore
+          horaFinFinales: true,
           sedePrincipal: true,
           categorias: { include: { category: true } },
           modalidades: { include: { modalidadConfig: true } },
@@ -1686,6 +1692,8 @@ export class AdminTorneosController {
           canchasFinales: torneo.canchasFinales,
           // @ts-ignore
           horaInicioFinales: torneo.horaInicioFinales,
+          // @ts-ignore
+          horaFinFinales: torneo.horaFinFinales,
           ciudad: torneo.ciudad,
           flyerUrl: torneo.flyerUrl,
           // @ts-ignore

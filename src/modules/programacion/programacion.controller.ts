@@ -20,6 +20,7 @@ interface CalcularProgramacionDto {
   fechaInicio?: string;
   canchasFinales?: string[];
   horaInicioFinales?: string;
+  horaFinFinales?: string;
 }
 
 interface AplicarProgramacionDto {
@@ -47,6 +48,7 @@ export class ProgramacionController {
       dto.fechaInicio,
       dto.canchasFinales,
       dto.horaInicioFinales,
+      dto.horaFinFinales,
     );
   }
 

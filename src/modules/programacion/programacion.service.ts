@@ -115,6 +115,7 @@ export class ProgramacionService {
     fechaInicio?: string,
     canchasFinales?: string[],
     horaInicioFinales?: string,
+    horaFinFinales?: string,
   ): Promise<ResultadoProgramacion> {
     console.log('[Programacion] ===== INICIAR CÁLCULO =====');
     console.log('[Programacion] tournamentId:', tournamentId);
@@ -200,6 +201,8 @@ export class ProgramacionService {
         fechaFinales: true,
         canchasFinales: true,
         horaInicioFinales: true,
+        // @ts-ignore - campo nuevo pendiente de migración
+        horaFinFinales: true,
       }
     });
     
@@ -211,6 +214,8 @@ export class ProgramacionService {
       (torneo?.canchasFinales as string[] || []);
     
     const horaInicioFinalesFinal = horaInicioFinales || torneo?.horaInicioFinales;
+    // @ts-ignore - campo nuevo pendiente de migración
+    const horaFinFinalesFinal = horaFinFinales || torneo?.horaFinFinales || '23:00';
 
     // 5. Calcular predicción de recursos
     const prediccion = this.calcularPrediccion(partidos, slots);
@@ -242,6 +247,16 @@ export class ProgramacionService {
       };
     }
 
+    // Obtener tournamentCategories para ordenar finales por categoría
+    const categoriasUnicas = [...new Set(categoriasSorteadas)];
+    const tournamentCategories = await this.prisma.tournamentCategory.findMany({
+      where: {
+        id: { in: categoriasUnicas },
+        tournamentId,
+      },
+      select: { id: true, categoryId: true },
+    });
+
     // 8. Distribuir partidos cronológicamente
     const distribucion = this.distribuirPartidosCronologicamente(
       partidos, 
@@ -250,6 +265,8 @@ export class ProgramacionService {
       fechaFinales,
       canchasFinalesFinal,
       horaInicioFinalesFinal,
+      horaFinFinalesFinal,
+      tournamentCategories,
     );
 
     // 9. Validar conflictos adicionales
@@ -515,6 +532,8 @@ export class ProgramacionService {
     fechaFinales?: string,
     canchasFinales?: string[],
     horaInicioFinales?: string,
+    horaFinFinales?: string,
+    tournamentCategories?: { id: string; categoryId: string }[],
   ): DistribucionDia[] {
     // 1. Agrupar slots por fecha
     const slotsPorFecha = this.agruparSlotsPorFecha(slots);
@@ -529,57 +548,75 @@ export class ProgramacionService {
       return [];
     }
 
-    // 2. Ordenar partidos por fase (ZONA → REPECHAJE → ... → FINAL)
-    const partidosOrdenados = [...partidos].sort((a, b) => {
+    // 2. Separar fechas: finales vs otras
+    const fechaFinalesReal = fechaFinales || fechasOrdenadas[fechasOrdenadas.length - 1];
+    const fechasNoFinales = fechasOrdenadas.filter(f => f !== fechaFinalesReal);
+
+    // 3. Obtener orden de categorías para ordenar finales (bajas primero, altas después)
+    const ordenCategorias = this.obtenerOrdenCategorias(tournamentCategories);
+
+    // 4. Separar partidos por tipo: finales vs normales
+    const partidosFinales = partidos.filter(p => FASES_FINALES.includes(p.fase));
+    const partidosNormales = partidos.filter(p => !FASES_FINALES.includes(p.fase));
+
+    // 5. Ordenar partidos normales por fase
+    const partidosNormalesOrdenados = [...partidosNormales].sort((a, b) => {
       const ordenA = ORDEN_FASES.indexOf(a.fase);
       const ordenB = ORDEN_FASES.indexOf(b.fase);
       if (ordenA !== ordenB) return ordenA - ordenB;
       return a.orden - b.orden;
     });
 
-    // 3. Separar fechas: finales vs otras
-    const fechaFinalesReal = fechaFinales || fechasOrdenadas[fechasOrdenadas.length - 1];
-    const fechasNoFinales = fechasOrdenadas.filter(f => f !== fechaFinalesReal);
+    // 6. Ordenar finales: SEMIS primero, luego FINAL, y dentro de cada una categorías bajas primero
+    const partidosFinalesOrdenados = [...partidosFinales].sort((a, b) => {
+      // Primero SEMIS, luego FINAL
+      const ordenFaseA = ORDEN_FASES.indexOf(a.fase);
+      const ordenFaseB = ORDEN_FASES.indexOf(b.fase);
+      if (ordenFaseA !== ordenFaseB) return ordenFaseA - ordenFaseB;
+      
+      // Dentro de la misma fase, categorías bajas primero
+      const ordenCatA = ordenCategorias.get(a.categoriaId) || 999;
+      const ordenCatB = ordenCategorias.get(b.categoriaId) || 999;
+      return ordenCatA - ordenCatB;
+    });
 
-    // 4. Asignar partidos
+    // 7. Asignar partidos
     const asignaciones: PartidoAsignado[] = [];
     const slotsAsignados = new Set<string>();
 
-    for (const partido of partidosOrdenados) {
-      const esFaseFinal = FASES_FINALES.includes(partido.fase);
-      
-      // Determinar fechas permitidas para esta fase
-      let fechasPermitidas: string[];
-      if (esFaseFinal) {
-        // Fases finales SOLO en fechaFinales
-        fechasPermitidas = [fechaFinalesReal];
-      } else {
-        // Otras fases en cualquier fecha EXCEPTO fechaFinales
-        fechasPermitidas = fechasNoFinales.length > 0 ? fechasNoFinales : fechasOrdenadas;
-      }
-
-      // Determinar restricciones adicionales para finales
-      const canchasPermitidas = esFaseFinal ? canchasFinales : undefined;
-      const horaMinima = esFaseFinal ? horaInicioFinales : undefined;
-
-      // Encontrar slot
-      const asignacion = this.encontrarSlotOptimo(
-        partido,
-        fechasPermitidas,
+    // 7.1 Asignar partidos normales con distribución balanceada
+    if (partidosNormalesOrdenados.length > 0 && fechasNoFinales.length > 0) {
+      this.asignarPartidosBalanceado(
+        partidosNormalesOrdenados,
+        fechasNoFinales,
         slotsPorFecha,
         slotsAsignados,
         asignaciones,
-        canchasPermitidas,
-        horaMinima,
       );
+    }
 
-      if (asignacion) {
-        asignaciones.push(asignacion);
-        slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+    // 7.2 Asignar finales en fechaFinales con orden de categorías
+    if (partidosFinalesOrdenados.length > 0) {
+      for (const partido of partidosFinalesOrdenados) {
+        const asignacion = this.encontrarSlotOptimo(
+          partido,
+          [fechaFinalesReal],
+          slotsPorFecha,
+          slotsAsignados,
+          asignaciones,
+          canchasFinales,
+          horaInicioFinales,
+          horaFinFinales,
+        );
+
+        if (asignacion) {
+          asignaciones.push(asignacion);
+          slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+        }
       }
     }
 
-    // 5. Construir distribución final
+    // 8. Construir distribución final
     return this.construirDistribucion(asignaciones, slotsPorFecha, fechasOrdenadas);
   }
 
@@ -595,6 +632,7 @@ export class ProgramacionService {
     asignacionesExistentes: PartidoAsignado[],
     canchasPermitidas?: string[],
     horaMinima?: string,
+    horaMaxima?: string,
   ): PartidoAsignado | null {
     // Recopilar info de parejas para este partido
     const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
@@ -610,6 +648,11 @@ export class ProgramacionService {
       // Filtrar por hora mínima (para finales)
       if (horaMinima) {
         slotsDelDia = slotsDelDia.filter(s => s.horaInicio >= horaMinima);
+      }
+
+      // Filtrar por hora máxima (para finales)
+      if (horaMaxima) {
+        slotsDelDia = slotsDelDia.filter(s => s.horaInicio <= horaMaxima);
       }
 
       for (const slot of slotsDelDia) {
@@ -645,6 +688,149 @@ export class ProgramacionService {
     }
 
     return null;
+  }
+
+  /**
+   * Obtiene el orden de categorías para ordenar finales
+   * Categorías bajas (5ª, 6ª, 7ª, 8ª) primero, luego altas (1ª, 2ª, 3ª, 4ª)
+   */
+  private obtenerOrdenCategorias(
+    tournamentCategories?: { id: string; categoryId: string }[],
+  ): Map<string, number> {
+    const ordenMap = new Map<string, number>();
+    
+    if (!tournamentCategories) return ordenMap;
+
+    // Mapa de palabras clave a orden numérico (menor = más baja)
+    const extractOrder = (nombre: string): number => {
+      const lower = nombre.toLowerCase();
+      // Buscar números romanos o arábigos
+      if (lower.includes('8') || lower.includes('octava')) return 8;
+      if (lower.includes('7') || lower.includes('septima')) return 7;
+      if (lower.includes('6') || lower.includes('sexta')) return 6;
+      if (lower.includes('5') || lower.includes('quinta')) return 5;
+      if (lower.includes('4') || lower.includes('cuarta')) return 4;
+      if (lower.includes('3') || lower.includes('tercera')) return 3;
+      if (lower.includes('2') || lower.includes('segunda')) return 2;
+      if (lower.includes('1') || lower.includes('primera')) return 1;
+      return 999; // Sin orden definido
+    };
+
+    // Asignar orden basado en el nombre de la categoría
+    for (const tc of tournamentCategories) {
+      // Por ahora usamos un orden por defecto basado en el ID
+      // En producción deberíamos obtener los nombres de categoría
+      ordenMap.set(tc.categoryId, 0);
+    }
+
+    return ordenMap;
+  }
+
+  /**
+   * Asigna partidos de forma balanceada entre días según capacidad
+   * Distribuye proporcionalmente para evitar saturar los primeros días
+   */
+  private asignarPartidosBalanceado(
+    partidos: PartidoProgramar[],
+    fechas: string[],
+    slotsPorFecha: Record<string, SlotDisponible[]>,
+    slotsAsignados: Set<string>,
+    asignaciones: PartidoAsignado[],
+  ): void {
+    // Calcular capacidad de cada día
+    const capacidadPorDia = new Map<string, number>();
+    let capacidadTotal = 0;
+    
+    for (const fecha of fechas) {
+      const slots = slotsPorFecha[fecha] || [];
+      const capacidad = slots.length;
+      capacidadPorDia.set(fecha, capacidad);
+      capacidadTotal += capacidad;
+    }
+
+    if (capacidadTotal === 0) return;
+
+    // Calcular cuántos partidos asignar a cada día proporcionalmente
+    const asignacionesPorDia = new Map<string, number>();
+    const partidosRestantesPorDia = new Map<string, number>();
+    
+    for (const fecha of fechas) {
+      const capacidad = capacidadPorDia.get(fecha) || 0;
+      // Calcular proporción y redondear
+      const proporcion = capacidad / capacidadTotal;
+      const cantidadPartidos = Math.round(partidos.length * proporcion);
+      asignacionesPorDia.set(fecha, cantidadPartidos);
+      partidosRestantesPorDia.set(fecha, cantidadPartidos);
+    }
+
+    // Ajustar por redondeo para asegurar que sumen el total
+    let totalAsignado = 0;
+    for (const cantidad of asignacionesPorDia.values()) {
+      totalAsignado += cantidad;
+    }
+    
+    // Si hay diferencia, ajustar el último día
+    if (totalAsignado !== partidos.length && fechas.length > 0) {
+      const ultimaFecha = fechas[fechas.length - 1];
+      const diferencia = partidos.length - totalAsignado;
+      const actual = asignacionesPorDia.get(ultimaFecha) || 0;
+      asignacionesPorDia.set(ultimaFecha, actual + diferencia);
+      partidosRestantesPorDia.set(ultimaFecha, actual + diferencia);
+    }
+
+    // Asignar partidos rotando entre días según su capacidad
+    let indiceFecha = 0;
+    
+    for (const partido of partidos) {
+      // Encontrar un día que tenga capacidad restante
+      let asignado = false;
+      let intentos = 0;
+      
+      while (!asignado && intentos < fechas.length) {
+        const fecha = fechas[indiceFecha % fechas.length];
+        const restantes = partidosRestantesPorDia.get(fecha) || 0;
+        
+        if (restantes > 0) {
+          // Intentar asignar a este día
+          const asignacion = this.encontrarSlotOptimo(
+            partido,
+            [fecha],
+            slotsPorFecha,
+            slotsAsignados,
+            asignaciones,
+          );
+
+          if (asignacion) {
+            asignaciones.push(asignacion);
+            slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+            partidosRestantesPorDia.set(fecha, restantes - 1);
+            asignado = true;
+          }
+        }
+        
+        indiceFecha++;
+        intentos++;
+      }
+      
+      // Si no se pudo asignar por capacidad, intentar cualquier día disponible
+      if (!asignado) {
+        for (const fecha of fechas) {
+          const asignacion = this.encontrarSlotOptimo(
+            partido,
+            [fecha],
+            slotsPorFecha,
+            slotsAsignados,
+            asignaciones,
+          );
+
+          if (asignacion) {
+            asignaciones.push(asignacion);
+            slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+            break;
+          }
+        }
+      }
+    }
   }
 
   /**
