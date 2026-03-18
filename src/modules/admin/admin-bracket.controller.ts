@@ -94,53 +94,58 @@ export class AdminBracketController {
   @Post('categorias/:id/cerrar-inscripciones')
   async cerrarInscripciones(@Param('id') tournamentCategoryId: string) {
     try {
-      const categoria = await this.prisma.tournamentCategory.findUnique({
-        where: { id: tournamentCategoryId },
-        include: { category: true },
-      });
+      // Usar transacción para asegurar consistencia
+      const result = await this.prisma.$transaction(async (tx) => {
+        const categoria = await tx.tournamentCategory.findUnique({
+          where: { id: tournamentCategoryId },
+          include: { category: true },
+        });
 
-      if (!categoria) {
-        throw new NotFoundException('Categoría no encontrada');
-      }
+        if (!categoria) {
+          throw new NotFoundException('Categoría no encontrada');
+        }
 
-      if (categoria.estado !== 'INSCRIPCIONES_ABIERTAS') {
-        return {
-          success: false,
-          message: `Las inscripciones ya están cerradas o el sorteo ya fue realizado. Estado actual: ${categoria.estado}`,
-          estado: categoria.estado,
-        };
-      }
+        if (categoria.estado !== 'INSCRIPCIONES_ABIERTAS') {
+          return {
+            success: false,
+            message: `Las inscripciones ya están cerradas o el sorteo ya fue realizado. Estado actual: ${categoria.estado}`,
+            estado: categoria.estado,
+          };
+        }
 
-      // Contar inscripciones confirmadas
-      const inscripcionesCount = await this.prisma.inscripcion.count({
-        where: {
-          tournamentId: categoria.tournamentId,
-          categoryId: categoria.categoryId,
-          estado: {
-            in: ['CONFIRMADA', 'PENDIENTE_PAGO'],
+        // Contar inscripciones confirmadas (dentro de la transacción)
+        const inscripcionesCount = await tx.inscripcion.count({
+          where: {
+            tournamentId: categoria.tournamentId,
+            categoryId: categoria.categoryId,
+            estado: {
+              in: ['CONFIRMADA', 'PENDIENTE_PAGO'],
+            },
           },
-        },
-      });
+        });
 
-      const MINIMO_PARA_SORTEAR = 8;
-      
-      // Actualizar estado
-      await this.prisma.tournamentCategory.update({
-        where: { id: tournamentCategoryId },
-        data: {
+        const MINIMO_PARA_SORTEAR = 8;
+        
+        // Actualizar estado (dentro de la transacción)
+        await tx.tournamentCategory.update({
+          where: { id: tournamentCategoryId },
+          data: {
+            estado: 'INSCRIPCIONES_CERRADAS',
+            inscripcionAbierta: false,
+          },
+        });
+
+        return {
+          success: true,
+          message: `Inscripciones cerradas para ${categoria.category.nombre}`,
           estado: 'INSCRIPCIONES_CERRADAS',
-          inscripcionAbierta: false,
-        },
+          totalInscripciones: inscripcionesCount,
+          puedeSortear: inscripcionesCount >= MINIMO_PARA_SORTEAR,
+          minimoRequerido: MINIMO_PARA_SORTEAR,
+        };
       });
 
-      return {
-        success: true,
-        message: `Inscripciones cerradas para ${categoria.category.nombre}`,
-        estado: 'INSCRIPCIONES_CERRADAS',
-        totalInscripciones: inscripcionesCount,
-        puedeSortear: inscripcionesCount >= MINIMO_PARA_SORTEAR,
-        minimoRequerido: MINIMO_PARA_SORTEAR,
-      };
+      return result;
     } catch (error: any) {
       console.error('[cerrarInscripciones] Error:', error);
       throw new BadRequestException({
@@ -157,37 +162,42 @@ export class AdminBracketController {
   @Post('categorias/:id/abrir-inscripciones')
   async abrirInscripciones(@Param('id') tournamentCategoryId: string) {
     try {
-      const categoria = await this.prisma.tournamentCategory.findUnique({
-        where: { id: tournamentCategoryId },
-        include: { category: true },
-      });
+      // Usar transacción para asegurar consistencia
+      const result = await this.prisma.$transaction(async (tx) => {
+        const categoria = await tx.tournamentCategory.findUnique({
+          where: { id: tournamentCategoryId },
+          include: { category: true },
+        });
 
-      if (!categoria) {
-        throw new NotFoundException('Categoría no encontrada');
-      }
+        if (!categoria) {
+          throw new NotFoundException('Categoría no encontrada');
+        }
 
-      // Solo se puede reabrir si está cerrada pero sin sorteo
-      if (categoria.estado !== 'INSCRIPCIONES_CERRADAS') {
+        // Solo se puede reabrir si está cerrada pero sin sorteo
+        if (categoria.estado !== 'INSCRIPCIONES_CERRADAS') {
+          return {
+            success: false,
+            message: `No se pueden reabrir inscripciones en estado ${categoria.estado}. Solo se puede reabrir si están cerradas pero sin sorteo.`,
+            estado: categoria.estado,
+          };
+        }
+
+        await tx.tournamentCategory.update({
+          where: { id: tournamentCategoryId },
+          data: {
+            estado: 'INSCRIPCIONES_ABIERTAS',
+            inscripcionAbierta: true,
+          },
+        });
+
         return {
-          success: false,
-          message: `No se pueden reabrir inscripciones en estado ${categoria.estado}. Solo se puede reabrir si están cerradas pero sin sorteo.`,
-          estado: categoria.estado,
-        };
-      }
-
-      await this.prisma.tournamentCategory.update({
-        where: { id: tournamentCategoryId },
-        data: {
+          success: true,
+          message: `Inscripciones reabiertas para ${categoria.category.nombre}`,
           estado: 'INSCRIPCIONES_ABIERTAS',
-          inscripcionAbierta: true,
-        },
+        };
       });
 
-      return {
-        success: true,
-        message: `Inscripciones reabiertas para ${categoria.category.nombre}`,
-        estado: 'INSCRIPCIONES_ABIERTAS',
-      };
+      return result;
     } catch (error: any) {
       console.error('[abrirInscripciones] Error:', error);
       throw new BadRequestException({
