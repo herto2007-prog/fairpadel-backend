@@ -393,6 +393,7 @@ npm run lint           # Debe pasar sin errores
 | Mar 2025 | `any` en TypeScript | Pérdida de type safety, bugs | Usar tipos estrictos, interfaces |
 | Mar 2025 | Fondos inconsistentes | UX fragmentada | Implementar Regla #7 (BackgroundEffects) |
 | Mar 2025 | Strings vacíos en opcionales | Validaciones fallan | Usar `undefined` (Regla #4) |
+| Mar 2025 | Cambiar a `migrate deploy` sin baseline | Error P3005, backend crash | Hacer baseline de migraciones primero |
 
 ### Lecciones Aprendidas
 
@@ -435,8 +436,8 @@ Siempre mostrar error al usuario, no solo en console.log.
 ### Configuración Docker
 El `Dockerfile` está configurado para:
 1. Build de la aplicación
-2. `prisma migrate deploy` - Aplicar migraciones pendientes
-3. `prisma db seed` - Ejecutar seed si hay datos nuevos
+2. `npx prisma migrate deploy` - Aplicar migraciones pendientes
+3. `npx prisma db seed` - Ejecutar seed si hay datos nuevos
 4. Iniciar la aplicación
 
 **Archivos críticos:**
@@ -454,7 +455,10 @@ Configuradas en Railway Dashboard:
 
 ⚠️ **NUNCA hardcodear secrets en código. Siempre usar `process.env.XXX`.**
 
-### Proceso de Migraciones
+### Sistema de Migraciones (CORRECTAMENTE CONFIGURADO)
+
+**Estado actual:** Baseline completado, `migrate deploy` funcional
+
 ```bash
 # 1. Desarrollo local - crear migración
 npx prisma migrate dev --name nombre_descriptivo
@@ -463,12 +467,36 @@ npx prisma migrate dev --name nombre_descriptivo
 git add prisma/migrations/
 git commit -m "migrate: descripción del cambio"
 
-# 3. Push - Railway aplica automáticamente
+# 3. Push - Railway aplica automáticamente con migrate deploy
 git push
 ```
 
-⚠️ **NUNCA modificar el Dockerfile sin validar el flujo de migraciones.**
-✅ **Siempre crear migraciones formales, nunca usar `db push` en prod.**
+**⚠️ REGLAS CRÍTICAS:**
+- ✅ **Siempre usar `migrate deploy`** - Aplica migraciones formales de forma segura
+- ❌ **NUNCA usar `db push --accept-data-loss` en producción** - Solo para emergencias
+- ❌ **NUNCA modificar el Dockerfile** sin validar el flujo de migraciones
+- ✅ **Siempre crear migraciones formales** - Archivos SQL en `prisma/migrations/`
+
+**📋 Si la BD fue creada con `db push` (sin historial):**
+Si ocurre error P3005 ("database schema is not empty"), hacer baseline:
+```sql
+-- 1. Crear tabla de migraciones manualmente en BD
+CREATE TABLE "_prisma_migrations" (
+    "id" VARCHAR(36) PRIMARY KEY,
+    "checksum" VARCHAR(64) NOT NULL,
+    "finished_at" TIMESTAMP WITH TIME ZONE,
+    "migration_name" VARCHAR(255) NOT NULL,
+    "logs" TEXT,
+    "rolled_back_at" TIMESTAMP WITH TIME ZONE,
+    "started_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "applied_steps_count" INTEGER NOT NULL DEFAULT 0
+);
+
+-- 2. Insertar migraciones existentes como "ya aplicadas"
+-- (usar checksums SHA256 de los archivos migration.sql)
+INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
+VALUES (gen_random_uuid(), 'CHECKSUM_AQUI', NOW(), '20250310013000_add_tournament_management_v2', NOW(), 1);
+```
 
 ---
 

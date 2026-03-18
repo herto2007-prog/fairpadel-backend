@@ -2,13 +2,12 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-17 22:50 - FIX COMPLETO DE TIMEZONE EN PRODUCCIÓN
-> - Schema: `TorneoDisponibilidadDia.fecha` cambiado de `@db.Date` a `@db.Timestamptz(3)`
-> - Baseline de migraciones completado en BD de producción
-> - Dockerfile: usa `migrate deploy` correctamente
-> - Migración aplicada: `20260317224647_fix_fecha_timezone_timestamptz`
-> - Backend: Todas las fechas usan `T03:00:00.000Z` para Paraguay UTC-3
-> **ESTADO:** Bug de "off-by-one-day" en Step 2 CanchasManager CORREGIDO
+> **Última actualización:** 2026-03-17 23:30 - FIXES COMPLETADOS Y DOCUMENTADOS
+> - Timezone: Schema cambiado a `@db.Timestamptz(3)`, baseline completado
+> - Bracket: Frontend soporta 8/16/32/64 parejas, fases ZONA/REPECHAJE visibles
+> - Cerrar Inscripciones: Transacciones Prisma, manejo correcto de errores
+> - Deploy: Sistema de migraciones corregido (`migrate deploy` funcional)
+> **ESTADO:** Sistema de torneos 100% alineado y documentado
 
 ---
 
@@ -1441,3 +1440,35 @@ DELETE /admin/torneos/:id/disponibilidad/dias/:diaId
 ---
 
 **Última actualización:** 2026-03-17 22:00
+
+
+---
+
+## ✅ Completado (2026-03-17) - Correcciones Finales del Sistema
+
+### Fix de Timezone en Producción
+- [x] **Schema:** `TorneoDisponibilidadDia.fecha` cambiado de `@db.Date` a `@db.Timestamptz(3)`
+- [x] **Baseline:** Tabla `_prisma_migrations` creada y poblada con historial completo
+- [x] **Dockerfile:** Corregido para usar `npx prisma migrate deploy` (no `db push`)
+- [x] **Deploy:** Backend aplica migraciones formales automáticamente en Railway
+
+### Fix de Sistema de Bracket
+- [x] **Frontend:** Soporta brackets de 8/16/32/64 parejas (fórmula escalable)
+- [x] **Fases visibles:** ZONA y RONDA AJUSTE ahora aparecen en el modal de configuración
+- [x] **UX:** Eliminados `alert()`, ahora usa `showError()` consistente
+- [x] **Semillas:** Opción "Usar semillas por ranking" funcional
+
+### Fix de Cerrar Inscripciones
+- [x] **Backend:** Transacciones Prisma (`$transaction`) para consistencia
+- [x] **Frontend:** Maneja correctamente `success: false` del backend
+- [x] **Feedback:** Mensajes de éxito al cerrar/reabrir inscripciones
+- [x] **Cierre múltiple:** Verifica `data.success` de cada respuesta individual
+
+### Fix de CanchasManager
+- [x] **Cargar canchas:** Corregida race condition entre `loadData()` y `loadTorneoInfo()`
+- [x] **Selección múltiple:** Ahora se mantienen seleccionadas al recargar (1,2,3...)
+- [x] **Interfaz:** Agregados `canchasFinales` y `horaInicioFinales` a `TorneoInfo`
+
+---
+
+**Última actualización:** 2026-03-17 23:30
