@@ -207,26 +207,29 @@ export class BracketService {
       throw new BadRequestException('Categoría no encontrada');
     }
     
-    // Obtener slots disponibles del torneo
-    const disponibilidad = await this.prisma.torneoDisponibilidadDia.findMany({
-      where: { tournamentId: categoria.tournamentId },
+    // Obtener slots disponibles (LIBRES) del torneo
+    const slotsLibres = await this.prisma.torneoSlot.findMany({
+      where: { 
+        disponibilidad: {
+          tournamentId: categoria.tournamentId,
+        },
+        estado: 'LIBRE',
+      },
+      include: {
+        disponibilidad: true,
+      },
     });
     
-    // Contar slots totales y calcular duración promedio ponderada
-    let slotsDisponibles = 0;
+    // Contar slots totales y calcular duración promedio
+    const slotsDisponibles = slotsLibres.length;
     let minutosTotalesDisponibles = 0;
     
-    for (const disp of disponibilidad) {
-      // Calcular slots por día: (horaFin - horaInicio) / duracionSlot
-      const horaInicio = new Date(`2000-01-01T${disp.horaInicio}`);
-      const horaFin = new Date(`2000-01-01T${disp.horaFin}`);
-      const duracionMinutos = disp.minutosSlot || 90;
-      
-      const minutosTotales = (horaFin.getTime() - horaInicio.getTime()) / (1000 * 60);
-      const slotsPorDia = Math.floor(minutosTotales / duracionMinutos);
-      
-      slotsDisponibles += slotsPorDia;
-      minutosTotalesDisponibles += slotsPorDia * duracionMinutos;
+    for (const slot of slotsLibres) {
+      // Calcular duración del slot
+      const horaInicio = new Date(`2000-01-01T${slot.horaInicio}`);
+      const horaFin = new Date(`2000-01-01T${slot.horaFin}`);
+      const duracionMinutos = (horaFin.getTime() - horaInicio.getTime()) / (1000 * 60);
+      minutosTotalesDisponibles += duracionMinutos;
     }
     
     const slotsFaltantes = Math.max(0, calculo.totalPartidos - slotsDisponibles);
