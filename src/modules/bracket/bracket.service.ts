@@ -228,13 +228,18 @@ export class BracketService {
     
     const slotsFaltantes = Math.max(0, calculo.totalPartidos - slotsDisponibles);
     
+    // Calcular horas necesarias (asumiendo 90 min por slot = 1.5h)
+    const duracionSlotMinutos = 90;
+    const horasNecesarias = Math.ceil((slotsFaltantes * duracionSlotMinutos) / 60);
+    const horasTotalesNecesarias = Math.ceil((calculo.totalPartidos * duracionSlotMinutos) / 60);
+    
     return {
       valido: slotsFaltantes === 0,
       slotsNecesarios: calculo.totalPartidos,
       slotsDisponibles,
       slotsFaltantes,
       mensaje: slotsFaltantes > 0 
-        ? `Faltan ${slotsFaltantes} slots. Necesitas ${calculo.totalPartidos} slots para ${totalParejas} parejas pero solo tienes ${slotsDisponibles} configurados.`
+        ? `Faltan ${slotsFaltantes} slots (${horasNecesarias}h). Necesitas ${calculo.totalPartidos} slots (${horasTotalesNecesarias}h) para ${totalParejas} parejas pero solo tienes ${slotsDisponibles} configurados. Sugerencia: agrega ${horasNecesarias}h de disponibilidad (ej: ${horasNecesarias > 8 ? '2 días de 8h o 1 día de ' + horasNecesarias + 'h' : '1 día de ' + horasNecesarias + 'h'}).`
         : undefined,
       detallePorFase: calculo.detallePorFase,
     };
