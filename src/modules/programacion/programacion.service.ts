@@ -61,6 +61,7 @@ export interface ResultadoProgramacion {
   prediccion: PrediccionRecursos;
   distribucion: DistribucionDia[];
   conflictos: Conflicto[];
+  logs?: LogAsignacion[];
 }
 
 export interface Conflicto {
@@ -70,6 +71,16 @@ export interface Conflicto {
   mensaje: string;
   sugerencia?: string;
   accion?: 'AGREGAR_DIAS' | 'EXTENDER_HORARIOS' | 'CONFIGURAR_FINALES' | 'ACEPTAR_RIESGO';
+}
+
+export interface LogAsignacion {
+  tipo: 'SALTADO' | 'ASIGNADO' | 'ADELANTADO';
+  partidoId: string;
+  categoriaNombre: string;
+  fase: string;
+  fecha: string;
+  hora: string;
+  mensaje: string;
 }
 
 /**
@@ -257,6 +268,9 @@ export class ProgramacionService {
       select: { id: true, categoryId: true },
     });
 
+    // Array para logs de asignación
+    const logs: LogAsignacion[] = [];
+
     // 8. Distribuir partidos cronológicamente
     const distribucion = await this.distribuirPartidosCronologicamente(
       partidos, 
@@ -267,20 +281,23 @@ export class ProgramacionService {
       horaInicioFinalesFinal,
       horaFinFinalesFinal,
       tournamentCategories,
+      logs,
     );
 
     // 9. Validar conflictos adicionales
     const conflictosAdicionales = this.validarConflictos(distribucion, partidos);
 
-    const resultado = {
+    const resultado: ResultadoProgramacion = {
       prediccion,
       distribucion,
       conflictos: [...conflictos, ...conflictosAdicionales],
+      logs: logs.length > 0 ? logs : undefined,
     };
     
     console.log('[Programacion] ===== CÁLCULO COMPLETADO =====');
     console.log('[Programacion] Total partidos:', resultado.prediccion.totalPartidos);
     console.log('[Programacion] Distribución días:', resultado.distribucion.length);
+    console.log('[Programacion] Logs generados:', logs.length);
     
     return resultado;
   }
@@ -534,6 +551,7 @@ export class ProgramacionService {
     horaInicioFinales?: string,
     horaFinFinales?: string,
     tournamentCategories?: { id: string; categoryId: string }[],
+    logs?: LogAsignacion[],
   ): Promise<DistribucionDia[]> {
     // 1. Agrupar slots por fecha
     const slotsPorFecha = this.agruparSlotsPorFecha(slots);
@@ -594,6 +612,7 @@ export class ProgramacionService {
         slotsPorFecha,
         slotsAsignados,
         asignaciones,
+        logs,
       );
     }
 
@@ -609,6 +628,7 @@ export class ProgramacionService {
           canchasFinales,
           horaInicioFinales,
           horaFinFinales,
+          logs,
         );
 
         if (asignacion) {
@@ -635,6 +655,7 @@ export class ProgramacionService {
     canchasPermitidas?: string[],
     horaMinima?: string,
     horaMaxima?: string,
+    logs?: LogAsignacion[],
   ): PartidoAsignado | null {
     // Recopilar info de parejas para este partido
     const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
@@ -676,10 +697,36 @@ export class ProgramacionService {
           console.log(
             `[Programacion] Slot ${slot.horaInicio} en ${fecha} saltado para partido ${partido.id}: ${verificacion.razon}`
           );
+          
+          // Agregar al array de logs para el frontend
+          if (logs) {
+            logs.push({
+              tipo: 'SALTADO',
+              partidoId: partido.id,
+              categoriaNombre: partido.categoriaNombre,
+              fase: partido.fase,
+              fecha,
+              hora: slot.horaInicio,
+              mensaje: verificacion.razon || 'Conflicto de horario',
+            });
+          }
+          
           continue;
         }
 
-        // Slot válido encontrado
+        // Slot válido encontrado - agregar log
+        if (logs) {
+          logs.push({
+            tipo: 'ASIGNADO',
+            partidoId: partido.id,
+            categoriaNombre: partido.categoriaNombre,
+            fase: partido.fase,
+            fecha,
+            hora: slot.horaInicio,
+            mensaje: `${partido.categoriaNombre} - ${partido.fase} asignado a las ${slot.horaInicio} en ${fecha}`,
+          });
+        }
+
         return {
           partidoId: partido.id,
           fecha,
@@ -758,6 +805,7 @@ export class ProgramacionService {
     slotsPorFecha: Record<string, SlotDisponible[]>,
     slotsAsignados: Set<string>,
     asignaciones: PartidoAsignado[],
+    logs?: LogAsignacion[],
   ): void {
     // Calcular capacidad de cada día
     const capacidadPorDia = new Map<string, number>();
@@ -820,6 +868,10 @@ export class ProgramacionService {
             slotsPorFecha,
             slotsAsignados,
             asignaciones,
+            undefined,
+            undefined,
+            undefined,
+            logs,
           );
 
           if (asignacion) {
@@ -843,6 +895,10 @@ export class ProgramacionService {
             slotsPorFecha,
             slotsAsignados,
             asignaciones,
+            undefined,
+            undefined,
+            undefined,
+            logs,
           );
 
           if (asignacion) {
