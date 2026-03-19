@@ -276,10 +276,12 @@ export class BracketService {
   /**
    * Conecta la navegación entre partidos
    * 
-   * FLUJO:
-   * - Zona → (para algunos) Ronda de Ajuste → Bracket
-   * - Zona → (para otros) Directo al Bracket
-   * - Ronda de Ajuste → Ganadores al Bracket, Perdedores ELIMINADOS
+   * FLUJO SISTEMA PARAGUAYO:
+   * - TODOS los ganadores de ZONA → Bracket principal
+   * - Primeros N perdedores de ZONA → Repechaje (segunda oportunidad)
+   * - Demás perdedores de ZONA → Bracket (por suerte, para completar)
+   * - Ganadores de Repechaje → Bracket
+   * - Perdedores de Repechaje → ELIMINADOS
    */
   private conectarNavegacion(
     zona: MatchNode[],
@@ -292,8 +294,7 @@ export class BracketService {
     final: MatchNode[],
     config: BracketConfigResponse,
   ): void {
-    // Los partidos de primera ronda del bracket principal
-    // Determinar cuál es la primera ronda según el tamaño del bracket
+    // Determinar primera ronda del bracket
     let primeraRonda: MatchNode[];
     if (treintaydosavos.length > 0) {
       primeraRonda = treintaydosavos;
@@ -305,75 +306,73 @@ export class BracketService {
       primeraRonda = cuartos;
     }
     
-    const totalParejas = config.totalParejas;
-    const objetivoBracket = config.tamanoBracket;
-    const parejasEnRondaAjuste = config.parejasEnRepechaje;
+    const parejasEnRepechaje = config.parejasEnRepechaje; // Número de parejas que van a repechaje
+    const partidosRepechaje = rondaAjuste.length;
     
-    // Distribución de parejas después de zona:
-    // - parejasEnRondaAjuste: juegan ronda de ajuste (mix de ganadores y perdedores de zona)
-    // - (totalParejas - parejasEnRondaAjuste): van directo al bracket
+    // PARTIDOS DE ZONA: cada uno tiene ganador y perdedor
+    // Necesitamos distribuirlos correctamente
     
-    const parejasDirectoAlBracket = totalParejas - parejasEnRondaAjuste;
+    let slotBracketIndex = 0; // Índice para asignar slots en primeraRonda
     
-    // Seleccionamos qué parejas van a ronda de ajuste
-    // Estrategia: seleccionamos las primeras N parejas de la zona (mix aleatorio)
-    // En la práctica se hace sorteo, aquí marcamos las conexiones
-    
-    // 1. CONECTAR PERDEDORES DE ZONA A RONDA DE AJUSTE (REPECHAJE)
-    // Los perdedores de los primeros partidos de zona van a repechaje
-    // Esto da una segunda oportunidad antes de ser eliminados
-    for (let i = 0; i < parejasEnRondaAjuste; i++) {
-      const partidoZonaIndex = Math.floor(i / 2);
-      const posicionEnPartido = (i % 2) + 1; // 1 o 2
-      
-      if (zona[partidoZonaIndex]) {
-        const partidoRondaAjusteIndex = Math.floor(i / 2);
-        
-        if (rondaAjuste[partidoRondaAjusteIndex]) {
-          // El PERDEDOR de zona va a ronda de ajuste (repechaje)
-          zona[partidoZonaIndex].partidoPerdedorSiguienteId = rondaAjuste[partidoRondaAjusteIndex].id;
-          zona[partidoZonaIndex].posicionEnPerdedor = posicionEnPartido;
-        }
-      }
-    }
-
-    // 2. CONECTAR GANADORES DE RONDA DE AJUSTE AL BRACKET
-    rondaAjuste.forEach((partidoAjuste, index) => {
-      const targetIndex = index % primeraRonda.length;
-      const targetPartido = primeraRonda[targetIndex];
-      
-      partidoAjuste.partidoSiguienteId = targetPartido.id;
-      partidoAjuste.posicionEnSiguiente = (index % 2) + 1;
-      
-      if (!targetPartido.tipoEntrada1) {
-        targetPartido.tipoEntrada1 = TipoEntrada.GANADOR_REPECHAJE;
-        targetPartido.partidoOrigen1Id = partidoAjuste.id;
-      } else {
-        targetPartido.tipoEntrada2 = TipoEntrada.GANADOR_REPECHAJE;
-        targetPartido.partidoOrigen2Id = partidoAjuste.id;
-      }
-    });
-
-    // 3. CONECTAR PAREJAS QUE VAN DIRECTO AL BRACKET
-    // Las que no jugaron ronda de ajuste
-    const parejasDirectas = zona.slice(Math.ceil(parejasEnRondaAjuste / 2));
-    parejasDirectas.forEach((partidoZona, index) => {
-      const targetIndex = (rondaAjuste.length + index) % primeraRonda.length;
-      const targetPartido = primeraRonda[targetIndex];
+    zona.forEach((partidoZona, zonaIndex) => {
+      // TODOS los ganadores de zona van al bracket
+      // Asignar al siguiente slot disponible en primeraRonda
+      const targetPartido = primeraRonda[slotBracketIndex % primeraRonda.length];
       
       partidoZona.partidoSiguienteId = targetPartido.id;
-      partidoZona.posicionEnSiguiente = 1;
+      partidoZona.posicionEnSiguiente = targetPartido.inscripcion1Id ? 2 : 1;
       
-      if (!targetPartido.tipoEntrada1) {
+      if (!targetPartido.inscripcion1Id) {
         targetPartido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
-        targetPartido.partidoOrigen1Id = partidoZona.id;
       } else {
         targetPartido.tipoEntrada2 = TipoEntrada.GANADOR_ZONA;
-        targetPartido.partidoOrigen2Id = partidoZona.id;
+      }
+      
+      slotBracketIndex++;
+      
+      // Los primeros N perdedores van al repechaje
+      // Los demás perdedores van al bracket (para completar)
+      if (zonaIndex < partidosRepechaje) {
+        // Este perdedor va a repechaje
+        const partidoRepechaje = rondaAjuste[zonaIndex];
+        partidoZona.partidoPerdedorSiguienteId = partidoRepechaje.id;
+        partidoZona.posicionEnPerdedor = partidoRepechaje.inscripcion1Id ? 2 : 1;
+      } else {
+        // Este perdedor va directo al bracket (por suerte)
+        const targetPartidoPerdedor = primeraRonda[slotBracketIndex % primeraRonda.length];
+        
+        // Nota: no podemos conectar directamente el perdedor porque es dinámico
+        // El perdedor se asignará cuando termine el partido
+        // Por ahora dejamos que el sistema lo maneje al cargar resultados
+        
+        // Pero sí reservamos un slot para él
+        if (!targetPartidoPerdedor.inscripcion1Id) {
+          targetPartidoPerdedor.tipoEntrada1 = TipoEntrada.PERDEDOR_ZONA;
+        } else if (!targetPartidoPerdedor.inscripcion2Id) {
+          targetPartidoPerdedor.tipoEntrada2 = TipoEntrada.PERDEDOR_ZONA;
+        }
+        
+        slotBracketIndex++;
       }
     });
 
-    // 4. CONECTAR BRACKET PRINCIPAL
+    // CONECTAR GANADORES DE REPECHAJE AL BRACKET
+    rondaAjuste.forEach((partidoRepechaje, index) => {
+      const targetPartido = primeraRonda[slotBracketIndex % primeraRonda.length];
+      
+      partidoRepechaje.partidoSiguienteId = targetPartido.id;
+      partidoRepechaje.posicionEnSiguiente = targetPartido.inscripcion1Id ? 2 : 1;
+      
+      if (!targetPartido.inscripcion1Id) {
+        targetPartido.tipoEntrada1 = TipoEntrada.GANADOR_REPECHAJE;
+      } else {
+        targetPartido.tipoEntrada2 = TipoEntrada.GANADOR_REPECHAJE;
+      }
+      
+      slotBracketIndex++;
+    });
+
+    // CONECTAR BRACKET PRINCIPAL
     this.conectarEliminacionDirecta(
       treintaydosavos,
       dieciseisavos,
