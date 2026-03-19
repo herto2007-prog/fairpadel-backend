@@ -2082,3 +2082,38 @@ ADELANTADO: 7ª Categoría - OCTAVOS ADELANTADO a 2026-03-20 19:30 (balance: 16/
 - Backend: `380e577` - fix(programacion): restaurar distribucion balanceada con optimizacion de adelantar
 
 ---
+
+
+---
+
+## 🐛 Fix (2026-03-18) - Excluir Partidos "Por definir"
+
+### Problema
+El sistema estaba programando partidos donde ambas parejas aparecían como "Por definir" (dependen de resultados de rondas previas). Estos partidos no se pueden jugar todavía.
+
+### Solución
+Filtrar solo los partidos con **AMBAS parejas definidas**:
+
+```typescript
+const partidos = todosLosPartidos.filter(p => {
+  const tienePareja1 = p.inscripcion1Id && p.pareja1;
+  const tienePareja2 = p.inscripcion2Id && p.pareja2;
+  return tienePareja1 && tienePareja2;
+});
+```
+
+### Resultado
+- Solo se programan partidos jugables (ambas parejas conocidas)
+- Partidos "Por definir vs Por definir" se excluyen automáticamente
+- Se muestra mensaje informativo: "X partidos 'Por definir' no programados (pendientes de resultados)"
+
+### Mensaje al Usuario
+```
+⚠️ 15 partidos "Por definir" no programados (pendientes de resultados)
+💡 Estos partidos se programarán automáticamente cuando las parejas estén definidas
+```
+
+### Commit
+- Backend: `49d87d9` - fix(programacion): excluir partidos Por definir vs Por definir
+
+---
