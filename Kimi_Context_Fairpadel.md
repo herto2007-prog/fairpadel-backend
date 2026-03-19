@@ -2047,3 +2047,38 @@ ASIGNADO: 5ª Categoría - SEMIS asignado a las 22:00
 4. Confirmar que no hay huecos innecesarios en la distribución
 
 ---
+
+
+---
+
+## 🐛 Fix (2026-03-18) - Restaurar Distribución Balanceada
+
+### Problema
+La optimización de "adelantar partidos" rompió la distribución proporcional, llenando los primeros días y dejando los últimos (sábado/domingo) con espacio sobrante.
+
+### Solución
+Nuevo algoritmo que combina ambas características:
+
+```
+1. Calcular objetivo proporcional por día
+   Jueves: 30 slots → objetivo 25 partidos
+   Viernes: 40 slots → objetivo 33 partidos  
+   Sábado: 50 slots → objetivo 42 partidos
+
+2. Por cada partido, seleccionar el día con más MARGEN
+   (más lejos de cumplir su objetivo)
+
+3. Dentro de ese día, adelantar partidos sin conflicto
+```
+
+### Logs Mejorados
+Ahora muestran el balance:
+```
+ASIGNADO: 5ª Categoría - CUARTOS asignado a 2026-03-20 18:00 (balance: 15/25)
+ADELANTADO: 7ª Categoría - OCTAVOS ADELANTADO a 2026-03-20 19:30 (balance: 16/25)
+```
+
+### Commit
+- Backend: `380e577` - fix(programacion): restaurar distribucion balanceada con optimizacion de adelantar
+
+---
