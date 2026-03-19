@@ -341,14 +341,13 @@ export class BracketService {
         // Este perdedor va directo al bracket (por suerte)
         const targetPartidoPerdedor = primeraRonda[slotBracketIndex % primeraRonda.length];
         
-        // Nota: no podemos conectar directamente el perdedor porque es dinámico
-        // El perdedor se asignará cuando termine el partido
-        // Por ahora dejamos que el sistema lo maneje al cargar resultados
+        // Conectar el perdedor directamente al bracket
+        partidoZona.partidoPerdedorSiguienteId = targetPartidoPerdedor.id;
+        partidoZona.posicionEnPerdedor = targetPartidoPerdedor.inscripcion1Id ? 2 : 1;
         
-        // Pero sí reservamos un slot para él
         if (!targetPartidoPerdedor.inscripcion1Id) {
           targetPartidoPerdedor.tipoEntrada1 = TipoEntrada.PERDEDOR_ZONA;
-        } else if (!targetPartidoPerdedor.inscripcion2Id) {
+        } else {
           targetPartidoPerdedor.tipoEntrada2 = TipoEntrada.PERDEDOR_ZONA;
         }
         

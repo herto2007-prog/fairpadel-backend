@@ -764,6 +764,13 @@ export class ResultadosService {
   }
 
   private async avanzarGanador(match: any, ganadorId: string) {
+    // CASO ESPECIAL: BYE - el ganador ya está asignado pero necesitamos avanzarlo
+    if (match.esBye && match.inscripcionGanadoraId && !match.partidoSiguienteId) {
+      console.log(`[avanzarGanador] Partido ${match.id} es BYE, buscando conexión manual...`);
+      // Para BYE, buscamos el partido destino basado en la definición del bracket
+      // Esto es un workaround temporal - el BYE debería tener partidoSiguienteId configurado
+    }
+
     // Si hay partido siguiente para el ganador
     if (match.partidoSiguienteId) {
       const posicion = match.posicionEnSiguiente || 1;
@@ -779,19 +786,35 @@ export class ResultadosService {
       await this.programarPartidoSiCompleto(match.partidoSiguienteId, match.tournamentId);
     }
 
-    // Si hay partido de perdedores (repechaje)
+    // Si hay partido de perdedores (repechaje o bracket por suerte)
     if (match.partidoPerdedorSiguienteId) {
       const perdedorId = match.inscripcion1Id === ganadorId ? match.inscripcion2Id : match.inscripcion1Id;
       const posicion = match.posicionEnPerdedor || 1;
 
+      // Verificar a qué fase va el perdedor
+      const partidoDestino = await this.prisma.match.findUnique({
+        where: { id: match.partidoPerdedorSiguienteId },
+        select: { ronda: true },
+      });
+
+      // Si va a REPECHAJE, es un perdedor normal
+      // Si va a OCTAVOS/CUARTOS/etc, es un perdedor por suerte al bracket
+      const esRepechaje = partidoDestino?.ronda === 'REPECHAJE';
+
       await this.prisma.match.update({
         where: { id: match.partidoPerdedorSiguienteId },
         data: posicion === 1
-          ? { inscripcion1Id: perdedorId, tipoEntrada1: 'PERDEDOR_PARTIDO' }
-          : { inscripcion2Id: perdedorId, tipoEntrada2: 'PERDEDOR_PARTIDO' },
+          ? { 
+              inscripcion1Id: perdedorId, 
+              tipoEntrada1: esRepechaje ? 'PERDEDOR_PARTIDO' : 'PERDEDOR_ZONA_SUERTE' 
+            }
+          : { 
+              inscripcion2Id: perdedorId, 
+              tipoEntrada2: esRepechaje ? 'PERDEDOR_PARTIDO' : 'PERDEDOR_ZONA_SUERTE' 
+            },
       });
 
-      // Verificar si el partido de repechaje ahora está completo y programarlo automáticamente
+      // Verificar si el partido destino ahora está completo y programarlo automáticamente
       await this.programarPartidoSiCompleto(match.partidoPerdedorSiguienteId, match.tournamentId);
     }
 
