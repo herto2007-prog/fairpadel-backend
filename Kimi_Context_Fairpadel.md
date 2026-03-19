@@ -1880,3 +1880,97 @@ verificarConflictoPareja(partido, fecha, hora, asignaciones): {
 - Backend: `e70fd09` - feat(programacion): agregar mensajes informativos de descanso reglamentario
 
 ---
+
+
+---
+
+## ✅ Feature (2026-03-18) - Logs de Asignación Visibles en Frontend
+
+### Resumen
+Ahora cuando se calcula la programación, se muestran logs visibles en el frontend sobre qué slots se saltaron y por qué.
+
+### Backend - Logs Generados
+```typescript
+interface LogAsignacion {
+  tipo: 'SALTADO' | 'ASIGNADO';
+  partidoId: string;
+  categoriaNombre: string;
+  fase: string;
+  fecha: string;
+  hora: string;
+  mensaje: string;
+}
+
+// Ejemplo de log SALTADO
+{
+  tipo: 'SALTADO',
+  categoriaNombre: '5ª Categoría',
+  fase: 'SEMIS',
+  fecha: '2026-03-22',
+  hora: '21:00',
+  mensaje: 'Descanso reglamentario: jugó a las 18:00, puede jugar desde las 22:00 (4h de descanso)'
+}
+```
+
+### Frontend - UI de Logs
+```
+┌─ Logs de Asignación [Ver ▼] ─────────────────┐
+│                                                │
+│  SALTADO: 5ª Categoría - SEMIS                │
+│  Descanso reglamentario: jugó a las 18:00...  │
+│                                                │
+│  ASIGNADO: 6ª Categoría - CUARTOS             │
+│  6ª Categoría - CUARTOS asignado a las 21:00  │
+│                                                │
+└────────────────────────────────────────────────┘
+```
+
+**Colores:**
+- 🟡 `SALTADO` - Amarillo (advertencia)
+- 🟢 `ASIGNADO` - Verde (éxito)
+- 🔵 `ADELANTADO` - Azul (info)
+
+### Commits
+- Backend: `138fdd6` - feat(programacion): mostrar logs de asignacion en frontend
+- Frontend: `b01ab95` - feat(programacion): mostrar logs de asignacion en UI
+
+---
+
+## 💡 Propuesta: Optimización "Adelantar Partidos"
+
+### Problema Actual
+Cuando una pareja tiene conflicto de descanso en un slot (ej: 21:00), el sistema **salta ese slot** y lo deja vacío, buscando el siguiente slot disponible (ej: 22:00).
+
+Esto puede dejar **huecos** en la programación.
+
+### Propuesta de Optimización
+En lugar de saltar el slot, el sistema debería:
+
+```
+Ejemplo:
+- Slot 21:00 libre
+- Partido A no puede jugar (descanso hasta 22:00)
+- Partido B SÍ puede jugar (no tiene conflicto)
+
+LÓGICA ACTUAL:
+  Slot 21:00 → Vacío (salta)
+  Slot 22:00 → Partido A
+  Slot 23:00 → Partido B
+
+LÓGICA OPTIMIZADA:
+  Slot 21:00 → Partido B (adelantado)
+  Slot 22:00 → Partido A (esperó su descanso)
+  Slot 23:00 → Siguiente partido
+```
+
+**Ventajas:**
+- Menos slots vacíos
+- Mejor aprovechamiento de canchas
+- Partidos más compactos
+
+**Complejidad:** Media
+- Requiere reordenar partidos pendientes
+- Mantiene cola de "partidos listos para jugar"
+
+### ¿Implementamos esta optimización?
+
