@@ -663,8 +663,19 @@ export class ProgramacionService {
         // Verificar si el slot ya está asignado
         if (slotsAsignados.has(slotKey)) continue;
 
-        // Verificar conflictos de pareja
-        if (this.tieneConflictoPareja(parejaIds, fecha, slot.horaInicio, asignacionesExistentes)) {
+        // Verificar conflictos de pareja con mensaje informativo
+        const verificacion = this.verificarConflictoPareja(
+          partido,
+          fecha,
+          slot.horaInicio,
+          asignacionesExistentes,
+        );
+
+        if (verificacion.conflicto) {
+          // Log informativo sobre por qué se saltó este slot
+          console.log(
+            `[Programacion] Slot ${slot.horaInicio} en ${fecha} saltado para partido ${partido.id}: ${verificacion.razon}`
+          );
           continue;
         }
 
@@ -848,15 +859,19 @@ export class ProgramacionService {
    * Verifica si hay conflicto de pareja
    * Conflictos:
    * - Misma pareja ya juega ese día (máx 2 partidos por día)
-   * - Misma pareja juega con <4h de descanso
+   * - Misma pareja juega con <4h de descanso (regla FIP)
+   * 
+   * Retorna: { conflicto: boolean, razon?: string }
    */
-  private tieneConflictoPareja(
-    parejaIds: (string | undefined)[],
+  private verificarConflictoPareja(
+    partido: PartidoProgramar,
     fecha: string,
     horaInicio: string,
     asignacionesExistentes: PartidoAsignado[],
-  ): boolean {
+  ): { conflicto: boolean; razon?: string } {
+    const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
     const horaSlot = this.parseHora(horaInicio);
+    const horaSlotStr = horaInicio;
 
     for (const parejaId of parejaIds) {
       if (!parejaId) continue;
@@ -868,21 +883,54 @@ export class ProgramacionService {
 
       // Máximo 2 partidos por día por pareja
       if (partidosMismaFecha.length >= 2) {
-        return true;
+        return {
+          conflicto: true,
+          razon: `Máximo 2 partidos por día (${partidosMismaFecha.length} ya asignados)`,
+        };
       }
 
-      // Verificar 4h de descanso
-      const conflictoHorario = partidosMismaFecha.some(p => {
+      // Verificar 4h de descanso (regla FIP)
+      for (const p of partidosMismaFecha) {
         const horaPartido = this.parseHora(p.horaInicio);
-        return Math.abs(horaSlot - horaPartido) < 4;
-      });
-
-      if (conflictoHorario) {
-        return true;
+        const diferenciaHoras = Math.abs(horaSlot - horaPartido);
+        
+        if (diferenciaHoras < 4) {
+          const horaPermitida = this.formatHora(horaPartido + 4);
+          return {
+            conflicto: true,
+            razon: `Descanso reglamentario: jugó a las ${p.horaInicio}, puede jugar desde las ${horaPermitida} (4h de descanso)`,
+          };
+        }
       }
     }
 
-    return false;
+    return { conflicto: false };
+  }
+
+  /**
+   * Versión simple para verificar rápidamente (sin mensajes)
+   */
+  private tieneConflictoPareja(
+    parejaIds: (string | undefined)[],
+    fecha: string,
+    horaInicio: string,
+    asignacionesExistentes: PartidoAsignado[],
+  ): boolean {
+    const resultado = this.verificarConflictoPareja(
+      { 
+        id: '', 
+        fase: '', 
+        orden: 0, 
+        categoriaId: '', 
+        categoriaNombre: '',
+        inscripcion1Id: parejaIds[0],
+        inscripcion2Id: parejaIds[1],
+      } as PartidoProgramar,
+      fecha,
+      horaInicio,
+      asignacionesExistentes,
+    );
+    return resultado.conflicto;
   }
 
   /**
@@ -1135,6 +1183,12 @@ export class ProgramacionService {
   private parseHora(hora: string): number {
     const [h, m] = hora.split(':').map(Number);
     return h + m / 60;
+  }
+
+  private formatHora(decimal: number): string {
+    const h = Math.floor(decimal);
+    const m = Math.round((decimal - h) * 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
 
   private getDiaSemana(fecha: string): string {
