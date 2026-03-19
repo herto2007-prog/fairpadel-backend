@@ -54,6 +54,24 @@ export class ResultadosService {
       },
     });
 
+    // Cargar datos completos del match para avance (incluye IDs de navegación)
+    const matchCompleto = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true,
+        tournamentId: true,
+        categoryId: true,
+        partidoSiguienteId: true,
+        partidoPerdedorSiguienteId: true,
+        posicionEnSiguiente: true,
+        posicionEnPerdedor: true,
+        inscripcion1Id: true,
+        inscripcion2Id: true,
+        esBye: true,
+        ronda: true,
+      },
+    });
+
     if (!match) {
       throw new NotFoundException('Partido no encontrado');
     }
@@ -98,7 +116,10 @@ export class ResultadosService {
     });
 
     // Avanzar ganador al siguiente partido si existe
-    await this.avanzarGanador(match, ganadorId);
+    // Usar matchCompleto que tiene los IDs de navegación cargados
+    if (matchCompleto) {
+      await this.avanzarGanador(matchCompleto, ganadorId);
+    }
 
     return {
       success: true,
@@ -130,6 +151,24 @@ export class ResultadosService {
     if (!match) {
       throw new NotFoundException('Partido no encontrado');
     }
+
+    // Cargar datos completos del match para avance
+    const matchCompleto = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true,
+        tournamentId: true,
+        categoryId: true,
+        partidoSiguienteId: true,
+        partidoPerdedorSiguienteId: true,
+        posicionEnSiguiente: true,
+        posicionEnPerdedor: true,
+        inscripcion1Id: true,
+        inscripcion2Id: true,
+        esBye: true,
+        ronda: true,
+      },
+    });
 
     // Validar que haya inscripciones
     if (!match.esBye && (!match.inscripcion1Id || !match.inscripcion2Id)) {
@@ -192,7 +231,9 @@ export class ResultadosService {
     });
 
     // Avanzar ganador al siguiente partido si existe
-    await this.avanzarGanador(match, ganadorId);
+    if (matchCompleto) {
+      await this.avanzarGanador(matchCompleto, ganadorId);
+    }
 
     // Mensaje según tipo
     const mensajes = {
@@ -550,6 +591,24 @@ export class ResultadosService {
       throw new NotFoundException('Partido no encontrado');
     }
 
+    // Cargar datos completos para avance
+    const matchCompleto = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true,
+        tournamentId: true,
+        categoryId: true,
+        partidoSiguienteId: true,
+        partidoPerdedorSiguienteId: true,
+        posicionEnSiguiente: true,
+        posicionEnPerdedor: true,
+        inscripcion1Id: true,
+        inscripcion2Id: true,
+        esBye: true,
+        ronda: true,
+      },
+    });
+
     if (match.estado !== MatchStatus.EN_JUEGO) {
       throw new BadRequestException('El partido no está en juego');
     }
@@ -604,7 +663,9 @@ export class ResultadosService {
     });
 
     // Avanzar ganador
-    await this.avanzarGanador(match, ganadorId);
+    if (matchCompleto) {
+      await this.avanzarGanador(matchCompleto, ganadorId);
+    }
 
     console.log('[finalizarPartido] Partido actualizado:', {
       id: matchActualizado.id,
