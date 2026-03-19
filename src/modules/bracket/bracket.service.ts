@@ -190,6 +190,7 @@ export class BracketService {
     slotsNecesarios: number;
     slotsDisponibles: number;
     slotsFaltantes: number;
+    duracionPromedioMinutos: number;
     mensaje?: string;
     detallePorFase: { fase: string; partidos: number }[];
   }> {
@@ -211,9 +212,10 @@ export class BracketService {
       where: { tournamentId: categoria.tournamentId },
     });
     
-    // Contar slots totales (asumiendo que cada disponibilidad tiene slots configurados)
-    // Esto es una simplificación - en realidad deberíamos calcular los slots por duración
+    // Contar slots totales y calcular duración promedio ponderada
     let slotsDisponibles = 0;
+    let minutosTotalesDisponibles = 0;
+    
     for (const disp of disponibilidad) {
       // Calcular slots por día: (horaFin - horaInicio) / duracionSlot
       const horaInicio = new Date(`2000-01-01T${disp.horaInicio}`);
@@ -224,22 +226,29 @@ export class BracketService {
       const slotsPorDia = Math.floor(minutosTotales / duracionMinutos);
       
       slotsDisponibles += slotsPorDia;
+      minutosTotalesDisponibles += slotsPorDia * duracionMinutos;
     }
     
     const slotsFaltantes = Math.max(0, calculo.totalPartidos - slotsDisponibles);
     
-    // Calcular horas necesarias (asumiendo 90 min por slot = 1.5h)
-    const duracionSlotMinutos = 90;
-    const horasNecesarias = Math.ceil((slotsFaltantes * duracionSlotMinutos) / 60);
-    const horasTotalesNecesarias = Math.ceil((calculo.totalPartidos * duracionSlotMinutos) / 60);
+    // Calcular duración promedio real de los slots configurados
+    const duracionPromedioMinutos = slotsDisponibles > 0 
+      ? Math.round(minutosTotalesDisponibles / slotsDisponibles)
+      : 90;
+    
+    // Calcular horas necesarias usando la duración real
+    const horasNecesarias = Math.ceil((slotsFaltantes * duracionPromedioMinutos) / 60);
+    const horasTotalesNecesarias = Math.ceil((calculo.totalPartidos * duracionPromedioMinutos) / 60);
+    const horasTotalesDisponibles = Math.ceil(minutosTotalesDisponibles / 60);
     
     return {
       valido: slotsFaltantes === 0,
       slotsNecesarios: calculo.totalPartidos,
       slotsDisponibles,
       slotsFaltantes,
+      duracionPromedioMinutos,
       mensaje: slotsFaltantes > 0 
-        ? `Faltan ${slotsFaltantes} slots (${horasNecesarias}h). Necesitas ${calculo.totalPartidos} slots (${horasTotalesNecesarias}h) para ${totalParejas} parejas pero solo tienes ${slotsDisponibles} configurados. Sugerencia: agrega ${horasNecesarias}h de disponibilidad (ej: ${horasNecesarias > 8 ? '2 días de 8h o 1 día de ' + horasNecesarias + 'h' : '1 día de ' + horasNecesarias + 'h'}).`
+        ? `Faltan ${slotsFaltantes} slots (${horasNecesarias}h). Necesitas ${calculo.totalPartidos} slots (${horasTotalesNecesarias}h) para ${totalParejas} parejas pero tienes ${slotsDisponibles} slots (${horasTotalesDisponibles}h) configurados con duración promedio de ${duracionPromedioMinutos}min. Sugerencia: agrega ${horasNecesarias}h más (ej: ${horasNecesarias > 8 ? '2 días de 8h o 1 día de ' + horasNecesarias + 'h' : '1 día de ' + horasNecesarias + 'h'}).`
         : undefined,
       detallePorFase: calculo.detallePorFase,
     };
