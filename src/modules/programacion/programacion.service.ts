@@ -65,8 +65,8 @@ export interface ResultadoProgramacion {
 }
 
 export interface Conflicto {
-  tipo: 'MISMA_PAREJA' | 'CANCHA_OCUPADA' | 'SIN_DISPONIBILIDAD' | 'SIN_FECHA_FINALES' | 'ADVERTENCIA';
-  severidad: 'BLOQUEANTE' | 'ADVERTENCIA';
+  tipo: 'MISMA_PAREJA' | 'CANCHA_OCUPADA' | 'SIN_DISPONIBILIDAD' | 'SIN_FECHA_FINALES' | 'ADVERTENCIA' | 'INFO';
+  severidad: 'BLOQUEANTE' | 'ADVERTENCIA' | 'INFO';
   partidoId: string;
   mensaje: string;
   sugerencia?: string;
@@ -156,9 +156,26 @@ export class ProgramacionService {
     }
 
     // 2. Obtener partidos de las categorías sorteadas
-    const partidos = await this.obtenerPartidos(tournamentId, categoriasSorteadas);
+    const todosLosPartidos = await this.obtenerPartidos(tournamentId, categoriasSorteadas);
+    
+    // FILTRAR: Solo programar partidos con AMBAS parejas definidas
+    // Los partidos "Por definir" vs "Por definir" no se pueden jugar todavía
+    const partidos = todosLosPartidos.filter(p => {
+      const tienePareja1 = p.inscripcion1Id && p.pareja1;
+      const tienePareja2 = p.inscripcion2Id && p.pareja2;
+      return tienePareja1 && tienePareja2;
+    });
+    
+    const partidosPorDefinir = todosLosPartidos.length - partidos.length;
+    if (partidosPorDefinir > 0) {
+      console.log(`[Programacion] ${partidosPorDefinir} partidos excluidos (Por definir vs Por definir)`);
+    }
     
     if (partidos.length === 0) {
+      const mensaje = partidosPorDefinir > 0 
+        ? `Hay ${partidosPorDefinir} partidos "Por definir" (pendientes de resultados previos)`
+        : 'Las categorías seleccionadas no tienen partidos';
+      
       return {
         prediccion: {
           totalPartidos: 0,
@@ -166,15 +183,19 @@ export class ProgramacionService {
           slotsDisponibles: 0,
           deficit: 0,
           suficiente: false,
-          sugerencias: ['Las categorías seleccionadas no tienen partidos'],
+          sugerencias: partidosPorDefinir > 0 
+            ? [`${partidosPorDefinir} partidos esperan resultados de rondas previas`]
+            : ['Las categorías seleccionadas no tienen partidos'],
         },
         distribucion: [],
         conflictos: [{
           tipo: 'SIN_DISPONIBILIDAD',
           severidad: 'BLOQUEANTE',
           partidoId: '',
-          mensaje: 'No hay partidos para programar en las categorías seleccionadas',
-          sugerencia: 'Verifica que las categorías tengan fixture generado',
+          mensaje,
+          sugerencia: partidosPorDefinir > 0 
+            ? 'Juega las rondas previas primero para definir las parejas'
+            : 'Verifica que las categorías tengan fixture generado',
           accion: 'AGREGAR_DIAS',
         }],
       };
@@ -287,10 +308,22 @@ export class ProgramacionService {
     // 9. Validar conflictos adicionales
     const conflictosAdicionales = this.validarConflictos(distribucion, partidos);
 
+    // Agregar info sobre partidos por definir como advertencia informativa
+    const conflictosFinales = [...conflictos, ...conflictosAdicionales];
+    if (partidosPorDefinir > 0) {
+      conflictosFinales.push({
+        tipo: 'INFO',
+        severidad: 'ADVERTENCIA',
+        partidoId: '',
+        mensaje: `${partidosPorDefinir} partidos "Por definir" no programados (pendientes de resultados)`,
+        sugerencia: 'Estos partidos se programarán automáticamente cuando las parejas estén definidas',
+      });
+    }
+    
     const resultado: ResultadoProgramacion = {
       prediccion,
       distribucion,
-      conflictos: [...conflictos, ...conflictosAdicionales],
+      conflictos: conflictosFinales,
       logs: logs.length > 0 ? logs : undefined,
     };
     
