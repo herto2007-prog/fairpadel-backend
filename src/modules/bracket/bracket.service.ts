@@ -319,8 +319,9 @@ export class BracketService {
     // Estrategia: seleccionamos las primeras N parejas de la zona (mix aleatorio)
     // En la práctica se hace sorteo, aquí marcamos las conexiones
     
-    // 1. CONECTAR PAREJAS A RONDA DE AJUSTE
-    // Las primeras 'parejasEnRondaAjuste' parejas de la zona van a ronda de ajuste
+    // 1. CONECTAR PERDEDORES DE ZONA A RONDA DE AJUSTE (REPECHAJE)
+    // Los perdedores de los primeros partidos de zona van a repechaje
+    // Esto da una segunda oportunidad antes de ser eliminados
     for (let i = 0; i < parejasEnRondaAjuste; i++) {
       const partidoZonaIndex = Math.floor(i / 2);
       const posicionEnPartido = (i % 2) + 1; // 1 o 2
@@ -329,9 +330,9 @@ export class BracketService {
         const partidoRondaAjusteIndex = Math.floor(i / 2);
         
         if (rondaAjuste[partidoRondaAjusteIndex]) {
-          // El ganador de zona va a ronda de ajuste
-          zona[partidoZonaIndex].partidoSiguienteId = rondaAjuste[partidoRondaAjusteIndex].id;
-          zona[partidoZonaIndex].posicionEnSiguiente = posicionEnPartido;
+          // El PERDEDOR de zona va a ronda de ajuste (repechaje)
+          zona[partidoZonaIndex].partidoPerdedorSiguienteId = rondaAjuste[partidoRondaAjusteIndex].id;
+          zona[partidoZonaIndex].posicionEnPerdedor = posicionEnPartido;
         }
       }
     }
