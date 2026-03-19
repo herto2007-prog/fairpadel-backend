@@ -1818,3 +1818,65 @@ ALTER TABLE "tournaments" ADD COLUMN IF NOT EXISTS "hora_fin_finales" TEXT;
 ---
 
 **Última actualización:** 2026-03-18 - Sistema con distribución balanceada y hora fin configurable
+
+
+---
+
+## ✅ Fix (2026-03-18) - Orden Correcto de Finales
+
+### Corrección
+**Antes (incorrecto):** 5ª → 6ª → 7ª → 8ª → 1ª → 2ª → 3ª → 4ª  
+**Después (correcto):** 8ª → 7ª → 6ª → 5ª → 4ª → 3ª → 2ª → 1ª
+
+### Lógica
+- **8ª** = Categoría más baja (va primero, menos espectadores)
+- **1ª** = Categoría más alta (va última, el gran show)
+
+### Resultado
+```
+10:00 - SEMIS 8ª Categoría
+10:30 - SEMIS 7ª Categoría
+11:00 - SEMIS 6ª Categoría
+...
+15:00 - SEMIS 1ª Categoría (lo mejor del día D)
+16:00 - FINAL 1ª Categoría (el gran cierre)
+```
+
+### Commit
+- Backend: `7a13879` - fix(programacion): corregir orden de finales 8va → 1ra
+
+---
+
+
+---
+
+## ✅ Feature (2026-03-18) - Mensajes Informativos de Descanso Reglamentario
+
+### Nuevo Comportamiento
+Cuando el sistema salta un slot por la regla de 4h de descanso, ahora muestra logs informativos:
+
+```
+[Programacion] Slot 21:00 en 2026-03-22 saltado para partido xxx: 
+  Descanso reglamentario: jugó a las 18:00, puede jugar desde las 22:00 (4h de descanso)
+```
+
+### Implementación
+```typescript
+// Nuevo método que retorna razón del conflicto
+verificarConflictoPareja(partido, fecha, hora, asignaciones): {
+  conflicto: boolean;
+  razon?: string;  // Ej: "Descanso reglamentario: jugó a las 18:00, puede jugar desde las 22:00"
+}
+```
+
+### Tipos de Conflictos Detectados
+1. **Máximo 2 partidos por día**
+   - `Máximo 2 partidos por día (2 ya asignados)`
+
+2. **Descanso reglamentario (4h)**
+   - `Descanso reglamentario: jugó a las 18:00, puede jugar desde las 22:00 (4h de descanso)`
+
+### Commit
+- Backend: `e70fd09` - feat(programacion): agregar mensajes informativos de descanso reglamentario
+
+---
