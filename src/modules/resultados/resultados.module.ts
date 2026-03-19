@@ -3,9 +3,10 @@ import { ResultadosService } from './resultados.service';
 import { ResultadosController } from './resultados.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { CommonModule } from '../../common/common.module';
+import { ProgramacionModule } from '../programacion/programacion.module';
 
 @Module({
-  imports: [PrismaModule, CommonModule],
+  imports: [PrismaModule, CommonModule, ProgramacionModule],
   controllers: [ResultadosController],
   providers: [ResultadosService],
   exports: [ResultadosService],

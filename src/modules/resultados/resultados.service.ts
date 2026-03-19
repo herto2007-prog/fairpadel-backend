@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
+import { ProgramacionService } from '../programacion/programacion.service';
 import { FormatoSet3, MatchStatus, Prisma } from '@prisma/client';
 import { RegistrarResultadoDto, RegistrarPuntoDto, IniciarPartidoDto, FinalizarPartidoDto } from './dto/registrar-resultado.dto';
 import { ResultadoEspecialDto, TipoResultadoEspecial } from './dto/resultado-especial.dto';
@@ -12,6 +13,7 @@ export class ResultadosService {
   constructor(
     private prisma: PrismaService,
     private dateService: DateService,
+    private programacionService: ProgramacionService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -709,6 +711,9 @@ export class ResultadosService {
           ? { inscripcion1Id: ganadorId, tipoEntrada1: 'GANADOR_PARTIDO' }
           : { inscripcion2Id: ganadorId, tipoEntrada2: 'GANADOR_PARTIDO' },
       });
+
+      // Verificar si el partido siguiente ahora está completo y programarlo automáticamente
+      await this.programarPartidoSiCompleto(match.partidoSiguienteId, match.tournamentId);
     }
 
     // Si hay partido de perdedores (repechaje)
@@ -722,6 +727,31 @@ export class ResultadosService {
           ? { inscripcion1Id: perdedorId, tipoEntrada1: 'PERDEDOR_PARTIDO' }
           : { inscripcion2Id: perdedorId, tipoEntrada2: 'PERDEDOR_PARTIDO' },
       });
+
+      // Verificar si el partido de repechaje ahora está completo y programarlo automáticamente
+      await this.programarPartidoSiCompleto(match.partidoPerdedorSiguienteId, match.tournamentId);
+    }
+  }
+
+  /**
+   * Verifica si un partido tiene ambas parejas definidas y lo programa automáticamente
+   */
+  private async programarPartidoSiCompleto(matchId: string, tournamentId: string): Promise<void> {
+    try {
+      const resultado = await this.programacionService.programarPartidoAutomatico(tournamentId, matchId);
+      
+      if (resultado.success) {
+        console.log(`[avanzarGanador] Partido ${matchId} programado automáticamente:`, {
+          fecha: resultado.asignacion?.fecha,
+          hora: resultado.asignacion?.horaInicio,
+          cancha: resultado.asignacion?.canchaNombre,
+        });
+      } else {
+        console.log(`[avanzarGanador] No se pudo programar partido ${matchId}:`, resultado.message);
+      }
+    } catch (error) {
+      // No lanzar error para no interrumpir el flujo principal
+      console.error(`[avanzarGanador] Error programando partido ${matchId}:`, error);
     }
   }
 

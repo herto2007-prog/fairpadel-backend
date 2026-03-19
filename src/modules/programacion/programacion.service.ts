@@ -1357,6 +1357,153 @@ export class ProgramacionService {
   }
 
   /**
+   * Programa automáticamente un partido específico buscando el mejor slot disponible
+   * Usado cuando un partido de fase siguiente se completa (tiene ambas parejas)
+   */
+  async programarPartidoAutomatico(
+    tournamentId: string,
+    matchId: string,
+  ): Promise<{ success: boolean; asignacion?: PartidoAsignado; message?: string }> {
+    // Obtener el partido básico
+    const partido = await this.prisma.match.findUnique({
+      where: { id: matchId },
+    });
+
+    if (!partido) {
+      return { success: false, message: 'Partido no encontrado' };
+    }
+
+    // Solo programar si tiene ambas parejas definidas
+    if (!partido.inscripcion1Id || !partido.inscripcion2Id) {
+      return { success: false, message: 'Partido no tiene ambas parejas definidas' };
+    }
+
+    // Si ya está programado, no hacer nada
+    if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
+      return { success: false, message: 'Partido ya está programado' };
+    }
+
+    // Obtener torneo para configuración de finales
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: {
+        fechaFinales: true,
+        horaInicioFinales: true,
+        horaFinFinales: true,
+        canchasFinales: true,
+      },
+    });
+
+    // Obtener slots disponibles para este torneo
+    const slots = await this.obtenerSlotsDisponibles(tournamentId);
+    if (slots.length === 0) {
+      return { success: false, message: 'No hay slots disponibles' };
+    }
+
+    // Determinar restricciones según la fase
+    const esFaseFinal = ['SEMIS', 'FINAL'].includes(partido.ronda);
+    const fechaFinales = torneo?.fechaFinales 
+      ? this.dateService.getDateOnly(torneo.fechaFinales)
+      : null;
+    
+    // Filtrar slots según la fase
+    let slotsCandidatos = slots;
+    
+    if (esFaseFinal && fechaFinales) {
+      // Finales solo en fechaFinales
+      slotsCandidatos = slots.filter(s => s.fecha === fechaFinales);
+      
+      // Aplicar restricciones de horario si existen
+      if (torneo?.horaInicioFinales) {
+        slotsCandidatos = slotsCandidatos.filter(s => s.horaInicio >= torneo.horaInicioFinales!);
+      }
+      if (torneo?.horaFinFinales) {
+        slotsCandidatos = slotsCandidatos.filter(s => s.horaInicio <= torneo.horaFinFinales!);
+      }
+      
+      // Filtrar por canchas designadas si existen
+      const canchasFinales = torneo?.canchasFinales as string[];
+      if (canchasFinales?.length > 0) {
+        slotsCandidatos = slotsCandidatos.filter(s => canchasFinales.includes(s.torneoCanchaId));
+      }
+    } else {
+      // Fases no-finales: evitar fechaFinales si está definida
+      if (fechaFinales) {
+        slotsCandidatos = slots.filter(s => s.fecha !== fechaFinales);
+      }
+    }
+
+    if (slotsCandidatos.length === 0) {
+      return { success: false, message: 'No hay slots disponibles para esta fase' };
+    }
+
+    // Obtener partidos ya programados para verificar conflictos
+    const partidosProgramados = await this.obtenerPartidosProgramados(tournamentId);
+    
+    // Buscar el mejor slot (el primero disponible sin conflicto de pareja)
+    for (const slot of slotsCandidatos) {
+      // Verificar si el slot está ocupado
+      const slotOcupado = partidosProgramados.some(p => 
+        p.fecha === slot.fecha &&
+        p.horaInicio === slot.horaInicio &&
+        p.torneoCanchaId === slot.torneoCanchaId,
+      );
+      
+      if (slotOcupado) continue;
+
+      // Verificar conflicto de pareja (4h de descanso)
+      const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
+      const hayConflicto = this.tieneConflictoPareja(
+        parejaIds,
+        slot.fecha,
+        slot.horaInicio,
+        partidosProgramados,
+      );
+      
+      if (hayConflicto) continue;
+
+      // ¡Slot ideal encontrado! Asignarlo
+      await this.prisma.match.update({
+        where: { id: matchId },
+        data: {
+          torneoCanchaId: slot.torneoCanchaId,
+          fechaProgramada: slot.fecha,
+          horaProgramada: slot.horaInicio,
+        },
+      });
+
+      // Marcar slot como ocupado
+      await this.ocuparSlot(slot.torneoCanchaId, slot.fecha, slot.horaInicio);
+
+      const asignacion: PartidoAsignado = {
+        partidoId: matchId,
+        fecha: slot.fecha,
+        horaInicio: slot.horaInicio,
+        horaFin: this.calcularHoraFin(slot.horaInicio),
+        torneoCanchaId: slot.torneoCanchaId,
+        sedeNombre: slot.sedeNombre,
+        canchaNombre: slot.canchaNombre,
+        fase: partido.ronda,
+        categoriaNombre: 'Categoría', // Simplificado
+        pareja1: partido.inscripcion1Id || undefined,
+        pareja2: partido.inscripcion2Id || undefined,
+      };
+
+      return { success: true, asignacion, message: 'Partido programado automáticamente' };
+    }
+
+    return { success: false, message: 'No se encontró slot disponible sin conflictos' };
+  }
+
+  private calcularHoraFin(horaInicio: string): string {
+    const [h, m] = horaInicio.split(':').map(Number);
+    const totalMinutos = h * 60 + m + 90; // 90 min = 1.5h
+    const horaFin = Math.floor(totalMinutos / 60);
+    const minutosFin = totalMinutos % 60;
+    return `${horaFin.toString().padStart(2, '0')}:${minutosFin.toString().padStart(2, '0')}`;
+  }
+
+  /**
    * Obtiene las canchas disponibles para un torneo
    */
   async getCanchasDisponibles(tournamentId: string) {
@@ -1443,6 +1590,36 @@ export class ProgramacionService {
       },
       data: { estado: 'LIBRE' },
     });
+  }
+
+  /**
+   * Obtiene todos los partidos programados de un torneo
+   */
+  private async obtenerPartidosProgramados(tournamentId: string): Promise<PartidoAsignado[]> {
+    const partidos = await this.prisma.match.findMany({
+      where: {
+        fixtureVersion: {
+          tournamentId,
+        },
+        torneoCanchaId: { not: null },
+        fechaProgramada: { not: null },
+        horaProgramada: { not: null },
+      },
+    });
+
+    return partidos.map(p => ({
+      partidoId: p.id,
+      fecha: this.dateService.getDateOnly(p.fechaProgramada as Date),
+      horaInicio: p.horaProgramada as string,
+      horaFin: this.calcularHoraFin(p.horaProgramada as string),
+      torneoCanchaId: p.torneoCanchaId as string,
+      sedeNombre: '',
+      canchaNombre: '',
+      fase: p.ronda,
+      categoriaNombre: '',
+      pareja1: p.inscripcion1Id || undefined,
+      pareja2: p.inscripcion2Id || undefined,
+    }));
   }
 
   private async ocuparSlot(
