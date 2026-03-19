@@ -2168,3 +2168,79 @@ INFO: Asignando 16 partidos OCTAVOS a 1 día (2026-03-21)
 - El torneo fluye naturalmente: ZONA → OCTAVOS → CUARTOS → FINALES
 
 ---
+
+## ✅ Completado (2026-03-18) - Fix Sistema de Bracket: Distribución de Perdedores y Ganadores
+
+### Resumen Ejecutivo
+> **Estado:** Lógica de navegación entre ZONA → REPECHAJE → BRACKET corregida para todos los casos de participantes.
+
+### Problema Identificado
+La distribución de perdedores de zona al repechaje no funcionaba correctamente:
+1. Solo el primer partido de zona mandaba su perdedor al repechaje
+2. Los perdedores excedentes no iban al bracket por "suerte"
+3. Cuando había más slots de repechaje que perdedores, no se llenaban con ganadores
+
+### Solución Implementada
+
+#### 1. Lógica de Distribución Corregida (`conectarNavegacion`)
+```typescript
+// Cálculo correcto de slots
+const slotsRepechaje = partidosRepechaje * 2; // 2 slots por partido
+const slotsConPerdedores = Math.min(perdedoresZona, slotsRepechaje);
+const slotsConGanadores = Math.max(0, slotsRepechaje - perdedoresZona);
+
+// Distribución:
+// - Slots primero con perdedores (hasta agotar)
+// - Slots restantes con ganadores de zona
+// - Perdedores sobrantes → bracket por "suerte divina"
+```
+
+#### 2. Bugfix: `posicionEnPerdedor` no se guardaba
+```typescript
+// En guardarBracket() - faltaba esta línea:
+if (partido.posicionEnPerdedor) {
+  updateData.posicionEnPerdedor = partido.posicionEnPerdedor;
+}
+```
+
+#### 3. Nuevo Tipo de Entrada
+```typescript
+export enum TipoEntrada {
+  // ... otros tipos
+  PERDEDOR_ZONA_SUERTE = 'PERDEDOR_ZONA_SUERTE', // Lucky losers
+}
+```
+
+### Casos de Prueba Verificados
+
+| Parejas | Bracket | Zona | Repechaje | Perdedores→Rep | Ganadores→Rep | Perdedores Suerte |
+|---------|---------|------|-----------|----------------|---------------|-------------------|
+| 8       | 8       | 4P   | 0P        | 0              | 0             | 4                 |
+| 9       | 8       | 5P   | 1P (2S)   | 2              | 0             | 2                 |
+| 10      | 8       | 5P   | 2P (4S)   | 4              | 0             | 1                 |
+| 11      | 8       | 6P   | 3P (6S)   | 5              | 1             | 0                 |
+| 16      | 16      | 8P   | 0P        | 0              | 0             | 8                 |
+| 18      | 16      | 9P   | 2P (4S)   | 4              | 0             | 5                 |
+| 21      | 16      | 11P  | 5P (10S)  | 10             | 0             | 0                 |
+| 22      | 16      | 11P  | 6P (12S)  | 11             | 1             | 0                 |
+
+**Fórmula:** 
+- `Ganadores Directo al Bracket = GanadoresZona - SlotsConGanadores`
+- `Perdedores Suerte = max(0, PerdedoresZona - SlotsRepechaje)`
+- `Total Bracket = GanadoresDirecto + GanadoresRepechaje + PerdedoresSuerte`
+
+### Archivos Modificados
+- `src/modules/bracket/bracket.service.ts` - Lógica de conectarNavegacion corregida
+- `src/modules/bracket/dto/generate-bracket.dto.ts` - Nuevo tipo PERDEDOR_ZONA_SUERTE
+
+### Commit
+- Backend: `ee338fc` - fix(bracket): distribución de perdedores y ganadores a repechaje/bracket según lógica paraguaya
+
+### Deploy
+- ✅ Backend: https://github.com/herto2007-prog/fairpadel-backend.git
+- 🚀 Railway: Automático desde main
+
+---
+
+**Última actualización:** 2026-03-18 - Sistema de bracket con distribución correcta de perdedores y ganadores
+
