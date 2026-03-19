@@ -807,44 +807,96 @@ export class ProgramacionService {
     asignaciones: PartidoAsignado[],
     logs?: LogAsignacion[],
   ): void {
-    // OPTIMIZACIÓN: Usar cola de partidos pendientes para minimizar huecos
-    // En lugar de asignar partidos en orden fijo, por cada slot probamos todos los pendientes
-    // y asignamos el primero que no tenga conflicto
+    // DISTRIBUCIÓN BALANCEADA + OPTIMIZACIÓN DE ADELANTAR
+    // 
+    // 1. Calcular cuántos partidos debería tener cada día proporcionalmente
+    // 2. Por cada partido, encontrar el día con más "espacio proporcional disponible"
+    // 3. Dentro de ese día, usar la lógica de adelantar para minimizar huecos
     
-    const partidosPendientes = [...partidos]; // Cola de partidos por asignar
+    // PASO 1: Calcular capacidad y objetivo de cada día
+    const capacidadPorDia = new Map<string, number>();
+    const asignadosPorDia = new Map<string, number>();
+    let capacidadTotal = 0;
     
-    // Recorrer todos los slots cronológicamente
     for (const fecha of fechas) {
-      const slotsDelDia = slotsPorFecha[fecha] || [];
+      const slots = slotsPorFecha[fecha] || [];
+      const capacidad = slots.length;
+      capacidadPorDia.set(fecha, capacidad);
+      asignadosPorDia.set(fecha, 0);
+      capacidadTotal += capacidad;
+    }
+    
+    if (capacidadTotal === 0) return;
+    
+    // Calcular objetivo de partidos por día (proporcional)
+    const objetivoPorDia = new Map<string, number>();
+    for (const fecha of fechas) {
+      const capacidad = capacidadPorDia.get(fecha) || 0;
+      const proporcion = capacidad / capacidadTotal;
+      objetivoPorDia.set(fecha, Math.round(partidos.length * proporcion));
+    }
+    
+    // Ajustar por redondeo
+    let totalObjetivo = 0;
+    for (const cantidad of objetivoPorDia.values()) {
+      totalObjetivo += cantidad;
+    }
+    if (totalObjetivo !== partidos.length && fechas.length > 0) {
+      const ultimaFecha = fechas[fechas.length - 1];
+      objetivoPorDia.set(ultimaFecha, (objetivoPorDia.get(ultimaFecha) || 0) + (partidos.length - totalObjetivo));
+    }
+    
+    // PASO 2: Asignar partidos manteniendo el balance
+    const partidosPendientes = [...partidos];
+    
+    while (partidosPendientes.length > 0) {
+      // Encontrar el día con más "margen proporcional" (más lejos de su objetivo)
+      let mejorFecha: string | null = null;
+      let mejorMargen = -Infinity;
+      
+      for (const fecha of fechas) {
+        const asignados = asignadosPorDia.get(fecha) || 0;
+        const objetivo = objetivoPorDia.get(fecha) || 0;
+        const margen = objetivo - asignados; // Cuántos más puede recibir
+        
+        // Solo considerar días que aún necesitan partidos y tienen slots libres
+        const slotsLibres = (slotsPorFecha[fecha] || []).filter(s => {
+          const key = `${fecha}-${s.torneoCanchaId}-${s.horaInicio}`;
+          return !slotsAsignados.has(key);
+        }).length;
+        
+        if (margen > mejorMargen && slotsLibres > 0) {
+          mejorMargen = margen;
+          mejorFecha = fecha;
+        }
+      }
+      
+      if (!mejorFecha) break; // No hay más días disponibles
+      
+      // Intentar asignar un partido al día seleccionado
+      const slotsDelDia = slotsPorFecha[mejorFecha] || [];
+      let partidoAsignado = false;
       
       for (const slot of slotsDelDia) {
-        const slotKey = `${fecha}-${slot.torneoCanchaId}-${slot.horaInicio}`;
-        
-        // Saltar si el slot ya está ocupado
+        const slotKey = `${mejorFecha}-${slot.torneoCanchaId}-${slot.horaInicio}`;
         if (slotsAsignados.has(slotKey)) continue;
         
-        // Si no hay más partidos pendientes, terminar
-        if (partidosPendientes.length === 0) break;
-        
         // Buscar el primer partido pendiente que pueda usar este slot
-        let partidoAsignado = false;
-        
         for (let i = 0; i < partidosPendientes.length; i++) {
           const partido = partidosPendientes[i];
           
-          // Verificar si este partido puede usar este slot
           const verificacion = this.verificarConflictoPareja(
             partido,
-            fecha,
+            mejorFecha,
             slot.horaInicio,
             asignaciones,
           );
           
           if (!verificacion.conflicto) {
-            // ¡Este partido puede usar el slot! Asignarlo
+            // Asignar partido
             const asignacion: PartidoAsignado = {
               partidoId: partido.id,
-              fecha,
+              fecha: mejorFecha,
               horaInicio: slot.horaInicio,
               horaFin: slot.horaFin,
               torneoCanchaId: slot.torneoCanchaId,
@@ -862,59 +914,35 @@ export class ProgramacionService {
             
             asignaciones.push(asignacion);
             slotsAsignados.add(slotKey);
+            asignadosPorDia.set(mejorFecha, (asignadosPorDia.get(mejorFecha) || 0) + 1);
             
-            // Log de asignación
             if (logs) {
               logs.push({
                 tipo: i > 0 ? 'ADELANTADO' : 'ASIGNADO',
                 partidoId: partido.id,
                 categoriaNombre: partido.categoriaNombre,
                 fase: partido.fase,
-                fecha,
+                fecha: mejorFecha,
                 hora: slot.horaInicio,
                 mensaje: i > 0 
-                  ? `${partido.categoriaNombre} - ${partido.fase} ADELANTADO al slot ${slot.horaInicio} (otros partidos esperaban descanso)`
-                  : `${partido.categoriaNombre} - ${partido.fase} asignado a las ${slot.horaInicio}`,
+                  ? `${partido.categoriaNombre} - ${partido.fase} ADELANTADO a ${mejorFecha} ${slot.horaInicio} (balance: ${asignadosPorDia.get(mejorFecha)}/${objetivoPorDia.get(mejorFecha)})`
+                  : `${partido.categoriaNombre} - ${partido.fase} asignado a ${mejorFecha} ${slot.horaInicio} (balance: ${asignadosPorDia.get(mejorFecha)}/${objetivoPorDia.get(mejorFecha)})`,
               });
             }
             
-            // Eliminar de la cola de pendientes
             partidosPendientes.splice(i, 1);
             partidoAsignado = true;
             break;
-          } else {
-            // Este partido no puede usar el slot (está descansando)
-            // Log informativo
-            if (logs) {
-              logs.push({
-                tipo: 'SALTADO',
-                partidoId: partido.id,
-                categoriaNombre: partido.categoriaNombre,
-                fase: partido.fase,
-                fecha,
-                hora: slot.horaInicio,
-                mensaje: `${partido.categoriaNombre} - ${partido.fase} NO cabe a las ${slot.horaInicio}: ${verificacion.razon}`,
-              });
-            }
           }
         }
         
-        // Si ningún partido pudo usar este slot, quedará vacío (todos están descansando)
-        if (!partidoAsignado && logs) {
-          logs.push({
-            tipo: 'SALTADO',
-            partidoId: '',
-            categoriaNombre: '',
-            fase: '',
-            fecha,
-            hora: slot.horaInicio,
-            mensaje: `Slot ${slot.horaInicio} queda VACÍO - todos los partidos pendientes están en descanso`,
-          });
-        }
+        if (partidoAsignado) break;
       }
       
-      // Si no quedan partidos pendientes, terminar
-      if (partidosPendientes.length === 0) break;
+      // Si no se pudo asignar a este día, marcarlo como lleno para esta iteración
+      if (!partidoAsignado) {
+        asignadosPorDia.set(mejorFecha, 999999); // Forzar a buscar otro día
+      }
     }
     
     // Si quedaron partidos sin asignar (no cabían en los días disponibles)
