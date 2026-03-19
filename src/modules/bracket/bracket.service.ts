@@ -274,14 +274,29 @@ export class BracketService {
   }
 
   /**
-   * Conecta la navegación entre partidos
+   * Fisher-Yates shuffle para aleatorizar arrays
+   */
+  private shuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+
+  /**
+   * Conecta la navegación entre partidos con aleatoriedad
    * 
-   * FLUJO SISTEMA PARAGUAYO:
-   * - TODOS los ganadores de ZONA → Bracket principal
-   * - Primeros N perdedores de ZONA → Repechaje (segunda oportunidad)
-   * - Demás perdedores de ZONA → Bracket (por suerte, para completar)
-   * - Ganadores de Repechaje → Bracket
+   * FLUJO SISTEMA PARAGUAYO (MEJORADO):
+   * - TODOS los ganadores de ZONA → Bracket principal (posiciones aleatorias)
+   * - Perdedores seleccionados ALEATORIAMENTE de ZONA → Repechaje
+   * - Demás perdedores de ZONA → Bracket (posiciones aleatorias)
+   * - Ganadores de Repechaje → Bracket (posiciones aleatorias)
    * - Perdedores de Repechaje → ELIMINADOS
+   * 
+   * La aleatoriedad evita que jugadores se enfrenten entre sí prematuramente
+   * y hace el bracket más justo e impredecible.
    */
   private conectarNavegacion(
     zona: MatchNode[],
@@ -317,107 +332,121 @@ export class BracketService {
     const slotsConPerdedores = Math.min(perdedoresZona, slotsRepechaje);
     const slotsConGanadores = Math.max(0, slotsRepechaje - perdedoresZona);
     
-    // PARTIDOS DE ZONA: cada uno tiene ganador y perdedor
-    // Cada slot en primeraRonda tiene 2 posiciones (1 y 2)
-    // Usamos un índice secuencial para asignar TODOS los slots sin repetir
-    let slotIndex = 0; // Índice secuencial para TODOS los slots (ganadores + perdedores)
-    let perdedorCounter = 0;  // Contador de perdedores asignados al repechaje
-    let ganadorRepechajeCounter = 0; // Contador de ganadores asignados al repechaje
+    // PREPARAR ALEATORIEDAD EN LA ASIGNACIÓN
+    // Separar partidos de zona según su destino
+    const partidosZonaNormales = zona.filter(p => !p.esBye);
+    const partidosBye = zona.filter(p => p.esBye);
     
-    // Helper para obtener el siguiente slot disponible en primeraRonda
-    const getNextSlot = (): { partido: MatchNode; posicion: number } => {
-      const partidoIndex = Math.floor(slotIndex / 2);
-      const posicion = (slotIndex % 2) + 1; // 1 o 2
-      const partido = primeraRonda[partidoIndex % primeraRonda.length];
-      slotIndex++;
-      return { partido, posicion };
-    };
+    // Aleatorizar el orden de los partidos de zona para asignación de destinos
+    // Esto asegura que no sea siempre los "primeros" partidos los que van a repechaje
+    const partidosZonaShuffled = this.shuffleArray([...partidosZonaNormales]);
     
-    zona.forEach((partidoZona) => {
-      // Si es BYE, el "ganador" ya está predefinido, no necesita conexión de ganador
-      if (!partidoZona.esBye) {
-        // Decidir si el ganador va al bracket directo o al repechaje
-        // Los primeros N ganadores van al bracket, el resto al repechaje (si hay slots disponibles)
-        const ganadoresDirectoAlBracket = zona.length - slotsConGanadores;
-        const ganadorIndex = zona.indexOf(partidoZona);
+    // Determinar cuáles partidos envían perdedores al repechaje (aleatorio)
+    const indicesPerdedoresRepechaje = new Set<number>();
+    for (let i = 0; i < slotsConPerdedores && i < partidosZonaShuffled.length; i++) {
+      indicesPerdedoresRepechaje.add(i);
+    }
+    
+    // Determinar cuáles ganadores van al repechaje (si aplica)
+    const indicesGanadoresRepechaje = new Set<number>();
+    if (slotsConGanadores > 0) {
+      // Los últimos N partidos (después de los que envían perdedores a repechaje)
+      for (let i = slotsConPerdedores; i < slotsConPerdedores + slotsConGanadores && i < partidosZonaShuffled.length; i++) {
+        indicesGanadoresRepechaje.add(i);
+      }
+    }
+    
+    // Preparar slots del bracket principal para distribución aleatoria
+    // Cada slot es una posición específica (partido + posición 1 o 2)
+    const slotsBracket: { partido: MatchNode; posicion: number }[] = [];
+    for (let i = 0; i < primeraRonda.length; i++) {
+      slotsBracket.push({ partido: primeraRonda[i], posicion: 1 });
+      slotsBracket.push({ partido: primeraRonda[i], posicion: 2 });
+    }
+    
+    // Aleatorizar los slots del bracket para distribución equilibrada
+    const slotsBracketShuffled = this.shuffleArray(slotsBracket);
+    let slotIndex = 0;
+    
+    // ASIGNAR DESTINOS A CADA PARTIDO DE ZONA
+    partidosZonaShuffled.forEach((partidoZona, index) => {
+      // Determinar destino del GANADOR
+      if (indicesGanadoresRepechaje.has(index)) {
+        // Ganador va al repechaje
+        const repechajeSlot = index - slotsConPerdedores;
+        const repechajeIndex = Math.floor(repechajeSlot / 2);
+        const posicionEnRepechaje = (repechajeSlot % 2) + 1;
         
-        if (ganadorIndex < ganadoresDirectoAlBracket || slotsConGanadores === 0) {
-          // Ganador va directo al bracket
-          const { partido: targetPartido, posicion } = getNextSlot();
-          
-          partidoZona.partidoSiguienteId = targetPartido.id;
-          partidoZona.posicionEnSiguiente = posicion;
-          
-          if (posicion === 1) {
-            targetPartido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
-          } else {
-            targetPartido.tipoEntrada2 = TipoEntrada.GANADOR_ZONA;
-          }
-        } else {
-          // Ganador va al repechaje (porque no hay suficientes perdedores)
-          const repechajeIndex = Math.floor((perdedoresZona + ganadorRepechajeCounter) / 2);
-          const posicionEnRepechaje = ((perdedoresZona + ganadorRepechajeCounter) % 2) + 1;
-          
-          if (repechajeIndex < rondaAjuste.length) {
-            const partidoRepechaje = rondaAjuste[repechajeIndex];
-            partidoZona.partidoSiguienteId = partidoRepechaje.id;
-            partidoZona.posicionEnSiguiente = posicionEnRepechaje;
-            ganadorRepechajeCounter++;
-          }
-        }
-        
-        // Manejar el perdedor
-        if (perdedorCounter < slotsConPerdedores) {
-          // Perdedor va a repechaje
-          const repechajeIndex = Math.floor(perdedorCounter / 2);
-          const posicionEnRepechaje = (perdedorCounter % 2) + 1;
-          
+        if (repechajeIndex < rondaAjuste.length) {
           const partidoRepechaje = rondaAjuste[repechajeIndex];
-          partidoZona.partidoPerdedorSiguienteId = partidoRepechaje.id;
-          partidoZona.posicionEnPerdedor = posicionEnRepechaje;
-          
-          perdedorCounter++;
-        } else {
-          // Perdedor va directo al bracket (por suerte divina)
-          const { partido: targetPartido, posicion } = getNextSlot();
-          
-          partidoZona.partidoPerdedorSiguienteId = targetPartido.id;
-          partidoZona.posicionEnPerdedor = posicion;
-          
-          if (posicion === 1) {
-            targetPartido.tipoEntrada1 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
-          } else {
-            targetPartido.tipoEntrada2 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
-          }
-          
-          perdedorCounter++;
+          partidoZona.partidoSiguienteId = partidoRepechaje.id;
+          partidoZona.posicionEnSiguiente = posicionEnRepechaje;
         }
       } else {
-        // BYE: el ganador va directo al bracket
-        const { partido: targetPartido, posicion } = getNextSlot();
+        // Ganador va directo al bracket (slot aleatorio)
+        const slot = slotsBracketShuffled[slotIndex++];
+        partidoZona.partidoSiguienteId = slot.partido.id;
+        partidoZona.posicionEnSiguiente = slot.posicion;
         
-        partidoZona.partidoSiguienteId = targetPartido.id;
-        partidoZona.posicionEnSiguiente = posicion;
-        
-        if (posicion === 1) {
-          targetPartido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
+        if (slot.posicion === 1) {
+          slot.partido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
         } else {
-          targetPartido.tipoEntrada2 = TipoEntrada.GANADOR_ZONA;
+          slot.partido.tipoEntrada2 = TipoEntrada.GANADOR_ZONA;
+        }
+      }
+      
+      // Determinar destino del PERDEDOR
+      if (indicesPerdedoresRepechaje.has(index)) {
+        // Perdedor va a repechaje
+        const repechajeIndex = Math.floor(index / 2);
+        const posicionEnRepechaje = (index % 2) + 1;
+        
+        const partidoRepechaje = rondaAjuste[repechajeIndex];
+        partidoZona.partidoPerdedorSiguienteId = partidoRepechaje.id;
+        partidoZona.posicionEnPerdedor = posicionEnRepechaje;
+      } else {
+        // Perdedor va directo al bracket (slot aleatorio)
+        const slot = slotsBracketShuffled[slotIndex++];
+        partidoZona.partidoPerdedorSiguienteId = slot.partido.id;
+        partidoZona.posicionEnPerdedor = slot.posicion;
+        
+        if (slot.posicion === 1) {
+          slot.partido.tipoEntrada1 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
+        } else {
+          slot.partido.tipoEntrada2 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
         }
       }
     });
-
-    // CONECTAR GANADORES DE REPECHAJE AL BRACKET
-    rondaAjuste.forEach((partidoRepechaje) => {
-      const { partido: targetPartido, posicion } = getNextSlot();
+    
+    // ASIGNAR BYES (aleatoriamente también)
+    partidosBye.forEach((partidoBye) => {
+      const slot = slotsBracketShuffled[slotIndex++];
+      partidoBye.partidoSiguienteId = slot.partido.id;
+      partidoBye.posicionEnSiguiente = slot.posicion;
       
-      partidoRepechaje.partidoSiguienteId = targetPartido.id;
-      partidoRepechaje.posicionEnSiguiente = posicion;
-      
-      if (posicion === 1) {
-        targetPartido.tipoEntrada1 = TipoEntrada.GANADOR_REPECHAJE;
+      if (slot.posicion === 1) {
+        slot.partido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
       } else {
-        targetPartido.tipoEntrada2 = TipoEntrada.GANADOR_REPECHAJE;
+        slot.partido.tipoEntrada2 = TipoEntrada.GANADOR_ZONA;
+      }
+    });
+
+    // CONECTAR GANADORES DE REPECHAJE AL BRACKET (slots aleatorios restantes)
+    // Reordenar los slots restantes aleatoriamente
+    const slotsRestantes = slotsBracketShuffled.slice(slotIndex);
+    const slotsRestantesShuffled = this.shuffleArray(slotsRestantes);
+    
+    rondaAjuste.forEach((partidoRepechaje, index) => {
+      if (index < slotsRestantesShuffled.length) {
+        const slot = slotsRestantesShuffled[index];
+        partidoRepechaje.partidoSiguienteId = slot.partido.id;
+        partidoRepechaje.posicionEnSiguiente = slot.posicion;
+        
+        if (slot.posicion === 1) {
+          slot.partido.tipoEntrada1 = TipoEntrada.GANADOR_REPECHAJE;
+        } else {
+          slot.partido.tipoEntrada2 = TipoEntrada.GANADOR_REPECHAJE;
+        }
       }
     });
 
