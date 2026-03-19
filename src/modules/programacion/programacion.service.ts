@@ -807,106 +807,128 @@ export class ProgramacionService {
     asignaciones: PartidoAsignado[],
     logs?: LogAsignacion[],
   ): void {
-    // Calcular capacidad de cada día
-    const capacidadPorDia = new Map<string, number>();
-    let capacidadTotal = 0;
+    // OPTIMIZACIÓN: Usar cola de partidos pendientes para minimizar huecos
+    // En lugar de asignar partidos en orden fijo, por cada slot probamos todos los pendientes
+    // y asignamos el primero que no tenga conflicto
     
+    const partidosPendientes = [...partidos]; // Cola de partidos por asignar
+    
+    // Recorrer todos los slots cronológicamente
     for (const fecha of fechas) {
-      const slots = slotsPorFecha[fecha] || [];
-      const capacidad = slots.length;
-      capacidadPorDia.set(fecha, capacidad);
-      capacidadTotal += capacidad;
-    }
-
-    if (capacidadTotal === 0) return;
-
-    // Calcular cuántos partidos asignar a cada día proporcionalmente
-    const asignacionesPorDia = new Map<string, number>();
-    const partidosRestantesPorDia = new Map<string, number>();
-    
-    for (const fecha of fechas) {
-      const capacidad = capacidadPorDia.get(fecha) || 0;
-      // Calcular proporción y redondear
-      const proporcion = capacidad / capacidadTotal;
-      const cantidadPartidos = Math.round(partidos.length * proporcion);
-      asignacionesPorDia.set(fecha, cantidadPartidos);
-      partidosRestantesPorDia.set(fecha, cantidadPartidos);
-    }
-
-    // Ajustar por redondeo para asegurar que sumen el total
-    let totalAsignado = 0;
-    for (const cantidad of asignacionesPorDia.values()) {
-      totalAsignado += cantidad;
-    }
-    
-    // Si hay diferencia, ajustar el último día
-    if (totalAsignado !== partidos.length && fechas.length > 0) {
-      const ultimaFecha = fechas[fechas.length - 1];
-      const diferencia = partidos.length - totalAsignado;
-      const actual = asignacionesPorDia.get(ultimaFecha) || 0;
-      asignacionesPorDia.set(ultimaFecha, actual + diferencia);
-      partidosRestantesPorDia.set(ultimaFecha, actual + diferencia);
-    }
-
-    // Asignar partidos rotando entre días según su capacidad
-    let indiceFecha = 0;
-    
-    for (const partido of partidos) {
-      // Encontrar un día que tenga capacidad restante
-      let asignado = false;
-      let intentos = 0;
+      const slotsDelDia = slotsPorFecha[fecha] || [];
       
-      while (!asignado && intentos < fechas.length) {
-        const fecha = fechas[indiceFecha % fechas.length];
-        const restantes = partidosRestantesPorDia.get(fecha) || 0;
+      for (const slot of slotsDelDia) {
+        const slotKey = `${fecha}-${slot.torneoCanchaId}-${slot.horaInicio}`;
         
-        if (restantes > 0) {
-          // Intentar asignar a este día
-          const asignacion = this.encontrarSlotOptimo(
+        // Saltar si el slot ya está ocupado
+        if (slotsAsignados.has(slotKey)) continue;
+        
+        // Si no hay más partidos pendientes, terminar
+        if (partidosPendientes.length === 0) break;
+        
+        // Buscar el primer partido pendiente que pueda usar este slot
+        let partidoAsignado = false;
+        
+        for (let i = 0; i < partidosPendientes.length; i++) {
+          const partido = partidosPendientes[i];
+          
+          // Verificar si este partido puede usar este slot
+          const verificacion = this.verificarConflictoPareja(
             partido,
-            [fecha],
-            slotsPorFecha,
-            slotsAsignados,
+            fecha,
+            slot.horaInicio,
             asignaciones,
-            undefined,
-            undefined,
-            undefined,
-            logs,
           );
-
-          if (asignacion) {
+          
+          if (!verificacion.conflicto) {
+            // ¡Este partido puede usar el slot! Asignarlo
+            const asignacion: PartidoAsignado = {
+              partidoId: partido.id,
+              fecha,
+              horaInicio: slot.horaInicio,
+              horaFin: slot.horaFin,
+              torneoCanchaId: slot.torneoCanchaId,
+              sedeNombre: slot.sedeNombre,
+              canchaNombre: slot.canchaNombre,
+              fase: partido.fase,
+              categoriaNombre: partido.categoriaNombre,
+              pareja1: partido.pareja1 ? 
+                `${partido.pareja1.jugador1.nombre}/${partido.pareja1.jugador2?.nombre || '?'}` : 
+                undefined,
+              pareja2: partido.pareja2 ? 
+                `${partido.pareja2.jugador1.nombre}/${partido.pareja2.jugador2?.nombre || '?'}` : 
+                undefined,
+            };
+            
             asignaciones.push(asignacion);
-            slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
-            partidosRestantesPorDia.set(fecha, restantes - 1);
-            asignado = true;
+            slotsAsignados.add(slotKey);
+            
+            // Log de asignación
+            if (logs) {
+              logs.push({
+                tipo: i > 0 ? 'ADELANTADO' : 'ASIGNADO',
+                partidoId: partido.id,
+                categoriaNombre: partido.categoriaNombre,
+                fase: partido.fase,
+                fecha,
+                hora: slot.horaInicio,
+                mensaje: i > 0 
+                  ? `${partido.categoriaNombre} - ${partido.fase} ADELANTADO al slot ${slot.horaInicio} (otros partidos esperaban descanso)`
+                  : `${partido.categoriaNombre} - ${partido.fase} asignado a las ${slot.horaInicio}`,
+              });
+            }
+            
+            // Eliminar de la cola de pendientes
+            partidosPendientes.splice(i, 1);
+            partidoAsignado = true;
+            break;
+          } else {
+            // Este partido no puede usar el slot (está descansando)
+            // Log informativo
+            if (logs) {
+              logs.push({
+                tipo: 'SALTADO',
+                partidoId: partido.id,
+                categoriaNombre: partido.categoriaNombre,
+                fase: partido.fase,
+                fecha,
+                hora: slot.horaInicio,
+                mensaje: `${partido.categoriaNombre} - ${partido.fase} NO cabe a las ${slot.horaInicio}: ${verificacion.razon}`,
+              });
+            }
           }
         }
         
-        indiceFecha++;
-        intentos++;
+        // Si ningún partido pudo usar este slot, quedará vacío (todos están descansando)
+        if (!partidoAsignado && logs) {
+          logs.push({
+            tipo: 'SALTADO',
+            partidoId: '',
+            categoriaNombre: '',
+            fase: '',
+            fecha,
+            hora: slot.horaInicio,
+            mensaje: `Slot ${slot.horaInicio} queda VACÍO - todos los partidos pendientes están en descanso`,
+          });
+        }
       }
       
-      // Si no se pudo asignar por capacidad, intentar cualquier día disponible
-      if (!asignado) {
-        for (const fecha of fechas) {
-          const asignacion = this.encontrarSlotOptimo(
-            partido,
-            [fecha],
-            slotsPorFecha,
-            slotsAsignados,
-            asignaciones,
-            undefined,
-            undefined,
-            undefined,
-            logs,
-          );
-
-          if (asignacion) {
-            asignaciones.push(asignacion);
-            slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
-            break;
-          }
-        }
+      // Si no quedan partidos pendientes, terminar
+      if (partidosPendientes.length === 0) break;
+    }
+    
+    // Si quedaron partidos sin asignar (no cabían en los días disponibles)
+    if (partidosPendientes.length > 0 && logs) {
+      for (const partido of partidosPendientes) {
+        logs.push({
+          tipo: 'SALTADO',
+          partidoId: partido.id,
+          categoriaNombre: partido.categoriaNombre,
+          fase: partido.fase,
+          fecha: '',
+          hora: '',
+          mensaje: `⚠️ ${partido.categoriaNombre} - ${partido.fase} NO SE PUDO ASIGNAR (sin slots disponibles)`,
+        });
       }
     }
   }
