@@ -112,12 +112,160 @@ export class BracketService {
   }
 
   /**
+   * Calcula el total de slots necesarios para todo el torneo
+   * incluyendo ZONA, REPECHAJE, y todas las rondas del bracket
+   */
+  calcularSlotsNecesarios(totalParejas: number): {
+    totalPartidos: number;
+    partidosZona: number;
+    partidosRepechaje: number;
+    partidosBracket: number;
+    detallePorFase: { fase: string; partidos: number }[];
+  } {
+    const config = this.calcularConfiguracion(totalParejas);
+    
+    // Calcular partidos por fase
+    const partidosZona = config.partidosZona + (config.parejasConBye > 0 ? 1 : 0);
+    const partidosRepechaje = config.partidosRepechaje;
+    
+    // Calcular partidos del bracket principal
+    let partidosBracket = 0;
+    const detallePorFase: { fase: string; partidos: number }[] = [];
+    
+    // Agregar ZONA
+    detallePorFase.push({ fase: 'ZONA', partidos: partidosZona });
+    
+    // Agregar REPECHAJE si existe
+    if (partidosRepechaje > 0) {
+      detallePorFase.push({ fase: 'REPECHAJE', partidos: partidosRepechaje });
+    }
+    
+    // Calcular partidos del bracket según tamaño
+    if (config.tamanoBracket >= 64) {
+      const partidos = 32;
+      partidosBracket += partidos;
+      detallePorFase.push({ fase: '32AVOS', partidos });
+    }
+    if (config.tamanoBracket >= 32) {
+      const partidos = 16;
+      partidosBracket += partidos;
+      detallePorFase.push({ fase: '16AVOS', partidos });
+    }
+    if (config.tamanoBracket >= 16) {
+      const partidos = 8;
+      partidosBracket += partidos;
+      detallePorFase.push({ fase: 'OCTAVOS', partidos });
+    }
+    if (config.tamanoBracket >= 8) {
+      const partidos = 4;
+      partidosBracket += partidos;
+      detallePorFase.push({ fase: 'CUARTOS', partidos });
+    }
+    
+    // Semis y Final siempre existen
+    partidosBracket += 2;
+    detallePorFase.push({ fase: 'SEMIS', partidos: 2 });
+    
+    partidosBracket += 1;
+    detallePorFase.push({ fase: 'FINAL', partidos: 1 });
+    
+    return {
+      totalPartidos: partidosZona + partidosRepechaje + partidosBracket,
+      partidosZona,
+      partidosRepechaje,
+      partidosBracket,
+      detallePorFase,
+    };
+  }
+
+  /**
+   * Valida si hay suficiente disponibilidad para el torneo completo
+   * Lanza excepción si no hay suficientes slots configurados
+   */
+  async validarDisponibilidad(
+    tournamentCategoryId: string,
+    totalParejas: number,
+  ): Promise<{
+    valido: boolean;
+    slotsNecesarios: number;
+    slotsDisponibles: number;
+    slotsFaltantes: number;
+    mensaje?: string;
+    detallePorFase: { fase: string; partidos: number }[];
+  }> {
+    // Calcular slots necesarios
+    const calculo = this.calcularSlotsNecesarios(totalParejas);
+    
+    // Obtener el tournamentId desde la categoría
+    const categoria = await this.prisma.tournamentCategory.findUnique({
+      where: { id: tournamentCategoryId },
+      select: { tournamentId: true },
+    });
+    
+    if (!categoria) {
+      throw new BadRequestException('Categoría no encontrada');
+    }
+    
+    // Obtener slots disponibles del torneo
+    const disponibilidad = await this.prisma.torneoDisponibilidadDia.findMany({
+      where: { tournamentId: categoria.tournamentId },
+    });
+    
+    // Contar slots totales (asumiendo que cada disponibilidad tiene slots configurados)
+    // Esto es una simplificación - en realidad deberíamos calcular los slots por duración
+    let slotsDisponibles = 0;
+    for (const disp of disponibilidad) {
+      // Calcular slots por día: (horaFin - horaInicio) / duracionSlot
+      const horaInicio = new Date(`2000-01-01T${disp.horaInicio}`);
+      const horaFin = new Date(`2000-01-01T${disp.horaFin}`);
+      const duracionMinutos = disp.minutosSlot || 90;
+      
+      const minutosTotales = (horaFin.getTime() - horaInicio.getTime()) / (1000 * 60);
+      const slotsPorDia = Math.floor(minutosTotales / duracionMinutos);
+      
+      slotsDisponibles += slotsPorDia;
+    }
+    
+    const slotsFaltantes = Math.max(0, calculo.totalPartidos - slotsDisponibles);
+    
+    return {
+      valido: slotsFaltantes === 0,
+      slotsNecesarios: calculo.totalPartidos,
+      slotsDisponibles,
+      slotsFaltantes,
+      mensaje: slotsFaltantes > 0 
+        ? `Faltan ${slotsFaltantes} slots. Necesitas ${calculo.totalPartidos} slots para ${totalParejas} parejas pero solo tienes ${slotsDisponibles} configurados.`
+        : undefined,
+      detallePorFase: calculo.detallePorFase,
+    };
+  }
+
+  /**
    * Genera el bracket completo con partidos y navegación
    */
   async generarBracket(dto: GenerateBracketDto): Promise<{
     config: BracketConfigResponse;
     partidos: MatchNode[];
   }> {
+    // Validar disponibilidad antes de generar
+    const validacion = await this.validarDisponibilidad(
+      dto.tournamentCategoryId,
+      dto.totalParejas,
+    );
+    
+    if (!validacion.valido) {
+      throw new BadRequestException({
+        success: false,
+        message: validacion.mensaje,
+        detalle: {
+          slotsNecesarios: validacion.slotsNecesarios,
+          slotsDisponibles: validacion.slotsDisponibles,
+          slotsFaltantes: validacion.slotsFaltantes,
+          partidosPorFase: validacion.detallePorFase,
+        },
+      });
+    }
+    
     const config = this.calcularConfiguracion(dto.totalParejas);
     const partidos: MatchNode[] = [];
 
