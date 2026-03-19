@@ -791,6 +791,18 @@ export class ResultadosService {
       const perdedorId = match.inscripcion1Id === ganadorId ? match.inscripcion2Id : match.inscripcion1Id;
       const posicion = match.posicionEnPerdedor || 1;
 
+      console.log('[avanzarGanador] DEBUG avance perdedor:', {
+        matchId: match.id,
+        matchRonda: match.ronda,
+        ganadorId,
+        perdedorId,
+        inscripcion1Id: match.inscripcion1Id,
+        inscripcion2Id: match.inscripcion2Id,
+        partidoPerdedorSiguienteId: match.partidoPerdedorSiguienteId,
+        posicionEnPerdedor: match.posicionEnPerdedor,
+        posicionUsada: posicion,
+      });
+
       // Verificar a qué fase va el perdedor
       const partidoDestino = await this.prisma.match.findUnique({
         where: { id: match.partidoPerdedorSiguienteId },
