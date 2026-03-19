@@ -611,6 +611,11 @@ export class AdminBracketController {
               : undefined,
           formatoSet3: p.formatoSet3,
           estado: p.estado,
+          // Datos de programación (para habilitar carga de resultados)
+          torneoCanchaId: p.torneoCanchaId,
+          fechaProgramada: p.fechaProgramada,
+          horaProgramada: p.horaProgramada,
+          // Datos legibles para mostrar
           fecha: p.fechaProgramada,
           hora: p.horaProgramada,
           cancha: p.torneoCancha
