@@ -1974,3 +1974,76 @@ LÓGICA OPTIMIZADA:
 
 ### ¿Implementamos esta optimización?
 
+
+
+---
+
+## ✅ Feature (2026-03-18) - Optimización "Adelantar Partidos"
+
+### Resumen
+Implementada optimización para minimizar slots vacíos. Cuando un partido no puede jugar por descanso, otro partido que sí pueda jugar ocupa su lugar.
+
+### Antes (dejaba huecos)
+```
+18:00 - Partido A (5ª Cat)
+19:30 - Partido B (6ª Cat)
+21:00 - VACÍO (Partido C espera descanso de 4h)
+22:00 - Partido C (5ª Cat, esperó su descanso)
+```
+
+### Después (sin huecos)
+```
+18:00 - Partido A (5ª Cat)
+19:30 - Partido B (6ª Cat)
+21:00 - Partido D (7ª Cat) ADELANTADO - no tenía conflicto
+22:00 - Partido C (5ª Cat, esperó su descanso)
+```
+
+### Implementación
+```typescript
+// Nuevo algoritmo con cola de partidos pendientes
+const partidosPendientes = [...partidos];
+
+for (const slot of slotsCronologicamente) {
+  // Buscar el primer partido pendiente que pueda usar este slot
+  for (const partido of partidosPendientes) {
+    if (!tieneConflicto(partido, slot)) {
+      asignar(partido, slot);
+      partidosPendientes.remove(partido);
+      
+      if (partidoFueAdelantado) {
+        log('ADELANTADO', `${partido} ocupó slot que otro no podía usar`);
+      }
+      break;
+    }
+  }
+}
+```
+
+### Nuevos Tipos de Log
+| Tipo | Color | Descripción |
+|------|-------|-------------|
+| `ASIGNADO` | 🟢 Verde | Partido asignado normalmente |
+| `ADELANTADO` | 🔵 Azul | Partido ocupó slot que otro no podía usar |
+| `SALTADO` | 🟡 Amarillo | Partido no pudo usar slot (descanso) |
+
+### Ejemplo de Logs
+```
+ADELANTADO: 7ª Categoría - CUARTOS ADELANTADO al slot 21:00 
+             (otros partidos esperaban descanso)
+SALTADO: 5ª Categoría - SEMIS NO cabe a las 21:00: 
+         Descanso reglamentario: jugó a las 18:00, puede jugar desde las 22:00
+ASIGNADO: 5ª Categoría - SEMIS asignado a las 22:00
+```
+
+### Commits
+- Backend: `0d26eee` - feat(programacion): optimizacion adelantar partidos
+- Frontend: `dcea1b3` - feat(programacion): mostrar solo logs relevantes
+
+### Testing Recomendado
+1. Crear torneo con múltiples categorías
+2. Calcular programación
+3. Verificar en Logs de Asignación que aparecen `ADELANTADO`
+4. Confirmar que no hay huecos innecesarios en la distribución
+
+---
