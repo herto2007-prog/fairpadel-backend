@@ -574,6 +574,36 @@ export class BracketService {
       }
     }
 
+    // AVANZAR GANADORES DE BYE AUTOMÁTICAMENTE
+    // Los partidos BYE ya tienen ganador asignado, hay que avanzarlos al bracket
+    for (const partido of partidos) {
+      if (partido.esBye && partido.partidoSiguienteId) {
+        const realId = idMap.get(partido.id);
+        const realSiguienteId = idMap.get(partido.partidoSiguienteId);
+        
+        if (realId && realSiguienteId) {
+          // Obtener el ganador del BYE
+          const matchBye = await this.prisma.match.findUnique({
+            where: { id: realId },
+            select: { inscripcion1Id: true },
+          });
+          
+          if (matchBye?.inscripcion1Id) {
+            // Avanzar el ganador al bracket
+            const posicion = partido.posicionEnSiguiente || 1;
+            await this.prisma.match.update({
+              where: { id: realSiguienteId },
+              data: posicion === 1
+                ? { inscripcion1Id: matchBye.inscripcion1Id, tipoEntrada1: 'GANADOR_ZONA' }
+                : { inscripcion2Id: matchBye.inscripcion1Id, tipoEntrada2: 'GANADOR_ZONA' },
+            });
+            
+            console.log(`[guardarBracket] BYE avanzado: ${matchBye.inscripcion1Id} → ${realSiguienteId}`);
+          }
+        }
+      }
+    }
+
     return fixtureVersion.id;
   }
 }
