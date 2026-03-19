@@ -2117,3 +2117,54 @@ const partidos = todosLosPartidos.filter(p => {
 - Backend: `49d87d9` - fix(programacion): excluir partidos Por definir vs Por definir
 
 ---
+
+
+---
+
+## ✅ Feature (2026-03-18) - Distribución por Ventanas de Fases
+
+### Problema
+ZONA estaba ocupando todos los días hasta el sábado, dejando poco espacio para REPECHAJE, OCTAVOS y CUARTOS.
+
+### Solución
+Nuevo algoritmo que divide los días en "ventanas" según el grupo de fases:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Jueves     Viernes      Sábado        Domingo          │
+│   19/03      20/03       21/03         22/03            │
+├─────────────────────────────────────────────────────────┤
+│  ZONA       ZONA         OCTAVOS       CUARTOS          │
+│  REPECHAJE  REPECHAJE    16avos/32avos                  │
+│                          (si aplica)                    │
+└─────────────────────────────────────────────────────────┘
+                           ↑
+                    fechaFinales → SEMIS + FINAL
+```
+
+### Cálculo de Ventanas
+```typescript
+// Proporcional a la cantidad de partidos de cada grupo
+const diasIniciales = totalDias * (partidosZONA / totalPartidos);
+const diasIntermedios = totalDias * (partidosOCTAVOS / totalPartidos);
+const diasPrevios = totalDias * (partidosCUARTOS / totalPartidos);
+```
+
+### Logs Informativos
+```
+INFO: Distribución por ventanas: ZONA/REPECHAJE=2d, OCTAVOS=1d, CUARTOS=1d, FINALES=1d
+INFO: Asignando 25 partidos ZONA/REPECHAJE a 2 días (2026-03-19 a 2026-03-20)
+INFO: Asignando 16 partidos OCTAVOS a 1 día (2026-03-21)
+```
+
+### Commits
+- Backend: `28029a1` - feat(programacion): distribucion por ventanas de fases
+- Frontend: `fdc24a6` - feat(programacion): agregar tipo INFO a logs
+
+### Resultado
+- Cada fase tiene sus días asignados proporcionalmente
+- ZONA no monopoliza todos los días
+- Hay espacio garantizado para fases intermedias
+- El torneo fluye naturalmente: ZONA → OCTAVOS → CUARTOS → FINALES
+
+---
