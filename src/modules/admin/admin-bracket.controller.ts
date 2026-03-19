@@ -590,7 +590,7 @@ export class AdminBracketController {
         success: true,
         fixtureEstado: fixtureVersion?.estado,
         definicion: fixtureVersion?.definicion,
-        partidos: partidos.map((p) => ({
+        partidos: (partidos as any[]).map((p) => ({
           id: p.id,
           fase: p.ronda,
           orden: p.numeroRonda,
@@ -618,6 +618,13 @@ export class AdminBracketController {
           // Datos legibles para mostrar
           fecha: p.fechaProgramada,
           hora: p.horaProgramada,
+          // Debug: información de navegación entre partidos
+          navegacion: {
+            partidoSiguienteId: p.partidoSiguienteId,
+            partidoPerdedorSiguienteId: p.partidoPerdedorSiguienteId,
+            posicionEnSiguiente: p.posicionEnSiguiente,
+            posicionEnPerdedor: p.posicionEnPerdedor,
+          },
           cancha: p.torneoCancha
             ? `${p.torneoCancha.sedeCancha.sede.nombre} - ${p.torneoCancha.sedeCancha.nombre}`
             : undefined,
