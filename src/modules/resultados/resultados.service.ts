@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { ProgramacionService } from '../programacion/programacion.service';
+import { ClasificacionService } from '../bracket/clasificacion.service';
 import { FormatoSet3, MatchStatus, Prisma } from '@prisma/client';
 import { RegistrarResultadoDto, RegistrarPuntoDto, IniciarPartidoDto, FinalizarPartidoDto } from './dto/registrar-resultado.dto';
 import { ResultadoEspecialDto, TipoResultadoEspecial } from './dto/resultado-especial.dto';
@@ -14,6 +15,7 @@ export class ResultadosService {
     private prisma: PrismaService,
     private dateService: DateService,
     private programacionService: ProgramacionService,
+    private clasificacionService: ClasificacionService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -730,6 +732,22 @@ export class ResultadosService {
 
       // Verificar si el partido de repechaje ahora está completo y programarlo automáticamente
       await this.programarPartidoSiCompleto(match.partidoPerdedorSiguienteId, match.tournamentId);
+    }
+
+    // IMPORTANTE: Recalcular estados de clasificación después de cada resultado
+    // Esto actualiza en tiempo real quién va directo, quién a repechaje, quién está eliminado
+    await this.recalcularClasificacion(match.tournamentId, match.categoryId);
+  }
+
+  /**
+   * Recalcula los estados de clasificación de todas las inscripciones
+   */
+  private async recalcularClasificacion(tournamentId: string, categoryId: string): Promise<void> {
+    try {
+      await this.clasificacionService.recalcularEstados(tournamentId, categoryId);
+    } catch (error) {
+      // No lanzar error para no interrumpir el flujo principal
+      console.error(`[recalcularClasificacion] Error:`, error);
     }
   }
 

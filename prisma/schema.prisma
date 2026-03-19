@@ -962,6 +962,12 @@ model Inscripcion {
   estado       InscripcionEstado     @default(PENDIENTE_PAGO)
   modoPago     ModoPagoInscripcion?  @map("modo_pago")
   notas        String?               @db.Text
+  
+  // NUEVO: Estado de clasificación en el torneo (actualizado en tiempo real)
+  estadoClasificacion String?          @map("estado_clasificacion") // PENDIENTE, CLASIFICADO_DIRECTO, REPECHAJE, EN_BRACKET, ELIMINADO
+  posicionClasificacion Int?           @map("posicion_clasificacion") // Orden de clasificación (1, 2, 3...)
+  rondaClasificacion  String?          @map("ronda_clasificacion") // ZONA, REPECHAJE, OCTAVOS, CUARTOS, etc.
+  
   createdAt    DateTime              @default(now()) @map("created_at")
   updatedAt    DateTime              @updatedAt @map("updated_at")
 
