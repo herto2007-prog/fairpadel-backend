@@ -791,6 +791,16 @@ export class ResultadosService {
       const perdedorId = match.inscripcion1Id === ganadorId ? match.inscripcion2Id : match.inscripcion1Id;
       const posicion = match.posicionEnPerdedor || 1;
 
+      // Verificar estado actual del partido destino
+      const partidoDestinoActual = await this.prisma.match.findUnique({
+        where: { id: match.partidoPerdedorSiguienteId },
+        select: { 
+          ronda: true,
+          inscripcion1Id: true,
+          inscripcion2Id: true,
+        },
+      });
+
       console.log('[avanzarGanador] DEBUG avance perdedor:', {
         matchId: match.id,
         matchRonda: match.ronda,
@@ -801,6 +811,13 @@ export class ResultadosService {
         partidoPerdedorSiguienteId: match.partidoPerdedorSiguienteId,
         posicionEnPerdedor: match.posicionEnPerdedor,
         posicionUsada: posicion,
+        destinoActual: {
+          inscripcion1Id: partidoDestinoActual?.inscripcion1Id,
+          inscripcion2Id: partidoDestinoActual?.inscripcion2Id,
+        },
+        vaASobreescribir: posicion === 1 
+          ? !!partidoDestinoActual?.inscripcion1Id 
+          : !!partidoDestinoActual?.inscripcion2Id,
       });
 
       // Verificar a qué fase va el perdedor
