@@ -31,9 +31,24 @@ export class CanchasSorteoService {
 
   /**
    * PASO 1.a: Configurar horarios de finales
+   * También crea automáticamente el día de finales con sus slots
    */
   async configurarFinales(dto: ConfigurarFinalesDto) {
-    const torneo = await this.prisma.tournament.update({
+    // Obtener el torneo para conocer su fecha de finales
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: dto.tournamentId },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    if (!torneo.fechaFinales) {
+      throw new BadRequestException('El torneo no tiene fecha de finales configurada');
+    }
+
+    // Actualizar configuración de finales
+    await this.prisma.tournament.update({
       where: { id: dto.tournamentId },
       data: {
         horaInicioFinales: dto.horaInicio,
@@ -42,13 +57,49 @@ export class CanchasSorteoService {
       },
     });
 
+    // Crear o actualizar el día de finales automáticamente
+    const fechaFinales = this.dateService.getDateOnly(torneo.fechaFinales);
+    
+    const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
+      where: {
+        tournamentId_fecha: {
+          tournamentId: dto.tournamentId,
+          fecha: torneo.fechaFinales,
+        },
+      },
+      update: {
+        horaInicio: dto.horaInicio,
+        horaFin: dto.horaFin,
+        minutosSlot: 90, // Duración estándar para finales
+      },
+      create: {
+        tournamentId: dto.tournamentId,
+        fecha: torneo.fechaFinales,
+        horaInicio: dto.horaInicio,
+        horaFin: dto.horaFin,
+        minutosSlot: 90,
+      },
+    });
+
+    // Generar slots para las canchas de finales
+    const slotsGenerados = await this.generarSlotsParaDia(
+      disponibilidad.id,
+      dto.canchasFinalesIds,
+      dto.horaInicio,
+      dto.horaFin,
+      90,
+    );
+
     return {
       success: true,
       message: 'Configuración de finales guardada',
       data: {
-        horaInicio: torneo.horaInicioFinales,
-        horaFin: torneo.horaFinFinales,
-        canchasFinales: torneo.canchasFinales,
+        horaInicio: dto.horaInicio,
+        horaFin: dto.horaFin,
+        canchasFinales: dto.canchasFinalesIds,
+        fechaFinales,
+        diaId: disponibilidad.id,
+        slotsGenerados,
       },
     };
   }
