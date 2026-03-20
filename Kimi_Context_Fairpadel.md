@@ -2,13 +2,12 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-18 - PROGRAMACIÓN REFACTORIZADA
-> - Timezone: Todos los fixes aplicados (frontend y backend)
-> - Wizard: Creación de torneos funcional con fechas correctas
-> - Canchas: Copia automática de sede, configuración de finales operativa
-> - Inscripciones: Cierre/apertura con feedback completo
-> - **Programación (NUEVO):** Sistema refactorizado con modo híbrido (auto-calcular + editar manual)
-> **ESTADO:** Listo para producción - seguir haciendo pruebas
+> **Última actualización:** 2026-03-19 - AUDITORÍA Y DOCUMENTACIÓN
+> - **AUDITORÍA:** Creados documentos AUDITORIA_TORNEOS.md y AUDITORIA_EJEMPLOS.md
+> - **Flujo Canchas y Sorteo:** Implementación completa (Paso 1.a, 1.b, 2)
+> - **Documentación:** Patrón de comentarios para saneamiento de código
+> - **Estado:** Listo para pruebas de flujo completo
+> **ESTADO:** En pruebas - verificar flujo end-to-end
 
 ---
 
@@ -621,6 +620,45 @@ Crear Torneo → Inscripciones Públicas → Cerrar/Sortear → Programar
 - [ ] **Notificaciones Push/SMS/Email** - Alertas de partidos, resultados, invitaciones
 - [ ] **Integración Bancard** - Pagos online de inscripciones
 - [ ] **App Móvil** - Versión nativa (React Native/Expo)
+
+---
+
+### ✅ Completado (2026-03-19) - Fusión "Canchas y Sorteo" + Documentación de Auditoría
+
+**Fusión de funcionalidades en nuevo tab único:**
+- [x] **Paso 1.a - Configurar Finales**: Horario inicio/fin + selector de canchas
+- [x] **Paso 1.b - Configurar Días**: Fecha, horario, duración slot, selección de canchas por día
+- [x] **Botón Gestionar Sedes**: Modal para agregar/remover sedes del torneo
+- [x] **Paso 2 - Cerrar y Sortear**: Selección múltiple de categorías, cálculo de necesidad
+- [x] **Modal Confirmación**: Muestra slots necesarios/disponibles, detalle por categoría
+- [x] **Modal Advertencia**: Si faltan canchas, redirige al Paso 1.b
+- [x] **Sorteo Masivo**: Cierra inscripciones, sortea, reserva slots para todas las fases
+
+**Nuevos Endpoints:**
+```
+GET    /admin/canchas-sorteo/:id/canchas
+GET    /admin/canchas-sorteo/:id/configuracion
+POST   /admin/canchas-sorteo/finales
+POST   /admin/canchas-sorteo/dias
+POST   /admin/canchas-sorteo/calcular-slots
+POST   /admin/canchas-sorteo/cerrar-y-sortear
+GET    /admin/torneos/:id/disponibilidad/sedes   (agregado)
+```
+
+**Documentación de Auditoría Creada:**
+- [x] **AUDITORIA_TORNEOS.md**: Mapeo completo del flujo de torneos
+  - Fases 0-6 del flujo completo
+  - Endpoints activos vs deprecated
+  - Componentes frontend por estado
+  - Patrón de comentarios para saneamiento
+- [x] **AUDITORIA_EJEMPLOS.md**: 8 ejemplos prácticos de marcado
+  - Prefijos estandarizados: [AUDITORIA-YYYY-MM-DD]
+  - Tipos: DEPRECATED, UNUSED, DUPLICATED, REVIEW, CRITICAL
+  - Comandos para buscar marcadores
+
+**Commits:**
+- Backend: `dce78b6`, `e8c6a78`, `fc05af2`
+- Frontend: `8a2b6cd`, `d06fd8e`, `83a41b5`
 
 ---
 
