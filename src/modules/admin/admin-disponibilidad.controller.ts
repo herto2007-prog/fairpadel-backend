@@ -273,6 +273,45 @@ export class AdminDisponibilidadController {
   }
 
   /**
+   * GET /admin/torneos/:id/disponibilidad/sedes
+   * Obtener sedes asignadas al torneo
+   */
+  @Get('sedes')
+  async obtenerSedes(@Param('id') tournamentId: string) {
+    try {
+      const torneoSedes = await this.prisma.torneoSede.findMany({
+        where: { tournamentId },
+        include: {
+          sede: {
+            include: {
+              canchas: {
+                where: { activa: true },
+              },
+            },
+          },
+        },
+      });
+
+      return {
+        success: true,
+        sedes: torneoSedes.map((ts) => ({
+          id: ts.sede.id,
+          nombre: ts.sede.nombre,
+          ciudad: ts.sede.ciudad,
+          direccion: ts.sede.direccion,
+          canchas: ts.sede.canchas.length,
+        })),
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error obteniendo sedes',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
    * POST /admin/torneos/:id/disponibilidad/sedes
    * Agregar una sede al torneo
    */
