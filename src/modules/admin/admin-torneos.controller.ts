@@ -1767,7 +1767,7 @@ export class AdminTorneosController {
 
   /**
    * POST /admin/torneos/:id/sedes
-   * Agregar una sede al torneo (con todas sus canchas)
+   * Agregar/Actualizar sede del torneo (MVP: UNA sola sede por torneo)
    */
   @Post(':id/sedes')
   async agregarSede(@Param('id') tournamentId: string, @Body() dto: { sedeId: string }) {
@@ -1785,23 +1785,14 @@ export class AdminTorneosController {
         throw new NotFoundException('Sede no encontrada');
       }
 
-      // Verificar que no esté ya agregada
-      const existing = await this.prisma.torneoSede.findUnique({
-        where: {
-          tournamentId_sedeId: {
-            tournamentId,
-            sedeId: dto.sedeId,
-          },
-        },
+      // MVP FIX: Eliminar TODAS las relaciones anteriores TorneoSede
+      // Solo permitimos UNA sede por torneo en el MVP
+      const deletedRelations = await this.prisma.torneoSede.deleteMany({
+        where: { tournamentId },
       });
-      if (existing) {
-        return {
-          success: false,
-          message: 'La sede ya está agregada al torneo',
-        };
-      }
+      console.log(`[agregarSede] Eliminadas ${deletedRelations.count} relaciones anteriores`);
 
-      // Crear la relación torneo-sede
+      // Crear la nueva relación torneo-sede
       const torneoSede = await this.prisma.torneoSede.create({
         data: {
           tournamentId,
@@ -1811,6 +1802,7 @@ export class AdminTorneosController {
           sede: true,
         },
       });
+      console.log(`[agregarSede] Creada nueva relación con sede ${sede.nombre}`);
 
       // MVP FIX: Primero desactivar todas las canchas del torneo
       // para asegurar que solo las de la sede actual estén activas
