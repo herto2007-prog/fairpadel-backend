@@ -117,6 +117,7 @@ export class CanchasSorteoService {
 
   /**
    * Genera slots (TorneoSlot) para un día específico
+   * El último slot puede extenderse más allá de horaFin (flexibilidad inteligente)
    */
   private async generarSlotsParaDia(
     disponibilidadId: string,
@@ -128,7 +129,10 @@ export class CanchasSorteoService {
     const inicio = this.parseHora(horaInicio);
     const fin = this.parseHora(horaFin);
     const minutosTotales = (fin.getTime() - inicio.getTime()) / (1000 * 60);
-    const slotsPorCancha = Math.floor(minutosTotales / minutosSlot);
+    
+    // Math.ceil para incluir el último slot aunque se extienda más allá del horario
+    // Ej: 18:00-23:00 (300min) / 90min = 3.33 → 4 slots (el último termina a las 00:00)
+    const slotsPorCancha = Math.ceil(minutosTotales / minutosSlot);
 
     let slotsGenerados = 0;
 
