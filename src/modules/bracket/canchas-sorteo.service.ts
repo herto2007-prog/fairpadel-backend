@@ -531,4 +531,40 @@ export class CanchasSorteoService {
       },
     };
   }
+
+  /**
+   * Elimina un día de juego y todos sus slots asociados
+   */
+  async eliminarDia(diaId: string) {
+    // Verificar que el día existe
+    const dia = await this.prisma.torneoDisponibilidadDia.findUnique({
+      where: { id: diaId },
+      include: {
+        slots: {
+          where: { estado: 'OCUPADO' },
+        },
+      },
+    });
+
+    if (!dia) {
+      throw new NotFoundException('Día no encontrado');
+    }
+
+    // Verificar que no hay slots ocupados
+    if (dia.slots.length > 0) {
+      throw new BadRequestException(
+        `No se puede eliminar el día porque tiene ${dia.slots.length} slot(s) ocupado(s) con partidos programados`
+      );
+    }
+
+    // Eliminar el día (cascada eliminará los slots libres)
+    await this.prisma.torneoDisponibilidadDia.delete({
+      where: { id: diaId },
+    });
+
+    return {
+      success: true,
+      message: 'Día eliminado correctamente',
+    };
+  }
 }

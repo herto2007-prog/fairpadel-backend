@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Delete, Param, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -73,5 +73,14 @@ export class CanchasSorteoController {
   @Post('cerrar-y-sortear')
   async cerrarInscripcionesYsortear(@Body() dto: CerrarInscripcionesSortearDto) {
     return this.canchasSorteoService.cerrarInscripcionesYsortear(dto);
+  }
+
+  /**
+   * Eliminar un día de juego y sus slots
+   * DELETE /admin/canchas-sorteo/dias/:diaId
+   */
+  @Delete('dias/:diaId')
+  async eliminarDia(@Param('diaId') diaId: string) {
+    return this.canchasSorteoService.eliminarDia(diaId);
   }
 }
