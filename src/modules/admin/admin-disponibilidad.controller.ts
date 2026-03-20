@@ -272,152 +272,20 @@ export class AdminDisponibilidadController {
     }
   }
 
-  /**
-   * GET /admin/torneos/:id/disponibilidad/sedes
-   * Obtener sedes asignadas al torneo
-   */
+  // [AUDITORIA-2026-03-19] DEPRECATED: Endpoints movidos a admin-torneos.controller.ts
+  // RAZÓN: El frontend espera la ruta /admin/torneos/:id/sedes (sin /disponibilidad)
+  // ACCIÓN: Usar admin-torneos.controller.ts en su lugar
+  // REF: AUDITORIA_TORNEOS.md - Endpoints de gestión de sedes
+  /*
   @Get('sedes')
-  async obtenerSedes(@Param('id') tournamentId: string) {
-    try {
-      const torneoSedes = await this.prisma.torneoSede.findMany({
-        where: { tournamentId },
-        include: {
-          sede: {
-            include: {
-              canchas: {
-                where: { activa: true },
-              },
-            },
-          },
-        },
-      });
-
-      return {
-        success: true,
-        sedes: torneoSedes.map((ts) => ({
-          id: ts.sede.id,
-          nombre: ts.sede.nombre,
-          ciudad: ts.sede.ciudad,
-          direccion: ts.sede.direccion,
-          canchas: ts.sede.canchas.length,
-        })),
-      };
-    } catch (error: any) {
-      throw new BadRequestException({
-        success: false,
-        message: 'Error obteniendo sedes',
-        error: error.message,
-      });
-    }
-  }
-
-  /**
-   * POST /admin/torneos/:id/disponibilidad/sedes
-   * Agregar una sede al torneo
-   */
+  async obtenerSedes(@Param('id') tournamentId: string) { ... }
+  
   @Post('sedes')
-  async agregarSede(@Param('id') tournamentId: string, @Body() dto: AgregarSedeDto) {
-    try {
-      // Verificar que la sede existe
-      const sede = await this.prisma.sede.findUnique({
-        where: { id: dto.sedeId },
-        include: {
-          canchas: {
-            where: { activa: true },
-          },
-        },
-      });
-      if (!sede) {
-        throw new NotFoundException('Sede no encontrada');
-      }
-
-      // Verificar que no esté ya agregada
-      const existing = await this.prisma.torneoSede.findUnique({
-        where: {
-          tournamentId_sedeId: {
-            tournamentId,
-            sedeId: dto.sedeId,
-          },
-        },
-      });
-      if (existing) {
-        return {
-          success: false,
-          message: 'La sede ya está agregada al torneo',
-        };
-      }
-
-      // Crear la relación torneo-sede
-      const torneoSede = await this.prisma.torneoSede.create({
-        data: {
-          tournamentId,
-          sedeId: dto.sedeId,
-        },
-        include: {
-          sede: true,
-        },
-      });
-
-      // Agregar automáticamente todas las canchas activas de la sede al torneo
-      const canchasCreadas = [];
-      for (const cancha of sede.canchas) {
-        try {
-          const torneoCancha = await this.prisma.torneoCancha.create({
-            data: {
-              tournamentId,
-              sedeCanchaId: cancha.id,
-            },
-          });
-          canchasCreadas.push(torneoCancha);
-        } catch (canchaError) {
-          // Si una cancha ya existe, ignorar y continuar
-          console.log(`Cancha ${cancha.id} ya existe en el torneo, saltando...`);
-        }
-      }
-
-      return {
-        success: true,
-        message: `Sede agregada con ${canchasCreadas.length} canchas`,
-        sede: torneoSede.sede,
-        canchasAgregadas: canchasCreadas.length,
-      };
-    } catch (error: any) {
-      throw new BadRequestException({
-        success: false,
-        message: 'Error agregando sede',
-        error: error.message,
-      });
-    }
-  }
-
-  /**
-   * DELETE /admin/torneos/:id/disponibilidad/sedes/:sedeId
-   * Quitar una sede del torneo
-   */
+  async agregarSede(@Param('id') tournamentId: string, @Body() dto: AgregarSedeDto) { ... }
+  
   @Delete('sedes/:sedeId')
-  async quitarSede(@Param('id') tournamentId: string, @Param('sedeId') sedeId: string) {
-    try {
-      await this.prisma.torneoSede.delete({
-        where: {
-          tournamentId_sedeId: {
-            tournamentId,
-            sedeId,
-          },
-        },
-      });
-
-      return {
-        success: true,
-        message: 'Sede removida del torneo',
-      };
-    } catch (error: any) {
-      throw new BadRequestException({
-        success: false,
-        message: 'Error removiendo sede',
-        error: error.message,
-      });
-    }
-  }
+  async quitarSede(@Param('id') tournamentId: string, @Param('sedeId') sedeId: string) { ... }
+  */
 
   /**
    * POST /admin/torneos/:id/disponibilidad/canchas
