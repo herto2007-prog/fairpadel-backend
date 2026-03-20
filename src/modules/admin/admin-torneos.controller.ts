@@ -1812,31 +1812,39 @@ export class AdminTorneosController {
         },
       });
 
+      // MVP FIX: Primero desactivar todas las canchas del torneo
+      // para asegurar que solo las de la sede actual estén activas
+      await this.prisma.torneoCancha.updateMany({
+        where: { tournamentId },
+        data: { activa: false },
+      });
+      console.log(`[agregarSede] Desactivadas todas las canchas del torneo ${tournamentId}`);
+
       // Agregar automáticamente todas las canchas activas de la sede al torneo
       const canchasCreadas = [];
       for (const cancha of sede.canchas) {
         try {
+          // Intentar crear nueva cancha
           const torneoCancha = await this.prisma.torneoCancha.create({
             data: {
               tournamentId,
               sedeCanchaId: cancha.id,
-              activa: true, // IMPORTANTE: Marcar como activa por defecto
+              activa: true,
             },
           });
           canchasCreadas.push(torneoCancha);
         } catch (canchaError) {
-          // Si una cancha ya existe, intentar activarla
-          console.log(`Cancha ${cancha.id} ya existe en el torneo, activando...`);
-          try {
-            await this.prisma.torneoCancha.updateMany({
-              where: {
-                tournamentId,
-                sedeCanchaId: cancha.id,
-              },
-              data: { activa: true },
-            });
-          } catch (e) {
-            // Ignorar errores de actualización
+          // Si ya existe, activarla
+          console.log(`[agregarSede] Cancha ${cancha.id} ya existe, activando...`);
+          const updated = await this.prisma.torneoCancha.updateMany({
+            where: {
+              tournamentId,
+              sedeCanchaId: cancha.id,
+            },
+            data: { activa: true },
+          });
+          if (updated.count > 0) {
+            canchasCreadas.push({ id: cancha.id, reactivada: true });
           }
         }
       }
