@@ -450,4 +450,81 @@ export class CanchasSorteoService {
   private formatHora(fecha: Date): string {
     return fecha.toTimeString().slice(0, 5);
   }
+
+  /**
+   * Obtiene las canchas asignadas a un torneo
+   */
+  async obtenerCanchas(tournamentId: string) {
+    const torneoCanchas = await this.prisma.torneoCancha.findMany({
+      where: { tournamentId, activa: true },
+      include: {
+        sedeCancha: {
+          include: { sede: { select: { id: true, nombre: true } } },
+        },
+      },
+      orderBy: { orden: 'asc' },
+    });
+
+    return {
+      success: true,
+      canchas: torneoCanchas.map((tc) => ({
+        id: tc.id, // ID de TorneoCancha (usado para asignación)
+        nombre: tc.sedeCancha.nombre,
+        tipo: tc.sedeCancha.tipo,
+        iluminacion: tc.sedeCancha.tieneLuz,
+        sede: tc.sedeCancha.sede,
+      })),
+    };
+  }
+
+  /**
+   * Obtiene la configuración completa de canchas y sorteo de un torneo
+   */
+  async obtenerConfiguracion(tournamentId: string) {
+    const [dias, torneo] = await Promise.all([
+      this.prisma.torneoDisponibilidadDia.findMany({
+        where: { tournamentId },
+        include: {
+          _count: { select: { slots: { where: { estado: 'LIBRE' } } } },
+          slots: {
+            select: { torneoCanchaId: true },
+            distinct: ['torneoCanchaId'],
+            where: { estado: 'LIBRE' },
+          },
+        },
+        orderBy: { fecha: 'asc' },
+      }),
+      this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: {
+          horaInicioFinales: true,
+          horaFinFinales: true,
+          canchasFinales: true,
+        },
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        dias: dias.map((d) => ({
+          id: d.id,
+          fecha: d.fecha,
+          horaInicio: d.horaInicio,
+          horaFin: d.horaFin,
+          minutosSlot: d.minutosSlot,
+          slotsLibres: d._count.slots,
+          canchas: d.slots.length,
+          canchasIds: d.slots.map((s) => s.torneoCanchaId),
+        })),
+        finales: torneo?.horaInicioFinales
+          ? {
+              horaInicio: torneo.horaInicioFinales,
+              horaFin: torneo.horaFinFinales,
+              canchasIds: torneo.canchasFinales || [],
+            }
+          : null,
+      },
+    };
+  }
 }

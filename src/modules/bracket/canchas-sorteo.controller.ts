@@ -34,19 +34,21 @@ export class CanchasSorteoController {
   }
 
   /**
+   * Obtiene las canchas asignadas al torneo
+   * GET /admin/canchas-sorteo/:tournamentId/canchas
+   */
+  @Get(':tournamentId/canchas')
+  async obtenerCanchas(@Param('tournamentId') tournamentId: string) {
+    return this.canchasSorteoService.obtenerCanchas(tournamentId);
+  }
+
+  /**
    * Obtiene configuración actual del torneo
    * GET /admin/canchas-sorteo/:tournamentId/configuracion
    */
   @Get(':tournamentId/configuracion')
   async obtenerConfiguracion(@Param('tournamentId') tournamentId: string) {
-    // TODO: Implementar obtención de configuración actual
-    return {
-      success: true,
-      data: {
-        tournamentId,
-        // Retornar días configurados, finales, etc.
-      },
-    };
+    return this.canchasSorteoService.obtenerConfiguracion(tournamentId);
   }
 
   /**
