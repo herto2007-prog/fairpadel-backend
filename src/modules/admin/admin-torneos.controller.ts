@@ -1820,12 +1820,24 @@ export class AdminTorneosController {
             data: {
               tournamentId,
               sedeCanchaId: cancha.id,
+              activa: true, // IMPORTANTE: Marcar como activa por defecto
             },
           });
           canchasCreadas.push(torneoCancha);
         } catch (canchaError) {
-          // Si una cancha ya existe, ignorar y continuar
-          console.log(`Cancha ${cancha.id} ya existe en el torneo, saltando...`);
+          // Si una cancha ya existe, intentar activarla
+          console.log(`Cancha ${cancha.id} ya existe en el torneo, activando...`);
+          try {
+            await this.prisma.torneoCancha.updateMany({
+              where: {
+                tournamentId,
+                sedeCanchaId: cancha.id,
+              },
+              data: { activa: true },
+            });
+          } catch (e) {
+            // Ignorar errores de actualización
+          }
         }
       }
 
