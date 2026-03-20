@@ -641,6 +641,7 @@ model TorneoSlot {
   horaInicio        String   @map("hora_inicio") // "18:00"
   horaFin           String   @map("hora_fin")    // "19:30"
   estado            String   @default("LIBRE") // LIBRE, OCUPADO, BLOQUEADO
+  fase              String?  @map("fase")       // ZONA, SEMIFINAL, FINAL, etc.
   matchId           String?  @unique @map("match_id")   // Si está ocupado, qué partido (único para 1:1)
   createdAt         DateTime @default(now()) @map("created_at")
 

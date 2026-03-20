@@ -1,17 +1,30 @@
 import { IsString, IsNumber, IsOptional, IsArray, IsBoolean, Min, Max, ArrayMinSize } from 'class-validator';
 
 /**
- * DTO para configurar horarios de finales (Paso 1.a)
+ * DTO para configurar horarios de semifinales y finales (Paso 1.a)
+ * Las semifinales se juegan antes que las finales
  */
 export class ConfigurarFinalesDto {
   @IsString()
   tournamentId: string;
 
+  // Horario de semifinales (primera mitad del día de finales)
   @IsString()
-  horaInicio: string; // "18:00"
+  horaInicioSemifinales: string; // "14:00"
 
   @IsString()
-  horaFin: string; // "23:00"
+  horaFinSemifinales: string; // "16:00"
+
+  @IsArray()
+  @IsString({ each: true })
+  canchasSemifinalesIds: string[];
+
+  // Horario de finales (segunda mitad del día de finales)
+  @IsString()
+  horaInicioFinales: string; // "16:00"
+
+  @IsString()
+  horaFinFinales: string; // "18:00"
 
   @IsArray()
   @IsString({ each: true })

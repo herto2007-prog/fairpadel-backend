@@ -30,8 +30,8 @@ export class CanchasSorteoService {
   ) {}
 
   /**
-   * PASO 1.a: Configurar horarios de finales
-   * También crea automáticamente el día de finales con sus slots
+   * PASO 1.a: Configurar horarios de semifinales y finales
+   * Crea automáticamente el día de finales con slots para ambas fases
    */
   async configurarFinales(dto: ConfigurarFinalesDto) {
     // Obtener el torneo para conocer su fecha de finales
@@ -47,12 +47,20 @@ export class CanchasSorteoService {
       throw new BadRequestException('El torneo no tiene fecha de finales configurada');
     }
 
-    // Actualizar configuración de finales
+    // Validar que los horarios no se solapen
+    const finSemis = this.parseHora(dto.horaFinSemifinales);
+    const inicioFinales = this.parseHora(dto.horaInicioFinales);
+    
+    if (finSemis > inicioFinales) {
+      throw new BadRequestException('El horario de semifinales no puede terminar después de que empiecen las finales');
+    }
+
+    // Actualizar configuración de finales en el torneo
     await this.prisma.tournament.update({
       where: { id: dto.tournamentId },
       data: {
-        horaInicioFinales: dto.horaInicio,
-        horaFinFinales: dto.horaFin,
+        horaInicioFinales: dto.horaInicioFinales,
+        horaFinFinales: dto.horaFinFinales,
         canchasFinales: dto.canchasFinalesIds,
       },
     });
@@ -60,6 +68,7 @@ export class CanchasSorteoService {
     // Crear o actualizar el día de finales automáticamente
     const fechaFinales = this.dateService.getDateOnly(torneo.fechaFinales);
     
+    // El horario total es desde el inicio de semifinales hasta el fin de finales
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
       where: {
         tournamentId_fecha: {
@@ -68,38 +77,58 @@ export class CanchasSorteoService {
         },
       },
       update: {
-        horaInicio: dto.horaInicio,
-        horaFin: dto.horaFin,
-        minutosSlot: 90, // Duración estándar para finales
+        horaInicio: dto.horaInicioSemifinales,
+        horaFin: dto.horaFinFinales,
+        minutosSlot: 90,
       },
       create: {
         tournamentId: dto.tournamentId,
         fecha: torneo.fechaFinales,
-        horaInicio: dto.horaInicio,
-        horaFin: dto.horaFin,
+        horaInicio: dto.horaInicioSemifinales,
+        horaFin: dto.horaFinFinales,
         minutosSlot: 90,
       },
     });
 
-    // Generar slots para las canchas de finales
-    const slotsGenerados = await this.generarSlotsParaDia(
+    // Generar slots para semifinales
+    const slotsSemifinales = await this.generarSlotsParaDiaConFase(
+      disponibilidad.id,
+      dto.canchasSemifinalesIds,
+      dto.horaInicioSemifinales,
+      dto.horaFinSemifinales,
+      90,
+      'SEMIFINAL',
+    );
+
+    // Generar slots para finales
+    const slotsFinales = await this.generarSlotsParaDiaConFase(
       disponibilidad.id,
       dto.canchasFinalesIds,
-      dto.horaInicio,
-      dto.horaFin,
+      dto.horaInicioFinales,
+      dto.horaFinFinales,
       90,
+      'FINAL',
     );
 
     return {
       success: true,
-      message: 'Configuración de finales guardada',
+      message: 'Configuración guardada',
       data: {
-        horaInicio: dto.horaInicio,
-        horaFin: dto.horaFin,
-        canchasFinales: dto.canchasFinalesIds,
+        semifinales: {
+          horaInicio: dto.horaInicioSemifinales,
+          horaFin: dto.horaFinSemifinales,
+          canchas: dto.canchasSemifinalesIds,
+          slotsGenerados: slotsSemifinales,
+        },
+        finales: {
+          horaInicio: dto.horaInicioFinales,
+          horaFin: dto.horaFinFinales,
+          canchas: dto.canchasFinalesIds,
+          slotsGenerados: slotsFinales,
+        },
         fechaFinales,
         diaId: disponibilidad.id,
-        slotsGenerados,
+        totalSlots: slotsSemifinales + slotsFinales,
       },
     };
   }
@@ -199,6 +228,46 @@ export class CanchasSorteoService {
             horaInicio: this.formatHora(slotInicio),
             horaFin: this.formatHora(slotFin),
             estado: 'LIBRE',
+          },
+        });
+        slotsGenerados++;
+      }
+    }
+
+    return slotsGenerados;
+  }
+
+  /**
+   * Genera slots marcados con una fase específica (SEMIFINAL, FINAL, etc.)
+   */
+  private async generarSlotsParaDiaConFase(
+    disponibilidadId: string,
+    canchasIds: string[],
+    horaInicio: string,
+    horaFin: string,
+    minutosSlot: number,
+    fase: string,
+  ): Promise<number> {
+    const inicio = this.parseHora(horaInicio);
+    const fin = this.parseHora(horaFin);
+    const minutosTotales = (fin.getTime() - inicio.getTime()) / (1000 * 60);
+    const slotsPorCancha = Math.ceil(minutosTotales / minutosSlot);
+
+    let slotsGenerados = 0;
+
+    for (const canchaId of canchasIds) {
+      for (let i = 0; i < slotsPorCancha; i++) {
+        const slotInicio = new Date(inicio.getTime() + i * minutosSlot * 60000);
+        const slotFin = new Date(slotInicio.getTime() + minutosSlot * 60000);
+
+        await this.prisma.torneoSlot.create({
+          data: {
+            disponibilidadId,
+            torneoCanchaId: canchaId,
+            horaInicio: this.formatHora(slotInicio),
+            horaFin: this.formatHora(slotFin),
+            estado: 'LIBRE',
+            fase,
           },
         });
         slotsGenerados++;
