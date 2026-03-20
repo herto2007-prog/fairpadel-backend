@@ -23,18 +23,15 @@ export class ResultadosService {
   // ═══════════════════════════════════════════════════════════
 
   /**
-   * Valida que el partido esté programado (tenga cancha, fecha y hora asignadas)
-   * antes de permitir cargar resultados o iniciar el partido
+   * [MVP] Validación simplificada - permite cargar resultados sin programación previa
+   * En el flujo MVP, los partidos se juegan y luego se cargan resultados directamente
    */
   private validarPartidoProgramado(match: any): void {
-    // Permitir resultados especiales (WO, retiro antes de jugar) sin programación
-    // ya que pueden ocurrir antes de que el partido esté programado
-    if (match.estado === 'PROGRAMADO' && (!match.torneoCanchaId || !match.fechaProgramada || !match.horaProgramada)) {
-      throw new BadRequestException(
-        'El partido debe estar programado antes de cargar resultados. ' +
-        'Ve al tab "Programación" para asignar fecha, hora y cancha.'
-      );
-    }
+    // MVP: No requerir programación previa para cargar resultados
+    // El partido solo necesita tener ambas parejas asignadas (validado en el método principal)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _ = match; // Evitar warning de parámetro no usado
+    return; // Siempre permitir para MVP
   }
 
   // ═══════════════════════════════════════════════════════════
