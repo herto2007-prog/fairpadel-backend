@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { IsString, IsOptional, IsBoolean, IsEnum } from 'class-validator';
@@ -110,10 +111,14 @@ export class SedesAdminController {
 
   /**
    * Listar todas las sedes con sus canchas
+   * Query: ?activas=true - Solo sedes activas
    */
   @Get()
-  async findAll() {
+  async findAll(@Query('activas') activas?: string) {
+    const where = activas === 'true' ? { activa: true } : {};
+    
     const sedes = await this.prisma.sede.findMany({
+      where,
       include: {
         canchas: {
           where: { activa: true },
@@ -129,7 +134,10 @@ export class SedesAdminController {
       orderBy: { nombre: 'asc' },
     });
 
-    return sedes;
+    return {
+      success: true,
+      sedes,
+    };
   }
 
   /**
