@@ -1728,22 +1728,22 @@ export class AdminTorneosController {
 
   /**
    * GET /admin/torneos/:id/sedes
-   * Obtener sedes asignadas al torneo
+   * Obtener sedes asignadas al torneo (con conteo de canchas activas del torneo)
    */
   @Get(':id/sedes')
   async obtenerSedes(@Param('id') tournamentId: string) {
     try {
+      // Obtener sedes del torneo
       const torneoSedes = await this.prisma.torneoSede.findMany({
         where: { tournamentId },
         include: {
-          sede: {
-            include: {
-              canchas: {
-                where: { activa: true },
-              },
-            },
-          },
+          sede: true,
         },
+      });
+
+      // Contar canchas activas del torneo (TorneoCancha)
+      const canchasCount = await this.prisma.torneoCancha.count({
+        where: { tournamentId, activa: true },
       });
 
       return {
@@ -1753,7 +1753,7 @@ export class AdminTorneosController {
           nombre: ts.sede.nombre,
           ciudad: ts.sede.ciudad,
           direccion: ts.sede.direccion,
-          canchas: ts.sede.canchas.length,
+          canchas: canchasCount, // IMPORTANTE: Canchas activas del torneo, no de la sede
         })),
       };
     } catch (error: any) {
