@@ -459,13 +459,17 @@ export class CanchasSorteoService {
       // MVP FIX: Generar bracket real usando bracketService
       // Calcular config del bracket basado en número de parejas
       const numParejas = inscripcionesCategoria.length;
+      console.log(`[cerrarInscripcionesYsortear] Categoría ${categoriaInfo.nombre}: ${numParejas} parejas`);
+      
       const config = this.bracketService.calcularConfiguracion(numParejas);
+      console.log(`[cerrarInscripcionesYsortear] Config:`, config);
       
       // Generar partidos del bracket usando generarBracket
       const { partidos } = await this.bracketService.generarBracket({
         tournamentCategoryId: categoria.id,
         totalParejas: numParejas,
       });
+      console.log(`[cerrarInscripcionesYsortear] Partidos generados: ${partidos.length}`);
       
       // Guardar bracket en FixtureVersion
       // Archivar versión anterior si existe

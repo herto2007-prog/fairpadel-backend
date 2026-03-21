@@ -492,6 +492,7 @@ export class AdminBracketController {
    */
   @Get('bracket/:fixtureVersionId/partidos')
   async getPartidosBracket(@Param('fixtureVersionId') fixtureVersionId: string) {
+    console.log(`[getPartidosBracket] Request - fixtureVersionId: ${fixtureVersionId}`);
     try {
       const partidos = await this.prisma.match.findMany({
         where: { fixtureVersionId },
@@ -575,6 +576,8 @@ export class AdminBracketController {
         ],
       });
 
+      console.log(`[getPartidosBracket] Partidos encontrados: ${partidos.length}`);
+      
       // Debug: Log para verificar que los sets vienen en la respuesta
       console.log('[getPartidosBracket] Primer partido sets:', {
         set1: partidos[0] ? [partidos[0].set1Pareja1, partidos[0].set1Pareja2] : null,

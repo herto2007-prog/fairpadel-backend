@@ -676,6 +676,10 @@ export class BracketService {
     partidos: MatchNode[],
     inscripciones: any[],
   ): Promise<string> {
+    console.log(`[guardarBracket] Iniciando - categoryId: ${tournamentCategoryId}`);
+    console.log(`[guardarBracket] Total inscripciones: ${inscripciones.length}`);
+    console.log(`[guardarBracket] Total partidos: ${partidos.length}`);
+    
     // Obtener IDs de torneo y categoría
     const categoria = await this.prisma.tournamentCategory.findUnique({
       where: { id: tournamentCategoryId },
@@ -687,6 +691,7 @@ export class BracketService {
     }
 
     const { tournamentId, categoryId } = categoria;
+    console.log(`[guardarBracket] tournamentId: ${tournamentId}, categoryId: ${categoryId}`);
 
     // Crear FixtureVersion
     const fixtureVersion = await this.prisma.fixtureVersion.create({
@@ -850,6 +855,13 @@ export class BracketService {
         }
       }
     }
+
+    // Verificar partidos creados
+    const partidosCreados = await this.prisma.match.count({
+      where: { fixtureVersionId: fixtureVersion.id }
+    });
+    console.log(`[guardarBracket] Partidos creados: ${partidosCreados}`);
+    console.log(`[guardarBracket] FixtureVersion: ${fixtureVersion.id}`);
 
     return fixtureVersion.id;
   }
