@@ -138,6 +138,8 @@ export class CanchasSorteoService {
    * Crea los slots (TorneoSlot) para el día configurado
    */
   async configurarDiaJuego(dto: ConfigurarDiaJuegoDto) {
+    console.log(`[configurarDiaJuego] DTO recibido: ${JSON.stringify(dto)}`);
+    
     // Verificar que el torneo existe
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: dto.tournamentId },
@@ -149,6 +151,7 @@ export class CanchasSorteoService {
 
     // Crear o actualizar disponibilidad del día
     const fecha = this.dateService.parse(dto.fecha);
+    console.log(`[configurarDiaJuego] Fecha parseada: ${fecha}`);
     
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
       where: {
@@ -206,34 +209,48 @@ export class CanchasSorteoService {
     horaFin: string,
     minutosSlot: number,
   ): Promise<number> {
+    console.log(`[generarSlotsParaDia] Inicio - disponibilidadId: ${disponibilidadId}`);
+    console.log(`[generarSlotsParaDia] canchasIds: ${JSON.stringify(canchasIds)}`);
+    console.log(`[generarSlotsParaDia] horaInicio: ${horaInicio}, horaFin: ${horaFin}, minutosSlot: ${minutosSlot}`);
+
     const inicio = this.parseHora(horaInicio);
     const fin = this.parseHora(horaFin);
     const minutosTotales = (fin.getTime() - inicio.getTime()) / (1000 * 60);
     
+    console.log(`[generarSlotsParaDia] minutosTotales: ${minutosTotales}`);
+    
     // Math.ceil para incluir el último slot aunque se extienda más allá del horario
     // Ej: 18:00-23:00 (300min) / 90min = 3.33 → 4 slots (el último termina a las 00:00)
     const slotsPorCancha = Math.ceil(minutosTotales / minutosSlot);
+    console.log(`[generarSlotsParaDia] slotsPorCancha: ${slotsPorCancha}`);
 
     let slotsGenerados = 0;
 
     for (const canchaId of canchasIds) {
+      console.log(`[generarSlotsParaDia] Procesando cancha: ${canchaId}`);
       for (let i = 0; i < slotsPorCancha; i++) {
         const slotInicio = new Date(inicio.getTime() + i * minutosSlot * 60000);
         const slotFin = new Date(slotInicio.getTime() + minutosSlot * 60000);
 
-        await this.prisma.torneoSlot.create({
-          data: {
-            disponibilidadId,
-            torneoCanchaId: canchaId,
-            horaInicio: this.formatHora(slotInicio),
-            horaFin: this.formatHora(slotFin),
-            estado: 'LIBRE',
-          },
-        });
-        slotsGenerados++;
+        try {
+          await this.prisma.torneoSlot.create({
+            data: {
+              disponibilidadId,
+              torneoCanchaId: canchaId,
+              horaInicio: this.formatHora(slotInicio),
+              horaFin: this.formatHora(slotFin),
+              estado: 'LIBRE',
+            },
+          });
+          slotsGenerados++;
+          console.log(`[generarSlotsParaDia] Slot creado: ${i} para cancha ${canchaId}`);
+        } catch (error) {
+          console.error(`[generarSlotsParaDia] Error creando slot: ${error.message}`);
+        }
       }
     }
 
+    console.log(`[generarSlotsParaDia] Total slots generados: ${slotsGenerados}`);
     return slotsGenerados;
   }
 
