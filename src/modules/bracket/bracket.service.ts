@@ -695,6 +695,46 @@ export class BracketService {
     const { tournamentId, categoryId } = categoria;
     console.log(`[guardarBracket] tournamentId: ${tournamentId}, categoryId: ${categoryId}`);
 
+    // MVP: Si no hay slots, buscar slots disponibles del torneo
+    if (!slots || slots.length === 0) {
+      console.log(`[guardarBracket] Buscando slots disponibles...`);
+      const slotsDisponibles = await this.prisma.torneoSlot.findMany({
+        where: { 
+          estado: 'LIBRE',
+          disponibilidad: {
+            tournamentId,
+          },
+        },
+        include: {
+          disponibilidad: true,
+        },
+        orderBy: [
+          { disponibilidad: { fecha: 'asc' } },
+          { horaInicio: 'asc' },
+        ],
+        take: partidos.length,
+      });
+      
+      slots = slotsDisponibles.map((slot, index) => ({
+        fecha: slot.disponibilidad.fecha.toISOString().split('T')[0],
+        horaInicio: slot.horaInicio,
+        horaFin: slot.horaFin,
+        torneoCanchaId: slot.torneoCanchaId,
+        fase: partidos[index]?.fase || 'ZONA',
+        ordenPartido: partidos[index]?.orden || 1,
+      }));
+      
+      console.log(`[guardarBracket] Slots encontrados: ${slots.length}`);
+      
+      // Marcar slots como reservados
+      for (const slot of slotsDisponibles) {
+        await this.prisma.torneoSlot.update({
+          where: { id: slot.id },
+          data: { estado: 'OCUPADO' },
+        });
+      }
+    }
+
     // Calcular siguiente número de versión
     const ultimaVersion = await this.prisma.fixtureVersion.findFirst({
       where: { tournamentId, categoryId },
