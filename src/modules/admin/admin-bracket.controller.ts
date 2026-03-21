@@ -82,7 +82,8 @@ export class AdminBracketController {
         inscripcionAbierta: cat.inscripcionAbierta,
         estado: cat.estado,
         fixtureVersionId: cat.fixtureVersionId,
-        inscripcionesCount: countMap.get(cat.categoryId) || 0,
+        parejas: countMap.get(cat.categoryId) || 0, // MVP: Número de parejas inscritas
+        minimoParejas: 8, // MVP: Mínimo para sortear
       })),
     };
   }
