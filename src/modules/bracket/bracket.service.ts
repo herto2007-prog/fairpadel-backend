@@ -695,6 +695,39 @@ export class BracketService {
     const { tournamentId, categoryId } = categoria;
     console.log(`[guardarBracket] tournamentId: ${tournamentId}, categoryId: ${categoryId}`);
 
+    // MVP: Liberar slots del bracket anterior si existe
+    const categoriaActual = await this.prisma.tournamentCategory.findUnique({
+      where: { id: tournamentCategoryId },
+      select: { fixtureVersionId: true },
+    });
+    
+    if (categoriaActual?.fixtureVersionId) {
+      console.log(`[guardarBracket] Liberando slots del bracket anterior: ${categoriaActual.fixtureVersionId}`);
+      const partidosAnteriores = await this.prisma.match.findMany({
+        where: { fixtureVersionId: categoriaActual.fixtureVersionId },
+        select: { torneoCanchaId: true, fechaProgramada: true, horaProgramada: true },
+      });
+      
+      for (const partido of partidosAnteriores) {
+        if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
+          const slotLiberado = await this.prisma.torneoSlot.updateMany({
+            where: {
+              torneoCanchaId: partido.torneoCanchaId,
+              disponibilidad: {
+                fecha: partido.fechaProgramada,
+              },
+              horaInicio: partido.horaProgramada,
+              estado: 'OCUPADO',
+            },
+            data: { estado: 'LIBRE', matchId: null },
+          });
+          if (slotLiberado.count > 0) {
+            console.log(`[guardarBracket] Slot liberado: ${partido.fechaProgramada} ${partido.horaProgramada}`);
+          }
+        }
+      }
+    }
+
     // MVP: Si no hay slots, buscar slots disponibles del torneo
     if (!slots || slots.length === 0) {
       console.log(`[guardarBracket] Buscando slots disponibles...`);
