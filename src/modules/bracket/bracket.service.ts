@@ -669,12 +669,14 @@ export class BracketService {
 
   /**
    * Guarda el bracket generado en la base de datos
+   * MVP: Ahora acepta slots para asignar programación automática
    */
   async guardarBracket(
     tournamentCategoryId: string,
     config: BracketConfigResponse,
     partidos: MatchNode[],
     inscripciones: any[],
+    slots?: { fecha: string; horaInicio: string; horaFin: string; torneoCanchaId: string; fase: string; ordenPartido: number }[],
   ): Promise<string> {
     console.log(`[guardarBracket] Iniciando - categoryId: ${tournamentCategoryId}`);
     console.log(`[guardarBracket] Total inscripciones: ${inscripciones.length}`);
@@ -782,6 +784,18 @@ export class BracketService {
           if (tienePareja1 && !tienePareja2) {
             createData.esBye = true;
             createData.inscripcionGanadoraId = createData.inscripcion1Id;
+          }
+        }
+
+        // MVP: Asignar slot (cancha y horario) si está disponible
+        if (slots && slots.length > 0) {
+          const slot = slots.find(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
+          if (slot) {
+            createData.torneoCanchaId = slot.torneoCanchaId;
+            createData.fechaProgramada = new Date(slot.fecha);
+            createData.horaProgramada = slot.horaInicio;
+            createData.horaFinEstimada = slot.horaFin;
+            console.log(`[guardarBracket] Slot asignado - Partido ${partido.fase} ${partido.orden}: ${slot.fecha} ${slot.horaInicio}`);
           }
         }
 

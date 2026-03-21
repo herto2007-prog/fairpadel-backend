@@ -489,6 +489,7 @@ export class CanchasSorteoService {
         config,
         partidos,
         inscripcionesOrdenadas,
+        slotsReservados, // MVP: Pasar slots para asignar programación automática
       );
 
       // Actualizar categoría con el fixture
