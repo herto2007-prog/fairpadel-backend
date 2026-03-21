@@ -456,10 +456,50 @@ export class CanchasSorteoService {
 
       slotIndex += slotsReservados.length;
 
+      // MVP FIX: Generar bracket real usando bracketService
+      // Calcular config del bracket basado en número de parejas
+      const numParejas = inscripcionesCategoria.length;
+      const config = this.bracketService.calcularConfiguracion(numParejas);
+      
+      // Generar partidos del bracket usando generarBracket
+      const { partidos } = await this.bracketService.generarBracket({
+        tournamentCategoryId: categoria.id,
+        totalParejas: numParejas,
+      });
+      
+      // Guardar bracket en FixtureVersion
+      // Archivar versión anterior si existe
+      if (categoria.fixtureVersionId) {
+        await this.prisma.fixtureVersion.update({
+          where: { id: categoria.fixtureVersionId },
+          data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+        });
+      }
+      
+      // Ordenar inscripciones aleatoriamente para el sorteo
+      const inscripcionesOrdenadas = [...inscripcionesCategoria]
+        .sort(() => Math.random() - 0.5);
+      
+      const fixtureVersionId = await this.bracketService.guardarBracket(
+        categoria.id,
+        config,
+        partidos,
+        inscripcionesOrdenadas,
+      );
+
+      // Actualizar categoría con el fixture
+      await this.prisma.tournamentCategory.update({
+        where: { id: categoria.id },
+        data: {
+          estado: 'INSCRIPCIONES_CERRADAS',
+          fixtureVersionId,
+        },
+      });
+
       categoriasSorteadas.push({
         categoriaId: categoria.id,
         nombre: categoriaInfo.nombre,
-        fixtureVersionId: '', // Se llena después del sorteo
+        fixtureVersionId,
         totalPartidos: categoriaInfo.slotsNecesarios,
         slotsReservados: slotsReservados.length,
       });
