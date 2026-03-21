@@ -73,6 +73,13 @@ export class AdminBracketController {
       inscripcionesCount.map((i) => [i.categoryId, i._count.id]),
     );
 
+    console.log('[getCategoriasConInscripciones] Categorías raw:', categorias.map(c => ({
+      id: c.id,
+      estado: c.estado,
+      fixtureVersionId: c.fixtureVersionId,
+      fixtureVersion: c.fixtureVersion?.id,
+    })));
+
     return {
       success: true,
       categorias: categorias.map((cat) => ({
@@ -81,7 +88,7 @@ export class AdminBracketController {
         category: cat.category,
         inscripcionAbierta: cat.inscripcionAbierta,
         estado: cat.estado,
-        fixtureVersionId: cat.fixtureVersionId,
+        fixtureVersionId: cat.fixtureVersionId || cat.fixtureVersion?.id || null,
         inscripcionesCount: countMap.get(cat.categoryId) || 0, // Para compatibilidad con frontend
         parejas: countMap.get(cat.categoryId) || 0, // MVP: Número de parejas inscritas
         minimoParejas: 8, // MVP: Mínimo para sortear
