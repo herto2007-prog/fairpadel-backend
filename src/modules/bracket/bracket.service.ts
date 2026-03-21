@@ -695,11 +695,21 @@ export class BracketService {
     const { tournamentId, categoryId } = categoria;
     console.log(`[guardarBracket] tournamentId: ${tournamentId}, categoryId: ${categoryId}`);
 
+    // Calcular siguiente número de versión
+    const ultimaVersion = await this.prisma.fixtureVersion.findFirst({
+      where: { tournamentId, categoryId },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    const nuevaVersion = (ultimaVersion?.version || 0) + 1;
+    console.log(`[guardarBracket] Nueva version: ${nuevaVersion}`);
+
     // Crear FixtureVersion
     const fixtureVersion = await this.prisma.fixtureVersion.create({
       data: {
         tournamentId,
         categoryId,
+        version: nuevaVersion,
         definicion: {
           config,
           partidos: partidos.map((p) => ({
