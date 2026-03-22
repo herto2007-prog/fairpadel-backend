@@ -63,7 +63,8 @@ export class CanchasSorteoService {
     });
 
     // Crear o actualizar el día de finales automáticamente
-    const fechaFinales = this.dateService.getDateOnly(torneo.fechaFinales);
+    // FIX: fechaFinales ahora es String YYYY-MM-DD
+    const fechaFinales = torneo.fechaFinales;
     
     // El horario total es desde el inicio de semifinales hasta el fin de finales
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
@@ -145,8 +146,8 @@ export class CanchasSorteoService {
     }
 
     // Crear o actualizar disponibilidad del día
-    // FIX: Usar patrón consistente T03:00:00.000Z (medianoche PY = 03:00 UTC)
-    const fecha = new Date(`${dto.fecha}T03:00:00.000Z`);
+    // FIX: fecha ahora es String YYYY-MM-DD directamente
+    const fecha = dto.fecha;
     
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
       where: {
@@ -579,7 +580,8 @@ export class CanchasSorteoService {
         }
 
         const slot = slotsDisponibles[slotIndex];
-        const fecha = slot.disponibilidad.fecha.toISOString().split('T')[0];
+        // FIX: fecha ahora es String YYYY-MM-DD directamente
+        const fecha = slot.disponibilidad.fecha;
 
         slotsReservados.push({
           fecha,

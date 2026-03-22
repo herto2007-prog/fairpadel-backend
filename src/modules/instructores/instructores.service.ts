@@ -231,8 +231,8 @@ export class InstructoresService {
       throw new NotFoundException('Instructor no encontrado');
     }
 
-    // Usar UTC 00:00:00 para consistencia con almacenamiento
-    const fecha = new Date(createDto.fecha + 'T03:00:00.000Z');
+    // FIX: fecha es String YYYY-MM-DD
+    const fecha = createDto.fecha;
 
     // Verificar disponibilidad (simplificado - se puede mejorar)
     const reservaConflicto = await this.prisma.reservaInstructor.findFirst({
@@ -373,13 +373,11 @@ export class InstructoresService {
       throw new NotFoundException('No eres instructor');
     }
 
-    // Usar UTC 00:00:00 para consistencia con almacenamiento
-    const fecha = new Date(createDto.fecha + 'T03:00:00.000Z');
-
+    // FIX: fecha es String YYYY-MM-DD
     return this.prisma.pagoInstructor.create({
       data: {
         ...createDto,
-        fecha,
+        fecha: createDto.fecha,
         instructorId: instructor.id,
       },
     });

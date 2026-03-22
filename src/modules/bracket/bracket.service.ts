@@ -707,17 +707,14 @@ export class BracketService {
       
       for (const partido of partidosAnteriores) {
         if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
-          // FIX TIMEZONE: Normalizar fecha para comparación
-          const fechaNormalizada = partido.fechaProgramada.toISOString().split('T')[0];
+          // FIX: fechaProgramada ahora es String YYYY-MM-DD
+          const fechaNormalizada = partido.fechaProgramada;
           
           const slotLiberado = await this.prisma.torneoSlot.updateMany({
             where: {
               torneoCanchaId: partido.torneoCanchaId,
               disponibilidad: {
-                fecha: {
-                  gte: new Date(fechaNormalizada + 'T00:00:00.000Z'),
-                  lt: new Date(fechaNormalizada + 'T23:59:59.999Z'),
-                },
+                fecha: fechaNormalizada,
               },
               horaInicio: partido.horaProgramada,
               estado: 'OCUPADO',
@@ -753,9 +750,10 @@ export class BracketService {
       });
 
       // Filtrar slots que estén dentro del horario configurado para su día
+      // FIX: fecha ahora es String YYYY-MM-DD
       let slotsFiltrados = slotsDisponibles.filter(slot => {
-        const fechaSlot = slot.disponibilidad.fecha.toISOString().split('T')[0];
-        const configDia = diasConfig.find(d => d.fecha.toISOString().split('T')[0] === fechaSlot);
+        const fechaSlot = slot.disponibilidad.fecha;
+        const configDia = diasConfig.find(d => d.fecha === fechaSlot);
         if (!configDia) return false;
         
         // Verificar que el slot esté dentro del rango horario del día
@@ -783,6 +781,7 @@ export class BracketService {
           if (slotIndex < slotsFiltrados.length) {
             const slot = slotsFiltrados[slotIndex];
             slotsPorFase.push({
+              // FIX: fecha viene como Date de Prisma, convertir a YYYY-MM-DD
               fecha: slot.disponibilidad.fecha.toISOString().split('T')[0],
               horaInicio: slot.horaInicio,
               horaFin: slot.horaFin,
@@ -912,8 +911,8 @@ export class BracketService {
           const slot = slots.find(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
           if (slot) {
             createData.torneoCanchaId = slot.torneoCanchaId;
-            // FIX TIMEZONE: Usar T03:00:00.000Z para que medianoche PY se guarde correctamente
-            createData.fechaProgramada = new Date(slot.fecha + 'T03:00:00.000Z');
+            // FIX: fechaProgramada ahora es String YYYY-MM-DD directamente
+            createData.fechaProgramada = slot.fecha;
             createData.horaProgramada = slot.horaInicio;
             createData.horaFinEstimada = slot.horaFin;
           }

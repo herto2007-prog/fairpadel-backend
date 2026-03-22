@@ -257,8 +257,9 @@ export class PublicInscripcionesController {
       throw new BadRequestException('El torneo no está abierto para inscripciones');
     }
 
-    const ahora = new Date();
-    if (ahora > new Date(tournament.fechaLimiteInscr)) {
+    // FIX: fechas son String YYYY-MM-DD, comparar directamente
+    const hoy = new Date().toISOString().split('T')[0];
+    if (tournament.fechaLimiteInscr && hoy > ((tournament.fechaLimiteInscr as unknown) as string)) {
       throw new BadRequestException('Las inscripciones han cerrado');
     }
 

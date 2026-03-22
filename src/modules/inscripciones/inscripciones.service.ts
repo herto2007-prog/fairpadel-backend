@@ -32,8 +32,9 @@ export class InscripcionesService {
     }
 
     // Validar fechas de inscripción (usando fechaLimiteInscr)
-    const now = new Date();
-    if (now > new Date(tournament.fechaLimiteInscr)) {
+    // FIX: fechas son String YYYY-MM-DD, comparar directamente
+    const hoy = new Date().toISOString().split('T')[0];
+    if (tournament.fechaLimiteInscr && hoy > ((tournament.fechaLimiteInscr as unknown) as string)) {
       throw new BadRequestException('Las inscripciones han cerrado');
     }
 

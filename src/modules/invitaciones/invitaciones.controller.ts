@@ -164,9 +164,8 @@ export class InvitacionesController {
         apellido: datosPendientes.apellido,
         documento: datosPendientes.documento,
         telefono: datosRegistro.telefono || datosPendientes.telefono,
-        fechaNacimiento: datosRegistro.fechaNacimiento
-          ? new Date(datosRegistro.fechaNacimiento)
-          : null,
+        // FIX: fechaNacimiento es String YYYY-MM-DD
+        fechaNacimiento: datosRegistro.fechaNacimiento || null,
         ciudad: datosRegistro.ciudad,
         genero: datosRegistro.genero,
         pais: 'Paraguay',

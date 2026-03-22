@@ -71,8 +71,9 @@ export class PublicTournamentsController {
     // Filtro de fechas
     if (fechaDesde || fechaHasta) {
       where.fechaInicio = {};
-      if (fechaDesde) where.fechaInicio.gte = new Date(fechaDesde);
-      if (fechaHasta) where.fechaInicio.lte = new Date(fechaHasta);
+      // FIX: fechas son String YYYY-MM-DD, comparar directamente
+      if (fechaDesde) where.fechaInicio.gte = fechaDesde;
+      if (fechaHasta) where.fechaInicio.lte = fechaHasta;
     }
 
     // Búsqueda por texto (nombre o descripción)
@@ -199,9 +200,10 @@ export class PublicTournamentsController {
     }
 
     // Verificar si las inscripciones están abiertas
-    const ahora = new Date();
+    // FIX: fechas son String YYYY-MM-DD, comparar directamente
+    const hoy = new Date().toISOString().split('T')[0];
     const inscripcionesAbiertas =
-      ahora <= new Date(torneo.fechaLimiteInscr) &&
+      torneo.fechaLimiteInscr && hoy <= ((torneo.fechaLimiteInscr as unknown) as string) &&
       torneo.categorias.some((c) => c.inscripcionAbierta);
 
     return {

@@ -307,7 +307,8 @@ export class PerfilService {
     if (dto.pais !== undefined) updateData.pais = dto.pais;
     if (dto.telefono !== undefined) updateData.telefono = dto.telefono;
     if (dto.fechaNacimiento !== undefined) {
-      updateData.fechaNacimiento = new Date(dto.fechaNacimiento + 'T03:00:00.000Z');
+      // FIX: fechaNacimiento es String YYYY-MM-DD
+      updateData.fechaNacimiento = dto.fechaNacimiento;
     }
     if (dto.instagram !== undefined) updateData.instagram = dto.instagram;
     if (dto.facebook !== undefined) updateData.facebook = dto.facebook;

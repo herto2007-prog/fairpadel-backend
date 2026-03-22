@@ -617,8 +617,8 @@ export class AdminBracketController {
           torneoCanchaId: p.torneoCanchaId,
           fechaProgramada: p.fechaProgramada,
           horaProgramada: p.horaProgramada,
-          // Datos legibles para mostrar (las fechas ya vienen normalizadas)
-          fecha: p.fechaProgramada ? p.fechaProgramada.toISOString().split('T')[0] : null,
+          // Datos legibles para mostrar (fecha ya es String YYYY-MM-DD)
+          fecha: p.fechaProgramada,
           hora: p.horaProgramada,
           // Debug: información de navegación entre partidos
           navegacion: {

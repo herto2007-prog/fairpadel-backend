@@ -318,7 +318,7 @@ model User {
   apellido                String
   documento               String       @unique
   telefono                String?
-  fechaNacimiento         String?      @map("fecha_nacimiento") // YYYY-MM-DD
+  fechaNacimiento         DateTime?    @map("fecha_nacimiento")
   genero                  Gender
   ciudad                  String?
   pais                    String       @default("Paraguay")
@@ -330,7 +330,7 @@ model User {
   estado                  UserStatus   @default(NO_VERIFICADO)
   categoriaActualId       String?      @map("categoria_actual_id")
   esPremium               Boolean      @default(false) @map("es_premium")
-  fechaFinPremium         String?      @map("fecha_fin_premium") // YYYY-MM-DD - Timestamp de sistema, se mantiene similar
+  fechaFinPremium         DateTime?    @map("fecha_fin_premium")
   stripeCustomerId        String?      @map("stripe_customer_id")
   stripeSubscriptionId    String?      @map("stripe_subscription_id")
   notificacionesEmail     Boolean      @default(true) @map("notificaciones_email")
@@ -618,7 +618,7 @@ model TorneoCanchaHorario {
 model TorneoDisponibilidadDia {
   id            String   @id @default(uuid())
   tournamentId  String   @map("tournament_id")
-  fecha         String   // YYYY-MM-DD - Fecha del día de juego
+  fecha         DateTime @db.Timestamptz(3) // Timestamp con timezone para Paraguay UTC-3
   horaInicio    String   @map("hora_inicio") // "18:00"
   horaFin       String   @map("hora_fin")    // "23:00"
   minutosSlot   Int      @default(90) @map("minutos_slot") // Duración de cada partido
@@ -693,9 +693,9 @@ model Circuito {
   estado                  CircuitoEstado  @default(ACTIVO)
   
   // Fechas del circuito
-  fechaInicio             String          @map("fecha_inicio") // YYYY-MM-DD
-  fechaFin                String?         @map("fecha_fin") // YYYY-MM-DD
-  fechaLimiteInscripcion  String?         @map("fecha_limite_inscripcion") // YYYY-MM-DD
+  fechaInicio             DateTime        @map("fecha_inicio")
+  fechaFin                DateTime?       @map("fecha_fin")
+  fechaLimiteInscripcion  DateTime?       @map("fecha_limite_inscripcion")
   
   // Configuración visual
   logoUrl                 String?         @map("logo_url")
@@ -744,7 +744,7 @@ model TorneoCircuito {
   estado            String    @default("PENDIENTE") // PENDIENTE, APROBADO, RECHAZADO
   solicitadoPorId   String    @map("solicitado_por_id")
   aprobadoPorId     String?   @map("aprobado_por_id")
-  fechaAprobacion   String?   @map("fecha_aprobacion") // YYYY-MM-DD
+  fechaAprobacion   DateTime? @map("fecha_aprobacion")
   notas             String?   @db.Text
   
   createdAt         DateTime  @default(now()) @map("created_at")
@@ -793,10 +793,10 @@ model Tournament {
   pais                String
   region              String
   ciudad              String
-  fechaInicio         String            @map("fecha_inicio") // YYYY-MM-DD
-  fechaFin            String            @map("fecha_fin") // YYYY-MM-DD
-  fechaFinales        String?           @map("fecha_finales") // YYYY-MM-DD - Día D - Finales del torneo
-  fechaLimiteInscr    String            @map("fecha_limite_inscr") // YYYY-MM-DD
+  fechaInicio         DateTime          @map("fecha_inicio")
+  fechaFin            DateTime          @map("fecha_fin")
+  fechaFinales        DateTime?         @map("fecha_finales") // Día D - Finales del torneo
+  fechaLimiteInscr    DateTime          @map("fecha_limite_inscr")
   flyerUrl            String            @map("flyer_url")
   estado              TournamentStatus  @default(BORRADOR)
   costoInscripcion    Decimal           @map("costo_inscripcion") @db.Decimal(10, 2)
@@ -1020,8 +1020,8 @@ model Pago {
   comision       Decimal      @db.Decimal(10, 2)
   estado         PagoEstado   @default(PENDIENTE)
   transactionId  String?      @map("transaction_id")
-  fechaPago      String?      @map("fecha_pago") // YYYY-MM-DD
-  fechaConfirm   String?      @map("fecha_confirmacion") // YYYY-MM-DD
+  fechaPago      DateTime?    @map("fecha_pago")
+  fechaConfirm   DateTime?    @map("fecha_confirmacion")
   createdAt      DateTime     @default(now()) @map("created_at")
 
   inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
@@ -1081,7 +1081,7 @@ model Match {
   
   torneoCanchaId     String?      @map("torneo_cancha_id")
   sedeCanchaId       String?      @map("sede_cancha_id") // Para alquileres
-  fechaProgramada    String?      @map("fecha_programada") // YYYY-MM-DD
+  fechaProgramada    DateTime?    @map("fecha_programada") @db.Date
   horaProgramada     String?      @map("hora_programada")
   horaFinEstimada    String?      @map("hora_fin_estimada")
   estado             MatchStatus  @default(PROGRAMADO)
@@ -1189,7 +1189,7 @@ model HistorialPuntos {
   puntosGanados Int      @map("puntos_ganados") // Ya con multiplicador aplicado
   puntosBase    Int      @map("puntos_base")    // Sin multiplicador
   multiplicadorAplicado Float @default(1.0) @map("multiplicador_aplicado")
-  fechaTorneo   String   @map("fecha_torneo") // YYYY-MM-DD
+  fechaTorneo   DateTime @map("fecha_torneo") @db.Date
   createdAt     DateTime @default(now()) @map("created_at")
 
   jugador    User       @relation(fields: [jugadorId], references: [id], onDelete: Cascade)
@@ -1259,7 +1259,7 @@ model SolicitudJugar {
   id             String          @id @default(uuid())
   emisorId       String          @map("emisor_id")
   receptorId     String          @map("receptor_id")
-  fechaPropuesta String          @map("fecha_propuesta") // YYYY-MM-DD
+  fechaPropuesta DateTime        @map("fecha_propuesta")
   hora           String
   lugar          String
   mensaje        String?         @db.Text
@@ -1481,9 +1481,9 @@ model Suscripcion {
   periodo         PeriodoSuscripcion
   precio          Decimal            @db.Decimal(10, 2)
   estado          SuscripcionEstado  @default(PENDIENTE)
-  fechaInicio     String             @map("fecha_inicio") // YYYY-MM-DD
-  fechaFin        String             @map("fecha_fin") // YYYY-MM-DD
-  fechaRenovacion String?            @map("fecha_renovacion") // YYYY-MM-DD
+  fechaInicio     DateTime           @map("fecha_inicio")
+  fechaFin        DateTime           @map("fecha_fin")
+  fechaRenovacion DateTime?          @map("fecha_renovacion")
   autoRenovar     Boolean            @default(true) @map("auto_renovar")
   metodoPagoId    String?            @map("metodo_pago_id")
   cuponAplicado   String?            @map("cupon_aplicado")
@@ -1502,8 +1502,8 @@ model Cupon {
   codigo          String   @unique
   tipo            String
   valor           Decimal  @db.Decimal(10, 2)
-  fechaInicio     String   @map("fecha_inicio") // YYYY-MM-DD
-  fechaExpiracion String   @map("fecha_expiracion") // YYYY-MM-DD
+  fechaInicio     DateTime @map("fecha_inicio")
+  fechaExpiracion DateTime @map("fecha_expiracion")
   limiteUsos      Int      @map("limite_usos")
   usosActuales    Int      @default(0) @map("usos_actuales")
   estado          String   @default("ACTIVO")
@@ -1623,12 +1623,12 @@ model AscensoPendiente {
   
   // Evidencia de cumplimiento
   torneosGanadosIds   String[]            @map("torneos_ganados_ids")
-  fechaCalculo        String              @map("fecha_calculo") // YYYY-MM-DD
+  fechaCalculo        DateTime            @map("fecha_calculo")
   
   // Estado del ascenso
   estado              EstadoAscenso       @default(PENDIENTE)
   revisadoPorId       String?             @map("revisado_por_id")
-  fechaRevision       String?             @map("fecha_revision") // YYYY-MM-DD
+  fechaRevision       DateTime?           @map("fecha_revision")
   notasRevision       String?             @map("notas_revision") @db.Text
   
   createdAt           DateTime            @default(now()) @map("created_at")
@@ -1653,8 +1653,8 @@ model Banner {
   linkUrl            String?     @map("link_url") @db.VarChar(500)
   zona               BannerZona
   activo             Boolean     @default(true)
-  fechaInicio        String?     @map("fecha_inicio") // YYYY-MM-DD
-  fechaFin           String?     @map("fecha_fin") // YYYY-MM-DD
+  fechaInicio        DateTime?   @map("fecha_inicio")
+  fechaFin           DateTime?   @map("fecha_fin")
   orden              Int         @default(0)
   clicks             Int         @default(0)
   impresiones        Int         @default(0)
@@ -1882,8 +1882,8 @@ model InstructorDisponibilidad {
 model InstructorBloqueo {
   id            String   @id @default(uuid())
   instructorId  String   @map("instructor_id")
-  fechaInicio   String   @map("fecha_inicio") // YYYY-MM-DD
-  fechaFin      String   @map("fecha_fin") // YYYY-MM-DD
+  fechaInicio   DateTime @map("fecha_inicio") @db.Date
+  fechaFin      DateTime @map("fecha_fin") @db.Date
   motivo        String?
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -1897,7 +1897,7 @@ model ReservaInstructor {
   instructorId    String        @map("instructor_id")
   solicitanteId   String?       @map("solicitante_id")
   tipo            TipoClase
-  fecha           String        // YYYY-MM-DD
+  fecha           DateTime      @db.Date
   horaInicio      String        @map("hora_inicio")
   horaFin         String        @map("hora_fin")
   duracionMinutos Int           @map("duracion_minutos") @default(60)
@@ -1936,7 +1936,7 @@ model PagoInstructor {
   metodoPago            MetodoPagoInstructor @map("metodo_pago")
   concepto              ConceptoPago         @default(CLASE)
   descripcion           String?              @db.Text
-  fecha                 String               // YYYY-MM-DD
+  fecha                 DateTime             @db.Date
   numeroRecibo          Int?                 @map("numero_recibo")
   createdAt             DateTime             @default(now()) @map("created_at")
   updatedAt             DateTime             @updatedAt @map("updated_at")
@@ -2007,8 +2007,8 @@ model AlquilerBloqueo {
   id            String    @id @default(uuid())
   sedeId        String    @map("sede_id")
   sedeCanchaId  String?   @map("sede_cancha_id")
-  fechaInicio   String    @map("fecha_inicio") // YYYY-MM-DD
-  fechaFin      String    @map("fecha_fin") // YYYY-MM-DD
+  fechaInicio   DateTime  @map("fecha_inicio") @db.Date
+  fechaFin      DateTime  @map("fecha_fin") @db.Date
   motivo        String?
   createdAt     DateTime  @default(now()) @map("created_at")
 
@@ -2022,7 +2022,7 @@ model ReservaCancha {
   id                  String               @id @default(uuid())
   sedeCanchaId        String               @map("sede_cancha_id")
   userId              String?              @map("user_id")
-  fecha               String               // YYYY-MM-DD
+  fecha               DateTime             @db.Date
   horaInicio          String               @map("hora_inicio")
   horaFin             String               @map("hora_fin")
   duracionMinutos     Int                  @map("duracion_minutos")
@@ -2111,7 +2111,7 @@ model JugadorMensualero {
 model ReservaMensualero {
   id                String               @id @default(uuid())
   grupoId           String               @map("grupo_id")
-  fecha             String               // YYYY-MM-DD
+  fecha             DateTime             @db.Date
   estado            ReservaCanchaEstado  @default(PENDIENTE)
   pagado            Boolean              @default(false)
   montoPagado       Int                  @default(0) @map("monto_pagado")

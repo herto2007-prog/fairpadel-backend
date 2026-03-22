@@ -344,10 +344,11 @@ export class AdminTorneosController {
         const torneoData: any = {
           nombre: dto.nombre,
           descripcion: dto.descripcion || '',
-          fechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio + 'T03:00:00.000Z') : null,
-          fechaFin: new Date(dto.fechaFin + 'T03:00:00.000Z'),
-          fechaFinales: dto.fechaFinales ? new Date(dto.fechaFinales + 'T03:00:00.000Z') : null,
-          fechaLimiteInscr: new Date((dto.fechaLimiteInscripcion || dto.fechaInicio || dto.fechaFinales) + 'T03:00:00.000Z'),
+          // FIX: fechas ahora son String YYYY-MM-DD directamente
+          fechaInicio: dto.fechaInicio,
+          fechaFin: dto.fechaFin,
+          fechaFinales: dto.fechaFinales,
+          fechaLimiteInscr: dto.fechaLimiteInscripcion || dto.fechaInicio || dto.fechaFinales,
           ciudad: dto.ciudad,
           costoInscripcion: dto.costoInscripcion, // Prisma maneja Decimal desde number
           organizador: { connect: { id: user.userId } },
@@ -537,12 +538,12 @@ export class AdminTorneosController {
 
           try {
             // 1. Crear o actualizar el día de disponibilidad para finales
-            const fechaDate = new Date(fechaStr + 'T03:00:00.000Z');
+            // FIX: fecha es String YYYY-MM-DD
             const diaFinales = await this.prisma.torneoDisponibilidadDia.upsert({
               where: {
                 tournamentId_fecha: {
                   tournamentId: torneoId,
-                  fecha: fechaDate,
+                  fecha: fechaStr,
                 },
               },
               update: {
@@ -553,7 +554,7 @@ export class AdminTorneosController {
               },
               create: {
                 tournamentId: torneoId,
-                fecha: fechaDate,
+                fecha: fechaStr,
                 horaInicio,
                 horaFin,
                 minutosSlot,
@@ -1317,8 +1318,9 @@ export class AdminTorneosController {
           estado: 'CONFIRMADO',
           metodoPago: 'EFECTIVO',
           jugadorId: req.user.userId,
-          fechaPago: new Date(),
-          fechaConfirm: new Date(),
+          // FIX: fechas son String YYYY-MM-DD
+          fechaPago: new Date().toISOString().split('T')[0],
+          fechaConfirm: new Date().toISOString().split('T')[0],
         },
       });
     }
@@ -1538,11 +1540,21 @@ export class AdminTorneosController {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    const ahora = new Date();
-    const fechaInicio = torneo.fechaInicio ? new Date(torneo.fechaInicio) : null;
-    const fechaLimite = torneo.fechaLimiteInscr ? new Date(torneo.fechaLimiteInscr) : null;
-    const diasHastaInicio = fechaInicio ? Math.ceil((fechaInicio.getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24)) : null;
-    const diasHastaCierre = fechaLimite ? Math.ceil((fechaLimite.getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24)) : null;
+    // FIX: fechas son String YYYY-MM-DD, calcular días diferente
+    const hoy = new Date().toISOString().split('T')[0];
+    const fechaInicio = torneo.fechaInicio;
+    const fechaLimite = torneo.fechaLimiteInscr;
+    
+    // Función helper para calcular diferencia de días entre strings YYYY-MM-DD
+    const diasEntre = (fecha1: string, fecha2: string): number => {
+      const d1 = new Date(fecha1 + 'T12:00:00');
+      const d2 = new Date(fecha2 + 'T12:00:00');
+      return Math.ceil((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24));
+    };
+    
+    // Casting a string porque Prisma types aún no están actualizados
+    const diasHastaInicio = fechaInicio ? diasEntre((fechaInicio as unknown) as string, hoy) : null;
+    const diasHastaCierre = fechaLimite ? diasEntre((fechaLimite as unknown) as string, hoy) : null;
 
     const inscripcionesStats = {
       total: inscripciones.length,
@@ -1662,7 +1674,7 @@ export class AdminTorneosController {
     let estadoTorneo: 'configuracion' | 'inscripciones' | 'sorteo' | 'programacion' | 'en_curso' | 'finalizado';
     if (torneo.estado === 'FINALIZADO') {
       estadoTorneo = 'finalizado';
-    } else if (fechaInicio && fechaInicio <= ahora) {
+    } else if (fechaInicio && ((fechaInicio as unknown) as string) <= hoy) {
       estadoTorneo = 'en_curso';
     } else if (tieneFixture && disponibilidad.length > 0) {
       estadoTorneo = 'programacion';

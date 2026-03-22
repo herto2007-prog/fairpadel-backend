@@ -2,12 +2,13 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-19 - AUDITORÍA Y DOCUMENTACIÓN
-> - **AUDITORÍA:** Creados documentos AUDITORIA_TORNEOS.md y AUDITORIA_EJEMPLOS.md
-> - **Flujo Canchas y Sorteo:** Implementación completa (Paso 1.a, 1.b, 2)
-> - **Documentación:** Patrón de comentarios para saneamiento de código
-> - **Estado:** Listo para pruebas de flujo completo
-> **ESTADO:** En pruebas - verificar flujo end-to-end
+> **Última actualización:** 2026-03-22 - MIGRACIÓN FECHAS A STRING
+> - **MIGRACIÓN CRÍTICA:** Todas las fechas de negocio migradas de DateTime a String (YYYY-MM-DD)
+> - **Motivo:** Eliminar bugs de timezone (Paraguay UTC-3 causaba día anterior)
+> - **Schema:** 18 tablas modificadas, ~30 columnas de fecha cambiadas
+> - **Build:** ✅ Compilación exitosa, listo para deploy
+> - **Estado:** Pendiente aplicar migración SQL en producción
+> **ESTADO:** Listo para deploy - requiere aplicar migración en Railway
 
 ---
 
@@ -30,45 +31,123 @@
 
 ### 🕐 Manejo de Fechas - Timezone Paraguay (CRÍTICO)
 
+**ACTUALIZACIÓN 2026-03-22:** Las fechas de negocio ahora son `String` en formato `YYYY-MM-DD`. Ver sección "MIGRACIÓN: FECHAS DATE → STRING" abajo.
+
 **Timezone:** `America/Asuncion` (UTC-3)
 
-**REGLA:** Todas las fechas en el sistema son hora de Paraguay. **NUNCA** usar `new Date()` sin normalizar.
+**REGLA:** Todas las fechas en el sistema son hora de Paraguay.
 
-**REGLA CRÍTICA DE ALMACENAMIENTO (Anti-Bug de Fechas):**
-Cuando se convierte fecha YYYY-MM-DD a Date para PostgreSQL, SIEMPRE usar `T03:00:00.000Z` (NO `T00:00:00.000Z`).
-
+**✅ NUEVO ENFOQUE (Post-Migración):**
 ```typescript
-// ✅ CORRECTO - 03:00 UTC = 00:00 Paraguay
-new Date('2026-03-22' + 'T03:00:00.000Z') // Muestra "22/03/2026"
+// Fechas son String YYYY-MM-DD - Sin conversiones de timezone
+const fecha: string = "2026-03-22"; // Guarda y muestra exactamente esto
 
-// ❌ INCORRECTO - Causa bug de día anterior
-new Date('2026-03-22' + 'T00:00:00.000Z') // Muestra "21/03/2026"
+// Comparación directa como strings (funciona por formato ISO)
+if (hoy > fechaProgramada) { /* ... */ }
+
+// Para cálculos de día de semana
+const diaSemana = new Date(fecha + 'T12:00:00').getDay();
 ```
 
-**Por qué:** Paraguay es UTC-3. Medianoche PY (00:00) = 03:00 UTC. Si guardamos 00:00 UTC, al mostrar en PY da 21:00 del día anterior.
+**❌ ANTIGUO ENFOQUE (Pre-Migración) - YA NO APLICA:**
+```typescript
+// ❌ ELIMINADO - Ya no se usa
+new Date('2026-03-22' + 'T03:00:00.000Z')
+```
 
 **Backend:**
 ```typescript
-// Usar DateService SIEMPRE
-import { DateService } from '../../common/services/date.service';
-const fecha = this.dateService.parse(dto.fecha); // Parsea como PY
-const ahora = this.dateService.now(); // Ahora en PY
-const rango = this.dateService.getDatesRange(inicio, fin);
+// Validación de formato en DTOs
+@Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Formato YYYY-MM-DD' })
+fechaInicio: string;
+
+// Uso directo en servicios
+const torneo = await this.prisma.tournament.create({
+  data: {
+    fechaInicio: dto.fechaInicio, // String directo
+    fechaFin: dto.fechaFin,
+  }
+});
 ```
 
 **Frontend:**
 ```typescript
 // Usar utilidades de date.ts
-import { formatDatePY, toISOStringPY, getDatesRangePY } from '../utils/date';
-const str = formatDatePY(fechaISO); // "12/03/2025"
-const iso = toISOStringPY(fechaLocal); // Envía al backend
+import { formatDatePY, getDatesRangePY } from '../utils/date';
+const str = formatDatePY('2026-03-22'); // "22/03/2026"
 const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
 ```
 
 **Archivos:**
-- Backend: `src/common/services/date.service.ts`
-- Backend: `src/common/interceptors/paraguay-timezone.interceptor.ts`
+- Backend: `src/common/services/date.service.ts` (legacy - mantener para timestamps)
+- Backend: `src/common/interceptors/paraguay-timezone.interceptor.ts` (legacy)
 - Frontend: `src/utils/date.ts`
+
+---
+
+## 🔥 MIGRACIÓN: FECHAS DATE → STRING (2026-03-22)
+
+### Cambio Arquitectónico Mayor
+**Problema:** Las fechas DateTime con timezone causaban que las fechas mostraran un día anterior en Paraguay (UTC-3). Una fecha guardada como "2026-03-27" mostraba "26/03/2026".
+
+**Solución:** Migrar TODAS las fechas de negocio de `DateTime @db.Timestamptz` a `String` en formato `YYYY-MM-DD`.
+
+### Tablas Modificadas (18 total)
+- `tournaments` - fechas del torneo
+- `circuitos` - fechas de circuito
+- `torneo_disponibilidad_dias` - fechas de días de juego
+- `matches` - fecha_programada
+- `users` - fecha_nacimiento, fecha_fin_premium
+- `pagos` - fecha_pago, fecha_confirmacion
+- `historial_puntos` - fecha_torneo
+- `solicitudes_jugar` - fecha_propuesta
+- `suscripciones` - fechas de suscripción
+- `cupones` - fechas de validez
+- `banners` - fechas de publicación
+- `ascensos_pendientes` - fechas de cálculo
+- `instructor_bloqueos` - fechas de bloqueo
+- `reservas_instructor` - fecha de clase
+- `pagos_instructor` - fecha de pago
+- `alquiler_bloqueos` - fechas de bloqueo
+- `reservas_canchas` - fecha de reserva
+- `reservas_mensualeros` - fecha de reserva
+
+### Archivos de Migración
+- **SQL:** `prisma/migrations/20260322100000_fecha_string_migration/migration.sql`
+- **README:** `prisma/migrations/20260322100000_fecha_string_migration/README.md`
+- **Backup Schema:** `prisma/schema.prisma.backup.datetime`
+
+### Archivos de Código Modificados
+- `canchas-sorteo.service.ts` - Sorteo de canchas
+- `bracket.service.ts` - Generación de bracket
+- `admin-bracket.controller.ts` - API de bracket
+- `admin-torneos.controller.ts` - Gestión de torneos
+- `admin-disponibilidad.controller.ts` - Disponibilidad
+- `tournaments.service.ts` - CRUD de torneos
+- `inscripciones.service.ts` - Inscripciones
+- `public-inscripciones.controller.ts` - API pública
+- `public-tournaments.controller.ts` - Torneos públicos
+- `alquileres.service.ts` - Alquileres
+- `instructores.service.ts` - Instructores
+- `programacion.service.ts` - Programación
+- `auth.service.ts` - Registro
+- `perfil.service.ts` - Perfil
+- `invitaciones.controller.ts` - Invitaciones
+
+### Deploy en Producción
+```bash
+# Opción 1: SQL directo (recomendado para control)
+psql $DATABASE_URL -f prisma/migrations/20260322100000_fecha_string_migration/migration.sql
+
+# Opción 2: Prisma migrate (si funciona conexión)
+npx prisma migrate deploy
+```
+
+### Notas Post-Migración
+- Las fechas se comparan ahora como strings: `"2026-03-22" > "2026-03-21"`
+- Se eliminaron todos los `new Date(fecha + 'T03:00:00.000Z')`
+- Los castings `(as unknown as string)` pueden eliminarse tras regenerar tipos de Prisma
+- **Fechas de sistema** (createdAt, updatedAt, expiresAt) se mantienen como DateTime
 
 ---
 

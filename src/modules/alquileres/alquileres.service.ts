@@ -36,9 +36,8 @@ export class AlquileresService {
   // ============ DISPONIBILIDAD ============
 
   async consultarDisponibilidad(sedeId: string, fecha: string, sedeCanchaId?: string) {
-    // Usar UTC 00:00:00 para consistencia con almacenamiento
-    const fechaDate = new Date(fecha + 'T03:00:00.000Z');
-    const diaSemana = fechaDate.getDay();
+    // FIX: fecha es String YYYY-MM-DD, calcular día de semana local
+    const diaSemana = this.getDiaSemanaFromString(fecha);
 
     // Obtener canchas de la sede
     const canchas = await this.prisma.sedeCancha.findMany({
@@ -57,7 +56,7 @@ export class AlquileresService {
     const reservasExistentes = await this.prisma.reservaCancha.findMany({
       where: {
         sedeCanchaId: { in: canchas.map(c => c.id) },
-        fecha: fechaDate,
+        fecha: fecha,
         estado: { in: [ReservaCanchaEstado.PENDIENTE, ReservaCanchaEstado.CONFIRMADA] },
       },
     });
@@ -162,9 +161,8 @@ export class AlquileresService {
       throw new BadRequestException('Los alquileres no están habilitados para esta sede');
     }
 
-    // Verificar disponibilidad
-    const fecha = new Date(createDto.fecha + 'T03:00:00.000Z');
-    const diaSemana = fecha.getDay();
+    // FIX: fecha es String YYYY-MM-DD
+    const diaSemana = this.getDiaSemanaFromString(createDto.fecha);
 
     const disponibilidad = await this.prisma.alquilerDisponibilidad.findFirst({
       where: {
@@ -184,7 +182,7 @@ export class AlquileresService {
     const conflicto = await this.prisma.reservaCancha.findFirst({
       where: {
         sedeCanchaId: createDto.sedeCanchaId,
-        fecha,
+        fecha: createDto.fecha,
         estado: { in: [ReservaCanchaEstado.PENDIENTE, ReservaCanchaEstado.CONFIRMADA] },
         OR: [
           {
@@ -211,7 +209,6 @@ export class AlquileresService {
     return this.prisma.reservaCancha.create({
       data: {
         ...createDto,
-        fecha,
         userId,
         estado,
         duracionMinutos: createDto.duracionMinutos || 90,
@@ -239,7 +236,8 @@ export class AlquileresService {
     };
 
     if (fecha) {
-      where.fecha = new Date(fecha + 'T03:00:00.000Z');
+      // FIX: fecha es String YYYY-MM-DD
+      where.fecha = fecha;
     }
 
     return this.prisma.reservaCancha.findMany({
@@ -329,5 +327,16 @@ export class AlquileresService {
         motivoRechazo: motivo,
       },
     });
+  }
+
+  /**
+   * Helper: Obtiene el día de la semana (0-6) desde un string YYYY-MM-DD
+   * Usa mediodía Paraguay para evitar problemas de timezone
+   */
+  private getDiaSemanaFromString(fecha: string): number {
+    const [year, month, day] = fecha.split('-').map(Number);
+    // Crear fecha en hora local de Paraguay (UTC-3)
+    const date = new Date(year, month - 1, day, 12, 0, 0);
+    return date.getDay();
   }
 }
