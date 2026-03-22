@@ -146,8 +146,18 @@ export class CanchasSorteoService {
     }
 
     // Crear o actualizar disponibilidad del día
+    // DEBUG: Log detallado para trackear problema de fechas
+    console.log('[DEBUG configurarDiaJuego] ======================================');
+    console.log('[DEBUG] dto.fecha recibida:', dto.fecha);
+    console.log('[DEBUG] dto.fecha tipo:', typeof dto.fecha);
+    console.log('[DEBUG] dto.fecha length:', dto.fecha?.length);
+    console.log('[DEBUG] dto.fecha char codes:', [...(dto.fecha || '')].map(c => c.charCodeAt(0)));
+    
     // NOTA: La fecha ya viene validada y transformada por el DTO (formato YYYY-MM-DD)
     const fecha = dto.fecha;
+    
+    console.log('[DEBUG] fecha a guardar:', fecha);
+    console.log('[DEBUG] ======================================');
     
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
       where: {
@@ -168,6 +178,12 @@ export class CanchasSorteoService {
         horaFin: dto.horaFin,
         minutosSlot: dto.minutosSlot,
       },
+    });
+    
+    console.log('[DEBUG] Disponibilidad guardada:', {
+      id: disponibilidad.id,
+      fecha: disponibilidad.fecha,
+      fechaType: typeof disponibilidad.fecha,
     });
 
     // Generar slots para cada cancha
