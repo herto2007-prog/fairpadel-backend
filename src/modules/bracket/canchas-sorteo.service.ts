@@ -154,6 +154,7 @@ export class CanchasSorteoService {
     console.log('[DEBUG] dto.fecha char codes:', [...(dto.fecha || '')].map(c => c.charCodeAt(0)));
     
     // NOTA: La fecha ya viene validada y transformada por el DTO (formato YYYY-MM-DD)
+    // FIX: Usar clave compuesta tournamentId_fecha_horaInicio para soportar múltiples franjas por día
     const fecha = dto.fecha;
     
     console.log('[DEBUG] fecha a guardar:', fecha);

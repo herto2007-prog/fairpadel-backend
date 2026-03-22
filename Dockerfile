@@ -6,7 +6,8 @@ RUN apt-get update && apt-get install -y tzdata && rm -rf /var/lib/apt/lists/*
 
 # Force rebuild on each deploy
 ARG RAILWAY_DEPLOYMENT_ID=unknown
-RUN echo "Building deployment: ${RAILWAY_DEPLOYMENT_ID}"
+ARG CACHE_BUST=1
+RUN echo "Building deployment: ${RAILWAY_DEPLOYMENT_ID} - ${CACHE_BUST}"
 
 WORKDIR /app
 
