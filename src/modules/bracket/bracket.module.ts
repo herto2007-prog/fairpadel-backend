@@ -7,9 +7,10 @@ import { CanchasSorteoController } from './canchas-sorteo.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { ProgramacionModule } from '../programacion/programacion.module';
 import { CommonModule } from '../../common/common.module';
+import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 
 @Module({
-  imports: [PrismaModule, ProgramacionModule, CommonModule],
+  imports: [PrismaModule, ProgramacionModule, CommonModule, NotificacionesModule],
   controllers: [ClasificacionController, CanchasSorteoController],
   providers: [BracketService, ClasificacionService, CanchasSorteoService],
   exports: [BracketService, ClasificacionService, CanchasSorteoService],
