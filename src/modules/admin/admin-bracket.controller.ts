@@ -617,10 +617,8 @@ export class AdminBracketController {
           torneoCanchaId: p.torneoCanchaId,
           fechaProgramada: p.fechaProgramada,
           horaProgramada: p.horaProgramada,
-          // Datos legibles para mostrar (fix timezone Paraguay UTC-3)
-          fecha: p.fechaProgramada 
-            ? new Date(p.fechaProgramada.getTime() + (3 * 60 * 60 * 1000)).toISOString().split('T')[0]
-            : null,
+          // Datos legibles para mostrar (las fechas ya vienen normalizadas)
+          fecha: p.fechaProgramada ? p.fechaProgramada.toISOString().split('T')[0] : null,
           hora: p.horaProgramada,
           // Debug: información de navegación entre partidos
           navegacion: {

@@ -145,7 +145,8 @@ export class CanchasSorteoService {
     }
 
     // Crear o actualizar disponibilidad del día
-    const fecha = this.dateService.parse(dto.fecha);
+    // FIX: Usar patrón consistente T03:00:00.000Z (medianoche PY = 03:00 UTC)
+    const fecha = new Date(`${dto.fecha}T03:00:00.000Z`);
     
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
       where: {
