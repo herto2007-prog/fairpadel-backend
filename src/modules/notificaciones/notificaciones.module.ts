@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { NotificacionesService } from './notificaciones.service';
-import { PrismaModule } from '../../prisma/prisma.module';
+import { EmailModule } from '../../email/email.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [EmailModule],
   providers: [NotificacionesService],
   exports: [NotificacionesService],
 })

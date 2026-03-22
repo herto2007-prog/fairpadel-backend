@@ -3,10 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateInscripcionDto } from './dto/create-inscripcion.dto';
 import { UpdateInscripcionDto, ConfirmarInscripcionDto } from './dto/update-inscripcion.dto';
 import { InscripcionEstado, TournamentStatus } from '@prisma/client';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 
 @Injectable()
 export class InscripcionesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificacionesService: NotificacionesService,
+  ) {}
 
   async create(dto: CreateInscripcionDto, jugador1Id: string) {
     // Validar torneo existe y está abierto para inscripciones
@@ -229,7 +233,7 @@ export class InscripcionesService {
       throw new BadRequestException('La inscripción no puede ser confirmada en su estado actual');
     }
 
-    return this.prisma.inscripcion.update({
+    const inscripcionConfirmada = await this.prisma.inscripcion.update({
       where: { id },
       data: { 
         estado: dto.estado,
@@ -246,6 +250,13 @@ export class InscripcionesService {
         }
       }
     });
+
+    // Notificar confirmación si el estado es CONFIRMADA
+    if (dto.estado === InscripcionEstado.CONFIRMADA) {
+      await this.notificacionesService.notificarInscripcionConfirmada(inscripcionConfirmada.id);
+    }
+
+    return inscripcionConfirmada;
   }
 
   async cancelar(id: string, userId: string, motivo?: string) {

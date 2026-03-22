@@ -1,182 +1,184 @@
 import { Injectable } from '@nestjs/common';
+import { EmailService } from '../../email/email.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class NotificacionesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private emailService: EmailService,
+    private prisma: PrismaService,
+  ) {}
 
   /**
-   * Enviar invitación a jugador 2
-   * Cuando un jugador inscribe a su compañero que no está registrado
+   * Notifica al jugador 2 que fue invitado a jugar
    */
-  async enviarInvitacionJugador(data: {
-    inscripcionId: string;
-    tournamentId: string;
-    emailJugador: string;
-    telefonoJugador?: string;
-    nombreJugador1: string;
-    nombreTorneo: string;
-    linkRegistro: string;
-  }) {
-    const { inscripcionId, tournamentId, emailJugador, telefonoJugador, nombreJugador1, nombreTorneo, linkRegistro } = data;
-
-    // Guardar registro de la invitación
-    const invitacion = await this.prisma.invitacionJugador.create({
-      data: {
-        inscripcionId,
-        email: emailJugador,
-        token: this.generarToken(),
-        expiraAt: new Date(Date.now() + 48 * 60 * 60 * 1000), // 48 horas
-      },
-    });
-
-    // Preparar mensaje
-    const mensajeSMS = this.generarMensajeSMS({
-      nombreJugador1,
-      nombreTorneo,
-      linkRegistro: `${linkRegistro}?token=${invitacion.token}`,
-    });
-
-    const mensajeEmail = this.generarMensajeEmail({
-      nombreJugador1,
-      nombreTorneo,
-      linkRegistro: `${linkRegistro}?token=${invitacion.token}`,
-    });
-
-    // Registrar notificaciones (envío real se implementa con Tigo/Email provider)
-    const notificaciones = [];
-
-    if (telefonoJugador) {
-      const sms = await this.prisma.notificacionEnviada.create({
-        data: {
-          tournamentId,
-          inscripcionId,
-          tipo: 'SMS',
-          destinatario: telefonoJugador,
-          template: 'INVITACION_JUGADOR',
-          contenido: mensajeSMS,
-          estado: 'PENDIENTE', // Cambia a ENVIADO cuando el provider confirme
+  async notificarInvitacionJugador(inscripcionId: string, nombreJugador2?: string): Promise<void> {
+    try {
+      const inscripcion = await this.prisma.inscripcion.findUnique({
+        where: { id: inscripcionId },
+        include: {
+          tournament: true,
+          category: true,
+          jugador1: {
+            select: { nombre: true, apellido: true },
+          },
         },
       });
-      notificaciones.push(sms);
+
+      if (!inscripcion || !inscripcion.jugador2Email) return;
+
+      const linkConfirmacion = `https://www.fairpadel.com/invitacion/${inscripcion.id}`;
+
+      await this.emailService.sendInvitacionJugador(
+        inscripcion.jugador2Email,
+        nombreJugador2 || 'Jugador',
+        `${inscripcion.jugador1.nombre} ${inscripcion.jugador1.apellido}`,
+        inscripcion.tournament.nombre,
+        linkConfirmacion,
+      );
+    } catch (error) {
+      console.error(`[Notificaciones] Error al enviar invitación:`, error);
     }
-
-    const email = await this.prisma.notificacionEnviada.create({
-      data: {
-        tournamentId,
-        inscripcionId,
-        tipo: 'EMAIL',
-        destinatario: emailJugador,
-        template: 'INVITACION_JUGADOR',
-        contenido: mensajeEmail,
-        estado: 'PENDIENTE',
-      },
-    });
-    notificaciones.push(email);
-
-    return {
-      success: true,
-      invitacion,
-      notificaciones,
-      mensajePreview: {
-        sms: mensajeSMS,
-        email: mensajeEmail,
-      },
-    };
   }
 
   /**
-   * Enviar recordatorio de checklist al organizador
+   * Notifica a ambos jugadores que la inscripción fue confirmada
    */
-  async enviarRecordatorioChecklist(data: {
-    tournamentId: string;
-    itemId: string;
-    telefonoOrganizador: string;
-    emailOrganizador: string;
-    tituloItem: string;
-    nombreTorneo: string;
-  }) {
-    const { tournamentId, itemId, telefonoOrganizador, emailOrganizador, tituloItem, nombreTorneo } = data;
+  async notificarInscripcionConfirmada(inscripcionId: string): Promise<void> {
+    try {
+      const inscripcion = await this.prisma.inscripcion.findUnique({
+        where: { id: inscripcionId },
+        include: {
+          tournament: true,
+          category: true,
+          jugador1: {
+            select: { nombre: true, apellido: true, email: true },
+          },
+          jugador2: {
+            select: { nombre: true, apellido: true, email: true },
+          },
+        },
+      });
 
-    const mensaje = `Recordatorio FairPadel: "${tituloItem}" para el torneo "${nombreTorneo}". Revisa tu checklist en la plataforma.`;
+      if (!inscripcion) return;
 
-    // Marcar como enviado el recordatorio
-    await this.prisma.checklistItem.update({
-      where: { id: itemId },
-      data: { recordatorioEnviado: true },
-    });
+      const fechaSorteo = inscripcion.tournament.fechaInicio?.toLocaleDateString('es-PY') || 'Próximamente';
+      const categoriaNombre = inscripcion.category?.nombre || 'Categoría no especificada';
 
-    // Registrar notificación SMS
-    const notificacion = await this.prisma.notificacionEnviada.create({
-      data: {
-        tournamentId,
-        tipo: 'SMS',
-        destinatario: telefonoOrganizador,
-        template: 'RECORDATORIO_CHECKLIST',
-        contenido: mensaje,
-        estado: 'PENDIENTE',
-      },
-    });
+      // Notificar a jugador 1
+      if (inscripcion.jugador1.email) {
+        await this.emailService.sendInscripcionConfirmada(
+          inscripcion.jugador1.email,
+          `${inscripcion.jugador1.nombre} ${inscripcion.jugador1.apellido}`,
+          inscripcion.tournament.nombre,
+          categoriaNombre,
+          fechaSorteo,
+        );
+      }
 
-    return {
-      success: true,
-      notificacion,
-      mensajePreview: mensaje,
-    };
+      // Notificar a jugador 2 (si tiene email)
+      const jugador2Email = inscripcion.jugador2?.email || inscripcion.jugador2Email;
+      const jugador2Nombre = inscripcion.jugador2 
+        ? `${inscripcion.jugador2.nombre} ${inscripcion.jugador2.apellido}`
+        : 'Jugador';
+
+      if (jugador2Email) {
+        await this.emailService.sendInscripcionConfirmada(
+          jugador2Email,
+          jugador2Nombre,
+          inscripcion.tournament.nombre,
+          categoriaNombre,
+          fechaSorteo,
+        );
+      }
+    } catch (error) {
+      console.error(`[Notificaciones] Error al enviar confirmación:`, error);
+    }
   }
 
   /**
-   * Obtener notificaciones pendientes de envío
-   * Para procesar con Tigo/Email cron job
+   * Notifica a ambos jugadores que el partido fue programado
    */
-  async getPendientes(tipo?: 'SMS' | 'EMAIL') {
-    const where: any = { estado: 'PENDIENTE' };
-    if (tipo) where.tipo = tipo;
+  async notificarPartidoProgramado(matchId: string): Promise<void> {
+    try {
+      const partido = await this.prisma.match.findUnique({
+        where: { id: matchId },
+        include: {
+          tournament: true,
+          torneoCancha: {
+            include: {
+              sedeCancha: {
+                include: { sede: true },
+              },
+            },
+          },
+          inscripcion1: {
+            include: {
+              jugador1: { select: { nombre: true, apellido: true, email: true } },
+              jugador2: { select: { nombre: true, apellido: true } },
+            },
+          },
+          inscripcion2: {
+            include: {
+              jugador1: { select: { nombre: true, apellido: true, email: true } },
+              jugador2: { select: { nombre: true, apellido: true } },
+            },
+          },
+        },
+      });
 
-    return this.prisma.notificacionEnviada.findMany({
-      where,
-      orderBy: { enviadoAt: 'asc' },
-      take: 50, // Lote de 50
-    });
-  }
+      if (!partido || !partido.fechaProgramada || !partido.horaProgramada) return;
 
-  /**
-   * Marcar notificación como enviada
-   */
-  async marcarEnviada(id: string, estado: 'ENTREGADO' | 'FALLIDO', errorMsg?: string) {
-    return this.prisma.notificacionEnviada.update({
-      where: { id },
-      data: {
-        estado,
-        errorMsg,
-      },
-    });
-  }
+      const fecha = partido.fechaProgramada.toLocaleDateString('es-PY');
+      const hora = partido.horaProgramada;
+      const cancha = partido.torneoCancha?.sedeCancha?.nombre || 'Cancha por definir';
+      const sede = partido.torneoCancha?.sedeCancha?.sede?.nombre || 'Sede por definir';
 
-  private generarToken(): string {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  }
+      // Notificar a pareja 1
+      if (partido.inscripcion1) {
+        const jugador1Email = partido.inscripcion1.jugador1?.email;
+        const jugador1Nombre = `${partido.inscripcion1.jugador1?.nombre} ${partido.inscripcion1.jugador1?.apellido}`;
+        const rival = partido.inscripcion2 
+          ? `${partido.inscripcion2.jugador1?.nombre} ${partido.inscripcion2.jugador1?.apellido} / ${partido.inscripcion2.jugador2?.nombre} ${partido.inscripcion2.jugador2?.apellido}`
+          : 'Por definir';
 
-  private generarMensajeSMS(data: { nombreJugador1: string; nombreTorneo: string; linkRegistro: string }): string {
-    const { nombreJugador1, nombreTorneo, linkRegistro } = data;
-    // SMS corto para Tigo (límite de caracteres)
-    return `${nombreJugador1} te invita a jugar el torneo "${nombreTorneo}". Registrate aqui: ${linkRegistro} (valido 48hs)`;
-  }
+        if (jugador1Email) {
+          await this.emailService.sendPartidoProgramado(
+            jugador1Email,
+            jugador1Nombre,
+            partido.tournament.nombre,
+            fecha,
+            hora,
+            cancha,
+            sede,
+            rival,
+          );
+        }
+      }
 
-  private generarMensajeEmail(data: { nombreJugador1: string; nombreTorneo: string; linkRegistro: string }): string {
-    const { nombreJugador1, nombreTorneo, linkRegistro } = data;
-    return `
-Hola,
+      // Notificar a pareja 2
+      if (partido.inscripcion2) {
+        const jugador2Email = partido.inscripcion2.jugador1?.email;
+        const jugador2Nombre = `${partido.inscripcion2.jugador1?.nombre} ${partido.inscripcion2.jugador1?.apellido}`;
+        const rival = partido.inscripcion1
+          ? `${partido.inscripcion1.jugador1?.nombre} ${partido.inscripcion1.jugador1?.apellido} / ${partido.inscripcion1.jugador2?.nombre} ${partido.inscripcion1.jugador2?.apellido}`
+          : 'Por definir';
 
-${nombreJugador1} te ha invitado a ser su compañero en el torneo "${nombreTorneo}".
-
-Para confirmar tu participación, registrate en FairPadel:
-${linkRegistro}
-
-Este enlace expira en 48 horas.
-
-Saludos,
-Equipo FairPadel
-    `.trim();
+        if (jugador2Email) {
+          await this.emailService.sendPartidoProgramado(
+            jugador2Email,
+            jugador2Nombre,
+            partido.tournament.nombre,
+            fecha,
+            hora,
+            cancha,
+            sede,
+            rival,
+          );
+        }
+      }
+    } catch (error) {
+      console.error(`[Notificaciones] Error al enviar programación:`, error);
+    }
   }
 }

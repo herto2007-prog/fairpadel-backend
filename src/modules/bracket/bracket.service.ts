@@ -7,10 +7,14 @@ import {
   TipoEntrada,
   MatchNode,
 } from './dto/generate-bracket.dto';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 
 @Injectable()
 export class BracketService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificacionesService: NotificacionesService,
+  ) {}
 
   /**
    * Calcula la configuración del bracket según la fórmula del usuario
@@ -871,6 +875,11 @@ export class BracketService {
           data: createData,
         });
         idMap.set(partido.id, created.id);
+
+        // Notificar programación del partido si tiene slot asignado
+        if (createData.fechaProgramada && createData.horaProgramada) {
+          await this.notificacionesService.notificarPartidoProgramado(created.id);
+        }
       }
     }
 

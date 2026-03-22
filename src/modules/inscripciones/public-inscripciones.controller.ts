@@ -399,15 +399,10 @@ export class PublicInscripcionesController {
       });
 
       // Crear invitación y enviar notificaciones
-      const resultadoInvitacion = await this.notificacionesService.enviarInvitacionJugador({
-        inscripcionId: inscripcion.id,
-        tournamentId,
-        emailJugador: jugador2NoRegistrado.email,
-        telefonoJugador: jugador2NoRegistrado.telefono,
-        nombreJugador1: `${user.nombre} ${user.apellido}`,
-        nombreTorneo: tournament.nombre,
-        linkRegistro: `${process.env.FRONTEND_URL}/registro`,
-      });
+      await this.notificacionesService.notificarInvitacionJugador(
+        inscripcion.id,
+        jugador2NoRegistrado.nombre,
+      );
 
       // Guardar datos del jugador2 no registrado para matchearlos después
       // (esto se podría guardar en una tabla separada o en metadata de la inscripción)
@@ -421,7 +416,6 @@ export class PublicInscripcionesController {
               documento: jugador2NoRegistrado.documento,
               telefono: jugador2NoRegistrado.telefono,
               email: jugador2NoRegistrado.email,
-              invitacionToken: resultadoInvitacion.invitacion.token,
             },
           }),
         },
