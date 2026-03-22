@@ -145,78 +145,145 @@ frontend/
 
 **REGLA DE ORO:** Todas las fechas se manejan en hora de Paraguay. NUNCA usar `new Date()` directamente sin considerar el timezone.
 
-**REGLA CRÍTICA DE ALMACENAMIENTO (Anti-Bug de Fechas):**
-Cuando se convierte una fecha YYYY-MM-DD a Date para PostgreSQL, SIEMPRE usar `T03:00:00.000Z` en lugar de `T00:00:00.000Z`.
+**✅ NUEVO FORMATO DE ALMACENAMIENTO (Marzo 2025):**
+Las fechas se almacenan como **String `YYYY-MM-DD`** en PostgreSQL, NO como DateTime. Esto elimina completamente los bugs de timezone.
 
 ```typescript
-// ✅ CORRECTO - Guarda como 03:00 UTC = 00:00 Paraguay (UTC-3)
-const fecha = new Date('2026-03-22' + 'T03:00:00.000Z');
-// En BD: 2026-03-22 03:00:00+00 (UTC)
-// Al mostrar en Paraguay: 2026-03-22 00:00:00 (PY) → "22/03/2026" ✓
+// Base de datos (Prisma schema)
+// ✅ CORRECTO - Almacenar como String
+model Tournament {
+  fechaInicio String // "2026-03-27" - Sin timezone, sin hora
+  fechaFin    String // "2026-03-27"
+}
 
-// ❌ INCORRECTO - Causa el bug de día anterior
-const fecha = new Date('2026-03-22' + 'T00:00:00.000Z');
-// En BD: 2026-03-22 00:00:00+00 (UTC)
-// Al mostrar en Paraguay: 2026-03-21 21:00:00 (PY) → "21/03/2026" ✗
+// ❌ INCORRECTO - DateTime causa bugs de timezone
+model Tournament {
+  fechaInicio DateTime // No usar para fechas sin hora
+}
 ```
 
-**Explicación:** Paraguay es UTC-3. Medianoche en Paraguay (00:00) es 03:00 UTC. Si guardamos 00:00 UTC, al convertir a hora Paraguay da 21:00 del día anterior, mostrando el día equivocado.
+**¿Por qué String YYYY-MM-DD?**
+- Elimina conversiones de timezone innecesarias
+- Una fecha "27 de marzo" siempre es "27 de marzo" sin importar el timezone
+- El backend recibe YYYY-MM-DD y lo guarda directamente
+- El frontend recibe YYYY-MM-DD y lo formatea sin crear Date objects
 
-#### Backend (NestJS)
+**⚠️ REGla CRÍTICA DE FORMATO (Anti-Bug de Fechas):**
+NUNCA usar `new Date('YYYY-MM-DD')` en el frontend. Esto interpreta la fecha como UTC y al convertir a Paraguay (UTC-3) muestra el día anterior.
+
 ```typescript
-// ✅ CORRECTO - Usar DateService
-import { DateService } from '../../common/services/date.service';
+// ❌ PROHIBIDO - Causa el bug de día anterior
+new Date('2026-03-27').toLocaleDateString('es-PY') 
+// → "26/03/2026" (¡UN DÍA ANTES!)
 
-constructor(private dateService: DateService) {}
+// ✅ CORRECTO - Usar funciones de date.ts que trabajan con strings
+import { formatDatePY, formatDatePYLong, formatDatePYShort } from '../utils/date';
 
-// Parsear fechas de requests
-const fecha = this.dateService.parse(dto.fecha); // Detecta YYYY-MM-DD o ISO
-
-// Obtener fecha actual en Paraguay
-const ahora = this.dateService.now();
-
-// Formatear para respuesta
-const fechaStr = this.dateService.format(date);
-
-// Rango de fechas
-const fechas = this.dateService.getDatesRange(fechaInicio, fechaFin);
+formatDatePY('2026-03-27')        // → "27/03/2026"
+formatDatePYLong('2026-03-27')    // → "viernes, 27 de marzo"
+formatDatePYShort('2026-03-27')   // → "27 Mar"
+formatDatePYShort('2026-03-27', true) // → "27 Mar, 2026"
 ```
 
-#### Frontend (React)
+#### Backend (NestJS) - Manejo de Fechas
+
+**DTOs - Recibir fechas del frontend:**
+```typescript
+// ✅ CORRECTO - Usar @Transform para extraer YYYY-MM-DD de ISO strings
+import { Transform } from 'class-transformer';
+
+export class ConfigurarDiaJuegoDto {
+  @Transform(({ value }) => {
+    // Extrae "2026-03-27" de "2026-03-27T00:00:00.000Z" o deja el string
+    if (typeof value === 'string' && value.length > 10) {
+      return value.substring(0, 10);
+    }
+    return value;
+  })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha debe tener formato YYYY-MM-DD',
+  })
+  fecha: string; // "2026-03-27"
+}
+```
+
+**Servicios - Guardar en BD:**
+```typescript
+// ✅ CORRECTO - Usar string YYYY-MM-DD directamente
+async configurarDiaJuego(dto: ConfigurarDiaJuegoDto) {
+  const fecha = dto.fecha; // Ya es "YYYY-MM-DD" desde el DTO
+  
+  await this.prisma.torneoDisponibilidadDia.upsert({
+    where: { tournamentId_fecha: { tournamentId: dto.tournamentId, fecha } },
+    create: {
+      tournamentId: dto.tournamentId,
+      fecha, // String YYYY-MM-DD - ¡Sin conversiones!
+      horaInicio: dto.horaInicio,
+      horaFin: dto.horaFin,
+    },
+    update: { /* ... */ }
+  });
+}
+```
+
+#### Frontend (React) - Manejo de Fechas
+
+**Mostrar fechas al usuario:**
 ```typescript
 // ✅ CORRECTO - Usar utilidades de date.ts
 import { 
-  formatDatePY, 
-  formatDateTimePY, 
-  toISOStringPY,
-  parseDatePY,
-  getDatesRangePY 
+  formatDatePY,      // Formato: "27/03/2026"
+  formatDatePYLong,  // Formato: "viernes, 27 de marzo"
+  formatDatePYShort, // Formato: "27 Mar" o "27 Mar, 2026"
+  formatDateTimePY,  // Formato: "27/03/2026 18:30"
+  parseDatePY,       // Parsear a Date (solo cuando sea necesario)
+  getDatesRangePY    // Generar rango de fechas
 } from '../utils/date';
 
-// Mostrar fecha al usuario
-const fechaStr = formatDatePY(fechaISO); // "12/03/2025"
+// El backend envía fechas como string "YYYY-MM-DD"
+const fechaDesdeBackend = '2026-03-27';
 
-// Mostrar fecha y hora
-const fechaHora = formatDateTimePY(fechaISO); // "12/03/2025 18:30"
+// ✅ CORRECTO - Usar funciones que trabajan con strings directamente
+<span>{formatDatePY(fechaDesdeBackend)}</span>           // "27/03/2026"
+<span>{formatDatePYLong(fechaDesdeBackend)}</span>       // "viernes, 27 de marzo"
+<span>{formatDatePYShort(fechaDesdeBackend, true)}</span> // "27 Mar, 2026"
+```
 
-// Enviar al backend (mantiene hora Paraguay)
-const isoPY = toISOStringPY(fechaLocal); 
+**Enviar fechas al backend:**
+```typescript
+// ✅ CORRECTO - Enviar string YYYY-MM-DD
+const fecha = '2026-03-27'; // String en formato YYYY-MM-DD
 
-// Generar rango de fechas
-const fechas = getDatesRangePY('2025-03-12', '2025-03-15');
+await api.post('/endpoint', {
+  fecha, // El backend extraerá YYYY-MM-DD si viene como ISO
+  // o usa el string directamente
+});
 ```
 
 #### ❌ PROHIBIDO
 ```typescript
-// ❌ NUNCA usar directamente sin timezone
-const fecha = new Date(); // Puede dar hora UTC
-const fecha = new Date(dto.fecha); // Puede interpretar mal el timezone
-fecha.toISOString(); // Siempre UTC, pierde hora Paraguay
+// ❌ NUNCA usar new Date() con strings YYYY-MM-DD del backend
+const fecha = new Date('2026-03-27'); // Interpreta como UTC 00:00
+fecha.toLocaleDateString('es-PY');    // → "26/03/2026" (¡BUG! día anterior)
+
+// ❌ NUNCA usar toLocaleDateString directamente
+new Date(fechaString).toLocaleDateString('es-PY'); // Bug de timezone
+
+// ❌ NUNCA asumir que Date() interpreta en hora local
+const fecha = new Date(); // Puede dar hora UTC en el servidor
 ```
 
 **Archivos clave:**
-- Backend: `src/common/services/date.service.ts`
-- Backend: `src/common/interceptors/paraguay-timezone.interceptor.ts`
+- **Frontend:** `src/utils/date.ts` - Funciones `formatDatePY`, `formatDatePYLong`, `formatDatePYShort`
+- **Backend:** DTOs con `@Transform` para extraer YYYY-MM-DD de ISO strings
+- **Backend:** `paraguay-timezone.interceptor.ts` - Desactivado para fechas (solo para datetimes)
+
+**Migración completada (Marzo 2025):**
+- ✅ 18 tablas migradas de DateTime a String (YYYY-MM-DD)
+- ✅ Todos los DTOs actualizados con `@Transform`
+- ✅ Frontend: ~23 reemplazos de `toLocaleDateString` por funciones de `date.ts`
+- ✅ Nuevas funciones: `formatDatePYLong()`, `formatDatePYShort()`
 - Frontend: `src/utils/date.ts`
 
 ---

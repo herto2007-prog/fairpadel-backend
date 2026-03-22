@@ -2,16 +2,15 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-22 - SOLUCIÓN DEFINITIVA FECHAS ✅ (BACKEND + FRONTEND)
-> - **MIGRACIÓN CRÍTICA:** Todas las fechas de negocio migradas de DateTime a String (YYYY-MM-DD)
-> - **Motivo:** Eliminar bugs de timezone (Paraguay UTC-3 causaba día anterior)
-> - **BACKEND:** DTOs con @Transform y @Matches para validar formato YYYY-MM-DD
-> - **FRONTEND:** formatDatePY() ahora formatea strings YYYY-MM-DD sin crear objetos Date
-> - **Schema:** 18 tablas modificadas, ~30 columnas de fecha cambiadas
-> - **Validación:** Backend limpia ISO strings, Frontend formatea sin timezone
+> **Última actualización:** 2026-03-19 - FIX FRONTEND FECHAS + DOCUMENTACIÓN ✅
+> - **BUG FIX:** ~23 reemplazos de `toLocaleDateString` por funciones `date.ts`
+> - **Motivo:** Eliminar bug de día anterior al mostrar fechas (timezone UTC-3)
+> - **BACKEND:** Sin cambios (ya estaba migrado a String YYYY-MM-DD)
+> - **FRONTEND:** 19 archivos actualizados, nuevas funciones `formatDatePYLong()`, `formatDatePYShort()`
+> - **Documentación:** `REGLAS_PROGRAMACION.md` y `Kimi_Context_Fairpadel.md` actualizados
 > - **Build:** ✅ Compilación exitosa en ambos repos
-> - **Deploy:** ✅ Ambos repos deployados
-> **ESTADO:** ✅ Estable - Solución permanente completa
+> - **Deploy:** ⏳ Pendiente push a producción
+> **ESTADO:** ✅ Frontend corregido - Listo para deploy
 
 ---
 
@@ -741,6 +740,55 @@ GET    /admin/torneos/:id/disponibilidad/sedes   (agregado)
 **Commits:**
 - Backend: `dce78b6`, `e8c6a78`, `fc05af2`
 - Frontend: `8a2b6cd`, `d06fd8e`, `83a41b5`
+
+---
+
+### ✅ Completado (2026-03-19) - Fix Frontend: Bug de Visualización de Fechas
+
+**Problema:** El frontend mostraba fechas un día anterior (ej: "26/03" en lugar de "27/03") al usar `new Date(fecha).toLocaleDateString('es-PY')` con strings YYYY-MM-DD del backend.
+
+**Causa:** `new Date('2026-03-27')` interpreta como UTC 00:00, y al convertir a Paraguay (UTC-3) resulta en "26/03/2026 21:00".
+
+**Solución:** Actualizar frontend para usar funciones de `date.ts` que trabajan directamente con strings YYYY-MM-DD.
+
+**Archivos modificados (19 archivos, ~23 reemplazos):**
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/utils/date.ts` | Nuevas funciones: `formatDatePYLong()`, `formatDatePYShort()` |
+| `CanchasSorteoManager.tsx` | `formatDatePY()` en lugar de `toLocaleDateString()` |
+| `BracketView.tsx` | 2 reemplazos |
+| `MisTorneosPage.tsx` | 1 reemplazo |
+| `TorneoPublicDetailPage.tsx` | 1 reemplazo |
+| `MisReservasPage.tsx` | 1 reemplazo |
+| `AscensosManager.tsx` | 1 reemplazo |
+| `CircuitosManager.tsx` | 1 reemplazo |
+| `TorneosPendientesManager.tsx` | 1 reemplazo |
+| `CircuitosListPage.tsx` | 1 reemplazo |
+| `InscripcionCard.tsx` | 1 reemplazo |
+| `PerfilPage.tsx` | 2 reemplazos |
+| `DisponibilidadWizard.tsx` | `formatDatePYLong()` para fechas largas |
+| `DisponibilidadConfig.tsx` | `formatDatePYLong()` para fechas largas |
+| `TorneosPublicListPage.tsx` | `formatDatePYShort()` con año |
+| `TournamentsListPage.tsx` | `formatDatePY()` |
+| `TournamentDetailPage.tsx` | 2 reemplazos |
+| `OverviewTab.tsx` | `formatDatePY()` |
+| `HomeDashboardPage.tsx` | `formatDatePY()` |
+| `InscripcionesManager.tsx` | 2 reemplazos |
+
+**Nuevas funciones en `date.ts`:**
+```typescript
+formatDatePY('2026-03-27')           // → "27/03/2026"
+formatDatePYLong('2026-03-27')       // → "viernes, 27 de marzo"
+formatDatePYShort('2026-03-27')      // → "27 Mar"
+formatDatePYShort('2026-03-27', true) // → "27 Mar, 2026"
+```
+
+**Documentación actualizada:**
+- `REGLAS_PROGRAMACION.md` - Sección 6 (Manejo de Fechas) completamente actualizada
+- `Kimi_Context_Fairpadel.md` - Esta entrada
+
+**Build:** ✅ Compilación exitosa
 
 ---
 
