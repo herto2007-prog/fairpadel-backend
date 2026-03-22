@@ -2,14 +2,15 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-22 - MIGRACIÓN FECHAS A STRING ✅ COMPLETADA
+> **Última actualización:** 2026-03-22 - SOLUCIÓN DEFINITIVA FECHAS ✅
 > - **MIGRACIÓN CRÍTICA:** Todas las fechas de negocio migradas de DateTime a String (YYYY-MM-DD)
 > - **Motivo:** Eliminar bugs de timezone (Paraguay UTC-3 causaba día anterior)
+> - **SOLUCIÓN DEFINITIVA:** DTOs con @Transform y @Matches para validar formato YYYY-MM-DD
 > - **Schema:** 18 tablas modificadas, ~30 columnas de fecha cambiadas
+> - **Validación:** @Transform limpia ISO strings, @Matches rechaza formatos inválidos
 > - **Build:** ✅ Compilación exitosa
-> - **Deploy:** ✅ Migración aplicada en Railway sin errores (redeploy 50s)
-> - **Estado:** Backend estable y online
-> **ESTADO:** ✅ Estable - Migración completada exitosamente
+> - **Deploy:** ✅ Migración aplicada en Railway sin errores
+> **ESTADO:** ✅ Estable - Solución permanente implementada
 
 ---
 
