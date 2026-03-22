@@ -725,6 +725,12 @@ export class BracketService {
 
     // MVP: Si no hay slots, buscar slots disponibles del torneo
     if (!slots || slots.length === 0) {
+      // Obtener configuración de días para filtrar por horario correcto
+      const diasConfig = await this.prisma.torneoDisponibilidadDia.findMany({
+        where: { tournamentId },
+        select: { fecha: true, horaInicio: true, horaFin: true },
+      });
+
       const slotsDisponibles = await this.prisma.torneoSlot.findMany({
         where: { 
           estado: 'LIBRE',
@@ -739,22 +745,57 @@ export class BracketService {
           { disponibilidad: { fecha: 'asc' } },
           { horaInicio: 'asc' },
         ],
-        take: partidos.length,
       });
-      
-      slots = slotsDisponibles.map((slot, index) => ({
-        fecha: slot.disponibilidad.fecha.toISOString().split('T')[0],
-        horaInicio: slot.horaInicio,
-        horaFin: slot.horaFin,
-        torneoCanchaId: slot.torneoCanchaId,
-        fase: partidos[index]?.fase || 'ZONA',
-        ordenPartido: partidos[index]?.orden || 1,
-      }));
+
+      // Filtrar slots que estén dentro del horario configurado para su día
+      let slotsFiltrados = slotsDisponibles.filter(slot => {
+        const fechaSlot = slot.disponibilidad.fecha.toISOString().split('T')[0];
+        const configDia = diasConfig.find(d => d.fecha.toISOString().split('T')[0] === fechaSlot);
+        if (!configDia) return false;
+        
+        // Verificar que el slot esté dentro del rango horario del día
+        return slot.horaInicio >= configDia.horaInicio && slot.horaFin <= configDia.horaFin;
+      });
+
+      // MVP FIX: Asignar slots por fase (ZONA primero, luego REPECHAJE, etc.)
+      const ordenFases = [
+        FaseBracket.ZONA,
+        FaseBracket.REPECHAJE,
+        FaseBracket.TREINTAYDOSAVOS,
+        FaseBracket.DIECISEISAVOS,
+        FaseBracket.OCTAVOS,
+        FaseBracket.CUARTOS,
+        FaseBracket.SEMIS,
+        FaseBracket.FINAL,
+      ];
+
+      const slotsPorFase: typeof slots = [];
+      let slotIndex = 0;
+
+      for (const fase of ordenFases) {
+        const partidosFaseCount = partidos.filter(p => p.fase === fase).length;
+        for (let i = 0; i < partidosFaseCount; i++) {
+          if (slotIndex < slotsFiltrados.length) {
+            const slot = slotsFiltrados[slotIndex];
+            slotsPorFase.push({
+              fecha: slot.disponibilidad.fecha.toISOString().split('T')[0],
+              horaInicio: slot.horaInicio,
+              horaFin: slot.horaFin,
+              torneoCanchaId: slot.torneoCanchaId,
+              fase,
+              ordenPartido: i + 1,
+            });
+            slotIndex++;
+          }
+        }
+      }
+
+      slots = slotsPorFase;
       
       // Marcar slots como reservados
-      for (const slot of slotsDisponibles) {
+      for (let i = 0; i < slotIndex; i++) {
         await this.prisma.torneoSlot.update({
-          where: { id: slot.id },
+          where: { id: slotsFiltrados[i].id },
           data: { estado: 'OCUPADO' },
         });
       }
@@ -860,8 +901,9 @@ export class BracketService {
           }
         }
 
-        // MVP: Asignar slot (cancha y horario) si está disponible
-        if (slots && slots.length > 0) {
+        // MVP: Asignar slot (cancha y horario) si está disponible y NO es BYE
+        // Buscar slot por fase y orden del partido
+        if (!partido.esBye && slots && slots.length > 0) {
           const slot = slots.find(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
           if (slot) {
             createData.torneoCanchaId = slot.torneoCanchaId;
@@ -876,8 +918,8 @@ export class BracketService {
         });
         idMap.set(partido.id, created.id);
 
-        // Notificar programación del partido si tiene slot asignado
-        if (createData.fechaProgramada && createData.horaProgramada) {
+        // Notificar programación del partido si tiene slot asignado (y no es BYE)
+        if (!partido.esBye && createData.fechaProgramada && createData.horaProgramada) {
           await this.notificacionesService.notificarPartidoProgramado(created.id);
         }
       }
