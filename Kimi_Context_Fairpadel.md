@@ -2,13 +2,16 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-22 - MIGRACIÓN FECHAS A STRING
+> **Última actualización:** 2026-03-22 - MIGRACIÓN FECHAS A STRING (CON PROBLEMAS)
 > - **MIGRACIÓN CRÍTICA:** Todas las fechas de negocio migradas de DateTime a String (YYYY-MM-DD)
 > - **Motivo:** Eliminar bugs de timezone (Paraguay UTC-3 causaba día anterior)
 > - **Schema:** 18 tablas modificadas, ~30 columnas de fecha cambiadas
-> - **Build:** ✅ Compilación exitosa, listo para deploy
-> - **Estado:** Pendiente aplicar migración SQL en producción
-> **ESTADO:** Listo para deploy - requiere aplicar migración en Railway
+> - **Build:** ✅ Compilación exitosa
+> - **⚠️ PROBLEMA EN PRODUCCIÓN:** Error P3009 - migración fallida
+> - **Causa:** Columna `fecha_aprobacion` no existe en tabla `circuitos` en producción
+> - **Fix:** SQL actualizado con bloques DO/EXCEPTION para manejar columnas inexistentes
+> - **Estado:** Pendiente commit del SQL arreglado
+> **ESTADO:** Fix en progreso - SQL arreglado, pendiente commit
 
 ---
 

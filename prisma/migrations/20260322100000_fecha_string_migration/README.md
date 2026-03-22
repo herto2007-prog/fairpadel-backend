@@ -15,7 +15,7 @@ Todas las fechas de "negocio" han sido migradas de `DateTime @db.Timestamptz` a 
 | Tabla | Columnas |
 |-------|----------|
 | `tournaments` | `fecha_inicio`, `fecha_fin`, `fecha_finales`, `fecha_limite_inscr` |
-| `circuitos` | `fecha_inicio`, `fecha_fin`, `fecha_limite_inscripcion`, `fecha_aprobacion` |
+| `circuitos` | `fecha_inicio`, `fecha_fin`, `fecha_limite_inscripcion` |
 | `torneo_disponibilidad_dias` | `fecha` |
 | `matches` | `fecha_programada` |
 | `users` | `fecha_nacimiento`, `fecha_fin_premium` |
@@ -33,45 +33,46 @@ Todas las fechas de "negocio" han sido migradas de `DateTime @db.Timestamptz` a 
 | `reservas_canchas` | `fecha` |
 | `reservas_mensualeros` | `fecha` |
 
-## Campos QUE NO cambiaron (se mantienen DateTime)
-
-- `createdAt`, `updatedAt` (todos los modelos)
-- `expiresAt`, `expiraAt` (tokens, invitaciones)
-- `respondedAt`, `confirmadoEn`
-- `fechaAprobacion` (circuitos - timestamp de sistema)
-- `horaInicioReal`, `horaFinReal` (matches - timestamps reales)
-- `fechaRecordatorio` (checklist - incluye hora)
-
-## Aplicar en Producción
-
-### Opción 1: SQL Directo (Recomendado)
+## Deploy en Producción
 
 ```bash
-# Conectarse a la BD de Railway y ejecutar:
-psql $DATABASE_URL -f prisma/migrations/fecha_string_migration/migration.sql
+# Opción 1: SQL directo (recomendado para control)
+psql $DATABASE_URL -f prisma/migrations/20260322100000_fecha_string_migration/migration.sql
+
+# Opción 2: Prisma migrate (si funciona conexión)
+npx prisma migrate deploy
 ```
 
-### Opción 2: Prisma Migrate (si funciona la conexión)
+## Recuperación de Error P3009 (Migración Fallida)
+
+Si la migración falla con error P3009:
 
 ```bash
-npx prisma migrate dev --name fecha_string_migration
+# 1. Conectar a BD de Railway
+psql $DATABASE_URL
+
+# 2. Marcar la migración fallida como resuelta (baselining)
+DELETE FROM "_prisma_migrations" 
+WHERE "migration_name" = '20260322100000_fecha_string_migration' 
+AND "finished_at" IS NULL;
+
+# 3. O si está parcialmente aplicada, marcar como completada:
+UPDATE "_prisma_migrations" 
+SET "finished_at" = NOW(), "applied_steps_count" = 1
+WHERE "migration_name" = '20260322100000_fecha_string_migration';
+
+# 4. Verificar estado
+SELECT * FROM "_prisma_migrations" ORDER BY "started_at" DESC;
 ```
 
-## Verificación
+## Notas Post-Migración
 
-```sql
--- Verificar que las columnas son varchar
-SELECT table_name, column_name, data_type 
-FROM information_schema.columns 
-WHERE table_schema = 'public' 
-AND column_name LIKE '%fecha%'
-ORDER BY table_name, column_name;
-```
-
-## Notas para Desarrollo
-
-- Las fechas ahora se comparan como strings: `hoy > torneo.fechaInicio`
-- El formato siempre es `YYYY-MM-DD`
-- Los DTOs usan `@Matches(/^\d{4}-\d{2}-\d{2}$/)` para validar
+- Las fechas se comparan ahora como strings: `hoy > torneo.fechaInicio`
 - Se eliminaron todos los `new Date(fecha + 'T03:00:00.000Z')`
-- Se agregaron castings temporales `(fecha as unknown as string)` hasta regenerar tipos de Prisma
+- Los castings `(as unknown as string)` pueden eliminarse tras regenerar tipos de Prisma
+- **Fechas de sistema** (createdAt, updatedAt, expiresAt) se mantienen como DateTime
+
+## Historial de Fixes
+
+- **2026-03-22**: SQL original falló por columna `fecha_aprobacion` inexistente en `circuitos`
+- **2026-03-22**: SQL actualizado con bloques DO/EXCEPTION para manejar columnas inexistentes
