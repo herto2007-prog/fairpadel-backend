@@ -2,15 +2,16 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-19 - FIX FRONTEND FECHAS + DOCUMENTACIÓN ✅
-> - **BUG FIX:** ~23 reemplazos de `toLocaleDateString` por funciones `date.ts`
-> - **Motivo:** Eliminar bug de día anterior al mostrar fechas (timezone UTC-3)
-> - **BACKEND:** Sin cambios (ya estaba migrado a String YYYY-MM-DD)
-> - **FRONTEND:** 19 archivos actualizados, nuevas funciones `formatDatePYLong()`, `formatDatePYShort()`
-> - **Documentación:** `REGLAS_PROGRAMACION.md` y `Kimi_Context_Fairpadel.md` actualizados
-> - **Build:** ✅ Compilación exitosa en ambos repos
-> - **Deploy:** ⏳ Pendiente push a producción
-> **ESTADO:** ✅ Frontend corregido - Listo para deploy
+> **Última actualización:** 2026-03-19 - FEATURE: SELECCIÓN DE CANCHAS POR DÍA ✅
+> - **FEATURE:** Selección de canchas por día en "Canchas y Sorteo"
+> - **Motivo:** Permitir deshabilitar canchas específicas (mantenimiento, daño, etc.)
+> - **BACKEND:** Sin cambios (ya soportaba array de canchasIds)
+> - **FRONTEND:** `CanchasSorteoManager.tsx` - Checkboxes de selección
+> - **UX:** Todas seleccionadas por defecto, usuario desmarca las no disponibles
+> - **Validación:** Mínimo 1 cancha requerida por día
+> - **Build:** ✅ Compilación exitosa
+> - **Deploy:** ✅ Push a producción completado
+> **ESTADO:** ✅ Feature lista - MVP refinado a profesional
 
 ---
 
@@ -740,6 +741,30 @@ GET    /admin/torneos/:id/disponibilidad/sedes   (agregado)
 **Commits:**
 - Backend: `dce78b6`, `e8c6a78`, `fc05af2`
 - Frontend: `8a2b6cd`, `d06fd8e`, `83a41b5`
+
+---
+
+### ✅ Completado (2026-03-19) - Feature: Selección de Canchas por Día
+
+**En tab "Canchas y Sorteo" - Paso 2: Configurar Días**
+
+**Problema:** No se podía deshabilitar canchas específicas por día (ej: cancha en mantenimiento, vidrio roto).
+
+**Solución:** Agregar selector de canchas con checkboxes para cada día configurado.
+
+**Funcionalidad:**
+- Todas las canchas seleccionadas por defecto (comportamiento anterior)
+- Usuario puede desmarcar canchas específicas
+- Validación: mínimo 1 cancha requerida
+- Mensaje guía: "desmarca las que estén en mantenimiento"
+
+**Técnico:**
+- Estado `canchasInicializadas` para inicialización única
+- `useEffect` controlado para evitar re-renders
+- Reset manual al agregar día (todas las canchas por defecto)
+
+**Archivo:** `CanchasSorteoManager.tsx`
+**Commit:** `72a01c3`
 
 ---
 
