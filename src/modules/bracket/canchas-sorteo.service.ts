@@ -223,8 +223,20 @@ export class CanchasSorteoService {
         const slotInicio = `${String(Math.floor(minutosInicio / 60)).padStart(2, '0')}:${String(minutosInicio % 60).padStart(2, '0')}`;
         const slotFin = `${String(Math.floor(minutosFin / 60)).padStart(2, '0')}:${String(minutosFin % 60).padStart(2, '0')}`;
 
-        await this.prisma.torneoSlot.create({
-          data: {
+        // FIX: Usar upsert para evitar error de unique constraint
+        await this.prisma.torneoSlot.upsert({
+          where: {
+            disponibilidadId_torneoCanchaId_horaInicio: {
+              disponibilidadId,
+              torneoCanchaId: canchaId,
+              horaInicio: slotInicio,
+            },
+          },
+          update: {
+            horaFin: slotFin,
+            estado: 'LIBRE',
+          },
+          create: {
             disponibilidadId,
             torneoCanchaId: canchaId,
             horaInicio: slotInicio,
@@ -266,8 +278,21 @@ export class CanchasSorteoService {
         const slotInicio = `${String(Math.floor(minutosInicio / 60)).padStart(2, '0')}:${String(minutosInicio % 60).padStart(2, '0')}`;
         const slotFin = `${String(Math.floor(minutosFin / 60)).padStart(2, '0')}:${String(minutosFin % 60).padStart(2, '0')}`;
 
-        await this.prisma.torneoSlot.create({
-          data: {
+        // FIX: Usar upsert para evitar error de unique constraint
+        await this.prisma.torneoSlot.upsert({
+          where: {
+            disponibilidadId_torneoCanchaId_horaInicio: {
+              disponibilidadId,
+              torneoCanchaId: canchaId,
+              horaInicio: slotInicio,
+            },
+          },
+          update: {
+            horaFin: slotFin,
+            estado: 'LIBRE',
+            fase,
+          },
+          create: {
             disponibilidadId,
             torneoCanchaId: canchaId,
             horaInicio: slotInicio,
