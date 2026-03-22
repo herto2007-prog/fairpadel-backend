@@ -148,7 +148,9 @@ export class CanchasSorteoService {
     // Crear o actualizar disponibilidad del día
     // DEBUG: Log detallado para trackear problema de fechas
     console.log('[DEBUG configurarDiaJuego] ======================================');
+    console.log('[DEBUG] VERSION: 2026.03.22 - Soporte multi-franja');
     console.log('[DEBUG] dto.fecha recibida:', dto.fecha);
+    console.log('[DEBUG] dto.horaInicio recibida:', dto.horaInicio);
     console.log('[DEBUG] dto.fecha tipo:', typeof dto.fecha);
     console.log('[DEBUG] dto.fecha length:', dto.fecha?.length);
     console.log('[DEBUG] dto.fecha char codes:', [...(dto.fecha || '')].map(c => c.charCodeAt(0)));
