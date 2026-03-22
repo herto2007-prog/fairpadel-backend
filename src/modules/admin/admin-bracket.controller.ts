@@ -617,8 +617,8 @@ export class AdminBracketController {
           torneoCanchaId: p.torneoCanchaId,
           fechaProgramada: p.fechaProgramada,
           horaProgramada: p.horaProgramada,
-          // Datos legibles para mostrar
-          fecha: p.fechaProgramada,
+          // Datos legibles para mostrar (fix timezone)
+          fecha: p.fechaProgramada ? p.fechaProgramada.toISOString().split('T')[0] : null,
           hora: p.horaProgramada,
           // Debug: información de navegación entre partidos
           navegacion: {
