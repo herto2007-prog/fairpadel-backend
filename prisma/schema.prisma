@@ -629,7 +629,7 @@ model TorneoDisponibilidadDia {
   tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   slots         TorneoSlot[]
 
-  @@unique([tournamentId, fecha])
+  @@unique([tournamentId, fecha, horaInicio])
   @@map("torneo_disponibilidad_dias")
 }
 

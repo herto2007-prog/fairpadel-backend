@@ -539,16 +539,16 @@ export class AdminTorneosController {
 
           try {
             // 1. Crear o actualizar el día de disponibilidad para finales
-            // FIX: fecha es String YYYY-MM-DD
+            // Nueva clave compuesta permite múltiples franjas por día
             const diaFinales = await this.prisma.torneoDisponibilidadDia.upsert({
               where: {
-                tournamentId_fecha: {
+                tournamentId_fecha_horaInicio: {
                   tournamentId: torneoId,
                   fecha: fechaStr,
+                  horaInicio,
                 },
               },
               update: {
-                horaInicio,
                 horaFin, // Horario configurable para finales
                 minutosSlot,
                 activo: true,

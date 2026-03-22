@@ -418,15 +418,16 @@ export class AdminDisponibilidadController {
       console.log('[Disponibilidad] Fecha:', fecha);
 
       // Crear o actualizar la disponibilidad del día
+      // Nueva clave compuesta permite múltiples franjas por día (misma fecha, diferente hora)
       const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
         where: {
-          tournamentId_fecha: {
+          tournamentId_fecha_horaInicio: {
             tournamentId,
             fecha,
+            horaInicio: dto.horaInicio,
           },
         },
         update: {
-          horaInicio: dto.horaInicio,
           horaFin: dto.horaFin,
           minutosSlot: dto.minutosSlot,
           activo: true,

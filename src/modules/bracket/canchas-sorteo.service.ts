@@ -63,19 +63,19 @@ export class CanchasSorteoService {
     });
 
     // Crear o actualizar el día de finales automáticamente
-    // FIX: fechaFinales ahora es String YYYY-MM-DD
+    // Nueva clave compuesta permite múltiples franjas por día
     const fechaFinales = torneo.fechaFinales;
     
     // El horario total es desde el inicio de semifinales hasta el fin de finales
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
       where: {
-        tournamentId_fecha: {
+        tournamentId_fecha_horaInicio: {
           tournamentId: dto.tournamentId,
           fecha: torneo.fechaFinales,
+          horaInicio: dto.horaInicioSemifinales,
         },
       },
       update: {
-        horaInicio: dto.horaInicioSemifinales,
         horaFin: dto.horaFinFinales,
         minutosSlot: 90,
       },
@@ -161,13 +161,14 @@ export class CanchasSorteoService {
     
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
       where: {
-        tournamentId_fecha: {
+        // Nueva clave compuesta: permite múltiples franjas por día (misma fecha, diferente hora)
+        tournamentId_fecha_horaInicio: {
           tournamentId: dto.tournamentId,
           fecha: fecha,
+          horaInicio: dto.horaInicio,
         },
       },
       update: {
-        horaInicio: dto.horaInicio,
         horaFin: dto.horaFin,
         minutosSlot: dto.minutosSlot,
       },
