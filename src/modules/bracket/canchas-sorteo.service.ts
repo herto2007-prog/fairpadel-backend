@@ -47,11 +47,8 @@ export class CanchasSorteoService {
       throw new BadRequestException('El torneo no tiene fecha de finales configurada');
     }
 
-    // Validar que los horarios no se solapen
-    const finSemis = this.parseHora(dto.horaFinSemifinales);
-    const inicioFinales = this.parseHora(dto.horaInicioFinales);
-    
-    if (finSemis > inicioFinales) {
+    // Validar que los horarios no se solapen (comparación directa de strings HH:mm)
+    if (dto.horaFinSemifinales > dto.horaInicioFinales) {
       throw new BadRequestException('El horario de semifinales no puede terminar después de que empiecen las finales');
     }
 
@@ -206,27 +203,30 @@ export class CanchasSorteoService {
     horaFin: string,
     minutosSlot: number,
   ): Promise<number> {
-    const inicio = this.parseHora(horaInicio);
-    const fin = this.parseHora(horaFin);
-    const minutosTotales = (fin.getTime() - inicio.getTime()) / (1000 * 60);
+    // FIX: Usar strings directamente sin convertir a Date
+    const [iniHora, iniMin] = horaInicio.split(':').map(Number);
+    const [finHora, finMin] = horaFin.split(':').map(Number);
+    const minutosTotales = (finHora * 60 + finMin) - (iniHora * 60 + iniMin);
     
     // Math.ceil para incluir el último slot aunque se extienda más allá del horario
-    // Ej: 18:00-23:00 (300min) / 90min = 3.33 → 4 slots (el último termina a las 00:00)
     const slotsPorCancha = Math.ceil(minutosTotales / minutosSlot);
 
     let slotsGenerados = 0;
 
     for (const canchaId of canchasIds) {
       for (let i = 0; i < slotsPorCancha; i++) {
-        const slotInicio = new Date(inicio.getTime() + i * minutosSlot * 60000);
-        const slotFin = new Date(slotInicio.getTime() + minutosSlot * 60000);
+        const minutosInicio = (iniHora * 60 + iniMin) + (i * minutosSlot);
+        const minutosFin = minutosInicio + minutosSlot;
+        
+        const slotInicio = `${String(Math.floor(minutosInicio / 60)).padStart(2, '0')}:${String(minutosInicio % 60).padStart(2, '0')}`;
+        const slotFin = `${String(Math.floor(minutosFin / 60)).padStart(2, '0')}:${String(minutosFin % 60).padStart(2, '0')}`;
 
         await this.prisma.torneoSlot.create({
           data: {
             disponibilidadId,
             torneoCanchaId: canchaId,
-            horaInicio: this.formatHora(slotInicio),
-            horaFin: this.formatHora(slotFin),
+            horaInicio: slotInicio,
+            horaFin: slotFin,
             estado: 'LIBRE',
           },
         });
@@ -248,24 +248,28 @@ export class CanchasSorteoService {
     minutosSlot: number,
     fase: string,
   ): Promise<number> {
-    const inicio = this.parseHora(horaInicio);
-    const fin = this.parseHora(horaFin);
-    const minutosTotales = (fin.getTime() - inicio.getTime()) / (1000 * 60);
+    // FIX: Usar strings directamente sin convertir a Date
+    const [iniHora, iniMin] = horaInicio.split(':').map(Number);
+    const [finHora, finMin] = horaFin.split(':').map(Number);
+    const minutosTotales = (finHora * 60 + finMin) - (iniHora * 60 + iniMin);
     const slotsPorCancha = Math.ceil(minutosTotales / minutosSlot);
 
     let slotsGenerados = 0;
 
     for (const canchaId of canchasIds) {
       for (let i = 0; i < slotsPorCancha; i++) {
-        const slotInicio = new Date(inicio.getTime() + i * minutosSlot * 60000);
-        const slotFin = new Date(slotInicio.getTime() + minutosSlot * 60000);
+        const minutosInicio = (iniHora * 60 + iniMin) + (i * minutosSlot);
+        const minutosFin = minutosInicio + minutosSlot;
+        
+        const slotInicio = `${String(Math.floor(minutosInicio / 60)).padStart(2, '0')}:${String(minutosInicio % 60).padStart(2, '0')}`;
+        const slotFin = `${String(Math.floor(minutosFin / 60)).padStart(2, '0')}:${String(minutosFin % 60).padStart(2, '0')}`;
 
         await this.prisma.torneoSlot.create({
           data: {
             disponibilidadId,
             torneoCanchaId: canchaId,
-            horaInicio: this.formatHora(slotInicio),
-            horaFin: this.formatHora(slotFin),
+            horaInicio: slotInicio,
+            horaFin: slotFin,
             estado: 'LIBRE',
             fase,
           },
@@ -356,12 +360,12 @@ export class CanchasSorteoService {
     const slotsDisponibles = slotsLibres.length;
     const slotsFaltantes = Math.max(0, totalSlotsNecesarios - slotsDisponibles);
 
-    // Calcular duración promedio y horas
+    // Calcular duración promedio y horas (sin usar Date, solo strings)
     let minutosTotales = 0;
     for (const slot of slotsLibres) {
-      const inicio = this.parseHora(slot.horaInicio);
-      const fin = this.parseHora(slot.horaFin);
-      minutosTotales += (fin.getTime() - inicio.getTime()) / (1000 * 60);
+      const [iniHora, iniMin] = slot.horaInicio.split(':').map(Number);
+      const [finHora, finMin] = slot.horaFin.split(':').map(Number);
+      minutosTotales += (finHora * 60 + finMin) - (iniHora * 60 + iniMin);
     }
     
     const duracionPromedioMinutos = slotsDisponibles > 0 
@@ -604,26 +608,6 @@ export class CanchasSorteoService {
     }
 
     return slotsReservados;
-  }
-
-  // Helper: Parsear hora string a Date
-  private parseHora(hora: string): Date {
-    // FIX: Usar fecha base con T03:00:00Z para evitar problemas de timezone
-    // Paraguay es UTC-3, entonces 03:00 UTC = 00:00 PY
-    const [hours, minutes] = hora.split(':').map(Number);
-    const fecha = new Date('2000-01-01T03:00:00.000Z');
-    fecha.setUTCHours(hours + 3, minutes, 0, 0);
-    return fecha;
-  }
-
-  // Helper: Formatear Date a hora string (sin conversión de timezone)
-  private formatHora(fecha: Date): string {
-    // Obtener horas y minutos directamente sin conversión de timezone
-    const hours = fecha.getUTCHours();
-    const minutes = fecha.getUTCMinutes();
-    // Ajustar para Paraguay (UTC-3)
-    const pyHours = (hours - 3 + 24) % 24;
-    return `${String(pyHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   }
 
   /**
