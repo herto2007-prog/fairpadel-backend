@@ -61,10 +61,11 @@ export class ParaguayTimezoneInterceptor implements NestInterceptor {
 
     const result: any = {};
     for (const [key, value] of Object.entries(obj)) {
-      // Detectar campos de fecha por nombre
-      if (this.isDateField(key) && typeof value === 'string') {
-        result[key] = this.parseParaguayDate(value);
-      } else if (typeof value === 'object' && value !== null) {
+      // FIX MIGRACIÓN: Ya no procesamos fechas - ahora son String YYYY-MM-DD
+      // if (this.isDateField(key) && typeof value === 'string') {
+      //   result[key] = this.parseParaguayDate(value);
+      // } else 
+      if (typeof value === 'object' && value !== null) {
         result[key] = this.normalizeDatesInObject(value);
       } else {
         result[key] = value;
