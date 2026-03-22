@@ -707,18 +707,23 @@ export class BracketService {
       
       for (const partido of partidosAnteriores) {
         if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
+          // FIX TIMEZONE: Normalizar fecha para comparación
+          const fechaNormalizada = partido.fechaProgramada.toISOString().split('T')[0];
+          
           const slotLiberado = await this.prisma.torneoSlot.updateMany({
             where: {
               torneoCanchaId: partido.torneoCanchaId,
               disponibilidad: {
-                fecha: partido.fechaProgramada,
+                fecha: {
+                  gte: new Date(fechaNormalizada + 'T00:00:00.000Z'),
+                  lt: new Date(fechaNormalizada + 'T23:59:59.999Z'),
+                },
               },
               horaInicio: partido.horaProgramada,
               estado: 'OCUPADO',
             },
             data: { estado: 'LIBRE', matchId: null },
           });
-
         }
       }
     }
