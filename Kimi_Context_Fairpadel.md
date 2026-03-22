@@ -10,8 +10,8 @@
 > - **⚠️ PROBLEMA EN PRODUCCIÓN:** Error P3009 - migración fallida
 > - **Causa:** Columna `fecha_aprobacion` no existe en tabla `circuitos` en producción
 > - **Fix:** SQL actualizado con bloques DO/EXCEPTION para manejar columnas inexistentes
-> - **Estado:** Pendiente commit del SQL arreglado
-> **ESTADO:** Fix en progreso - SQL arreglado, pendiente commit
+> - **Estado:** ✅ Commit y push completados
+> **ESTADO:** Fix enviado - SQL robusto en Railway
 
 ---
 
