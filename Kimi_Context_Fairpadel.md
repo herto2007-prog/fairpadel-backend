@@ -2,16 +2,14 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-19 - FEATURE: SELECCIÓN DE CANCHAS POR DÍA ✅
-> - **FEATURE:** Selección de canchas por día en "Canchas y Sorteo"
-> - **Motivo:** Permitir deshabilitar canchas específicas (mantenimiento, daño, etc.)
-> - **BACKEND:** Sin cambios (ya soportaba array de canchasIds)
-> - **FRONTEND:** `CanchasSorteoManager.tsx` - Checkboxes de selección
-> - **UX:** Todas seleccionadas por defecto, usuario desmarca las no disponibles
-> - **Validación:** Mínimo 1 cancha requerida por día
-> - **Build:** ✅ Compilación exitosa
-> - **Deploy:** ✅ Push a producción completado
-> **ESTADO:** ✅ Feature lista - MVP refinado a profesional
+> **Última actualización:** 2026-03-19 - MÚLTIPLES FRANJAS POR DÍA ✅
+> - **MIGRACIÓN BD:** Cambio de UNIQUE (tournamentId, fecha) a (tournamentId, fecha, horaInicio)
+> - **MOTIVO:** Permitir configurar el mismo día con diferentes horarios (ej: mañana + tarde)
+> - **BACKEND:** 4 archivos actualizados para usar nueva clave compuesta
+> - **CASO DE USO:** 27/03 14:00-18:00 (Canchas 1,2) + 27/03 18:00-23:00 (Canchas 1,2,3,4)
+> - **BUILD:** ✅ Backend compila exitosamente
+> - **MIGRACIÓN SQL:** Lista en `prisma/migrations/20250319160000_permitir_multiples_franjas_por_dia/`
+> **ESTADO:** ✅ Listo para aplicar migración en producción
 
 ---
 
@@ -814,6 +812,42 @@ formatDatePYShort('2026-03-27', true) // → "27 Mar, 2026"
 - `Kimi_Context_Fairpadel.md` - Esta entrada
 
 **Build:** ✅ Compilación exitosa
+
+---
+
+### ✅ Completado (2026-03-19) - Migración BD: Múltiples Franjas por Día
+
+**Cambio arquitectónico:** Permite configurar el mismo día con diferentes horarios.
+
+**Problema:** La restricción `UNIQUE (tournamentId, fecha)` impedía tener múltiples configuraciones en el mismo día.
+
+**Solución:** Cambiar a `UNIQUE (tournamentId, fecha, horaInicio)`.
+
+**Ejemplo de uso:**
+```
+📅 Días configurados:
+├─ 27/03/2026 | 14:00 - 18:00 | Canchas 1,2 | 8 slots (Mañana)
+├─ 27/03/2026 | 18:00 - 23:00 | Canchas 1,2,3,4 | 20 slots (Tarde)
+└─ 28/03/2026 | 10:00 - 14:00 | Canchas 3,4 | 8 slots
+```
+
+**Archivos modificados:**
+- `prisma/schema.prisma` - Línea 632: `@@unique([tournamentId, fecha, horaInicio])`
+- `src/modules/bracket/canchas-sorteo.service.ts` - Líneas 72, 165 (2 lugares)
+- `src/modules/admin/admin-disponibilidad.controller.ts` - Línea 423
+- `src/modules/admin/admin-torneos.controller.ts` - Línea 545
+
+**Migración SQL:**
+```sql
+-- Eliminar índice anterior
+DROP CONSTRAINT "torneo_disponibilidad_dias_tournament_id_fecha_key";
+
+-- Crear nuevo índice con hora_inicio
+ADD CONSTRAINT "torneo_disponibilidad_dias_tournament_id_fecha_hora_key" 
+UNIQUE ("tournament_id", "fecha", "hora_inicio");
+```
+
+**Aplicación:** Automática con `prisma migrate deploy` en el próximo deploy.
 
 ---
 
