@@ -678,10 +678,6 @@ export class BracketService {
     inscripciones: any[],
     slots?: { fecha: string; horaInicio: string; horaFin: string; torneoCanchaId: string; fase: string; ordenPartido: number }[],
   ): Promise<string> {
-    console.log(`[guardarBracket] Iniciando - categoryId: ${tournamentCategoryId}`);
-    console.log(`[guardarBracket] Total inscripciones: ${inscripciones.length}`);
-    console.log(`[guardarBracket] Total partidos: ${partidos.length}`);
-    
     // Obtener IDs de torneo y categoría
     const categoria = await this.prisma.tournamentCategory.findUnique({
       where: { id: tournamentCategoryId },
@@ -693,8 +689,6 @@ export class BracketService {
     }
 
     const { tournamentId, categoryId } = categoria;
-    console.log(`[guardarBracket] tournamentId: ${tournamentId}, categoryId: ${categoryId}`);
-
     // MVP: Liberar slots del bracket anterior si existe
     const categoriaActual = await this.prisma.tournamentCategory.findUnique({
       where: { id: tournamentCategoryId },
@@ -702,7 +696,6 @@ export class BracketService {
     });
     
     if (categoriaActual?.fixtureVersionId) {
-      console.log(`[guardarBracket] Liberando slots del bracket anterior: ${categoriaActual.fixtureVersionId}`);
       const partidosAnteriores = await this.prisma.match.findMany({
         where: { fixtureVersionId: categoriaActual.fixtureVersionId },
         select: { torneoCanchaId: true, fechaProgramada: true, horaProgramada: true },
@@ -721,16 +714,13 @@ export class BracketService {
             },
             data: { estado: 'LIBRE', matchId: null },
           });
-          if (slotLiberado.count > 0) {
-            console.log(`[guardarBracket] Slot liberado: ${partido.fechaProgramada} ${partido.horaProgramada}`);
-          }
+
         }
       }
     }
 
     // MVP: Si no hay slots, buscar slots disponibles del torneo
     if (!slots || slots.length === 0) {
-      console.log(`[guardarBracket] Buscando slots disponibles...`);
       const slotsDisponibles = await this.prisma.torneoSlot.findMany({
         where: { 
           estado: 'LIBRE',
@@ -757,8 +747,6 @@ export class BracketService {
         ordenPartido: partidos[index]?.orden || 1,
       }));
       
-      console.log(`[guardarBracket] Slots encontrados: ${slots.length}`);
-      
       // Marcar slots como reservados
       for (const slot of slotsDisponibles) {
         await this.prisma.torneoSlot.update({
@@ -775,8 +763,6 @@ export class BracketService {
       select: { version: true },
     });
     const nuevaVersion = (ultimaVersion?.version || 0) + 1;
-    console.log(`[guardarBracket] Nueva version: ${nuevaVersion}`);
-
     // Crear FixtureVersion
     const fixtureVersion = await this.prisma.fixtureVersion.create({
       data: {
@@ -878,7 +864,6 @@ export class BracketService {
             createData.fechaProgramada = new Date(slot.fecha);
             createData.horaProgramada = slot.horaInicio;
             createData.horaFinEstimada = slot.horaFin;
-            console.log(`[guardarBracket] Slot asignado - Partido ${partido.fase} ${partido.orden}: ${slot.fecha} ${slot.horaInicio}`);
           }
         }
 
@@ -947,7 +932,6 @@ export class BracketService {
                 : { inscripcion2Id: matchBye.inscripcion1Id, tipoEntrada2: 'GANADOR_ZONA' },
             });
             
-            console.log(`[guardarBracket] BYE avanzado: ${matchBye.inscripcion1Id} → ${realSiguienteId}`);
           }
         }
       }
@@ -957,9 +941,6 @@ export class BracketService {
     const partidosCreados = await this.prisma.match.count({
       where: { fixtureVersionId: fixtureVersion.id }
     });
-    console.log(`[guardarBracket] Partidos creados: ${partidosCreados}`);
-    console.log(`[guardarBracket] FixtureVersion: ${fixtureVersion.id}`);
-
     return fixtureVersion.id;
   }
 }

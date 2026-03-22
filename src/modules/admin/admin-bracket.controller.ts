@@ -73,13 +73,6 @@ export class AdminBracketController {
       inscripcionesCount.map((i) => [i.categoryId, i._count.id]),
     );
 
-    console.log('[getCategoriasConInscripciones] Categorías raw:', categorias.map(c => ({
-      id: c.id,
-      estado: c.estado,
-      fixtureVersionId: c.fixtureVersionId,
-      fixtureVersion: c.fixtureVersion?.id,
-    })));
-
     return {
       success: true,
       categorias: categorias.map((cat) => ({
@@ -499,7 +492,6 @@ export class AdminBracketController {
    */
   @Get('bracket/:fixtureVersionId/partidos')
   async getPartidosBracket(@Param('fixtureVersionId') fixtureVersionId: string) {
-    console.log(`[getPartidosBracket] Request - fixtureVersionId: ${fixtureVersionId}`);
     try {
       const partidos = await this.prisma.match.findMany({
         where: { fixtureVersionId },
@@ -583,8 +575,6 @@ export class AdminBracketController {
         ],
       });
 
-      console.log(`[getPartidosBracket] Partidos encontrados: ${partidos.length}`);
-      
       // Debug: Log para verificar que los sets vienen en la respuesta
       console.log('[getPartidosBracket] Primer partido sets:', {
         set1: partidos[0] ? [partidos[0].set1Pareja1, partidos[0].set1Pareja2] : null,
