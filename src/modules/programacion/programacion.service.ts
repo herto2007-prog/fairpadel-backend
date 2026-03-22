@@ -238,8 +238,8 @@ export class ProgramacionService {
       }
     });
     
-    const fechaFinales = torneo?.fechaFinales ? 
-      this.dateService.getDateOnly(torneo.fechaFinales) : undefined;
+    // FIX: fechaFinales es String YYYY-MM-DD directamente
+    const fechaFinales = torneo?.fechaFinales || undefined;
     
     // Usar canchasFinales del torneo si no se pasaron
     const canchasFinalesFinal = canchasFinales?.length ? canchasFinales : 
@@ -512,7 +512,8 @@ export class ProgramacionService {
         const cancha = canchaMap.get(s.torneoCanchaId);
         return {
           id: s.id,
-          fecha: this.dateService.getDateOnly(disp.fecha),
+          // FIX: fecha es String YYYY-MM-DD
+          fecha: disp.fecha,
           horaInicio: s.horaInicio,
           horaFin: s.horaFin,
           torneoCanchaId: s.torneoCanchaId,
@@ -1305,7 +1306,8 @@ export class ProgramacionService {
     if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
       await this.liberarSlot(
         partido.torneoCanchaId,
-        this.dateService.getDateOnly(partido.fechaProgramada),
+        // FIX: fechaProgramada es String YYYY-MM-DD
+        partido.fechaProgramada,
         partido.horaProgramada,
       );
     }
@@ -1342,7 +1344,8 @@ export class ProgramacionService {
     if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
       await this.liberarSlot(
         partido.torneoCanchaId,
-        this.dateService.getDateOnly(partido.fechaProgramada),
+        // FIX: fechaProgramada es String YYYY-MM-DD
+        partido.fechaProgramada,
         partido.horaProgramada,
       );
     }
@@ -1406,7 +1409,8 @@ export class ProgramacionService {
     // Determinar restricciones según la fase
     const esFaseFinal = ['SEMIS', 'FINAL'].includes(partido.ronda);
     const fechaFinales = torneo?.fechaFinales 
-      ? this.dateService.getDateOnly(torneo.fechaFinales)
+      // FIX: fechaFinales es String YYYY-MM-DD
+      ? torneo.fechaFinales
       : null;
     
     // Filtrar slots según la fase
@@ -1613,7 +1617,8 @@ export class ProgramacionService {
 
     return partidos.map(p => ({
       partidoId: p.id,
-      fecha: this.dateService.getDateOnly(p.fechaProgramada as Date),
+      // FIX: fechaProgramada es String YYYY-MM-DD
+      fecha: p.fechaProgramada as string,
       horaInicio: p.horaProgramada as string,
       horaFin: this.calcularHoraFin(p.horaProgramada as string),
       torneoCanchaId: p.torneoCanchaId as string,
@@ -1635,7 +1640,8 @@ export class ProgramacionService {
       where: {
         torneoCanchaId,
         disponibilidad: {
-          fecha: new Date(fecha + 'T03:00:00.000Z'),
+          // FIX: fecha es String YYYY-MM-DD
+          fecha: fecha,
         },
         horaInicio,
       },

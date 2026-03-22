@@ -269,7 +269,8 @@ export class CircuitosService {
         puntosValidos: dto.estado === 'APROBADO' ? (dto.puntosValidos ?? true) : false,
         orden: dto.orden,
         aprobadoPorId: adminId,
-        fechaAprobacion: this.dateService.now(),
+        // FIX: fechaAprobacion es String YYYY-MM-DD
+        fechaAprobacion: new Date().toISOString().split('T')[0],
         notas: dto.notas,
       },
       include: {

@@ -132,7 +132,7 @@ export class MatchesService {
     matchId: string,
     data: {
       canchaId?: string;
-      fechaProgramada?: Date;
+      fechaProgramada?: string;  // FIX: Ahora es String YYYY-MM-DD
       horaProgramada?: string;
       horaFinEstimada?: string;
     },
@@ -157,6 +157,7 @@ export class MatchesService {
       where: { id: matchId },
       data: {
         torneoCanchaId: data.canchaId,
+        // FIX: fechaProgramada es String YYYY-MM-DD
         fechaProgramada: data.fechaProgramada,
         horaProgramada: data.horaProgramada,
         horaFinEstimada: data.horaFinEstimada,

@@ -781,8 +781,8 @@ export class BracketService {
           if (slotIndex < slotsFiltrados.length) {
             const slot = slotsFiltrados[slotIndex];
             slotsPorFase.push({
-              // FIX: fecha viene como Date de Prisma, convertir a YYYY-MM-DD
-              fecha: slot.disponibilidad.fecha.toISOString().split('T')[0],
+              // FIX: fecha es String YYYY-MM-DD directamente
+              fecha: slot.disponibilidad.fecha,
               horaInicio: slot.horaInicio,
               horaFin: slot.horaFin,
               torneoCanchaId: slot.torneoCanchaId,

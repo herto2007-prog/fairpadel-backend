@@ -282,11 +282,14 @@ export class PerfilService {
     return logros;
   }
 
-  private calcularEdad(fechaNacimiento: Date): number {
+  private calcularEdad(fechaNacimiento: string): number {
+    // FIX: fechaNacimiento es String YYYY-MM-DD
+    const [year, month, day] = fechaNacimiento.split('-').map(Number);
+    const fechaNac = new Date(year, month - 1, day);
     const hoy = new Date();
-    let edad = hoy.getFullYear() - fechaNacimiento.getFullYear();
-    const mes = hoy.getMonth() - fechaNacimiento.getMonth();
-    if (mes < 0 || (mes === 0 && hoy.getDate() < fechaNacimiento.getDate())) {
+    let edad = hoy.getFullYear() - fechaNac.getFullYear();
+    const mes = hoy.getMonth() - fechaNac.getMonth();
+    if (mes < 0 || (mes === 0 && hoy.getDate() < fechaNac.getDate())) {
       edad--;
     }
     return edad;

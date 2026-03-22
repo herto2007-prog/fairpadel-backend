@@ -62,7 +62,10 @@ export class NotificacionesService {
 
       if (!inscripcion) return;
 
-      const fechaSorteo = inscripcion.tournament.fechaInicio?.toLocaleDateString('es-PY') || 'Próximamente';
+      // FIX: fechaInicio es String YYYY-MM-DD, formatear manualmente
+      const fechaSorteo = inscripcion.tournament.fechaInicio 
+        ? inscripcion.tournament.fechaInicio.split('-').reverse().join('/') 
+        : 'Próximamente';
       const categoriaNombre = inscripcion.category?.nombre || 'Categoría no especificada';
 
       // Notificar a jugador 1
@@ -129,7 +132,8 @@ export class NotificacionesService {
 
       if (!partido || !partido.fechaProgramada || !partido.horaProgramada) return;
 
-      const fecha = partido.fechaProgramada.toLocaleDateString('es-PY');
+      // FIX: fechaProgramada es String YYYY-MM-DD, formatear manualmente
+      const fecha = partido.fechaProgramada.split('-').reverse().join('/');
       const hora = partido.horaProgramada;
       const cancha = partido.torneoCancha?.sedeCancha?.nombre || 'Cancha por definir';
       const sede = partido.torneoCancha?.sedeCancha?.sede?.nombre || 'Sede por definir';

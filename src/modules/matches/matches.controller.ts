@@ -38,7 +38,7 @@ export class MatchesController {
     @Body() data: {
       canchaId?: string;
       canchaNombre?: string;
-      fechaProgramada?: Date;
+      fechaProgramada?: string;  // FIX: Ahora es String YYYY-MM-DD
       horaProgramada?: string;
       horaFinEstimada?: string;
     },

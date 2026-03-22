@@ -145,7 +145,8 @@ export class RankingsService {
               puntosGanados: puntosFinales,
               puntosBase: config.puntosBase,
               multiplicadorAplicado: torneo.multiplicadorPuntos,
-              fechaTorneo: this.dateService.now(),
+              // FIX: fechaTorneo es String YYYY-MM-DD
+              fechaTorneo: new Date().toISOString().split('T')[0],
             },
           });
           puntosCalculados.push(historial);
@@ -417,7 +418,8 @@ export class RankingsService {
               categoriaActualId: regla.categoriaOrigenId,
               categoriaNuevaId: regla.categoriaDestinoId,
               torneosGanadosIds: candidato.torneosGanados,
-              fechaCalculo: this.dateService.now(),
+              // FIX: fechaCalculo es String YYYY-MM-DD
+              fechaCalculo: new Date().toISOString().split('T')[0],
               estado: 'PENDIENTE',
             },
             include: {
@@ -439,8 +441,10 @@ export class RankingsService {
   }
 
   private async buscarCandidatosAscenso(regla: any) {
-    const fechaDesde = new Date();
-    fechaDesde.setMonth(fechaDesde.getMonth() - regla.mesesVentana);
+    // FIX: fechaTorneo es String YYYY-MM-DD
+    const fechaDesdeDate = new Date();
+    fechaDesdeDate.setMonth(fechaDesdeDate.getMonth() - regla.mesesVentana);
+    const fechaDesde = fechaDesdeDate.toISOString().split('T')[0];
 
     // Buscar jugadores que ganaron campeonatos en la categoría origen
     const campeones = await this.prisma.historialPuntos.groupBy({
@@ -498,7 +502,8 @@ export class RankingsService {
       data: {
         estado,
         revisadoPorId: adminId,
-        fechaRevision: this.dateService.now(),
+        // FIX: fechaRevision es String YYYY-MM-DD
+        fechaRevision: new Date().toISOString().split('T')[0],
         notasRevision: notas,
       },
       include: {

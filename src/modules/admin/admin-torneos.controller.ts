@@ -525,7 +525,8 @@ export class AdminTorneosController {
         const horaFin = dto.horaFinFinales || torneoActualizado.horaFinFinales || '23:00';
         
         if (fechaFinales) {
-          const fechaStr = this.dateService.getDateOnly(fechaFinales as Date); // YYYY-MM-DD en timezone Paraguay
+          // FIX: fechaFinales ya es String YYYY-MM-DD
+          const fechaStr = fechaFinales as string;
           // @ts-ignore
           const minutosSlot: number = torneoActualizado.minutosPorPartido || torneo.minutosPorPartido || 120;
           

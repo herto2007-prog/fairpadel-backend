@@ -110,8 +110,9 @@ export class DemoService {
                 monto: Number(torneo.costoInscripcion),
                 comision: 0,
                 estado: 'CONFIRMADO',
-                fechaPago: new Date(),
-                fechaConfirm: new Date(),
+                // FIX: fechas son String YYYY-MM-DD
+                fechaPago: new Date().toISOString().split('T')[0],
+                fechaConfirm: new Date().toISOString().split('T')[0],
               },
             });
           }
