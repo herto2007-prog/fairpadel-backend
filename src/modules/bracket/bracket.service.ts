@@ -907,7 +907,8 @@ export class BracketService {
           const slot = slots.find(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
           if (slot) {
             createData.torneoCanchaId = slot.torneoCanchaId;
-            createData.fechaProgramada = new Date(slot.fecha);
+            // FIX TIMEZONE: Usar T03:00:00.000Z para que medianoche PY se guarde correctamente
+            createData.fechaProgramada = new Date(slot.fecha + 'T03:00:00.000Z');
             createData.horaProgramada = slot.horaInicio;
             createData.horaFinEstimada = slot.horaFin;
           }
