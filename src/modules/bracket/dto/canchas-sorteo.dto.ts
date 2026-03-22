@@ -1,4 +1,5 @@
-import { IsString, IsNumber, IsOptional, IsArray, IsBoolean, Min, Max, ArrayMinSize } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, IsBoolean, Min, Max, ArrayMinSize, Matches } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 /**
  * DTO para configurar horarios de semifinales y finales (Paso 1.a)
@@ -38,8 +39,23 @@ export class ConfigurarDiaJuegoDto {
   @IsString()
   tournamentId: string;
 
+  /**
+   * Fecha del día de juego en formato YYYY-MM-DD.
+   * Si se envía con hora (ISO), se extrae automáticamente la fecha.
+   * @example "2026-03-27"
+   */
   @IsString()
-  fecha: string; // "2026-03-20"
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha debe tener formato YYYY-MM-DD (ej: 2026-03-27)',
+  })
+  @Transform(({ value }) => {
+    // Si viene como ISO string (2026-03-27T00:00:00Z), extraer solo YYYY-MM-DD
+    if (typeof value === 'string' && value.length > 10) {
+      return value.substring(0, 10);
+    }
+    return value;
+  })
+  fecha: string;
 
   @IsString()
   horaInicio: string; // "18:00"

@@ -146,8 +146,8 @@ export class CanchasSorteoService {
     }
 
     // Crear o actualizar disponibilidad del día
-    // FIX: Extraer solo YYYY-MM-DD si viene como ISO string (evita bug timezone)
-    const fecha = dto.fecha.length > 10 ? dto.fecha.substring(0, 10) : dto.fecha;
+    // NOTA: La fecha ya viene validada y transformada por el DTO (formato YYYY-MM-DD)
+    const fecha = dto.fecha;
     
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
       where: {
