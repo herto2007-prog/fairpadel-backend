@@ -608,12 +608,22 @@ export class CanchasSorteoService {
 
   // Helper: Parsear hora string a Date
   private parseHora(hora: string): Date {
-    return new Date(`2000-01-01T${hora}`);
+    // FIX: Usar fecha base con T03:00:00Z para evitar problemas de timezone
+    // Paraguay es UTC-3, entonces 03:00 UTC = 00:00 PY
+    const [hours, minutes] = hora.split(':').map(Number);
+    const fecha = new Date('2000-01-01T03:00:00.000Z');
+    fecha.setUTCHours(hours + 3, minutes, 0, 0);
+    return fecha;
   }
 
-  // Helper: Formatear Date a hora string
+  // Helper: Formatear Date a hora string (sin conversión de timezone)
   private formatHora(fecha: Date): string {
-    return fecha.toTimeString().slice(0, 5);
+    // Obtener horas y minutos directamente sin conversión de timezone
+    const hours = fecha.getUTCHours();
+    const minutes = fecha.getUTCMinutes();
+    // Ajustar para Paraguay (UTC-3)
+    const pyHours = (hours - 3 + 24) % 24;
+    return `${String(pyHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   }
 
   /**
