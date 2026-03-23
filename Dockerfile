@@ -1,18 +1,18 @@
-FROM node:20-slim
+FROM node:20-alpine
 
 # Configurar timezone de Paraguay (UTC-3)
 ENV TZ=America/Asuncion
-RUN apt-get update && apt-get install -y tzdata && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache tzdata
 
-# Force rebuild on each deploy
+# Force rebuild on each deploy - imagen completamente diferente
 ARG RAILWAY_DEPLOYMENT_ID=unknown
-ARG CACHE_BUST=1
+ARG CACHE_BUST=20260323
 RUN echo "Building deployment: ${RAILWAY_DEPLOYMENT_ID} - ${CACHE_BUST}"
 
 WORKDIR /app
 
 # Install OpenSSL for Prisma
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache openssl
 
 # Install dependencies
 COPY package*.json ./
@@ -21,14 +21,12 @@ RUN npm install --legacy-peer-deps
 # Copy prisma schema
 COPY prisma ./prisma/
 
-# Generate Prisma client
-# Usamos ARG que se puede pasar en buildtime, con valor por defecto
+# Generate Prisma client - FORZAR REGENERACIÓN COMPLETA
 ARG DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder
 ENV DATABASE_URL=${DATABASE_URL}
-ARG PRISMA_SCHEMA_HASH=force-regenerate-20260323
-RUN echo "Regenerating Prisma Client: ${PRISMA_SCHEMA_HASH}"
 RUN rm -rf node_modules/.prisma
-RUN npx prisma generate --schema=./prisma/schema.prisma
+RUN rm -rf node_modules/@prisma/client
+RUN npx prisma generate
 
 # Copy source code
 COPY src ./src/
@@ -43,6 +41,4 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-# Flujo: 1) Aplicar migraciones formales 2) Seed 3) Iniciar app
-# Baseline completado - BD ya tiene historial de migraciones
 CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && exec node dist/main.js"]
