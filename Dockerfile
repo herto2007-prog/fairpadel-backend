@@ -25,7 +25,10 @@ COPY prisma ./prisma/
 # Usamos ARG que se puede pasar en buildtime, con valor por defecto
 ARG DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder
 ENV DATABASE_URL=${DATABASE_URL}
-RUN npx prisma generate
+ARG PRISMA_SCHEMA_HASH=force-regenerate-20260323
+RUN echo "Regenerating Prisma Client: ${PRISMA_SCHEMA_HASH}"
+RUN rm -rf node_modules/.prisma
+RUN npx prisma generate --schema=./prisma/schema.prisma
 
 # Copy source code
 COPY src ./src/
