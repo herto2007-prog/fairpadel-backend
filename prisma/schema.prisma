@@ -621,8 +621,9 @@ model TorneoDisponibilidadDia {
   fecha         String   // YYYY-MM-DD - Fecha del día de juego
   horaInicio    String   @map("hora_inicio") // "18:00"
   horaFin       String   @map("hora_fin")    // "23:00"
-  minutosSlot   Int      @default(90) @map("minutos_slot") // Duración de cada partido
-  activo        Boolean  @default(true)
+  minutosSlot     Int      @default(90) @map("minutos_slot") // Duración de cada partido
+  fasesPermitidas String?  @map("fases_permitidas") // NUEVO: "ZONA,REPECHAJE,OCTAVOS,CUARTOS,SEMIS,FINAL"
+  activo          Boolean  @default(true)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 

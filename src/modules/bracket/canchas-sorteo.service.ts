@@ -30,6 +30,29 @@ export class CanchasSorteoService {
   ) {}
 
   /**
+   * NUEVO: Determina qué fases pueden jugarse en un día según su fecha
+   * Lógica paraguaya estándar: Jueves/Viernes=Zona/Repechaje, Sábado=Octavos/Cuartos, Domingo=Semis/Final
+   */
+  private obtenerFasesParaDia(fecha: string): FaseBracket[] {
+    // FIX: Usar fecha como string YYYY-MM-DD, no crear Date con timezone
+    const [year, month, day] = fecha.split('-').map(Number);
+    const date = new Date(year, month - 1, day, 12, 0, 0); // Mediodía para evitar problemas de timezone
+    const diaSemana = date.getDay();
+    
+    switch (diaSemana) {
+      case 4: // Jueves
+      case 5: // Viernes
+        return [FaseBracket.ZONA, FaseBracket.REPECHAJE];
+      case 6: // Sábado
+        return [FaseBracket.OCTAVOS, FaseBracket.CUARTOS];
+      case 0: // Domingo
+        return [FaseBracket.SEMIS, FaseBracket.FINAL];
+      default:
+        return [FaseBracket.ZONA]; // Lunes, Martes, Miércoles por defecto solo Zona
+    }
+  }
+
+  /**
    * PASO 1.a: Configurar horarios de semifinales y finales
    * Crea automáticamente el día de finales con slots para ambas fases
    */
@@ -159,7 +182,12 @@ export class CanchasSorteoService {
     // FIX: Usar clave compuesta tournamentId_fecha_horaInicio para soportar múltiples franjas por día
     const fecha = dto.fecha;
     
+    // NUEVO: Determinar fases permitidas automáticamente si no se especifican
+    const fasesPermitidas = dto.fasesPermitidas?.join(',') || 
+      this.obtenerFasesParaDia(fecha).join(',');
+    
     console.log('[DEBUG] fecha a guardar:', fecha);
+    console.log('[DEBUG] fasesPermitidas:', fasesPermitidas);
     console.log('[DEBUG] ======================================');
     
     const disponibilidad = await this.prisma.torneoDisponibilidadDia.upsert({
@@ -174,6 +202,7 @@ export class CanchasSorteoService {
       update: {
         horaFin: dto.horaFin,
         minutosSlot: dto.minutosSlot,
+        fasesPermitidas, // NUEVO
       },
       create: {
         tournamentId: dto.tournamentId,
@@ -181,6 +210,7 @@ export class CanchasSorteoService {
         horaInicio: dto.horaInicio,
         horaFin: dto.horaFin,
         minutosSlot: dto.minutosSlot,
+        fasesPermitidas, // NUEVO
       },
     });
     
@@ -208,6 +238,7 @@ export class CanchasSorteoService {
         horaInicio: dto.horaInicio,
         horaFin: dto.horaFin,
         minutosSlot: dto.minutosSlot,
+        fasesPermitidas, // NUEVO
         slotsGenerados,
         canchas: dto.canchasIds.length,
       },
@@ -439,6 +470,7 @@ export class CanchasSorteoService {
 
   /**
    * PASO 2: Cerrar inscripciones y sortear múltiples categorías
+   * NUEVO: Usa estrategia de fases por día si los días tienen fases configuradas
    */
   async cerrarInscripcionesYsortear(
     dto: CerrarInscripcionesSortearDto,
@@ -456,10 +488,296 @@ export class CanchasSorteoService {
       });
     }
 
-    // 2. Obtener slots disponibles ordenados por fecha/hora
+    // 2. NUEVO: Verificar si hay días con fases configuradas
+    const diasConFases = await this.prisma.torneoDisponibilidadDia.findMany({
+      where: { 
+        tournamentId,
+        fasesPermitidas: { not: null }
+      },
+      orderBy: { fecha: 'asc' },
+    });
+
+    // 3. Decidir estrategia basada en la configuración
+    if (diasConFases.length >= 2) {
+      // NUEVA LÓGICA: Procesar por día respetando fases con Round-Robin
+      console.log('[Sorteo] Usando estrategia NUEVA: Fases por día con Round-Robin');
+      return this.sortearConFasesPorDia(tournamentId, categoriasIds, calculo, diasConFases);
+    } else {
+      // FALLBACK: Usar lógica secuencial original (backward compatibility)
+      console.log('[Sorteo] Usando estrategia ORIGINAL: Secuencial');
+      return this.sortearSecuencialOriginal(tournamentId, categoriasIds, calculo);
+    }
+  }
+
+  /**
+   * NUEVO: Sorteo respetando fases por día con Round-Robin entre categorías
+   * Procesa los días cronológicamente, asignando partidos de las fases permitidas
+   */
+  private async sortearConFasesPorDia(
+    tournamentId: string,
+    categoriasIds: string[],
+    calculo: CalculoSlotsResponse,
+    diasConfig: any[],
+  ): Promise<SorteoMasivoResponse> {
+    // Preparar datos de categorías
+    const categoriasData = [];
+    const todasInscripciones = await this.prisma.inscripcion.findMany({
+      where: {
+        tournamentId,
+        estado: 'CONFIRMADA',
+      },
+    });
+    
+    for (const categoriaInfo of calculo.detallePorCategoria) {
+      const categoria = await this.prisma.tournamentCategory.findUnique({
+        where: { id: categoriaInfo.categoriaId },
+      });
+
+      if (!categoria) continue;
+
+      const inscripcionesCategoria = todasInscripciones.filter(
+        i => i.categoryId === categoria.categoryId
+      );
+
+      categoriasData.push({
+        categoria,
+        inscripciones: inscripcionesCategoria,
+        nombre: categoriaInfo.nombre,
+        slotsNecesarios: categoriaInfo.slotsNecesarios,
+        detallePorFase: categoriaInfo.partidosPorFase,
+      });
+    }
+
+    // Mapa para acumular asignaciones por categoría
+    const asignacionesPorCategoria = new Map<string, SlotReserva[]>();
+    const distribucionPorDia: Record<string, { slots: number; categorias: Set<string> }> = {};
+
+    // PROCESAR POR DÍA (cronológicamente)
+    for (const dia of diasConfig) {
+      // Obtener fases permitidas para este día
+      const fasesPermitidas = (dia.fasesPermitidas as string)
+        ?.split(',') as FaseBracket[] || 
+        this.obtenerFasesParaDia(dia.fecha);
+
+      if (fasesPermitidas.length === 0) continue;
+
+      // Obtener slots libres del día
+      const slotsDelDia = await this.prisma.torneoSlot.findMany({
+        where: {
+          disponibilidadId: dia.id,
+          estado: 'LIBRE',
+        },
+        orderBy: { horaInicio: 'asc' },
+      });
+
+      if (slotsDelDia.length === 0) continue;
+
+      // Obtener partidos pendientes de TODAS las categorías para estas fases
+      const partidosPorCategoria = new Map<string, Array<{ fase: FaseBracket; orden: number }>>();
+      
+      for (const catData of categoriasData) {
+        const partidosPendientes: Array<{ fase: FaseBracket; orden: number }> = [];
+        
+        // Calcular partidos por fase para esta categoría
+        const numParejas = catData.inscripciones.length;
+        const calculoCat = this.bracketService.calcularSlotsNecesarios(numParejas);
+        
+        for (const faseInfo of calculoCat.detallePorFase) {
+          const fase = faseInfo.fase as FaseBracket;
+          if (fasesPermitidas.includes(fase)) {
+            // Verificar cuántos slots ya están asignados para esta fase
+            const asignacionesExistentes = asignacionesPorCategoria.get(catData.categoria.id) || [];
+            const asignadosEnEstaFase = asignacionesExistentes.filter(s => s.fase === fase).length;
+            const pendientes = faseInfo.partidos - asignadosEnEstaFase;
+            
+            for (let i = 0; i < pendientes; i++) {
+              partidosPendientes.push({
+                fase,
+                orden: asignadosEnEstaFase + i + 1,
+              });
+            }
+          }
+        }
+        
+        if (partidosPendientes.length > 0) {
+          partidosPorCategoria.set(catData.categoria.id, partidosPendientes);
+        }
+      }
+
+      if (partidosPorCategoria.size === 0) continue;
+
+      // Ordenar con Round-Robin entre categorías
+      const partidosOrdenados = this.ordenarRoundRobin(
+        partidosPorCategoria, 
+        categoriasData.map(c => c.categoria.id)
+      );
+
+      // Asignar partidos a slots del día
+      for (let i = 0; i < partidosOrdenados.length && i < slotsDelDia.length; i++) {
+        const partido = partidosOrdenados[i];
+        const slot = slotsDelDia[i];
+        
+        const slotReserva: SlotReserva = {
+          fecha: dia.fecha,
+          horaInicio: slot.horaInicio,
+          horaFin: slot.horaFin,
+          torneoCanchaId: slot.torneoCanchaId,
+          categoriaId: partido.categoriaId,
+          fase: partido.fase,
+          ordenPartido: partido.orden,
+        };
+
+        // Agregar a las asignaciones de la categoría
+        if (!asignacionesPorCategoria.has(partido.categoriaId)) {
+          asignacionesPorCategoria.set(partido.categoriaId, []);
+        }
+        asignacionesPorCategoria.get(partido.categoriaId)!.push(slotReserva);
+
+        // Marcar slot como reservado
+        await this.prisma.torneoSlot.update({
+          where: { id: slot.id },
+          data: { estado: 'RESERVADO' },
+        });
+
+        // Actualizar distribución por día
+        if (!distribucionPorDia[dia.fecha]) {
+          distribucionPorDia[dia.fecha] = { slots: 0, categorias: new Set() };
+        }
+        distribucionPorDia[dia.fecha].slots++;
+        
+        const catNombre = categoriasData.find(c => c.categoria.id === partido.categoriaId)?.nombre;
+        if (catNombre) {
+          distribucionPorDia[dia.fecha].categorias.add(catNombre);
+        }
+      }
+    }
+
+    // Generar brackets y guardar con las asignaciones
+    const categoriasSorteadas = [];
+    let totalSlotsReservados = 0;
+    
+    for (const catData of categoriasData) {
+      const slotsCategoria = asignacionesPorCategoria.get(catData.categoria.id) || [];
+      totalSlotsReservados += slotsCategoria.length;
+      
+      // Cerrar inscripciones
+      await this.prisma.tournamentCategory.update({
+        where: { id: catData.categoria.id },
+        data: { estado: 'INSCRIPCIONES_CERRADAS' },
+      });
+
+      // Generar bracket
+      const numParejas = catData.inscripciones.length;
+      const config = this.bracketService.calcularConfiguracion(numParejas);
+      const { partidos } = await this.bracketService.generarBracket({
+        tournamentCategoryId: catData.categoria.id,
+        totalParejas: numParejas,
+      });
+      
+      // Archivar versión anterior si existe
+      if (catData.categoria.fixtureVersionId) {
+        await this.prisma.fixtureVersion.update({
+          where: { id: catData.categoria.fixtureVersionId },
+          data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+        });
+      }
+      
+      // Ordenar inscripciones aleatoriamente
+      const inscripcionesOrdenadas = [...catData.inscripciones]
+        .sort(() => Math.random() - 0.5);
+      
+      // Guardar bracket con slots asignados
+      const fixtureVersionId = await this.bracketService.guardarBracket(
+        catData.categoria.id,
+        config,
+        partidos,
+        inscripcionesOrdenadas,
+        slotsCategoria,
+      );
+
+      // Actualizar categoría
+      await this.prisma.tournamentCategory.update({
+        where: { id: catData.categoria.id },
+        data: {
+          estado: 'INSCRIPCIONES_CERRADAS',
+          fixtureVersionId,
+        },
+      });
+
+      categoriasSorteadas.push({
+        categoriaId: catData.categoria.id,
+        nombre: catData.nombre,
+        fixtureVersionId,
+        totalPartidos: catData.slotsNecesarios,
+        slotsReservados: slotsCategoria.length,
+      });
+    }
+
+    // Generar distribución por día para la respuesta
+    const distribucionResponse = Object.entries(distribucionPorDia).map(
+      ([fecha, info]) => ({
+        fecha,
+        slotsReservados: info.slots,
+        categorias: Array.from(info.categorias),
+      }),
+    );
+
+    return {
+      success: true,
+      message: `Se sortearon ${categoriasSorteadas.length} categorías con ${totalSlotsReservados} slots reservados (con fases por día)`,
+      categoriasSorteadas,
+      slotsTotalesReservados: totalSlotsReservados,
+      distribucionPorDia: distribucionResponse,
+    };
+  }
+
+  /**
+   * NUEVO: Ordena partidos con Round-Robin entre categorías
+   * Ej: CatA-1, CatB-1, CatC-1, CatA-2, CatB-2, CatC-2...
+   */
+  private ordenarRoundRobin(
+    partidosPorCategoria: Map<string, Array<{ fase: FaseBracket; orden: number }>>,
+    categoriasIds: string[],
+  ): Array<{ categoriaId: string; fase: FaseBracket; orden: number }> {
+    const resultado: Array<{ categoriaId: string; fase: FaseBracket; orden: number }> = [];
+    const indices = new Map<string, number>();
+
+    let hayMas = true;
+    while (hayMas) {
+      hayMas = false;
+      
+      for (const catId of categoriasIds) {
+        const partidos = partidosPorCategoria.get(catId) || [];
+        const idx = indices.get(catId) || 0;
+        
+        if (idx < partidos.length) {
+          resultado.push({
+            categoriaId: catId,
+            fase: partidos[idx].fase,
+            orden: partidos[idx].orden,
+          });
+          indices.set(catId, idx + 1);
+          hayMas = true;
+        }
+      }
+    }
+
+    return resultado;
+  }
+
+  /**
+   * LÓGICA ORIGINAL: Sorteo secuencial (mantenida para compatibilidad)
+   * Esta es la lógica original que asigna slots secuencialmente sin filtrar por fase
+   */
+  private async sortearSecuencialOriginal(
+    tournamentId: string,
+    categoriasIds: string[],
+    calculo: CalculoSlotsResponse,
+  ): Promise<SorteoMasivoResponse> {
+    // Obtener slots disponibles ordenados por fecha/hora
     const slotsDisponibles = await this.obtenerSlotsDisponiblesOrdenados(tournamentId);
 
-    // 3. Procesar cada categoría
+    // Procesar cada categoría
     const categoriasSorteadas = [];
     const distribucionPorDia: Record<string, { slots: number; categorias: Set<string> }> = {};
     let slotIndex = 0;
@@ -507,18 +825,16 @@ export class CanchasSorteoService {
 
       slotIndex += slotsReservados.length;
 
-      // MVP FIX: Generar bracket real usando bracketService
-      // Calcular config del bracket basado en número de parejas
+      // Generar bracket real usando bracketService
       const numParejas = inscripcionesCategoria.length;
       const config = this.bracketService.calcularConfiguracion(numParejas);
       
-      // Generar partidos del bracket usando generarBracket
+      // Generar partidos del bracket
       const { partidos } = await this.bracketService.generarBracket({
         tournamentCategoryId: categoria.id,
         totalParejas: numParejas,
       });
       
-      // Guardar bracket en FixtureVersion
       // Archivar versión anterior si existe
       if (categoria.fixtureVersionId) {
         await this.prisma.fixtureVersion.update({
@@ -536,7 +852,7 @@ export class CanchasSorteoService {
         config,
         partidos,
         inscripcionesOrdenadas,
-        slotsReservados, // MVP: Pasar slots para asignar programación automática
+        slotsReservados,
       );
 
       // Actualizar categoría con el fixture
@@ -557,7 +873,7 @@ export class CanchasSorteoService {
       });
     }
 
-    // 4. Generar distribución por día para la respuesta
+    // Generar distribución por día para la respuesta
     const distribucionResponse = Object.entries(distribucionPorDia).map(
       ([fecha, info]) => ({
         fecha,

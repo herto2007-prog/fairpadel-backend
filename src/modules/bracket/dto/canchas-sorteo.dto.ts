@@ -72,6 +72,12 @@ export class ConfigurarDiaJuegoDto {
   @IsString({ each: true })
   @ArrayMinSize(1)
   canchasIds: string[]; // IDs de TorneoCancha
+
+  // NUEVO: Fases que pueden jugarse en este día (opcional, para override manual)
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  fasesPermitidas?: string[]; // ['ZONA', 'REPECHAJE'] - Si no se envía, se calcula automáticamente
 }
 
 /**
