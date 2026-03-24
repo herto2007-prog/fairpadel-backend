@@ -906,10 +906,45 @@ export class BracketService {
         }
 
         // MVP: Asignar slot (cancha y horario) si está disponible y NO es BYE
-        // Buscar slot por fase y orden del partido
+        // Buscar slot por fase y orden del partido, respetando descanso de 4h
         if (!partido.esBye && slots && slots.length > 0) {
-          const slot = slots.find(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
+          let slot = slots.find(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
+          
+          // OPCIÓN A: Validar descanso de 4 horas entre partidos
           if (slot) {
+            // Buscar el último slot asignado a esta categoría
+            const slotsAsignados = slots.filter(s => 
+              s.fase === partido.fase && s.ordenPartido < partido.orden
+            );
+            
+            if (slotsAsignados.length > 0) {
+              const ultimoSlot = slotsAsignados[slotsAsignados.length - 1];
+              
+              // Verificar si hay al menos 4 horas de diferencia
+              const horaActual = this.parseHora(slot.horaInicio);
+              const horaUltima = this.parseHora(ultimoSlot.horaInicio);
+              const diferenciaHoras = horaActual - horaUltima;
+              
+              // Si es el mismo día y hay menos de 4 horas de diferencia, buscar siguiente slot válido
+              if (slot.fecha === ultimoSlot.fecha && diferenciaHoras < 4) {
+                // Buscar el siguiente slot en la lista que cumpla con 4h de descanso
+                const slotIndex = slots.findIndex(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
+                for (let i = slotIndex + 1; i < slots.length; i++) {
+                  const candidato = slots[i];
+                  const horaCandidato = this.parseHora(candidato.horaInicio);
+                  const diferenciaCandidato = horaCandidato - horaUltima;
+                  
+                  // Si es otro día o tiene al menos 4h de diferencia, usar este slot
+                  if (candidato.fecha !== ultimoSlot.fecha || diferenciaCandidato >= 4) {
+                    slot = candidato;
+                    // Actualizar el orden del slot para mantener consistencia
+                    slot.ordenPartido = partido.orden;
+                    break;
+                  }
+                }
+              }
+            }
+            
             createData.torneoCanchaId = slot.torneoCanchaId;
             // FIX: fechaProgramada ahora es String YYYY-MM-DD directamente
             createData.fechaProgramada = slot.fecha;
@@ -998,5 +1033,13 @@ export class BracketService {
       where: { fixtureVersionId: fixtureVersion.id }
     });
     return fixtureVersion.id;
+  }
+
+  /**
+   * Convierte hora en formato "HH:MM" a minutos desde medianoche
+   */
+  private parseHora(hora: string): number {
+    const [h, m] = hora.split(':').map(Number);
+    return h + m / 60;
   }
 }
