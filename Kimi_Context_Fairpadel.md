@@ -2,14 +2,130 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-19 - MÚLTIPLES FRANJAS POR DÍA ✅
-> - **MIGRACIÓN BD:** Cambio de UNIQUE (tournamentId, fecha) a (tournamentId, fecha, horaInicio)
-> - **MOTIVO:** Permitir configurar el mismo día con diferentes horarios (ej: mañana + tarde)
-> - **BACKEND:** 4 archivos actualizados para usar nueva clave compuesta
-> - **CASO DE USO:** 27/03 14:00-18:00 (Canchas 1,2) + 27/03 18:00-23:00 (Canchas 1,2,3,4)
-> - **BUILD:** ✅ Backend compila exitosamente
-> - **MIGRACIÓN SQL:** Lista en `prisma/migrations/20250319160000_permitir_multiples_franjas_por_dia/`
-> **ESTADO:** ✅ Listo para aplicar migración en producción
+> **Última actualización:** 2026-03-24 - SORTEO CON FASES POR DÍA + ROUND-ROBIN ✅
+> - **DISTRIBUCIÓN INTELIGENTE:** Fases asignadas a días específicos (Jueves/Viernes=Zona, Sábado=Octavos, Domingo=Final)
+> - **ROUND-ROBIN:** Alternancia equitativa entre categorías (CatA-1, CatB-1, CatA-2, CatB-2...)
+> - **COMPATIBILIDAD:** Fallback automático a lógica anterior si días no tienen fases configuradas
+> - **BUILD:** ✅ Backend y Frontend compilan exitosamente
+> - **DEPLOY:** ✅ Commits pushados a producción
+
+---
+
+## 🆕 COMPLETADO (2026-03-24) - Scheduling Inteligente
+
+### ✅ Implementación: Sorteo con Fases por Día
+
+**Problema identificado:** Los slots se asignaban secuencialmente sin respetar qué fases debían jugarse en qué días. Una categoría con 40 partidos tomaba los primeros 40 slots (que podían ser Jueves a Domingo mezclados), haciendo que partidos de OCTAVOS terminaran el Jueves y partidos de ZONA el Domingo.
+
+**Solución implementada:**
+
+#### 1. Base de Datos
+- Campo `fasesPermitidas` agregado a `TorneoDisponibilidadDia` (String opcional)
+- SQL aplicado en producción manualmente
+
+#### 2. Backend - `canchas-sorteo.service.ts`
+
+**Nuevos métodos:**
+- `obtenerFasesParaDia(fecha)` - Determina fases según día de semana:
+  - Jueves(4)/Viernes(5) → [ZONA, REPECHAJE]
+  - Sábado(6) → [OCTAVOS, CUARTOS]
+  - Domingo(0) → [SEMIS, FINAL]
+
+- `sortearConFasesPorDia()` - NUEVA lógica:
+  - Procesa días cronológicamente
+  - Para cada día, filtra partidos de las fases permitidas
+  - Usa Round-Robin entre categorías
+  - Asigna slots solo del día correspondiente
+
+- `ordenarRoundRobin()` - Alterna entre categorías:
+  ```
+  Slot 1: CatA-Zona-1
+  Slot 2: CatB-Zona-1
+  Slot 3: CatA-Zona-2
+  Slot 4: CatB-Zona-2
+  ```
+
+- `sortearSecuencialOriginal()` - MANTIENE lógica anterior como fallback
+
+**Estrategia de decisión:**
+```typescript
+if (diasConFases.length >= 2) {
+  return sortearConFasesPorDia(); // Nueva lógica
+} else {
+  return sortearSecuencialOriginal(); // Fallback
+}
+```
+
+#### 3. DTOs
+- `ConfigurarDiaJuegoDto` ahora incluye `fasesPermitidas?: string[]` (opcional)
+
+#### 4. Frontend
+- `ConfigurarDiaJuegoPayload` actualizado con campo opcional
+
+### ✅ Commits Realizados
+
+**Backend:** `bc35ba9`
+```
+feat(sorteo): implementar asignacion de slots por fases con Round-Robin
+- 3 files changed, 333 insertions(+), 10 deletions(-)
+```
+
+**Frontend:** `ec7d1eb`
+```
+feat(sorteo): actualizar interfaz ConfigurarDiaJuegoPayload con fasesPermitidas
+- 1 file changed, 1 insertion(+)
+```
+
+### 📊 Ejemplo de Funcionamiento
+
+**Configuración:**
+- Jueves: 20 slots (Zona/Repechaje)
+- Viernes: 20 slots (Zona/Repechaje)
+- Sábado: 20 slots (Octavos/Cuartos)
+- Domingo: 10 slots (Semis/Final)
+- 2 Categorías (CatA, CatB), 26 parejas cada una
+
+**Resultado:**
+```
+JUEVES (Zona):
+18:00 CatA-Z1 | CatB-Z1 | CatA-Z2 | CatB-Z2
+19:30 CatA-Z3 | CatB-Z3 | CatA-Z4 | CatB-Z4
+...
+
+VIERNES (Zona/Repechaje):
+18:00 CatA-Z9 | CatB-Z9 | CatA-Z10 | CatB-Z10
+19:30 CatA-R1 | CatB-R1 | CatA-R2 | CatB-R2
+...
+
+SÁBADO (Octavos/Cuartos):
+09:00 CatA-O1 | CatB-O1 | CatA-O2 | CatB-O2
+10:30 CatA-O5 | CatB-O5 | CatA-C1 | CatB-C1
+...
+
+DOMINGO (Semis/Final):
+09:00 CatA-S1 | CatB-S1 | CatA-S2 | CatB-S2
+10:30 CatA-F  | CatB-F
+```
+
+### 🛡️ Compatibilidad Garantizada
+
+- **Formato paraguayo intacto:** Zona→Repechaje→Octavos→Cuartos→Semis→Final
+- **Días existentes:** Si no tienen `fasesPermitidas`, usan lógica secuencial original
+- **Días nuevos:** Automáticamente calculan fases según día de semana
+- **Campo opcional:** No rompe datos existentes
+
+### 📋 Archivos Modificados
+
+| Archivo | Cambios |
+|---------|---------|
+| `prisma/schema.prisma` | +1 campo `fasesPermitidas` |
+| `canchas-sorteo.dto.ts` | +1 campo opcional en DTO |
+| `canchas-sorteo.service.ts` | ~333 líneas (nuevos métodos + refactor) |
+| `canchasSorteoService.ts` | +1 campo en interfaz |
+
+---
+
+## 🗓️ HISTORIAL ANTERIOR
 
 ---
 
@@ -848,6 +964,40 @@ UNIQUE ("tournament_id", "fecha", "hora_inicio");
 ```
 
 **Aplicación:** Automática con `prisma migrate deploy` en el próximo deploy.
+
+---
+
+### ✅ Completado (2026-03-23) - Sorteo con Distribución Secuencial + Fixes
+
+**Distribución de fases en sorteo:**
+
+| Orden | Fase | Asignación |
+|-------|------|------------|
+| 1 | **ZONAS** | Primeros slots disponibles |
+| 2 | **REPECHAJE** | Slots siguientes |
+| 3 | **OCTAVOS** | Continuación |
+| 4 | **CUARTOS** | Siguientes |
+| 5 | **SEMIS** | Slots posteriores |
+| 6 | **FINAL** | Últimos slots (último día) |
+
+**Características:**
+- ✅ Fases asignadas secuencialmente sin solapamientos
+- ✅ Una fase termina antes de que empiece la siguiente
+- ✅ Finales siempre quedan en el último día configurado
+- ✅ Si sobran slots, quedan libres al final
+
+**Fix Frontend:**
+- Filtrado de categorías ya sorteadas en "Canchas y Sorteo"
+- Estados `'CERRADA'` e `'INSCRIPCIONES_CERRADAS'` excluidos de selección
+
+**Intentos fallidos (aprendizaje):**
+- Validación de descanso 4h por pareja: Demasiado compleja para MVP
+- Distribución con solapamientos: No tiene sentido cronológicamente
+- Lógica final: Secuencial simple, sin validaciones complejas
+
+**Commits:**
+- Backend: `ec2056c` - Distribución secuencial sin solapamientos
+- Frontend: `8d31d78` - Fix filtro categorías sorteadas
 
 ---
 
