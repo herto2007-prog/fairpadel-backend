@@ -848,9 +848,6 @@ export class BracketService {
     // Mapear IDs temporales a reales
     const idMap = new Map<string, string>();
 
-    // Rastrear todos los slots asignados a esta categoría para validar descanso
-    const slotsAsignadosGlobal: { fecha: string; horaInicio: string; fase: string }[] = [];
-
     // Preparar asignación de inscripciones a partidos de ZONA
     // Las inscripciones vienen ordenadas por el sorteo
     const inscripcionesZona = [...inscripciones]; // Copia del orden del sorteo
@@ -909,46 +906,11 @@ export class BracketService {
         }
 
         // MVP: Asignar slot (cancha y horario) si está disponible y NO es BYE
-        // Buscar slot por fase y orden del partido, respetando descanso de 4h GLOBAL
+        // Buscar slot por fase y orden del partido
         if (!partido.esBye && slots && slots.length > 0) {
-          let slot = slots.find(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
+          const slot = slots.find(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
           
-          // OPCIÓN A (MEJORADA): Validar descanso de 4 horas respecto a TODOS los partidos anteriores
           if (slot) {
-            // Buscar el último slot asignado globalmente a esta categoría (de cualquier fase)
-            if (slotsAsignadosGlobal.length > 0) {
-              const ultimoSlot = slotsAsignadosGlobal[slotsAsignadosGlobal.length - 1];
-              
-              // Verificar si hay al menos 4 horas de diferencia
-              const horaActual = this.parseHora(slot.horaInicio);
-              const horaUltima = this.parseHora(ultimoSlot.horaInicio);
-              const diferenciaHoras = horaActual - horaUltima;
-              
-              // Si es el mismo día y hay menos de 4 horas de diferencia, buscar siguiente slot válido
-              if (slot.fecha === ultimoSlot.fecha && diferenciaHoras < 4) {
-                // Buscar el siguiente slot en la lista que cumpla con 4h de descanso
-                const slotIndex = slots.findIndex(s => s.fase === partido.fase && s.ordenPartido === partido.orden);
-                for (let i = slotIndex + 1; i < slots.length; i++) {
-                  const candidato = slots[i];
-                  const horaCandidato = this.parseHora(candidato.horaInicio);
-                  const diferenciaCandidato = horaCandidato - horaUltima;
-                  
-                  // Si es otro día o tiene al menos 4h de diferencia, usar este slot
-                  if (candidato.fecha !== ultimoSlot.fecha || diferenciaCandidato >= 4) {
-                    slot = candidato;
-                    break;
-                  }
-                }
-              }
-            }
-            
-            // Guardar el slot asignado globalmente
-            slotsAsignadosGlobal.push({
-              fecha: slot.fecha,
-              horaInicio: slot.horaInicio,
-              fase: partido.fase,
-            });
-            
             createData.torneoCanchaId = slot.torneoCanchaId;
             // FIX: fechaProgramada ahora es String YYYY-MM-DD directamente
             createData.fechaProgramada = slot.fecha;
