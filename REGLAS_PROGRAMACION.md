@@ -567,6 +567,42 @@ VALUES (gen_random_uuid(), 'CHECKSUM_AQUI', NOW(), '20250310013000_add_tournamen
 
 ---
 
+### 🔍 Debugging de Restricciones Únicas (Unique Constraints)
+
+**Problema común:** Error "Unique constraint failed" pero el código y el schema parecen correctos.
+
+**Causa frecuente:** Múltiples índices/constreñimientos únicos coexisten en la misma tabla (el viejo no se eliminó al crear el nuevo).
+
+**Diagnóstico rápido en Railway:**
+
+```sql
+-- Ver TODOS los índices únicos de una tabla
+SELECT indexname, indexdef 
+FROM pg_indexes 
+WHERE tablename = 'torneo_disponibilidad_dias';
+```
+
+**Sintoma del problema:**
+- Se ven DOS índices con restricciones similares
+- Ej: `tournament_id_fecha_key` (viejo) y `tournament_id_fecha_hora_key` (nuevo)
+- PostgreSQL aplica el primero que encuentra (el viejo)
+
+**Solución:**
+```sql
+-- Eliminar el índice viejo
+DROP INDEX IF EXISTS "torneo_disponibilidad_dias_tournament_id_fecha_key";
+
+-- Verificar que solo queda el nuevo
+SELECT indexname, indexdef 
+FROM pg_indexes 
+WHERE tablename = 'torneo_disponibilidad_dias';
+```
+
+**Lección aprendida (Marzo 2025):**
+> Al cambiar una restricción única de `(A, B)` a `(A, B, C)`, siempre verificar que el índice viejo fue eliminado. `migrate deploy` puede crear el nuevo sin borrar el viejo si hay datos existentes.
+
+---
+
 ## 12. Flujo de Trabajo para Nuevos Agentes
 
 ### Al Iniciar una Sesión
