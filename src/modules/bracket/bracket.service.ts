@@ -787,61 +787,39 @@ export class BracketService {
 
       // Asignar fases a días según distribución propuesta:
       // Día 1-2: Zonas | Día 2-3: Repechaje/Octavos | Día 3: Cuartos | Día 4: Semis/Finales
-      const asignacionFases: Record<string, FaseBracket[]> = {};
-      
-      if (totalDias >= 4) {
-        // Distribución ideal con 4+ días
-        asignacionFases[diasOrdenados[0]] = [FaseBracket.ZONA];
-        asignacionFases[diasOrdenados[1]] = [FaseBracket.ZONA, FaseBracket.REPECHAJE];
-        asignacionFases[diasOrdenados[2]] = [FaseBracket.REPECHAJE, FaseBracket.OCTAVOS, FaseBracket.CUARTOS];
-        asignacionFases[diasOrdenados[3]] = [FaseBracket.SEMIS, FaseBracket.FINAL];
-        // Días adicionales (si hay) se usan para zonas
-        for (let i = 4; i < totalDias; i++) {
-          asignacionFases[diasOrdenados[i]] = [FaseBracket.ZONA];
-        }
-      } else if (totalDias === 3) {
-        // Compactado 3 días
-        asignacionFases[diasOrdenados[0]] = [FaseBracket.ZONA, FaseBracket.REPECHAJE];
-        asignacionFases[diasOrdenados[1]] = [FaseBracket.OCTAVOS, FaseBracket.CUARTOS];
-        asignacionFases[diasOrdenados[2]] = [FaseBracket.SEMIS, FaseBracket.FINAL];
-      } else if (totalDias === 2) {
-        // Muy compactado 2 días
-        asignacionFases[diasOrdenados[0]] = [FaseBracket.ZONA, FaseBracket.REPECHAJE, FaseBracket.OCTAVOS];
-        asignacionFases[diasOrdenados[1]] = [FaseBracket.CUARTOS, FaseBracket.SEMIS, FaseBracket.FINAL];
-      } else {
-        // 1 día: todo en ese día (no recomendado)
-        asignacionFases[diasOrdenados[0]] = [FaseBracket.ZONA, FaseBracket.REPECHAJE, FaseBracket.OCTAVOS, FaseBracket.CUARTOS, FaseBracket.SEMIS, FaseBracket.FINAL];
-      }
+      // Asignar fases a días SECUENCIALMENTE (sin solapamientos)
+      // Orden cronológico: ZONA → REPECHAJE → OCTAVOS → CUARTOS → SEMIS → FINAL
+      const fasesEnOrden = [
+        FaseBracket.ZONA,
+        FaseBracket.REPECHAJE,
+        FaseBracket.OCTAVOS,
+        FaseBracket.CUARTOS,
+        FaseBracket.SEMIS,
+        FaseBracket.FINAL,
+      ];
 
-      // Asignar slots según la distribución
       const slotsPorFase: typeof slots = [];
-      const slotsUsadosPorDia = new Map<string, number>();
+      let slotIndexGlobal = 0; // Índice en slotsFiltrados
 
-      for (const fecha of diasOrdenados) {
-        const fasesDelDia = asignacionFases[fecha] || [];
-        const slotsDelDia = slotsPorDia.get(fecha) || [];
-        let slotIndexDia = slotsUsadosPorDia.get(fecha) || 0;
+      for (const fase of fasesEnOrden) {
+        const partidosFase = partidos.filter(p => p.fase === fase);
+        if (partidosFase.length === 0) continue;
 
-        for (const fase of fasesDelDia) {
-          const partidosFase = partidos.filter(p => p.fase === fase);
-          
-          for (let i = 0; i < partidosFase.length; i++) {
-            if (slotIndexDia < slotsDelDia.length) {
-              const slot = slotsDelDia[slotIndexDia];
-              slotsPorFase.push({
-                fecha: slot.disponibilidad.fecha,
-                horaInicio: slot.horaInicio,
-                horaFin: slot.horaFin,
-                torneoCanchaId: slot.torneoCanchaId,
-                fase,
-                ordenPartido: i + 1,
-              });
-              slotIndexDia++;
-            }
+        // Asignar slots para esta fase usando slots disponibles desde el índice actual
+        for (let i = 0; i < partidosFase.length; i++) {
+          if (slotIndexGlobal < slotsFiltrados.length) {
+            const slot = slotsFiltrados[slotIndexGlobal];
+            slotsPorFase.push({
+              fecha: slot.disponibilidad.fecha,
+              horaInicio: slot.horaInicio,
+              horaFin: slot.horaFin,
+              torneoCanchaId: slot.torneoCanchaId,
+              fase,
+              ordenPartido: i + 1,
+            });
+            slotIndexGlobal++;
           }
         }
-        
-        slotsUsadosPorDia.set(fecha, slotIndexDia);
       }
 
       slots = slotsPorFase.sort((a, b) => {
