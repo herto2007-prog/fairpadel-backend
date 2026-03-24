@@ -1000,12 +1000,4 @@ export class BracketService {
     });
     return fixtureVersion.id;
   }
-
-  /**
-   * Convierte hora en formato "HH:MM" a minutos desde medianoche
-   */
-  private parseHora(hora: string): number {
-    const [h, m] = hora.split(':').map(Number);
-    return h + m / 60;
-  }
 }
