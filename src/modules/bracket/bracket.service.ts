@@ -760,48 +760,109 @@ export class BracketService {
         return slot.horaInicio >= configDia.horaInicio && slot.horaFin <= configDia.horaFin;
       });
 
-      // MVP FIX: Asignar slots por fase (ZONA primero, luego REPECHAJE, etc.)
-      const ordenFases = [
-        FaseBracket.ZONA,
-        FaseBracket.REPECHAJE,
-        FaseBracket.TREINTAYDOSAVOS,
-        FaseBracket.DIECISEISAVOS,
-        FaseBracket.OCTAVOS,
-        FaseBracket.CUARTOS,
-        FaseBracket.SEMIS,
-        FaseBracket.FINAL,
-      ];
-
-      const slotsPorFase: typeof slots = [];
-      let slotIndex = 0;
-
-      for (const fase of ordenFases) {
-        const partidosFaseCount = partidos.filter(p => p.fase === fase).length;
-        for (let i = 0; i < partidosFaseCount; i++) {
-          if (slotIndex < slotsFiltrados.length) {
-            const slot = slotsFiltrados[slotIndex];
-            slotsPorFase.push({
-              // FIX: fecha es String YYYY-MM-DD directamente
-              fecha: slot.disponibilidad.fecha,
-              horaInicio: slot.horaInicio,
-              horaFin: slot.horaFin,
-              torneoCanchaId: slot.torneoCanchaId,
-              fase,
-              ordenPartido: i + 1,
-            });
-            slotIndex++;
-          }
+      // DISTRIBUCIÓN INTELIGENTE POR DÍAS
+      // Agrupar slots por día
+      const slotsPorDia = new Map<string, typeof slotsFiltrados>();
+      for (const slot of slotsFiltrados) {
+        const fecha = slot.disponibilidad.fecha;
+        if (!slotsPorDia.has(fecha)) {
+          slotsPorDia.set(fecha, []);
         }
+        slotsPorDia.get(fecha)!.push(slot);
       }
 
-      slots = slotsPorFase;
+      // Ordenar días cronológicamente
+      const diasOrdenados = Array.from(slotsPorDia.keys()).sort();
+      const totalDias = diasOrdenados.length;
+
+      // Calcular slots necesarios por fase
+      const slotsNecesarios = {
+        [FaseBracket.ZONA]: partidos.filter(p => p.fase === FaseBracket.ZONA).length,
+        [FaseBracket.REPECHAJE]: partidos.filter(p => p.fase === FaseBracket.REPECHAJE).length,
+        [FaseBracket.OCTAVOS]: partidos.filter(p => p.fase === FaseBracket.OCTAVOS).length,
+        [FaseBracket.CUARTOS]: partidos.filter(p => p.fase === FaseBracket.CUARTOS).length,
+        [FaseBracket.SEMIS]: partidos.filter(p => p.fase === FaseBracket.SEMIS).length,
+        [FaseBracket.FINAL]: partidos.filter(p => p.fase === FaseBracket.FINAL).length,
+      };
+
+      // Asignar fases a días según distribución propuesta:
+      // Día 1-2: Zonas | Día 2-3: Repechaje/Octavos | Día 3: Cuartos | Día 4: Semis/Finales
+      const asignacionFases: Record<string, FaseBracket[]> = {};
       
-      // Marcar slots como reservados
-      for (let i = 0; i < slotIndex; i++) {
-        await this.prisma.torneoSlot.update({
-          where: { id: slotsFiltrados[i].id },
-          data: { estado: 'OCUPADO' },
-        });
+      if (totalDias >= 4) {
+        // Distribución ideal con 4+ días
+        asignacionFases[diasOrdenados[0]] = [FaseBracket.ZONA];
+        asignacionFases[diasOrdenados[1]] = [FaseBracket.ZONA, FaseBracket.REPECHAJE];
+        asignacionFases[diasOrdenados[2]] = [FaseBracket.REPECHAJE, FaseBracket.OCTAVOS, FaseBracket.CUARTOS];
+        asignacionFases[diasOrdenados[3]] = [FaseBracket.SEMIS, FaseBracket.FINAL];
+        // Días adicionales (si hay) se usan para zonas
+        for (let i = 4; i < totalDias; i++) {
+          asignacionFases[diasOrdenados[i]] = [FaseBracket.ZONA];
+        }
+      } else if (totalDias === 3) {
+        // Compactado 3 días
+        asignacionFases[diasOrdenados[0]] = [FaseBracket.ZONA, FaseBracket.REPECHAJE];
+        asignacionFases[diasOrdenados[1]] = [FaseBracket.OCTAVOS, FaseBracket.CUARTOS];
+        asignacionFases[diasOrdenados[2]] = [FaseBracket.SEMIS, FaseBracket.FINAL];
+      } else if (totalDias === 2) {
+        // Muy compactado 2 días
+        asignacionFases[diasOrdenados[0]] = [FaseBracket.ZONA, FaseBracket.REPECHAJE, FaseBracket.OCTAVOS];
+        asignacionFases[diasOrdenados[1]] = [FaseBracket.CUARTOS, FaseBracket.SEMIS, FaseBracket.FINAL];
+      } else {
+        // 1 día: todo en ese día (no recomendado)
+        asignacionFases[diasOrdenados[0]] = [FaseBracket.ZONA, FaseBracket.REPECHAJE, FaseBracket.OCTAVOS, FaseBracket.CUARTOS, FaseBracket.SEMIS, FaseBracket.FINAL];
+      }
+
+      // Asignar slots según la distribución
+      const slotsPorFase: typeof slots = [];
+      const slotsUsadosPorDia = new Map<string, number>();
+
+      for (const fecha of diasOrdenados) {
+        const fasesDelDia = asignacionFases[fecha] || [];
+        const slotsDelDia = slotsPorDia.get(fecha) || [];
+        let slotIndexDia = slotsUsadosPorDia.get(fecha) || 0;
+
+        for (const fase of fasesDelDia) {
+          const partidosFase = partidos.filter(p => p.fase === fase);
+          
+          for (let i = 0; i < partidosFase.length; i++) {
+            if (slotIndexDia < slotsDelDia.length) {
+              const slot = slotsDelDia[slotIndexDia];
+              slotsPorFase.push({
+                fecha: slot.disponibilidad.fecha,
+                horaInicio: slot.horaInicio,
+                horaFin: slot.horaFin,
+                torneoCanchaId: slot.torneoCanchaId,
+                fase,
+                ordenPartido: i + 1,
+              });
+              slotIndexDia++;
+            }
+          }
+        }
+        
+        slotsUsadosPorDia.set(fecha, slotIndexDia);
+      }
+
+      slots = slotsPorFase.sort((a, b) => {
+        // Ordenar por fecha y hora
+        if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
+        return a.horaInicio.localeCompare(b.horaInicio);
+      });
+      
+      // Marcar slots como reservados (usando los slots asignados)
+      for (const slotAsignado of slots) {
+        const slotOriginal = slotsFiltrados.find(s => 
+          s.disponibilidad.fecha === slotAsignado.fecha && 
+          s.horaInicio === slotAsignado.horaInicio &&
+          s.torneoCanchaId === slotAsignado.torneoCanchaId
+        );
+        if (slotOriginal) {
+          await this.prisma.torneoSlot.update({
+            where: { id: slotOriginal.id },
+            data: { estado: 'OCUPADO' },
+          });
+        }
       }
     }
 
