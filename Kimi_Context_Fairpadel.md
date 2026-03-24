@@ -2471,6 +2471,42 @@ export enum TipoEntrada {
 
 **Última actualización:** 2026-03-18 - Sistema de bracket con distribución correcta de perdedores y ganadores
 
+---
+
+## 🐛 DEBUGGING - Lecciones Aprendidas
+
+### Marzo 2025: Múltiples Índices Únicos en PostgreSQL
+
+**Problema:** Error "Unique constraint failed on the fields: (tournament_id,fecha)" a pesar de que el código y schema tenían la clave nueva `(tournament_id, fecha, hora_inicio)`.
+
+**Causa real:** La base de datos tenía **DOS índices únicos**:
+1. `tournament_id_fecha_key` (viejo) - NO eliminado
+2. `tournament_id_fecha_hora_key` (nuevo) - Creado correctamente
+
+PostgreSQL aplicaba el primero (el viejo), causando el error.
+
+**Diagnóstico:**
+```sql
+-- Query que salvó el día
+SELECT indexname, indexdef 
+FROM pg_indexes 
+WHERE tablename = 'torneo_disponibilidad_dias';
+```
+
+**Resultado mostraba:**
+- `torneo_disponibilidad_dias_tournament_id_fecha_key` (viejo) ❌
+- `torneo_disponibilidad_dias_tournament_id_fecha_hora_key` (nuevo) ✅
+
+**Solución:**
+```sql
+DROP INDEX IF EXISTS "torneo_disponibilidad_dias_tournament_id_fecha_key";
+```
+
+**Tiempo perdido:** 2 días intentando invalidar caché de Railway cuando el problema era la BD.
+
+**Lección:** Siempre auditar la estructura REAL de la BD con queries SQL antes de asumir problemas de deploy/caché.
+
+---
 
 ## 🎉 COMPLETADO (2026-03-21) - PRIMER BRACKET FUNCIONAL - MVP LISTO
 
