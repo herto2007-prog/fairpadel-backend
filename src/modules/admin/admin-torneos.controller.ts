@@ -1798,32 +1798,41 @@ export class AdminTorneosController {
         throw new NotFoundException('Sede no encontrada');
       }
 
-      // MVP FIX: Eliminar TODAS las relaciones anteriores TorneoSede
-      // Solo permitimos UNA sede por torneo en el MVP
-      const deletedRelations = await this.prisma.torneoSede.deleteMany({
+      // Verificar si la sede ya está agregada
+      const sedeExistente = await this.prisma.torneoSede.findUnique({
+        where: {
+          tournamentId_sedeId: {
+            tournamentId,
+            sedeId: dto.sedeId,
+          },
+        },
+      });
+
+      if (sedeExistente) {
+        return {
+          success: false,
+          message: 'La sede ya está agregada al torneo',
+        };
+      }
+
+      // Calcular el orden (siguiente número disponible)
+      const sedesActuales = await this.prisma.torneoSede.count({
         where: { tournamentId },
       });
-      console.log(`[agregarSede] Eliminadas ${deletedRelations.count} relaciones anteriores`);
+      const nuevoOrden = sedesActuales;
 
-      // Crear la nueva relación torneo-sede
+      // Crear la nueva relación torneo-sede con orden
       const torneoSede = await this.prisma.torneoSede.create({
         data: {
           tournamentId,
           sedeId: dto.sedeId,
+          orden: nuevoOrden,
         },
         include: {
           sede: true,
         },
       });
-      console.log(`[agregarSede] Creada nueva relación con sede ${sede.nombre}`);
-
-      // MVP FIX: Primero desactivar todas las canchas del torneo
-      // para asegurar que solo las de la sede actual estén activas
-      await this.prisma.torneoCancha.updateMany({
-        where: { tournamentId },
-        data: { activa: false },
-      });
-      console.log(`[agregarSede] Desactivadas todas las canchas del torneo ${tournamentId}`);
+      console.log(`[agregarSede] Creada nueva relación con sede ${sede.nombre} (orden: ${nuevoOrden})`);
 
       // Agregar automáticamente todas las canchas activas de la sede al torneo
       const canchasCreadas = [];
@@ -1871,11 +1880,23 @@ export class AdminTorneosController {
 
   /**
    * DELETE /admin/torneos/:id/sedes/:sedeId
-   * Quitar una sede del torneo
+   * Quitar una sede del torneo y desactivar sus canchas
    */
   @Delete(':id/sedes/:sedeId')
   async quitarSede(@Param('id') tournamentId: string, @Param('sedeId') sedeId: string) {
     try {
+      // 1. Desactivar todas las canchas de esta sede en el torneo
+      const canchasDesactivadas = await this.prisma.torneoCancha.updateMany({
+        where: { 
+          tournamentId,
+          sedeCancha: {
+            sedeId: sedeId,
+          },
+        },
+        data: { activa: false },
+      });
+
+      // 2. Eliminar la relación torneo-sede
       await this.prisma.torneoSede.delete({
         where: {
           tournamentId_sedeId: {
@@ -1885,14 +1906,160 @@ export class AdminTorneosController {
         },
       });
 
+      // 3. Reordenar las sedes restantes (para mantener secuencia 0,1,2...)
+      const sedesRestantes = await this.prisma.torneoSede.findMany({
+        where: { tournamentId },
+        orderBy: { orden: 'asc' },
+      });
+
+      for (let i = 0; i < sedesRestantes.length; i++) {
+        await this.prisma.torneoSede.update({
+          where: { id: sedesRestantes[i].id },
+          data: { orden: i },
+        });
+      }
+
       return {
         success: true,
-        message: 'Sede removida del torneo',
+        message: `Sede removida. ${canchasDesactivadas.count} canchas desactivadas.`,
+        canchasDesactivadas: canchasDesactivadas.count,
       };
     } catch (error: any) {
       throw new BadRequestException({
         success: false,
         message: 'Error removiendo sede',
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * PUT /admin/torneos/:id/sedes/:sedeId/cambiar
+   * Cambiar una sede por otra (mantiene el orden)
+   */
+  @Put(':id/sedes/:sedeId/cambiar')
+  async cambiarSede(
+    @Param('id') tournamentId: string,
+    @Param('sedeId') sedeIdActual: string,
+    @Body() dto: { nuevaSedeId: string },
+  ) {
+    try {
+      // 1. Obtener el orden de la sede actual
+      const sedeActual = await this.prisma.torneoSede.findUnique({
+        where: {
+          tournamentId_sedeId: {
+            tournamentId,
+            sedeId: sedeIdActual,
+          },
+        },
+      });
+
+      if (!sedeActual) {
+        throw new NotFoundException('Sede actual no encontrada');
+      }
+
+      const ordenActual = sedeActual.orden;
+
+      // 2. Verificar que la nueva sede existe
+      const nuevaSede = await this.prisma.sede.findUnique({
+        where: { id: dto.nuevaSedeId },
+        include: {
+          canchas: { where: { activa: true } },
+        },
+      });
+
+      if (!nuevaSede) {
+        throw new NotFoundException('Nueva sede no encontrada');
+      }
+
+      // 3. Verificar que la nueva sede no esté ya asignada
+      const sedeYaAsignada = await this.prisma.torneoSede.findUnique({
+        where: {
+          tournamentId_sedeId: {
+            tournamentId,
+            sedeId: dto.nuevaSedeId,
+          },
+        },
+      });
+
+      if (sedeYaAsignada) {
+        return {
+          success: false,
+          message: 'La nueva sede ya está agregada al torneo',
+        };
+      }
+
+      // 4. Desactivar canchas de la sede vieja
+      await this.prisma.torneoCancha.updateMany({
+        where: {
+          tournamentId,
+          sedeCancha: {
+            sedeId: sedeIdActual,
+          },
+        },
+        data: { activa: false },
+      });
+
+      // 5. Eliminar relación vieja
+      await this.prisma.torneoSede.delete({
+        where: {
+          tournamentId_sedeId: {
+            tournamentId,
+            sedeId: sedeIdActual,
+          },
+        },
+      });
+
+      // 6. Crear relación nueva con el mismo orden
+      await this.prisma.torneoSede.create({
+        data: {
+          tournamentId,
+          sedeId: dto.nuevaSedeId,
+          orden: ordenActual,
+        },
+      });
+
+      // 7. Agregar canchas de la nueva sede
+      const canchasAgregadas = [];
+      for (const cancha of nuevaSede.canchas) {
+        try {
+          const torneoCancha = await this.prisma.torneoCancha.create({
+            data: {
+              tournamentId,
+              sedeCanchaId: cancha.id,
+              activa: true,
+            },
+          });
+          canchasAgregadas.push(torneoCancha);
+        } catch (canchaError) {
+          // Si ya existe, activarla
+          const updated = await this.prisma.torneoCancha.updateMany({
+            where: {
+              tournamentId,
+              sedeCanchaId: cancha.id,
+            },
+            data: { activa: true },
+          });
+          if (updated.count > 0) {
+            canchasAgregadas.push({ id: cancha.id, reactivada: true });
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: `Sede cambiada. ${canchasAgregadas.length} canchas agregadas.`,
+        sede: {
+          id: nuevaSede.id,
+          nombre: nuevaSede.nombre,
+          ciudad: nuevaSede.ciudad,
+        },
+        canchasAgregadas: canchasAgregadas.length,
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error cambiando sede',
         error: error.message,
       });
     }
