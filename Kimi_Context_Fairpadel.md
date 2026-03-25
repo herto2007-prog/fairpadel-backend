@@ -2,12 +2,146 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-24 - VALIDACIÓN DE DÍAS + FIX SORTEO ✅
-> - **VALIDACIÓN:** Verifica días Jueves/Viernes/Sábado/Domingo antes de sortear
-> - **FIX FECHAS:** Usar UTC para calcular día de semana (`Date.UTC()` + `getUTCDay()`)
-> - **DISTRIBUCIÓN INTELIGENTE:** Fases asignadas a días específicos
-> - **BUILD:** ✅ Backend y Frontend compilan exitosamente
+> **Última actualización:** 2026-03-25 - DISTRIBUCIÓN REPECHAJE + DESCANSO 4H ✅
+> - **FIX REPECHAJE:** Todos los perdedores de zona + algunos ganadores van a repechaje (tabla 8-31 parejas)
+> - **DESCANSO 4H:** Entre fases del mismo día, si no cabe pasa al siguiente día
+> - **MATCHID EN SLOTS:** Para liberación correcta en re-sorteo
+> - **BUILD:** ✅ Backend compila exitosamente
 > - **DEPLOY:** ✅ Commits pushados a producción
+
+---
+
+## 🆕 COMPLETADO (2026-03-25) - Distribución Correcta de Repechaje
+
+### ✅ Implementación: Todos los Perdedores + Algunos Ganadores a Repechaje
+
+**Problema identificado:** Para categorías con repechaje (9-15 y 17-31 parejas), el algoritmo asignaba incorrectamente los perdedores y ganadores a repechaje. Para 14 parejas, los 7 partidos de zona enviaban todos sus perdedores (7), pero ningún ganador, dejando 5 slots de repechaje vacíos.
+
+**Solución implementada:**
+
+#### Lógica Correcta (Tabla 8-31 parejas)
+
+| Parejas | Bracket | Zona | Repechaje | Perd→Repech | Gan→Repech | Gan→Directo |
+|---------|---------|------|-----------|-------------|------------|-------------|
+| 8 | 8 | 4 | 0 | 0 | 0 | 4 |
+| 9 | 8 | 4 | 1 | 2 | 0 | 4 |
+| 10 | 8 | 5 | 2 | 4 | 0 | 3 |
+| 11 | 8 | 5 | 3 | 6 | 0 | 1 |
+| 12 | 8 | 6 | 4 | 6 | 2 | 0 |
+| 13 | 8 | 6 | 5 | 6 | 4 | 0 |
+| **14** | **8** | **7** | **6** | **7** | **5** | **2** |
+| 15 | 8 | 7 | 7 | 6 | 8 | 0 |
+| 16 | 16 | 8 | 0 | 0 | 0 | 8 |
+| 17 | 16 | 8 | 1 | 2 | 0 | 8 |
+| 18 | 16 | 9 | 2 | 4 | 0 | 7 |
+| 19 | 16 | 9 | 3 | 6 | 0 | 5 |
+| 20 | 16 | 10 | 4 | 8 | 0 | 4 |
+| 21 | 16 | 10 | 5 | 10 | 0 | 3 |
+| 22 | 16 | 11 | 6 | 10 | 2 | 2 |
+| 23 | 16 | 11 | 7 | 10 | 4 | 2 |
+| 24 | 16 | 12 | 8 | 10 | 6 | 2 |
+| 25 | 16 | 12 | 9 | 10 | 8 | 2 |
+| 26 | 16 | 13 | 10 | 10 | 10 | 2 |
+| 27 | 16 | 13 | 11 | 10 | 12 | 2 |
+| 28 | 16 | 14 | 12 | 10 | 14 | 2 |
+| 29 | 16 | 14 | 13 | 10 | 16 | 2 |
+| 30 | 16 | 15 | 14 | 10 | 18 | 2 |
+| 31 | 16 | 15 | 15 | 10 | 20 | 2 |
+| 32 | 32 | 16 | 0 | 0 | 0 | 16 |
+
+**Lógica del algoritmo:**
+```typescript
+// TODOS los partidos de zona envían su PERDEDOR al repechaje
+// Solo ALGUNOS partidos de zona envían su GANADOR al repechaje
+
+slotsConPerdedores = Math.min(perdedoresZona, slotsRepechaje)
+slotsConGanadores = Math.max(0, slotsRepechaje - perdedoresZona)
+
+// Distribución:
+// - Perdedores: slot 1, 3, 5, 7... (posiciones impares en repechaje)
+// - Ganadores: slot 2, 4, 6, 8... (posiciones pares en repechaje)
+```
+
+**Ejemplo 14 parejas:**
+- 7 partidos de zona
+- 6 partidos de repechaje = 12 slots
+- 7 perdedores van a repechaje (todos)
+- 5 ganadores van a repechaje (aleatorios)
+- 2 ganadores van directo al bracket
+
+**Archivos modificados:**
+- `bracket.service.ts` - Lógica `conectarZonaConBracket()` corregida
+
+---
+
+## 🆕 COMPLETADO (2026-03-25) - Descanso 4 Horas Entre Fases
+
+### ✅ Implementación: Descanso Obligatorio Mismo Día
+
+**Problema:** El repechaje podía asignarse inmediatamente después de zona (ej: zona termina 21:00, repechaje empieza 19:30), sin dar descanso a los jugadores.
+
+**Solución:** Si una fase anterior del mismo día terminó, la siguiente fase debe esperar 4 horas.
+
+**Lógica:**
+```typescript
+horaMinimaInicio = ultimaHoraFaseAnterior + 4 horas
+
+// Ejemplo:
+// Zona termina a 21:00
+// Repechaje necesita empezar >= 01:00 (25:00)
+// Si último slot del día es 22:30, repechaje pasa al siguiente día
+```
+
+**Comportamiento:**
+| Escenario | Acción |
+|-----------|--------|
+| Cabe en el día (ej: zona 14:00, repechaje >= 18:00) | Asigna mismo día |
+| No cabe en el día (ej: zona 21:00, repechaje >= 01:00) | Pasa al siguiente día disponible |
+
+**Archivos modificados:**
+- `canchas-sorteo.service.ts` - Métodos `sortearConFasesPorDia()` y `asignarSlotsPorFase()`
+
+---
+
+## 🆕 COMPLETADO (2026-03-25) - MatchId en Slots para Liberación
+
+### ✅ Implementación: Guardar matchId al Asignar Slot
+
+**Problema:** Al re-sortear, los slots no se liberaban porque no tenían `matchId` guardado. El código buscaba `matchId: partido.id` pero los slots solo tenían `estado: 'OCUPADO'`.
+
+**Solución:**
+```typescript
+// Al crear un partido con slot asignado:
+await prisma.torneoSlot.updateMany({
+  where: { torneoCanchaId, fecha, horaInicio },
+  data: {
+    matchId: createdMatch.id,  // NUEVO
+    estado: 'OCUPADO'
+  }
+})
+```
+
+**Resultado:** Los slots ahora se liberan correctamente al re-sortear.
+
+---
+
+## 🆕 COMPLETADO (2026-03-25) - Re-Sorteo Usa Misma Lógica que Sorteo Masivo
+
+### ✅ Implementación: `reSortearCategoria()` con Distribución por Fases
+
+**Problema:** El re-sorteo individual usaba `guardarBracket()` con lógica secuencial, ignorando las fases por día de semana.
+
+**Solución:** Nuevo método `reSortearCategoria()` que:
+1. Libera slots de partidos sin resultado
+2. Elimina partidos sin resultado
+3. Archiva/elimina fixture anterior
+4. Usa `asignarSlotsPorFase()` con la misma lógica de distribución que sorteo masivo
+
+**Archivos modificados:**
+- `canchas-sorteo.service.ts` - Nuevos métodos `reSortearCategoria()` y `asignarSlotsPorFase()`
+- `admin-bracket.controller.ts` - Endpoint `reSortearBracket` actualizado
+
+---
 
 ---
 
