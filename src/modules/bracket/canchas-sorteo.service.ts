@@ -1353,4 +1353,317 @@ export class CanchasSorteoService {
       message: 'Día eliminado correctamente',
     };
   }
+
+  /**
+   * RE-SORTEAR: Re-sortea una categoría individual usando la misma lógica de distribución por fases
+   * que el sorteo masivo desde "Canchas y Sorteo"
+   */
+  async reSortearCategoria(
+    tournamentCategoryId: string,
+    usarSemillas?: boolean,
+  ) {
+    console.log('[Re-Sortear] Iniciando re-sorteo con distribución por fases para categoría:', tournamentCategoryId);
+
+    // 1. Obtener la categoría con su torneo
+    const categoria = await this.prisma.tournamentCategory.findUnique({
+      where: { id: tournamentCategoryId },
+      include: {
+        tournament: true,
+        category: true,
+      },
+    });
+
+    if (!categoria) {
+      throw new NotFoundException('Categoría no encontrada');
+    }
+
+    if (categoria.estado === 'SORTEO_REALIZADO') {
+      throw new BadRequestException('No se puede re-sortear un bracket ya publicado');
+    }
+
+    const fixtureVersionId = categoria.fixtureVersionId;
+    if (!fixtureVersionId) {
+      throw new BadRequestException('La categoría no tiene un bracket para re-sortear');
+    }
+
+    // 2. Obtener partidos del fixture actual
+    const partidosActuales = await this.prisma.match.findMany({
+      where: { fixtureVersionId },
+      select: {
+        id: true,
+        estado: true,
+        torneoCanchaId: true,
+        fechaProgramada: true,
+        horaProgramada: true,
+        set1Pareja1: true,
+      },
+    });
+
+    const partidosConResultado = partidosActuales.filter(p => p.set1Pareja1 !== null);
+    const partidosSinResultado = partidosActuales.filter(p => p.set1Pareja1 === null);
+
+    console.log(`[Re-Sortear] Partidos con resultado: ${partidosConResultado.length}, sin resultado: ${partidosSinResultado.length}`);
+
+    // 3. Liberar slots de partidos SIN resultado
+    for (const partido of partidosSinResultado) {
+      if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
+        await this.prisma.torneoSlot.updateMany({
+          where: {
+            torneoCanchaId: partido.torneoCanchaId,
+            disponibilidad: { fecha: partido.fechaProgramada },
+            horaInicio: partido.horaProgramada,
+            estado: 'OCUPADO',
+            matchId: partido.id,
+          },
+          data: { estado: 'LIBRE', matchId: null },
+        });
+        console.log(`[Re-Sortear] Slot liberado para partido ${partido.id}`);
+      }
+    }
+
+    // 4. Eliminar partidos SIN resultado
+    if (partidosSinResultado.length > 0) {
+      await this.prisma.match.deleteMany({
+        where: { id: { in: partidosSinResultado.map(p => p.id) } },
+      });
+      console.log(`[Re-Sortear] Eliminados ${partidosSinResultado.length} partidos sin resultado`);
+    }
+
+    if (partidosSinResultado.length === 0 && partidosConResultado.length > 0) {
+      throw new BadRequestException('No hay partidos pendientes para re-sortear. Todos tienen resultado.');
+    }
+
+    // 5. Archivar o eliminar el fixture anterior
+    if (partidosConResultado.length > 0) {
+      await this.prisma.fixtureVersion.update({
+        where: { id: fixtureVersionId },
+        data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+      });
+      console.log(`[Re-Sortear] Fixture anterior archivado`);
+    } else {
+      await this.prisma.fixtureVersion.delete({ where: { id: fixtureVersionId } });
+      console.log(`[Re-Sortear] Fixture anterior eliminado`);
+    }
+
+    // 6. Obtener inscripciones confirmadas
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: {
+        tournamentId: categoria.tournamentId,
+        categoryId: categoria.categoryId,
+        estado: 'CONFIRMADA',
+      },
+      include: {
+        jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+        jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+      },
+    });
+
+    if (inscripciones.length < 3) {
+      throw new BadRequestException(`Se necesitan al menos 3 parejas. Actual: ${inscripciones.length}`);
+    }
+
+    // 7. Obtener días configurados del torneo con sus fases permitidas
+    const diasConfig = await this.prisma.torneoDisponibilidadDia.findMany({
+      where: {
+        tournamentId: categoria.tournamentId,
+        activo: true,
+      },
+      include: {
+        slots: {
+          where: { estado: 'LIBRE' },
+        },
+      },
+      orderBy: { fecha: 'asc' },
+    });
+
+    if (diasConfig.length === 0) {
+      throw new BadRequestException('No hay días configurados para el sorteo');
+    }
+
+    // 8. Calcular partidos por fase para esta categoría
+    const numParejas = inscripciones.length;
+    const config = this.bracketService.calcularConfiguracion(numParejas);
+    const { partidos } = await this.bracketService.generarBracket({
+      tournamentCategoryId,
+      totalParejas: numParejas,
+    });
+
+    // 9. Usar la MISMA lógica de distribución por fases que el sorteo masivo
+    const slotsAsignados = await this.asignarSlotsPorFase(
+      categoria.tournamentId,
+      tournamentCategoryId,
+      diasConfig,
+      partidos,
+    );
+
+    console.log(`[Re-Sortear] Slots asignados: ${slotsAsignados.length}`);
+
+    // 10. Generar orden de sorteo (aleatorio o con semillas)
+    let inscripcionesOrdenadas;
+    if (usarSemillas) {
+      inscripcionesOrdenadas = await this.ordenarConSemillas(inscripciones, categoria);
+    } else {
+      inscripcionesOrdenadas = [...inscripciones].sort(() => Math.random() - 0.5);
+    }
+
+    // 11. Guardar bracket con los slots asignados
+    const nuevoFixtureVersionId = await this.bracketService.guardarBracket(
+      tournamentCategoryId,
+      config,
+      partidos,
+      inscripcionesOrdenadas,
+      slotsAsignados,
+    );
+
+    // 12. Actualizar categoría
+    await this.prisma.tournamentCategory.update({
+      where: { id: tournamentCategoryId },
+      data: {
+        estado: 'FIXTURE_BORRADOR',
+        fixtureVersionId: nuevoFixtureVersionId,
+      },
+    });
+
+    console.log(`[Re-Sortear] Re-sorteo completado. Nuevo fixture: ${nuevoFixtureVersionId}`);
+
+    return {
+      success: true,
+      message: 'Re-sorteo completado exitosamente',
+      fixtureVersionId: nuevoFixtureVersionId,
+      totalPartidos: partidos.length,
+      slotsAsignados: slotsAsignados.length,
+    };
+  }
+
+  /**
+   * Helper: Asigna slots a partidos respetando fases por día (misma lógica que sorteo masivo)
+   */
+  private async asignarSlotsPorFase(
+    tournamentId: string,
+    categoriaId: string,
+    diasConfig: any[],
+    partidos: any[],
+  ): Promise<SlotReserva[]> {
+    const slotsAsignados: SlotReserva[] = [];
+    const slotsUsados = new Set<string>();
+
+    // Agrupar partidos por fase
+    const partidosPorFase: Record<string, any[]> = {
+      [FaseBracket.ZONA]: partidos.filter(p => p.fase === FaseBracket.ZONA),
+      [FaseBracket.REPECHAJE]: partidos.filter(p => p.fase === FaseBracket.REPECHAJE),
+      [FaseBracket.OCTAVOS]: partidos.filter(p => p.fase === FaseBracket.OCTAVOS),
+      [FaseBracket.CUARTOS]: partidos.filter(p => p.fase === FaseBracket.CUARTOS),
+      [FaseBracket.SEMIS]: partidos.filter(p => p.fase === FaseBracket.SEMIS),
+      [FaseBracket.FINAL]: partidos.filter(p => p.fase === FaseBracket.FINAL),
+    };
+
+    // Procesar cada día en orden cronológico
+    for (const dia of diasConfig) {
+      // Determinar fases permitidas para este día
+      const fasesPermitidas = dia.fasesPermitidas
+        ? (dia.fasesPermitidas as string).split(',') as FaseBracket[]
+        : this.obtenerFasesParaDia(dia.fecha);
+
+      if (fasesPermitidas.length === 0) continue;
+
+      // Obtener slots libres del día
+      const slotsLibres = await this.prisma.torneoSlot.findMany({
+        where: {
+          disponibilidadId: dia.id,
+          estado: 'LIBRE',
+        },
+        orderBy: { horaInicio: 'asc' },
+      });
+
+      if (slotsLibres.length === 0) continue;
+
+      // Para cada fase permitida, asignar sus partidos pendientes
+      let slotIdx = 0;
+      for (const fase of fasesPermitidas) {
+        const partidosFase = partidosPorFase[fase] || [];
+        const partidosPendientes = partidosFase.filter(p => 
+          !slotsAsignados.some(s => s.fase === fase && s.ordenPartido === p.orden)
+        );
+
+        for (const partido of partidosPendientes) {
+          if (slotIdx >= slotsLibres.length) break;
+
+          const slot = slotsLibres[slotIdx];
+          const slotKey = `${dia.fecha}-${slot.horaInicio}-${slot.torneoCanchaId}`;
+
+          if (slotsUsados.has(slotKey)) {
+            slotIdx++;
+            continue;
+          }
+
+          slotsAsignados.push({
+            fecha: dia.fecha,
+            horaInicio: slot.horaInicio,
+            horaFin: slot.horaFin,
+            torneoCanchaId: slot.torneoCanchaId,
+            categoriaId,
+            fase,
+            ordenPartido: partido.orden,
+          });
+
+          slotsUsados.add(slotKey);
+          slotIdx++;
+
+          // Marcar slot como reservado
+          await this.prisma.torneoSlot.update({
+            where: { id: slot.id },
+            data: { estado: 'RESERVADO' },
+          });
+        }
+      }
+    }
+
+    return slotsAsignados.sort((a, b) => {
+      if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
+      return a.horaInicio.localeCompare(b.horaInicio);
+    });
+  }
+
+  /**
+   * Helper: Ordena inscripciones por semillas (ranking)
+   */
+  private async ordenarConSemillas(
+    inscripciones: any[],
+    categoria: any,
+  ): Promise<any[]> {
+    const jugadorIds = [...new Set(inscripciones.flatMap(i => [i.jugador1Id, i.jugador2Id].filter(Boolean)))];
+
+    const rankings = await this.prisma.ranking.findMany({
+      where: {
+        jugadorId: { in: jugadorIds },
+        tipoRanking: 'CATEGORIA',
+        alcance: categoria.categoryId,
+        temporada: new Date().getFullYear().toString(),
+      },
+    });
+
+    const rankingMap = new Map(rankings.map(r => [r.jugadorId, r]));
+
+    const inscripcionesConRanking = inscripciones.map(i => {
+      const r1 = rankingMap.get(i.jugador1Id);
+      const r2 = rankingMap.get(i.jugador2Id);
+      const puntos1 = r1?.puntosTotales || 0;
+      const puntos2 = r2?.puntosTotales || 0;
+      const posicion1 = r1?.posicion || 9999;
+      const posicion2 = r2?.posicion || 9999;
+
+      return {
+        ...i,
+        puntosTotal: puntos1 + puntos2,
+        mejorPosicion: Math.min(posicion1, posicion2),
+      };
+    });
+
+    return inscripcionesConRanking
+      .sort((a, b) => {
+        if (b.puntosTotal !== a.puntosTotal) return b.puntosTotal - a.puntosTotal;
+        return a.mejorPosicion - b.mejorPosicion;
+      })
+      .map(({ puntosTotal, mejorPosicion, ...rest }) => rest);
+  }
 }
