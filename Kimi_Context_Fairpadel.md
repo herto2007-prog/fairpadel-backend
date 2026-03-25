@@ -122,6 +122,15 @@ feat(sorteo): actualizar interfaz ConfigurarDiaJuegoPayload con fasesPermitidas
 ```
 feat(sorteo): agregar validacion de dias configurados vs fases requeridas
 - Nuevo metodo validarConfiguracionDias() verifica Jueves/Viernes/Sabado/Domingo
+```
+
+**Backend:** `411741a`
+```
+feat(resortear): liberar slots y mantener partidos con resultado al re-sortear
+- Al re-sortear, libera slots de partidos SIN resultado cargado
+- Mantiene partidos CON resultado (ya jugados)
+- Elimina solo partidos pendientes
+- Archiva fixture si tiene partidos jugados, elimina si no
 - Valida que haya suficientes slots por tipo de fase antes de sortear
 - Retorna error detallado si falta configuracion de dias
 ```
@@ -156,6 +165,46 @@ DOMINGO (Semis/Final):
 09:00 CatA-S1 | CatB-S1 | CatA-S2 | CatB-S2
 10:30 CatA-F  | CatB-F
 ```
+
+### 🔄 Funcionamiento del Re-Sortear
+
+**Problema anterior:** Al re-sortear, se eliminaban todos los partidos pero los slots quedaban ocupados, impidiendo reutilizarlos.
+
+**Solución implementada:**
+
+```typescript
+// Al hacer clic en "Re-Sortear":
+
+// 1. Separa partidos:
+const partidosConResultado = partidos.filter(p => p.tieneResultado)
+const partidosSinResultado = partidos.filter(p => !p.tieneResultado)
+
+// 2. Libera slots de partidos SIN resultado:
+for (partido of partidosSinResultado) {
+  await prisma.torneoSlot.update({
+    where: { matchId: partido.id },
+    data: { estado: 'LIBRE', matchId: null }
+  })
+}
+
+// 3. Elimina SOLO partidos sin resultado
+await prisma.match.deleteMany({
+  where: { id: { in: partidosSinResultado.map(p => p.id) } }
+})
+
+// 4. Mantiene partidos CON resultado (ya jugados)
+// Estos partidos permanecen en el bracket
+
+// 5. Genera nuevo sorteo para partidos pendientes
+return sortearBracket(categoria.id)
+```
+
+**Comportamiento:**
+| Tipo de Partido | Acción |
+|-----------------|--------|
+| Con resultado (ya jugado) | ✅ Se mantiene, no se modifica |
+| Sin resultado (pendiente) | ❌ Se elimina y slot se libera |
+| Todos con resultado | ⚠️ Error: "No hay partidos pendientes para re-sortear" |
 
 ### 🛡️ Compatibilidad Garantizada
 
