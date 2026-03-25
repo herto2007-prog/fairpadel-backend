@@ -507,21 +507,29 @@ export class BracketService {
     const partidosBye = zona.filter(p => p.esBye);
     
     // Aleatorizar el orden de los partidos de zona para asignación de destinos
-    // Esto asegura que no sea siempre los "primeros" partidos los que van a repechaje
     const partidosZonaShuffled = this.shuffleArray([...partidosZonaNormales]);
     
-    // Determinar cuáles partidos envían perdedores al repechaje (aleatorio)
-    const indicesPerdedoresRepechaje = new Set<number>();
-    for (let i = 0; i < slotsConPerdedores && i < partidosZonaShuffled.length; i++) {
-      indicesPerdedoresRepechaje.add(i);
-    }
+    // LÓGICA CORREGIDA:
+    // - TODOS los partidos de zona envían su PERDEDOR al repechaje
+    // - Algunos partidos de zona envían su GANADOR al repechaje (para completar slots)
+    // - Los demás partidos envían su GANADOR directo al bracket
     
-    // Determinar cuáles ganadores van al repechaje (si aplica)
+    // Seleccionar qué partidos envían ganador a repechaje
     const indicesGanadoresRepechaje = new Set<number>();
     if (slotsConGanadores > 0) {
-      // Los últimos N partidos (después de los que envían perdedores a repechaje)
-      for (let i = slotsConPerdedores; i < slotsConPerdedores + slotsConGanadores && i < partidosZonaShuffled.length; i++) {
-        indicesGanadoresRepechaje.add(i);
+      // Elegimos aleatoriamente N partidos que enviarán ganador a repechaje
+      const indicesDisponibles = Array.from({length: partidosZonaShuffled.length}, (_, i) => i);
+      const shuffledIndices = this.shuffleArray(indicesDisponibles);
+      for (let i = 0; i < slotsConGanadores && i < shuffledIndices.length; i++) {
+        indicesGanadoresRepechaje.add(shuffledIndices[i]);
+      }
+    }
+    
+    // Todos los partidos envían perdedor a repechaje (si hay repechaje)
+    const indicesPerdedoresRepechaje = new Set<number>();
+    if (slotsRepechaje > 0) {
+      for (let i = 0; i < partidosZonaShuffled.length; i++) {
+        indicesPerdedoresRepechaje.add(i);
       }
     }
     
@@ -541,13 +549,19 @@ export class BracketService {
     console.log(`[DistribucionBracket] Total partidos zona: ${partidosZonaShuffled.length}, Total repechajes: ${rondaAjuste.length}`);
     console.log(`[DistribucionBracket] slotsConPerdedores: ${slotsConPerdedores}, slotsConGanadores: ${slotsConGanadores}`);
     
+    // Distribuir perdedores en slots de repechaje (posiciones impares: 1, 3, 5...)
+    let slotPerdedorIdx = 0;
+    // Distribuir ganadores en slots de repechaje (posiciones pares: 2, 4, 6...)
+    let slotGanadorIdx = 0;
+    
     partidosZonaShuffled.forEach((partidoZona, index) => {
       // Determinar destino del GANADOR
       if (indicesGanadoresRepechaje.has(index)) {
         // Ganador va al repechaje
-        const repechajeSlot = index - slotsConPerdedores;
-        const repechajeIndex = Math.floor(repechajeSlot / 2);
-        const posicionEnRepechaje = (repechajeSlot % 2) + 1;
+        // Calcular qué partido de repechaje y posición le toca
+        const repechajeIndex = Math.floor(slotGanadorIdx / 2);
+        const posicionEnRepechaje = (slotGanadorIdx % 2) + 1;
+        slotGanadorIdx++;
         
         console.log(`[DistribucionBracket] Zona ${index} -> Ganador va a Repechaje ${repechajeIndex} pos ${posicionEnRepechaje}`);
         
@@ -569,11 +583,12 @@ export class BracketService {
         }
       }
       
-      // Determinar destino del PERDEDOR
-      if (indicesPerdedoresRepechaje.has(index)) {
-        // Perdedor va a repechaje
-        const repechajeIndex = Math.floor(index / 2);
-        const posicionEnRepechaje = (index % 2) + 1;
+      // Determinar destino del PERDEDOR (siempre va a repechaje si hay repechaje)
+      if (indicesPerdedoresRepechaje.has(index) && slotsRepechaje > 0) {
+        // Calcular qué partido de repechaje y posición le toca
+        const repechajeIndex = Math.floor(slotPerdedorIdx / 2);
+        const posicionEnRepechaje = (slotPerdedorIdx % 2) + 1;
+        slotPerdedorIdx++;
         
         console.log(`[DistribucionBracket] Zona ${index} -> Perdedor va a Repechaje ${repechajeIndex} pos ${posicionEnRepechaje}`);
         
