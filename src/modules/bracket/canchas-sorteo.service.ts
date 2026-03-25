@@ -34,10 +34,11 @@ export class CanchasSorteoService {
    * Lógica paraguaya estándar: Jueves/Viernes=Zona/Repechaje, Sábado=Octavos/Cuartos, Domingo=Semis/Final
    */
   private obtenerFasesParaDia(fecha: string): FaseBracket[] {
-    // FIX: Usar fecha como string YYYY-MM-DD, no crear Date con timezone
+    // FIX: Usar UTC para calcular día de semana, evitando problemas de timezone
+    // El string YYYY-MM-DD se interpreta como UTC mediodía (12:00)
     const [year, month, day] = fecha.split('-').map(Number);
-    const date = new Date(year, month - 1, day, 12, 0, 0); // Mediodía para evitar problemas de timezone
-    const diaSemana = date.getDay();
+    const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    const diaSemana = date.getUTCDay();
     
     switch (diaSemana) {
       case 4: // Jueves
