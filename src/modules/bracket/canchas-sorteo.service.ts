@@ -477,13 +477,23 @@ export class CanchasSorteoService {
     tournamentId: string,
     calculo: CalculoSlotsResponse,
   ): Promise<{ valido: boolean; mensaje?: string; detalle?: any }> {
+    console.log('[ValidacionDebug] ================================================');
+    console.log('[ValidacionDebug] INICIANDO validarConfiguracionDias');
+    console.log('[ValidacionDebug] tournamentId:', tournamentId);
+    console.log('[ValidacionDebug] totalSlotsNecesarios:', calculo.totalSlotsNecesarios);
+    console.log('[ValidacionDebug] detallePorCategoria:', JSON.stringify(calculo.detallePorCategoria, null, 2));
+
     // Obtener todos los días configurados con sus fases
     const diasConfig = await this.prisma.torneoDisponibilidadDia.findMany({
       where: { tournamentId },
       orderBy: { fecha: 'asc' },
     });
 
+    console.log('[ValidacionDebug] Días configurados encontrados:', diasConfig.length);
+    console.log('[ValidacionDebug] DiasConfig:', JSON.stringify(diasConfig.map(d => ({ id: d.id, fecha: d.fecha, fasesPermitidas: d.fasesPermitidas })), null, 2));
+
     if (diasConfig.length === 0) {
+      console.log('[ValidacionDebug] ERROR: No hay días configurados');
       return {
         valido: false,
         mensaje: 'No hay días configurados para el torneo',
@@ -495,6 +505,11 @@ export class CanchasSorteoService {
     const fasesRequeridas = new Map<FaseBracket, { partidos: number; diasNecesarios: number }>();
     
     for (const catInfo of calculo.detallePorCategoria) {
+      console.log(`[ValidacionDebug] Procesando categoría: ${catInfo.nombre} (${catInfo.categoriaId})`);
+      console.log(`[ValidacionDebug]   - parejas: ${catInfo.parejas}`);
+      console.log(`[ValidacionDebug]   - slotsNecesarios: ${catInfo.slotsNecesarios}`);
+      console.log(`[ValidacionDebug]   - partidosPorFase:`, JSON.stringify(catInfo.partidosPorFase, null, 2));
+      
       for (const faseInfo of catInfo.partidosPorFase) {
         const fase = faseInfo.fase as FaseBracket;
         const actual = fasesRequeridas.get(fase) || { partidos: 0, diasNecesarios: 0 };
@@ -502,8 +517,11 @@ export class CanchasSorteoService {
         // Estimamos 15 partidos por día (aproximado)
         actual.diasNecesarios = Math.ceil(actual.partidos / 15);
         fasesRequeridas.set(fase, actual);
+        console.log(`[ValidacionDebug]   - Fase ${fase}: +${faseInfo.partidos} partidos (total acumulado: ${actual.partidos})`);
       }
     }
+
+    console.log('[ValidacionDebug] Fases requeridas totales:', JSON.stringify(Array.from(fasesRequeridas.entries()), null, 2));
 
     // Contar slots disponibles por tipo de día (según día de semana)
     const slotsPorTipoDia = {
@@ -514,6 +532,7 @@ export class CanchasSorteoService {
 
     const diasDetalle: Array<{ fecha: string; tipo: string; slots: number; fasesPermitidas: string[] }> = [];
 
+    console.log('[ValidacionDebug] --- Procesando días configurados ---');
     for (const dia of diasConfig) {
       // Contar slots libres del día
       const slotsLibres = await this.prisma.torneoSlot.count({
@@ -531,22 +550,32 @@ export class CanchasSorteoService {
       let tipo = 'otro';
       let fasesPermitidas: string[] = [];
 
+      console.log(`[ValidacionDebug] Día ${dia.fecha}: diaSemana=${diaSemana} (0=Dom, 4=Jue, 5=Vie, 6=Sab)`);
+
       if (diaSemana === 4 || diaSemana === 5) { // Jueves o Viernes
         tipo = 'juevesViernes';
         slotsPorTipoDia.juevesViernes += slotsLibres;
         fasesPermitidas = ['ZONA', 'REPECHAJE'];
+        console.log(`[ValidacionDebug]   -> Tipo: Jueves/Viernes, slots libres: ${slotsLibres}, acumulado juevesViernes: ${slotsPorTipoDia.juevesViernes}`);
       } else if (diaSemana === 6) { // Sábado
         tipo = 'sabado';
         slotsPorTipoDia.sabado += slotsLibres;
         fasesPermitidas = ['OCTAVOS', 'CUARTOS'];
+        console.log(`[ValidacionDebug]   -> Tipo: Sábado, slots libres: ${slotsLibres}, acumulado sabado: ${slotsPorTipoDia.sabado}`);
       } else if (diaSemana === 0) { // Domingo
         tipo = 'domingo';
         slotsPorTipoDia.domingo += slotsLibres;
         fasesPermitidas = ['SEMIS', 'FINAL'];
+        console.log(`[ValidacionDebug]   -> Tipo: Domingo, slots libres: ${slotsLibres}, acumulado domingo: ${slotsPorTipoDia.domingo}`);
+      } else {
+        console.log(`[ValidacionDebug]   -> Tipo: OTRO (diaSemana=${diaSemana}), slots libres: ${slotsLibres}`);
       }
 
       diasDetalle.push({ fecha: dia.fecha, tipo, slots: slotsLibres, fasesPermitidas });
     }
+
+    console.log('[ValidacionDebug] --- Resumen slots por tipo de día ---');
+    console.log('[ValidacionDebug] slotsPorTipoDia:', JSON.stringify(slotsPorTipoDia, null, 2));
 
     // Verificar que hay suficientes días de cada tipo
     const errores: string[] = [];
@@ -556,8 +585,19 @@ export class CanchasSorteoService {
     const repechajePartidos = fasesRequeridas.get(FaseBracket.REPECHAJE)?.partidos || 0;
     const totalZonaRepechaje = zonaRepechaje + repechajePartidos;
     
+    console.log('[ValidacionDebug] --- Validación ZONA/REPECHAJE ---');
+    console.log(`[ValidacionDebug] ZONA partidos: ${zonaRepechaje}`);
+    console.log(`[ValidacionDebug] REPECHAJE partidos: ${repechajePartidos}`);
+    console.log(`[ValidacionDebug] Total Zona+Repechaje: ${totalZonaRepechaje}`);
+    console.log(`[ValidacionDebug] Slots Jueves/Viernes disponibles: ${slotsPorTipoDia.juevesViernes}`);
+    console.log(`[ValidacionDebug] Condición: ${totalZonaRepechaje} > 0 && ${slotsPorTipoDia.juevesViernes} < ${totalZonaRepechaje} = ${totalZonaRepechaje > 0 && slotsPorTipoDia.juevesViernes < totalZonaRepechaje}`);
+    
     if (totalZonaRepechaje > 0 && slotsPorTipoDia.juevesViernes < totalZonaRepechaje) {
-      errores.push(`Faltan días Jueves/Viernes: ${totalZonaRepechaje} partidos de Zona/Repechaje pero solo ${slotsPorTipoDia.juevesViernes} slots disponibles`);
+      const error = `Faltan días Jueves/Viernes: ${totalZonaRepechaje} partidos de Zona/Repechaje pero solo ${slotsPorTipoDia.juevesViernes} slots disponibles`;
+      console.log(`[ValidacionDebug] ERROR: ${error}`);
+      errores.push(error);
+    } else {
+      console.log('[ValidacionDebug] ZONA/REPECHAJE: OK');
     }
 
     // OCTAVOS y CUARTOS necesitan día Sábado
@@ -565,8 +605,19 @@ export class CanchasSorteoService {
     const cuartos = fasesRequeridas.get(FaseBracket.CUARTOS)?.partidos || 0;
     const totalOctavosCuartos = octavos + cuartos;
     
+    console.log('[ValidacionDebug] --- Validación OCTAVOS/CUARTOS ---');
+    console.log(`[ValidacionDebug] OCTAVOS partidos: ${octavos}`);
+    console.log(`[ValidacionDebug] CUARTOS partidos: ${cuartos}`);
+    console.log(`[ValidacionDebug] Total Octavos+Cuartos: ${totalOctavosCuartos}`);
+    console.log(`[ValidacionDebug] Slots Sábado disponibles: ${slotsPorTipoDia.sabado}`);
+    console.log(`[ValidacionDebug] Condición: ${totalOctavosCuartos} > 0 && ${slotsPorTipoDia.sabado} < ${totalOctavosCuartos} = ${totalOctavosCuartos > 0 && slotsPorTipoDia.sabado < totalOctavosCuartos}`);
+    
     if (totalOctavosCuartos > 0 && slotsPorTipoDia.sabado < totalOctavosCuartos) {
-      errores.push(`Faltan días Sábado: ${totalOctavosCuartos} partidos de Octavos/Cuartos pero solo ${slotsPorTipoDia.sabado} slots disponibles`);
+      const error = `Faltan días Sábado: ${totalOctavosCuartos} partidos de Octavos/Cuartos pero solo ${slotsPorTipoDia.sabado} slots disponibles`;
+      console.log(`[ValidacionDebug] ERROR: ${error}`);
+      errores.push(error);
+    } else {
+      console.log('[ValidacionDebug] OCTAVOS/CUARTOS: OK');
     }
 
     // SEMIS y FINAL necesitan día Domingo
@@ -574,11 +625,26 @@ export class CanchasSorteoService {
     const final = fasesRequeridas.get(FaseBracket.FINAL)?.partidos || 0;
     const totalSemisFinal = semis + final;
     
+    console.log('[ValidacionDebug] --- Validación SEMIS/FINAL ---');
+    console.log(`[ValidacionDebug] SEMIS partidos: ${semis}`);
+    console.log(`[ValidacionDebug] FINAL partidos: ${final}`);
+    console.log(`[ValidacionDebug] Total Semis+Final: ${totalSemisFinal}`);
+    console.log(`[ValidacionDebug] Slots Domingo disponibles: ${slotsPorTipoDia.domingo}`);
+    console.log(`[ValidacionDebug] Condición: ${totalSemisFinal} > 0 && ${slotsPorTipoDia.domingo} < ${totalSemisFinal} = ${totalSemisFinal > 0 && slotsPorTipoDia.domingo < totalSemisFinal}`);
+    
     if (totalSemisFinal > 0 && slotsPorTipoDia.domingo < totalSemisFinal) {
-      errores.push(`Faltan días Domingo: ${totalSemisFinal} partidos de Semis/Final pero solo ${slotsPorTipoDia.domingo} slots disponibles`);
+      const error = `Faltan días Domingo: ${totalSemisFinal} partidos de Semis/Final pero solo ${slotsPorTipoDia.domingo} slots disponibles`;
+      console.log(`[ValidacionDebug] ERROR: ${error}`);
+      errores.push(error);
+    } else {
+      console.log('[ValidacionDebug] SEMIS/FINAL: OK');
     }
 
     if (errores.length > 0) {
+      console.log('[ValidacionDebug] ================================================');
+      console.log('[ValidacionDebug] RESULTADO: INVALIDO - Errores encontrados:', errores.length);
+      console.log('[ValidacionDebug] Errores:', JSON.stringify(errores, null, 2));
+      console.log('[ValidacionDebug] ================================================');
       return {
         valido: false,
         mensaje: 'Configuración de días insuficiente para el torneo',
@@ -591,6 +657,9 @@ export class CanchasSorteoService {
       };
     }
 
+    console.log('[ValidacionDebug] ================================================');
+    console.log('[ValidacionDebug] RESULTADO: VALIDO = true');
+    console.log('[ValidacionDebug] ================================================');
     return { valido: true };
   }
 
@@ -615,14 +684,19 @@ export class CanchasSorteoService {
     }
 
     // 2. NUEVO: Validar configuración de días vs fases requeridas
+    console.log('[ValidacionDebug] Llamando a validarConfiguracionDias desde cerrarInscripcionesYsortear...');
     const validacionDias = await this.validarConfiguracionDias(tournamentId, calculo);
+    console.log('[ValidacionDebug] Resultado de validarConfiguracionDias:', JSON.stringify(validacionDias, null, 2));
+    
     if (!validacionDias.valido) {
+      console.log('[ValidacionDebug] Validación de días falló, lanzando BadRequestException');
       throw new BadRequestException({
         success: false,
         message: validacionDias.mensaje,
         detalle: validacionDias.detalle,
       });
     }
+    console.log('[ValidacionDebug] Validación de días exitosa, continuando...');
 
     // 3. NUEVO: Verificar si hay días con fases configuradas
     const diasConFases = await this.prisma.torneoDisponibilidadDia.findMany({
@@ -655,6 +729,17 @@ export class CanchasSorteoService {
     calculo: CalculoSlotsResponse,
     diasConfig: any[],
   ): Promise<SorteoMasivoResponse> {
+    // [SorteoDebug] Log inicial: días recibidos con sus fechas y fasesPermitidas
+    console.log('[SorteoDebug] ================================================');
+    console.log('[SorteoDebug] INICIO sortearConFasesPorDia');
+    console.log('[SorteoDebug] tournamentId:', tournamentId);
+    console.log('[SorteoDebug] Total días recibidos:', diasConfig.length);
+    console.log('[SorteoDebug] Días configurados:');
+    diasConfig.forEach((dia, idx) => {
+      console.log(`[SorteoDebug]   Día ${idx + 1}: fecha=${dia.fecha}, fasesPermitidas=${dia.fasesPermitidas}, id=${dia.id}`);
+    });
+    console.log('[SorteoDebug] ================================================');
+
     // Preparar datos de categorías
     const categoriasData = [];
     const todasInscripciones = await this.prisma.inscripcion.findMany({
@@ -690,12 +775,22 @@ export class CanchasSorteoService {
 
     // PROCESAR POR DÍA (cronológicamente)
     for (const dia of diasConfig) {
+      // [SorteoDebug] Log del día actual
+      console.log('[SorteoDebug] ------------------------------------------------');
+      console.log('[SorteoDebug] PROCESANDO DÍA:', dia.fecha);
+      
       // Obtener fases permitidas para este día
       const fasesPermitidas = (dia.fasesPermitidas as string)
         ?.split(',') as FaseBracket[] || 
         this.obtenerFasesParaDia(dia.fecha);
+      
+      console.log('[SorteoDebug]   Fases permitidas (raw):', dia.fasesPermitidas);
+      console.log('[SorteoDebug]   Fases permitidas (calculadas):', fasesPermitidas);
 
-      if (fasesPermitidas.length === 0) continue;
+      if (fasesPermitidas.length === 0) {
+        console.log('[SorteoDebug]   >>> SKIP: No hay fases permitidas para este día');
+        continue;
+      }
 
       // Obtener slots libres del día
       const slotsDelDia = await this.prisma.torneoSlot.findMany({
@@ -705,9 +800,21 @@ export class CanchasSorteoService {
         },
         orderBy: { horaInicio: 'asc' },
       });
+      
+      console.log('[SorteoDebug]   Slots libres encontrados:', slotsDelDia.length);
+      if (slotsDelDia.length > 0) {
+        console.log('[SorteoDebug]   Primer slot:', slotsDelDia[0].horaInicio, '-', slotsDelDia[0].horaFin);
+        console.log('[SorteoDebug]   Último slot:', slotsDelDia[slotsDelDia.length - 1].horaInicio, '-', slotsDelDia[slotsDelDia.length - 1].horaFin);
+      }
 
-      if (slotsDelDia.length === 0) continue;
+      if (slotsDelDia.length === 0) {
+        console.log('[SorteoDebug]   >>> SKIP: No hay slots libres para este día');
+        continue;
+      }
 
+      // [SorteoDebug] Log de búsqueda de partidos pendientes
+      console.log('[SorteoDebug]   Buscando partidos pendientes para fases:', fasesPermitidas);
+      
       // Obtener partidos pendientes de TODAS las categorías para estas fases
       const partidosPorCategoria = new Map<string, Array<{ fase: FaseBracket; orden: number }>>();
       
@@ -718,13 +825,20 @@ export class CanchasSorteoService {
         const numParejas = catData.inscripciones.length;
         const calculoCat = this.bracketService.calcularSlotsNecesarios(numParejas);
         
+        console.log(`[SorteoDebug]     Categoría ${catData.nombre} (${catData.categoria.id}):`);
+        console.log(`[SorteoDebug]       Parejas inscritas: ${numParejas}`);
+        
         for (const faseInfo of calculoCat.detallePorFase) {
           const fase = faseInfo.fase as FaseBracket;
+          console.log(`[SorteoDebug]       Fase ${fase}: ${faseInfo.partidos} partidos totales`);
+          
           if (fasesPermitidas.includes(fase)) {
             // Verificar cuántos slots ya están asignados para esta fase
             const asignacionesExistentes = asignacionesPorCategoria.get(catData.categoria.id) || [];
             const asignadosEnEstaFase = asignacionesExistentes.filter(s => s.fase === fase).length;
             const pendientes = faseInfo.partidos - asignadosEnEstaFase;
+            
+            console.log(`[SorteoDebug]         >> Fase ${fase} PERMITIDA: ${asignadosEnEstaFase} asignados, ${pendientes} pendientes`);
             
             for (let i = 0; i < pendientes; i++) {
               partidosPendientes.push({
@@ -732,15 +846,22 @@ export class CanchasSorteoService {
                 orden: asignadosEnEstaFase + i + 1,
               });
             }
+          } else {
+            console.log(`[SorteoDebug]         >> Fase ${fase} NO permitida en este día`);
           }
         }
         
         if (partidosPendientes.length > 0) {
           partidosPorCategoria.set(catData.categoria.id, partidosPendientes);
+          console.log(`[SorteoDebug]       Total pendientes para esta categoría: ${partidosPendientes.length}`);
         }
       }
 
-      if (partidosPorCategoria.size === 0) continue;
+      console.log('[SorteoDebug]   Total categorías con partidos pendientes:', partidosPorCategoria.size);
+      if (partidosPorCategoria.size === 0) {
+        console.log('[SorteoDebug]   >>> SKIP: No hay partidos pendientes para las fases permitidas');
+        continue;
+      }
 
       // Ordenar con Round-Robin entre categorías
       const partidosOrdenados = this.ordenarRoundRobin(
@@ -748,6 +869,10 @@ export class CanchasSorteoService {
         categoriasData.map(c => c.categoria.id)
       );
 
+      // [SorteoDebug] Log de asignación de slots
+      console.log('[SorteoDebug]   ASIGNANDO partidos a slots:');
+      console.log(`[SorteoDebug]     Partidos ordenados: ${partidosOrdenados.length}, Slots disponibles: ${slotsDelDia.length}`);
+      
       // Asignar partidos a slots del día
       for (let i = 0; i < partidosOrdenados.length && i < slotsDelDia.length; i++) {
         const partido = partidosOrdenados[i];
@@ -762,6 +887,10 @@ export class CanchasSorteoService {
           fase: partido.fase,
           ordenPartido: partido.orden,
         };
+
+        // [SorteoDebug] Log de cada asignación
+        const catNombre = categoriasData.find(c => c.categoria.id === partido.categoriaId)?.nombre;
+        console.log(`[SorteoDebug]     [${i + 1}] Asignando: ${catNombre} | Fase=${partido.fase} | Orden=${partido.orden} -> Día=${dia.fecha} | Hora=${slot.horaInicio}-${slot.horaFin}`);
 
         // Agregar a las asignaciones de la categoría
         if (!asignacionesPorCategoria.has(partido.categoriaId)) {
@@ -781,11 +910,13 @@ export class CanchasSorteoService {
         }
         distribucionPorDia[dia.fecha].slots++;
         
-        const catNombre = categoriasData.find(c => c.categoria.id === partido.categoriaId)?.nombre;
         if (catNombre) {
           distribucionPorDia[dia.fecha].categorias.add(catNombre);
         }
       }
+      
+      const asignadosEnEsteDia = Math.min(partidosOrdenados.length, slotsDelDia.length);
+      console.log(`[SorteoDebug]   >>> DÍA COMPLETADO: ${asignadosEnEsteDia} partidos asignados`);
     }
 
     // Generar brackets y guardar con las asignaciones

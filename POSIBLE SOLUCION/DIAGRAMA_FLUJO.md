@@ -1,0 +1,288 @@
+# 🗺️ DIAGRAMA DE FLUJO - FAIRPADEL SCHEDULING
+
+## ❌ FLUJO ACTUAL (PROBLEMÁTICO)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         CONFIGURACIÓN DE DÍAS                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Jueves (20 slots)    Viernes (20 slots)   Sábado (20 slots)   Domingo    │
+│   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐      ┌────────┐ │
+│   │ Slot 1      │      │ Slot 21     │      │ Slot 41     │      │Slot 61 │ │
+│   │ Slot 2      │      │ Slot 22     │      │ Slot 42     │      │Slot 62 │ │
+│   │ ...         │      │ ...         │      │ ...         │      │...     │ │
+│   │ Slot 20     │      │ Slot 40     │      │ Slot 60     │      │Slot 80 │ │
+│   └─────────────┘      └─────────────┘      └─────────────┘      └────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    ASIGNACIÓN ACTUAL (SECUENCIAL)                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Categoría A (40 partidos):                                                │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ Slots 1-40: TODOS los partidos (Zona, Repechaje, Octavos, Cuartos) │   │
+│   │ ❌ Problema: Los OCTAVOS están en Jueves/Viernes (debería Sábado)  │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   Categoría B (40 partidos):                                                │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ Slots 41-80: TODOS los partidos                                     │   │
+│   │ ❌ Problema: Los ZONA están en Sábado/Domingo (debería Jueves)     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   RESULTADO: ❌ Las fases NO respetan los días configurados                │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## ✅ FLUJO IDEAL (SOLUCIÓN)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    CONFIGURACIÓN DE DÍAS CON FASES                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Jueves              Viernes             Sábado              Domingo       │
+│   [ZONA, REPECHAJE]   [ZONA, REPECHAJE]   [OCTAVOS, CUARTOS]  [SEMIS, FINAL]│
+│   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌────────┐    │
+│   │ Slot 1      │     │ Slot 21     │     │ Slot 41     │     │Slot 61 │    │
+│   │ Slot 2      │     │ Slot 22     │     │ Slot 42     │     │Slot 62 │    │
+│   │ ...         │     │ ...         │     │ ...         │     │...     │    │
+│   │ Slot 20     │     │ Slot 40     │     │ Slot 60     │     │Slot 80 │    │
+│   └─────────────┘     └─────────────┘     └─────────────┘     └────────┘    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    ASIGNACIÓN IDEAL (POR DÍA Y FASE)                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   PROCESAR JUEVES (Zona, Repechaje):                                        │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ CatA-Zona-1    → Slot 1 (Jueves 18:00)                             │   │
+│   │ CatB-Zona-1    → Slot 2 (Jueves 18:00)  ← Round-Robin              │   │
+│   │ CatA-Zona-2    → Slot 3 (Jueves 19:30)                             │   │
+│   │ CatB-Zona-2    → Slot 4 (Jueves 19:30)                             │   │
+│   │ ...                                                                 │   │
+│   │ CatA-Repechaje-1 → Slot 15 (Jueves)                                │   │
+│   │ CatB-Repechaje-1 → Slot 16 (Jueves)                                │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   PROCESAR VIERNES (Zona, Repechaje):                                       │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ CatA-Zona-10    → Slot 21 (Viernes 18:00)                          │   │
+│   │ CatB-Zona-10    → Slot 22 (Viernes 18:00)                          │   │
+│   │ ...                                                                 │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   PROCESAR SÁBADO (Octavos, Cuartos):                                       │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ CatA-Octavos-1  → Slot 41 (Sábado 09:00)                           │   │
+│   │ CatB-Octavos-1  → Slot 42 (Sábado 09:00)                           │   │
+│   │ ...                                                                 │   │
+│   │ CatA-Cuartos-1  → Slot 55 (Sábado)                                 │   │
+│   │ CatB-Cuartos-1  → Slot 56 (Sábado)                                 │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   PROCESAR DOMINGO (Semis, Final):                                          │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ CatA-Semis-1    → Slot 61 (Domingo 09:00)                          │   │
+│   │ CatB-Semis-1    → Slot 62 (Domingo 09:00)                          │   │
+│   │ CatA-Final      → Slot 63 (Domingo 10:30)                          │   │
+│   │ CatB-Final      → Slot 64 (Domingo 10:30)                          │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   RESULTADO: ✅ Las fases respetan los días configurados                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔄 COMPARACIÓN ROUND-ROBIN vs SECUENCIAL
+
+### ❌ Asignación Secuencial (Actual)
+
+```
+Categoría A (8 partidos) + Categoría B (8 partidos) = 16 partidos
+
+Slots del Sábado (16 disponibles):
+┌─────────┬─────────┬─────────┬─────────┬─────────┐
+│ 09:00   │ 10:30   │ 12:00   │ 13:30   │ 15:00   │
+├─────────┼─────────┼─────────┼─────────┼─────────┤
+│ CatA-1  │ CatA-2  │ CatA-3  │ CatA-4  │ CatA-5  │
+│ CatA-6  │ CatA-7  │ CatA-8  │ CatB-1  │ CatB-2  │
+│ CatB-3  │ CatB-4  │ CatB-5  │ CatB-6  │ CatB-7  │
+│ CatB-8  │         │         │         │         │
+└─────────┴─────────┴─────────┴─────────┴─────────┘
+
+❌ Problema: CatA toma los mejores horarios (09:00-13:30)
+❌ CatB queda con horarios menos deseables (13:30-18:00)
+```
+
+### ✅ Asignación Round-Robin (Solución)
+
+```
+Categoría A (8 partidos) + Categoría B (8 partidos) = 16 partidos
+
+Slots del Sábado (16 disponibles):
+┌─────────┬─────────┬─────────┬─────────┬─────────┐
+│ 09:00   │ 10:30   │ 12:00   │ 13:30   │ 15:00   │
+├─────────┼─────────┼─────────┼─────────┼─────────┤
+│ CatA-1  │ CatB-1  │ CatA-2  │ CatB-2  │ CatA-3  │
+│ CatB-3  │ CatA-4  │ CatB-4  │ CatA-5  │ CatB-5  │
+│ CatA-6  │ CatB-6  │ CatA-7  │ CatB-7  │ CatA-8  │
+│ CatB-8  │         │         │         │         │
+└─────────┴─────────┴─────────┴─────────┴─────────┘
+
+✅ Ambas categorías comparten horarios equitativamente
+✅ CatA y CatB tienen partidos a las 09:00, 10:30, 12:00, etc.
+```
+
+---
+
+## 📊 FLUJO DE DATOS - SOLUCIÓN
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           FLUJO DE DATOS                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+  1. CONFIGURAR DÍAS
+     │
+     ├── Input: Fecha, Horario, Canchas, Fases Permitidas
+     │
+     └── Output: TorneoDisponibilidadDia con fasesPermitidas
+                 └── TorneoSlot (estado: LIBRE)
+
+  2. CERRAR INSCRIPCIONES Y SORTEAR
+     │
+     ├── Input: Categorías seleccionadas
+     │
+     ├── Paso 2.1: Calcular slots necesarios por categoría
+     │   └── Usa: BracketService.calcularSlotsNecesarios()
+     │
+     ├── Paso 2.2: Obtener días configurados (ordenados cronológicamente)
+     │   └── Query: TorneoDisponibilidadDia.orderBy(fecha: asc)
+     │
+     ├── Paso 2.3: Para cada día (cronológicamente):
+     │   │
+     │   ├── 2.3.1: Obtener fases permitidas del día
+     │   │   └── dia.fasesPermitidas → ['ZONA', 'REPECHAJE']
+     │   │
+     │   ├── 2.3.2: Obtener slots libres del día
+     │   │   └── Query: TorneoSlot.where(estado: 'LIBRE')
+     │   │
+     │   ├── 2.3.3: Obtener partidos de TODAS las categorías
+     │   │   └── Filtrar por fases permitidas
+     │   │
+     │   ├── 2.3.4: Ordenar con Round-Robin
+     │   │   └── CatA-1, CatB-1, CatA-2, CatB-2, ...
+     │   │
+     │   └── 2.3.5: Asignar partidos a slots del día
+     │       └── Marcar slots como RESERVADO
+     │
+     ├── Paso 2.4: Generar brackets
+     │   └── Para cada categoría:
+     │       ├── BracketService.generarBracket()
+     │       └── BracketService.guardarBracket(slotsAsignados)
+     │
+     └── Output: Categorías sorteadas con slots asignados
+
+  3. RESULTADO FINAL
+     │
+     └── Cada partido tiene:
+         ├── Fecha (correspondiente a su fase)
+         ├── Hora de inicio
+         ├── Cancha asignada
+         └── Estado: PROGRAMADO
+```
+
+---
+
+## 🎯 CASO DE USO - EJEMPLO REAL
+
+### Configuración del Torneo
+
+```typescript
+// Días configurados
+const dias = [
+  { fecha: '2026-03-27', fases: ['ZONA', 'REPECHAJE'], slots: 20 },      // Jueves
+  { fecha: '2026-03-28', fases: ['ZONA', 'REPECHAJE'], slots: 20 },      // Viernes
+  { fecha: '2026-03-29', fases: ['OCTAVOS', 'CUARTOS'], slots: 20 },     // Sábado
+  { fecha: '2026-03-30', fases: ['SEMIS', 'FINAL'], slots: 10 },         // Domingo
+];
+
+// Categorías a sortear
+const categorias = [
+  { id: 'CAT-A', nombre: 'Masculina A', parejas: 26 },  // 10 Zona + 5 Repechaje + 8 Octavos + 3 Semis/Final
+  { id: 'CAT-B', nombre: 'Femenina A', parejas: 26 },   // 10 Zona + 5 Repechaje + 8 Octavos + 3 Semis/Final
+];
+```
+
+### Resultado Esperado
+
+```
+JUEVES (Zona, Repechaje):
+┌──────────┬──────────┬──────────┬──────────┐
+│ Horario  │ Cancha 1 │ Cancha 2 │ Cancha 3 │
+├──────────┼──────────┼──────────┼──────────┤
+│ 18:00    │ CatA-Z1  │ CatB-Z1  │ CatA-Z2  │
+│ 19:30    │ CatB-Z2  │ CatA-Z3  │ CatB-Z3  │
+│ 21:00    │ CatA-Z4  │ CatB-Z4  │ CatA-Z5  │
+│ 22:30    │ CatB-Z5  │ CatA-Z6  │ CatB-Z6  │
+└──────────┴──────────┴──────────┴──────────┘
+
+VIERNES (Zona, Repechaje):
+┌──────────┬──────────┬──────────┬──────────┐
+│ Horario  │ Cancha 1 │ Cancha 2 │ Cancha 3 │
+├──────────┼──────────┼──────────┼──────────┤
+│ 18:00    │ CatA-Z7  │ CatB-Z7  │ CatA-Z8  │
+│ 19:30    │ CatB-Z8  │ CatA-Z9  │ CatB-Z9  │
+│ 21:00    │ CatA-Z10 │ CatB-Z10 │ CatA-R1  │
+│ 22:30    │ CatB-R1  │ CatA-R2  │ CatB-R2  │
+└──────────┴──────────┴──────────┴──────────┘
+
+SÁBADO (Octavos, Cuartos):
+┌──────────┬──────────┬──────────┬──────────┐
+│ Horario  │ Cancha 1 │ Cancha 2 │ Cancha 3 │
+├──────────┼──────────┼──────────┼──────────┤
+│ 09:00    │ CatA-O1  │ CatB-O1  │ CatA-O2  │
+│ 10:30    │ CatB-O2  │ CatA-O3  │ CatB-O3  │
+│ 12:00    │ CatA-O4  │ CatB-O4  │ CatA-O5  │
+│ 13:30    │ CatB-O5  │ CatA-O6  │ CatB-O6  │
+│ 15:00    │ CatA-O7  │ CatB-O7  │ CatA-O8  │
+│ 16:30    │ CatB-O8  │ CatA-C1  │ CatB-C1  │
+│ 18:00    │ CatA-C2  │ CatB-C2  │ CatA-C3  │
+│ 19:30    │ CatB-C3  │ CatA-C4  │ CatB-C4  │
+└──────────┴──────────┴──────────┴──────────┘
+
+DOMINGO (Semis, Final):
+┌──────────┬──────────┬──────────┐
+│ Horario  │ Cancha 1 │ Cancha 2 │
+├──────────┼──────────┼──────────┤
+│ 09:00    │ CatA-S1  │ CatB-S1  │
+│ 10:30    │ CatA-S2  │ CatB-S2  │
+│ 12:00    │ CatA-F   │ CatB-F   │
+└──────────┴──────────┴──────────┘
+```
+
+### Validación
+
+✅ **Todas las Zonas** están en Jueves/Viernes  
+✅ **Todos los Octavos** están en Sábado  
+✅ **Todos los Cuartos** están en Sábado  
+✅ **Todas las Semis** están en Domingo  
+✅ **Todas las Finales** están en Domingo  
+✅ **Round-Robin**: CatA y CatB alternan en todos los horarios  
+
+---
+
+*Diagrama de flujo para Fairpadel - Sistema de Scheduling*
