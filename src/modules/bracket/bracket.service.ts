@@ -760,7 +760,7 @@ export class BracketService {
         return slot.horaInicio >= configDia.horaInicio && slot.horaFin <= configDia.horaFin;
       });
 
-      // DISTRIBUCIÓN INTELIGENTE POR DÍAS - RESPETANDO FASES POR DÍA DE SEMANA
+      // DISTRIBUCIÓN INTELIGENTE POR DÍAS
       // Agrupar slots por día
       const slotsPorDia = new Map<string, typeof slotsFiltrados>();
       for (const slot of slotsFiltrados) {
@@ -773,37 +773,21 @@ export class BracketService {
 
       // Ordenar días cronológicamente
       const diasOrdenados = Array.from(slotsPorDia.keys()).sort();
+      const totalDias = diasOrdenados.length;
 
-      // Helper: Determinar fases permitidas según día de semana
-      const obtenerFasesParaDia = (fecha: string): FaseBracket[] => {
-        const [year, month, day] = fecha.split('-').map(Number);
-        const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-        const diaSemana = date.getUTCDay();
-        
-        switch (diaSemana) {
-          case 4: // Jueves
-          case 5: // Viernes
-            return [FaseBracket.ZONA, FaseBracket.REPECHAJE];
-          case 6: // Sábado
-            return [FaseBracket.OCTAVOS, FaseBracket.CUARTOS];
-          case 0: // Domingo
-            return [FaseBracket.SEMIS, FaseBracket.FINAL];
-          default:
-            return [FaseBracket.ZONA];
-        }
+      // Calcular slots necesarios por fase
+      const slotsNecesarios = {
+        [FaseBracket.ZONA]: partidos.filter(p => p.fase === FaseBracket.ZONA).length,
+        [FaseBracket.REPECHAJE]: partidos.filter(p => p.fase === FaseBracket.REPECHAJE).length,
+        [FaseBracket.OCTAVOS]: partidos.filter(p => p.fase === FaseBracket.OCTAVOS).length,
+        [FaseBracket.CUARTOS]: partidos.filter(p => p.fase === FaseBracket.CUARTOS).length,
+        [FaseBracket.SEMIS]: partidos.filter(p => p.fase === FaseBracket.SEMIS).length,
+        [FaseBracket.FINAL]: partidos.filter(p => p.fase === FaseBracket.FINAL).length,
       };
 
-      // Calcular partidos por fase
-      const partidosPorFase = {
-        [FaseBracket.ZONA]: partidos.filter(p => p.fase === FaseBracket.ZONA),
-        [FaseBracket.REPECHAJE]: partidos.filter(p => p.fase === FaseBracket.REPECHAJE),
-        [FaseBracket.OCTAVOS]: partidos.filter(p => p.fase === FaseBracket.OCTAVOS),
-        [FaseBracket.CUARTOS]: partidos.filter(p => p.fase === FaseBracket.CUARTOS),
-        [FaseBracket.SEMIS]: partidos.filter(p => p.fase === FaseBracket.SEMIS),
-        [FaseBracket.FINAL]: partidos.filter(p => p.fase === FaseBracket.FINAL),
-      };
-
-      // Asignar fases a días respetando día de semana
+      // Asignar fases a días según distribución propuesta:
+      // Día 1-2: Zonas | Día 2-3: Repechaje/Octavos | Día 3: Cuartos | Día 4: Semis/Finales
+      // Asignar fases a días SECUENCIALMENTE (sin solapamientos)
       // Orden cronológico: ZONA → REPECHAJE → OCTAVOS → CUARTOS → SEMIS → FINAL
       const fasesEnOrden = [
         FaseBracket.ZONA,
@@ -815,60 +799,31 @@ export class BracketService {
       ];
 
       const slotsPorFase: typeof slots = [];
-      const slotsUsados = new Set<string>(); // Track slots ya asignados
+      let slotIndexGlobal = 0; // Índice en slotsFiltrados
 
       for (const fase of fasesEnOrden) {
-        const partidosFase = partidosPorFase[fase];
+        const partidosFase = partidos.filter(p => p.fase === fase);
         if (partidosFase.length === 0) continue;
 
-        let partidosAsignados = 0;
-
-        // Recorrer días en orden cronológico
-        for (const fecha of diasOrdenados) {
-          if (partidosAsignados >= partidosFase.length) break;
-
-          const fasesPermitidas = obtenerFasesParaDia(fecha);
-          
-          // Si esta fase NO está permitida en este día, saltar al siguiente día
-          if (!fasesPermitidas.includes(fase)) {
-            continue;
-          }
-
-          // Obtener slots libres de este día que no estén usados
-          const slotsDelDia = slotsPorDia.get(fecha)!.filter(s => 
-            !slotsUsados.has(`${s.disponibilidad.fecha}-${s.horaInicio}-${s.torneoCanchaId}`)
-          );
-
-          // Asignar partidos de esta fase a slots de este día
-          const partidosRestantes = partidosFase.length - partidosAsignados;
-          const slotsAAsignar = Math.min(partidosRestantes, slotsDelDia.length);
-
-          for (let i = 0; i < slotsAAsignar; i++) {
-            const slot = slotsDelDia[i];
-            const partido = partidosFase[partidosAsignados];
-            
+        // Asignar slots para esta fase usando slots disponibles desde el índice actual
+        for (let i = 0; i < partidosFase.length; i++) {
+          if (slotIndexGlobal < slotsFiltrados.length) {
+            const slot = slotsFiltrados[slotIndexGlobal];
             slotsPorFase.push({
               fecha: slot.disponibilidad.fecha,
               horaInicio: slot.horaInicio,
               horaFin: slot.horaFin,
               torneoCanchaId: slot.torneoCanchaId,
               fase,
-              ordenPartido: partido.orden,
+              ordenPartido: i + 1,
             });
-
-            // Marcar slot como usado
-            slotsUsados.add(`${slot.disponibilidad.fecha}-${slot.horaInicio}-${slot.torneoCanchaId}`);
-            partidosAsignados++;
+            slotIndexGlobal++;
           }
-        }
-
-        // Log warning si no se asignaron todos los partidos de esta fase
-        if (partidosAsignados < partidosFase.length) {
-          console.warn(`[guardarBracket] ADVERTENCIA: Solo se asignaron ${partidosAsignados}/${partidosFase.length} partidos de ${fase}`);
         }
       }
 
       slots = slotsPorFase.sort((a, b) => {
+        // Ordenar por fecha y hora
         if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
         return a.horaInicio.localeCompare(b.horaInicio);
       });
