@@ -131,8 +131,14 @@ feat(resortear): liberar slots y mantener partidos con resultado al re-sortear
 - Mantiene partidos CON resultado (ya jugados)
 - Elimina solo partidos pendientes
 - Archiva fixture si tiene partidos jugados, elimina si no
-- Valida que haya suficientes slots por tipo de fase antes de sortear
-- Retorna error detallado si falta configuracion de dias
+```
+
+**Frontend:** `f630871`
+```
+fix(canchas-sorteo): corregir filtro de categorias sorteadas
+- Agregar fixtureVersionId a interfaz Categoria
+- FIX: Una categoria esta sorteada si tiene fixtureVersionId O estado sorteado
+- Estados sorteados: CERRADA, INSCRIPCIONES_CERRADAS, FIXTURE_BORRADOR, SORTEO_REALIZADO, EN_CURSO
 ```
 
 ### 📊 Ejemplo de Funcionamiento
@@ -165,6 +171,47 @@ DOMINGO (Semis/Final):
 09:00 CatA-S1 | CatB-S1 | CatA-S2 | CatB-S2
 10:30 CatA-F  | CatB-F
 ```
+
+### 🐛 FIX: Filtro de Categorías Sorteadas (2026-03-24)
+
+**Problema:** Al recargar la página, las categorías sorteadas aparecían como "Disponibles" en el tab "Canchas y Sorteo". El filtro `estaSorteada` solo verificaba estados `CERRADA` e `INSCRIPCIONES_CERRADAS`, pero no incluía `FIXTURE_BORRADOR` (estado cuando el sorteo está en borrador).
+
+**Causa:** La interfaz `Categoria` no tenía el campo `fixtureVersionId`, que es el indicador más confiable de que una categoría ya fue sorteada.
+
+**Solución:**
+
+```typescript
+// Interfaz actualizada
+interface Categoria {
+  id: string;
+  nombre: string;
+  parejas: number;
+  minimoParejas: number;
+  estado: string;
+  fixtureVersionId?: string | null; // NUEVO
+}
+
+// Filtro corregido
+const estadosSorteados = [
+  'CERRADA', 
+  'INSCRIPCIONES_CERRADAS', 
+  'FIXTURE_BORRADOR', 
+  'SORTEO_REALIZADO', 
+  'EN_CURSO'
+];
+
+// Una categoría está sorteada si:
+const estaSorteada = !!cat.fixtureVersionId || estadosSorteados.includes(cat.estado);
+```
+
+**Estados que indican categoría sorteada:**
+| Estado | Descripción |
+|--------|-------------|
+| `FIXTURE_BORRADOR` | Sorteo realizado, en borrador |
+| `SORTEO_REALIZADO` | Sorteo publicado |
+| `EN_CURSO` | Torneo en progreso |
+| `INSCRIPCIONES_CERRADAS` | Inscripciones cerradas, listo para sortear |
+| `CERRADA` | Categoría finalizada |
 
 ### 🔄 Funcionamiento del Re-Sortear
 
