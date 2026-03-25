@@ -1244,7 +1244,8 @@ export class CanchasSorteoService {
    * Obtiene slots disponibles ordenados por fecha y hora
    */
   private async obtenerSlotsDisponiblesOrdenados(tournamentId: string) {
-    return this.prisma.torneoSlot.findMany({
+    // Obtener slots con información de sede para ordenar por prioridad
+    const slotsConSede = await this.prisma.torneoSlot.findMany({
       where: {
         disponibilidad: {
           tournamentId,
@@ -1255,14 +1256,33 @@ export class CanchasSorteoService {
         disponibilidad: true,
         torneoCancha: {
           include: {
-            sedeCancha: true,
-          },
+            sedeCancha: {
+              include: {
+                sede: {
+                  include: {
+                    torneoSedes: {
+                      where: { tournamentId },
+                      select: { orden: true }
+                    }
+                  }
+                }
+              }
+            }
+          }
         },
       },
-      orderBy: [
-        { disponibilidad: { fecha: 'asc' } },
-        { horaInicio: 'asc' },
-      ],
+    });
+
+    // Ordenar: primero por orden de sede (prioridad), luego por fecha/hora
+    return slotsConSede.sort((a, b) => {
+      const ordenA = a.torneoCancha?.sedeCancha?.sede?.torneoSedes?.[0]?.orden ?? 999;
+      const ordenB = b.torneoCancha?.sedeCancha?.sede?.torneoSedes?.[0]?.orden ?? 999;
+      
+      if (ordenA !== ordenB) return ordenA - ordenB;
+      if (a.disponibilidad.fecha !== b.disponibilidad.fecha) {
+        return a.disponibilidad.fecha.localeCompare(b.disponibilidad.fecha);
+      }
+      return a.horaInicio.localeCompare(b.horaInicio);
     });
   }
 

@@ -13,13 +13,59 @@
 
 ## 🆕 COMPLETADO (2026-03-25) - Distribución Correcta de Repechaje
 
-### ✅ Implementación: Todos los Perdedores + Algunos Ganadores a Repechaje
+### ✅ Implementación: Contador Único para Evitar Colisiones
 
-**Problema identificado:** Para categorías con repechaje (9-15 y 17-31 parejas), el algoritmo asignaba incorrectamente los perdedores y ganadores a repechaje. Para 14 parejas, los 7 partidos de zona enviaban todos sus perdedores (7), pero ningún ganador, dejando 5 slots de repechaje vacíos.
+**Problema identificado:** Para categorías con repechaje (9-15 y 17-31 parejas), el algoritmo usaba contadores separados para perdedores y ganadores, causando que ambos se asignaran a las mismas posiciones en los partidos de repechaje. Esto dejaba algunos partidos de repechaje con 2 jugadores del mismo tipo y otros vacíos.
+
+**Ejemplo del bug (14 parejas):**
+```
+Perdedor 0 → Repechaje 0, Pos 1
+Perdedor 1 → Repechaje 0, Pos 2
+Ganador 0 → Repechaje 0, Pos 1  ← ¡COLISIÓN! Sobrescribe al perdedor 0
+Ganador 1 → Repechaje 0, Pos 2  ← ¡COLISIÓN! Sobrescribe al perdedor 1
+```
 
 **Solución implementada:**
+```typescript
+// Contador global de slots de repechaje
+let slotRepechajeIdx = 0;
 
-#### Lógica Correcta (Tabla 8-31 parejas)
+// Primero asignamos TODOS los perdedores
+partidosZona.forEach((zona, index) => {
+  if (vaARepechajePerdedor) {
+    repechajeIndex = Math.floor(slotRepechajeIdx / 2);
+    posicion = (slotRepechajeIdx % 2) + 1; // 1 o 2
+    slotRepechajeIdx++;
+  }
+});
+
+// Luego asignamos los ganadores (continuando donde quedaron los perdedores)
+partidosZona.forEach((zona, index) => {
+  if (vaARepechajeGanador) {
+    repechajeIndex = Math.floor(slotRepechajeIdx / 2);
+    posicion = (slotRepechajeIdx % 2) + 1; // 1 o 2
+    slotRepechajeIdx++;
+  }
+});
+```
+
+**Resultado correcto (14 parejas, 6 repechajes = 12 slots):**
+```
+Perdedor 0 → Repechaje 0, Pos 1  (slot 0)
+Perdedor 1 → Repechaje 0, Pos 2  (slot 1)
+Perdedor 2 → Repechaje 1, Pos 1  (slot 2)
+Perdedor 3 → Repechaje 1, Pos 2  (slot 3)
+Perdedor 4 → Repechaje 2, Pos 1  (slot 4)
+Perdedor 5 → Repechaje 2, Pos 2  (slot 5)
+Perdedor 6 → Repechaje 3, Pos 1  (slot 6)
+Ganador 0 → Repechaje 3, Pos 2  (slot 7)
+Ganador 1 → Repechaje 4, Pos 1  (slot 8)
+Ganador 2 → Repechaje 4, Pos 2  (slot 9)
+Ganador 3 → Repechaje 5, Pos 1  (slot 10)
+Ganador 4 → Repechaje 5, Pos 2  (slot 11)
+```
+
+**Tabla de distribución (8-31 parejas):**
 
 | Parejas | Bracket | Zona | Repechaje | Perd→Repech | Gan→Repech | Gan→Directo |
 |---------|---------|------|-----------|-------------|------------|-------------|
@@ -33,44 +79,12 @@
 | 15 | 8 | 7 | 7 | 6 | 8 | 0 |
 | 16 | 16 | 8 | 0 | 0 | 0 | 8 |
 | 17 | 16 | 8 | 1 | 2 | 0 | 8 |
-| 18 | 16 | 9 | 2 | 4 | 0 | 7 |
-| 19 | 16 | 9 | 3 | 6 | 0 | 5 |
-| 20 | 16 | 10 | 4 | 8 | 0 | 4 |
-| 21 | 16 | 10 | 5 | 10 | 0 | 3 |
-| 22 | 16 | 11 | 6 | 10 | 2 | 2 |
-| 23 | 16 | 11 | 7 | 10 | 4 | 2 |
-| 24 | 16 | 12 | 8 | 10 | 6 | 2 |
-| 25 | 16 | 12 | 9 | 10 | 8 | 2 |
-| 26 | 16 | 13 | 10 | 10 | 10 | 2 |
-| 27 | 16 | 13 | 11 | 10 | 12 | 2 |
-| 28 | 16 | 14 | 12 | 10 | 14 | 2 |
-| 29 | 16 | 14 | 13 | 10 | 16 | 2 |
-| 30 | 16 | 15 | 14 | 10 | 18 | 2 |
-| 31 | 16 | 15 | 15 | 10 | 20 | 2 |
-| 32 | 32 | 16 | 0 | 0 | 0 | 16 |
-
-**Lógica del algoritmo:**
-```typescript
-// TODOS los partidos de zona envían su PERDEDOR al repechaje
-// Solo ALGUNOS partidos de zona envían su GANADOR al repechaje
-
-slotsConPerdedores = Math.min(perdedoresZona, slotsRepechaje)
-slotsConGanadores = Math.max(0, slotsRepechaje - perdedoresZona)
-
-// Distribución:
-// - Perdedores: slot 1, 3, 5, 7... (posiciones impares en repechaje)
-// - Ganadores: slot 2, 4, 6, 8... (posiciones pares en repechaje)
-```
-
-**Ejemplo 14 parejas:**
-- 7 partidos de zona
-- 6 partidos de repechaje = 12 slots
-- 7 perdedores van a repechaje (todos)
-- 5 ganadores van a repechaje (aleatorios)
-- 2 ganadores van directo al bracket
+| 18-32 | ... | ... | ... | ... | ... | ... |
 
 **Archivos modificados:**
-- `bracket.service.ts` - Lógica `conectarZonaConBracket()` corregida
+- `bracket.service.ts` - Método `conectarZonaConBracket()` - Contador único `slotRepechajeIdx`
+
+**Commits:** `e70f51c`, `1ce75bc`
 
 ---
 
