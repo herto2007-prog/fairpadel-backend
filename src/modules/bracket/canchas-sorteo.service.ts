@@ -976,7 +976,11 @@ export class CanchasSorteoService {
         }
         
         if (!slotEncontrado) {
-          console.warn(`[SorteoDebug]     [Descanso] No se encontró slot para ${catNombre} | Fase ${partido.fase} #${partido.orden} con descanso de 4h`);
+          console.warn(`[SorteoDebug]     [FALLO] No se encontró slot para ${catNombre} | Fase ${partido.fase} #${partido.orden}`);
+          console.warn(`[SorteoDebug]            Hora mínima requerida: ${horaMinimaInicio}, Slots revisados: ${slotIdx}/${slotsDelDia.length}`);
+          if (slotIdx >= slotsDelDia.length) {
+            console.warn(`[SorteoDebug]            RAZÓN: Se agotaron los slots del día`);
+          }
         }
       }
       
