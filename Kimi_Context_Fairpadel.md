@@ -2,11 +2,10 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-24 - FIX MANEJO DE FECHAS + SORTEO CON FASES POR DÍA ✅
+> **Última actualización:** 2026-03-24 - VALIDACIÓN DE DÍAS + FIX SORTEO ✅
+> - **VALIDACIÓN:** Verifica días Jueves/Viernes/Sábado/Domingo antes de sortear
 > - **FIX FECHAS:** Usar UTC para calcular día de semana (`Date.UTC()` + `getUTCDay()`)
-> - **DISTRIBUCIÓN INTELIGENTE:** Fases asignadas a días específicos (Jueves/Viernes=Zona, Sábado=Octavos, Domingo=Final)
-> - **ROUND-ROBIN:** Alternancia equitativa entre categorías (CatA-1, CatB-1, CatA-2, CatB-2...)
-> - **COMPATIBILIDAD:** Fallback automático a lógica anterior si días no tienen fases configuradas
+> - **DISTRIBUCIÓN INTELIGENTE:** Fases asignadas a días específicos
 > - **BUILD:** ✅ Backend y Frontend compilan exitosamente
 > - **DEPLOY:** ✅ Commits pushados a producción
 
@@ -63,6 +62,48 @@ if (diasConFases.length >= 2) {
 #### 4. Frontend
 - `ConfigurarDiaJuegoPayload` actualizado con campo opcional
 
+### 🆕 COMPLETADO (2026-03-24) - Validación de Configuración de Días
+
+**Problema detectado:** El sistema asignaba todas las fases a los primeros días disponibles, causando:
+- ZONA y REPECHAJE encimados en el mismo día
+- OCTAVOS/CUARTOS/SEMIS/FINAL todos en Viernes en lugar de Sábado/Domingo
+- Usuarios sin aviso previo de que faltaban días configurados
+
+**Solución implementada:**
+
+#### Nuevo método `validarConfiguracionDias()`
+```typescript
+// Valida ANTES de sortear que existan:
+- Días Jueves/Viernes para ZONA + REPECHAJE
+- Días Sábado para OCTAVOS + CUARTOS  
+- Días Domingo para SEMIS + FINAL
+
+// Retorna error detallado si falta algo:
+{
+  valido: false,
+  mensaje: "Configuración de días insuficiente",
+  detalle: {
+    errores: [
+      "Faltan días Sábado: 12 partidos de Octavos/Cuartos pero solo 0 slots disponibles"
+    ],
+    diasConfigurados: [...],
+    slotsPorTipoDia: { juevesViernes: 29, sabado: 0, domingo: 16 }
+  }
+}
+```
+
+**Tipos de días validados:**
+| Tipo de Día | Fases Permitidas | Día de Semana |
+|-------------|------------------|---------------|
+| Jueves/Viernes | ZONA, REPECHAJE | 4, 5 |
+| Sábado | OCTAVOS, CUARTOS | 6 |
+| Domingo | SEMIS, FINAL | 0 |
+
+**Comportamiento:**
+- Si validación pasa → Procede con sorteo normal
+- Si validación falla → Retorna error 400 con mensaje claro
+- Usuario debe agregar más días antes de intentar sortear nuevamente
+
 ### ✅ Commits Realizados
 
 **Backend:** `bc35ba9`
@@ -75,6 +116,14 @@ feat(sorteo): implementar asignacion de slots por fases con Round-Robin
 ```
 feat(sorteo): actualizar interfaz ConfigurarDiaJuegoPayload con fasesPermitidas
 - 1 file changed, 1 insertion(+)
+```
+
+**Backend:** `151c996`
+```
+feat(sorteo): agregar validacion de dias configurados vs fases requeridas
+- Nuevo metodo validarConfiguracionDias() verifica Jueves/Viernes/Sabado/Domingo
+- Valida que haya suficientes slots por tipo de fase antes de sortear
+- Retorna error detallado si falta configuracion de dias
 ```
 
 ### 📊 Ejemplo de Funcionamiento
