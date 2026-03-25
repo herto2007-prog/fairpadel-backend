@@ -470,6 +470,131 @@ export class CanchasSorteoService {
   }
 
   /**
+   * NUEVO: Valida que la configuración de días pueda albergar todas las fases del torneo
+   * Retorna error detallado si falta configuración, o null si todo está OK
+   */
+  private async validarConfiguracionDias(
+    tournamentId: string,
+    calculo: CalculoSlotsResponse,
+  ): Promise<{ valido: boolean; mensaje?: string; detalle?: any }> {
+    // Obtener todos los días configurados con sus fases
+    const diasConfig = await this.prisma.torneoDisponibilidadDia.findMany({
+      where: { tournamentId },
+      orderBy: { fecha: 'asc' },
+    });
+
+    if (diasConfig.length === 0) {
+      return {
+        valido: false,
+        mensaje: 'No hay días configurados para el torneo',
+        detalle: { diasConfigurados: 0 },
+      };
+    }
+
+    // Calcular slots totales por tipo de fase requeridos
+    const fasesRequeridas = new Map<FaseBracket, { partidos: number; diasNecesarios: number }>();
+    
+    for (const catInfo of calculo.detallePorCategoria) {
+      for (const faseInfo of catInfo.partidosPorFase) {
+        const fase = faseInfo.fase as FaseBracket;
+        const actual = fasesRequeridas.get(fase) || { partidos: 0, diasNecesarios: 0 };
+        actual.partidos += faseInfo.partidos;
+        // Estimamos 15 partidos por día (aproximado)
+        actual.diasNecesarios = Math.ceil(actual.partidos / 15);
+        fasesRequeridas.set(fase, actual);
+      }
+    }
+
+    // Contar slots disponibles por tipo de día (según día de semana)
+    const slotsPorTipoDia = {
+      juevesViernes: 0, // ZONA, REPECHAJE
+      sabado: 0,        // OCTAVOS, CUARTOS
+      domingo: 0,       // SEMIS, FINAL
+    };
+
+    const diasDetalle: Array<{ fecha: string; tipo: string; slots: number; fasesPermitidas: string[] }> = [];
+
+    for (const dia of diasConfig) {
+      // Contar slots libres del día
+      const slotsLibres = await this.prisma.torneoSlot.count({
+        where: {
+          disponibilidadId: dia.id,
+          estado: 'LIBRE',
+        },
+      });
+
+      // Determinar tipo de día según fecha
+      const [year, month, day] = dia.fecha.split('-').map(Number);
+      const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+      const diaSemana = date.getUTCDay();
+
+      let tipo = 'otro';
+      let fasesPermitidas: string[] = [];
+
+      if (diaSemana === 4 || diaSemana === 5) { // Jueves o Viernes
+        tipo = 'juevesViernes';
+        slotsPorTipoDia.juevesViernes += slotsLibres;
+        fasesPermitidas = ['ZONA', 'REPECHAJE'];
+      } else if (diaSemana === 6) { // Sábado
+        tipo = 'sabado';
+        slotsPorTipoDia.sabado += slotsLibres;
+        fasesPermitidas = ['OCTAVOS', 'CUARTOS'];
+      } else if (diaSemana === 0) { // Domingo
+        tipo = 'domingo';
+        slotsPorTipoDia.domingo += slotsLibres;
+        fasesPermitidas = ['SEMIS', 'FINAL'];
+      }
+
+      diasDetalle.push({ fecha: dia.fecha, tipo, slots: slotsLibres, fasesPermitidas });
+    }
+
+    // Verificar que hay suficientes días de cada tipo
+    const errores: string[] = [];
+
+    // ZONA y REPECHAJE necesitan días Jueves/Viernes
+    const zonaRepechaje = fasesRequeridas.get(FaseBracket.ZONA)?.partidos || 0;
+    const repechajePartidos = fasesRequeridas.get(FaseBracket.REPECHAJE)?.partidos || 0;
+    const totalZonaRepechaje = zonaRepechaje + repechajePartidos;
+    
+    if (totalZonaRepechaje > 0 && slotsPorTipoDia.juevesViernes < totalZonaRepechaje) {
+      errores.push(`Faltan días Jueves/Viernes: ${totalZonaRepechaje} partidos de Zona/Repechaje pero solo ${slotsPorTipoDia.juevesViernes} slots disponibles`);
+    }
+
+    // OCTAVOS y CUARTOS necesitan día Sábado
+    const octavos = fasesRequeridas.get(FaseBracket.OCTAVOS)?.partidos || 0;
+    const cuartos = fasesRequeridas.get(FaseBracket.CUARTOS)?.partidos || 0;
+    const totalOctavosCuartos = octavos + cuartos;
+    
+    if (totalOctavosCuartos > 0 && slotsPorTipoDia.sabado < totalOctavosCuartos) {
+      errores.push(`Faltan días Sábado: ${totalOctavosCuartos} partidos de Octavos/Cuartos pero solo ${slotsPorTipoDia.sabado} slots disponibles`);
+    }
+
+    // SEMIS y FINAL necesitan día Domingo
+    const semis = fasesRequeridas.get(FaseBracket.SEMIS)?.partidos || 0;
+    const final = fasesRequeridas.get(FaseBracket.FINAL)?.partidos || 0;
+    const totalSemisFinal = semis + final;
+    
+    if (totalSemisFinal > 0 && slotsPorTipoDia.domingo < totalSemisFinal) {
+      errores.push(`Faltan días Domingo: ${totalSemisFinal} partidos de Semis/Final pero solo ${slotsPorTipoDia.domingo} slots disponibles`);
+    }
+
+    if (errores.length > 0) {
+      return {
+        valido: false,
+        mensaje: 'Configuración de días insuficiente para el torneo',
+        detalle: {
+          errores,
+          fasesRequeridas: Array.from(fasesRequeridas.entries()).map(([fase, info]) => ({ fase, ...info })),
+          diasConfigurados: diasDetalle,
+          slotsPorTipoDia,
+        },
+      };
+    }
+
+    return { valido: true };
+  }
+
+  /**
    * PASO 2: Cerrar inscripciones y sortear múltiples categorías
    * NUEVO: Usa estrategia de fases por día si los días tienen fases configuradas
    */
@@ -489,7 +614,17 @@ export class CanchasSorteoService {
       });
     }
 
-    // 2. NUEVO: Verificar si hay días con fases configuradas
+    // 2. NUEVO: Validar configuración de días vs fases requeridas
+    const validacionDias = await this.validarConfiguracionDias(tournamentId, calculo);
+    if (!validacionDias.valido) {
+      throw new BadRequestException({
+        success: false,
+        message: validacionDias.mensaje,
+        detalle: validacionDias.detalle,
+      });
+    }
+
+    // 3. NUEVO: Verificar si hay días con fases configuradas
     const diasConFases = await this.prisma.torneoDisponibilidadDia.findMany({
       where: { 
         tournamentId,
