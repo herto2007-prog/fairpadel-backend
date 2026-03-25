@@ -2,7 +2,8 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-24 - SORTEO CON FASES POR DÍA + ROUND-ROBIN ✅
+> **Última actualización:** 2026-03-24 - FIX MANEJO DE FECHAS + SORTEO CON FASES POR DÍA ✅
+> - **FIX FECHAS:** Usar UTC para calcular día de semana (`Date.UTC()` + `getUTCDay()`)
 > - **DISTRIBUCIÓN INTELIGENTE:** Fases asignadas a días específicos (Jueves/Viernes=Zona, Sábado=Octavos, Domingo=Final)
 > - **ROUND-ROBIN:** Alternancia equitativa entre categorías (CatA-1, CatB-1, CatA-2, CatB-2...)
 > - **COMPATIBILIDAD:** Fallback automático a lógica anterior si días no tienen fases configuradas
@@ -122,6 +123,31 @@ DOMINGO (Semis/Final):
 | `canchas-sorteo.dto.ts` | +1 campo opcional en DTO |
 | `canchas-sorteo.service.ts` | ~333 líneas (nuevos métodos + refactor) |
 | `canchasSorteoService.ts` | +1 campo en interfaz |
+
+---
+
+## 🐛 FIX: Manejo Correcto de Fechas (2026-03-24)
+
+**Problema detectado:** En la implementación inicial de `obtenerFasesParaDia()`, se usó `new Date(year, month - 1, day, 12, 0, 0)` que crea la fecha en hora local del servidor, potencialmente causando inconsistencias en el cálculo del día de la semana.
+
+**Solución aplicada:**
+```typescript
+// ❌ ANTES (problemático)
+const date = new Date(year, month - 1, day, 12, 0, 0);
+const diaSemana = date.getDay();
+
+// ✅ DESPUÉS (correcto)
+const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+const diaSemana = date.getUTCDay();
+```
+
+**Regla reforzada:** Para fechas de negocio (YYYY-MM-DD):
+- NUNCA usar `new Date()` sin especificar timezone
+- Usar `Date.UTC()` para cálculos consistentes
+- Usar strings YYYY-MM-DD para almacenamiento y comparación
+- Los timestamps de sistema (createdAt, updatedAt) sí usan `new Date()` normal
+
+**Commit:** `fbbe68b` - fix(fechas): usar UTC para calcular dia de semana
 
 ---
 
