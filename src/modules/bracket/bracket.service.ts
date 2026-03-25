@@ -538,6 +538,9 @@ export class BracketService {
     let slotIndex = 0;
     
     // ASIGNAR DESTINOS A CADA PARTIDO DE ZONA
+    console.log(`[DistribucionBracket] Total partidos zona: ${partidosZonaShuffled.length}, Total repechajes: ${rondaAjuste.length}`);
+    console.log(`[DistribucionBracket] slotsConPerdedores: ${slotsConPerdedores}, slotsConGanadores: ${slotsConGanadores}`);
+    
     partidosZonaShuffled.forEach((partidoZona, index) => {
       // Determinar destino del GANADOR
       if (indicesGanadoresRepechaje.has(index)) {
@@ -545,6 +548,8 @@ export class BracketService {
         const repechajeSlot = index - slotsConPerdedores;
         const repechajeIndex = Math.floor(repechajeSlot / 2);
         const posicionEnRepechaje = (repechajeSlot % 2) + 1;
+        
+        console.log(`[DistribucionBracket] Zona ${index} -> Ganador va a Repechaje ${repechajeIndex} pos ${posicionEnRepechaje}`);
         
         if (repechajeIndex < rondaAjuste.length) {
           const partidoRepechaje = rondaAjuste[repechajeIndex];
@@ -569,6 +574,8 @@ export class BracketService {
         // Perdedor va a repechaje
         const repechajeIndex = Math.floor(index / 2);
         const posicionEnRepechaje = (index % 2) + 1;
+        
+        console.log(`[DistribucionBracket] Zona ${index} -> Perdedor va a Repechaje ${repechajeIndex} pos ${posicionEnRepechaje}`);
         
         const partidoRepechaje = rondaAjuste[repechajeIndex];
         partidoZona.partidoPerdedorSiguienteId = partidoRepechaje.id;
