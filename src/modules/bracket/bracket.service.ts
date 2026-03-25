@@ -605,17 +605,6 @@ export class BracketService {
           slot.partido.tipoEntrada2 = TipoEntrada.GANADOR_ZONA;
         }
       }
-        // Perdedor va directo al bracket (slot aleatorio)
-        const slot = slotsBracketShuffled[slotIndex++];
-        partidoZona.partidoPerdedorSiguienteId = slot.partido.id;
-        partidoZona.posicionEnPerdedor = slot.posicion;
-        
-        if (slot.posicion === 1) {
-          slot.partido.tipoEntrada1 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
-        } else {
-          slot.partido.tipoEntrada2 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
-        }
-      }
     });
     
     // ASIGNAR BYES (aleatoriamente también)
