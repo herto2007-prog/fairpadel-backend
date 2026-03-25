@@ -904,6 +904,7 @@ export class CanchasSorteoService {
         // Calcular hora mínima para esta fase (descanso de 4 horas desde fase anterior)
         const idxFaseActual = ordenFases.indexOf(partido.fase);
         let horaMinimaInicio = '00:00';
+        let faseAnteriorMismoDia = false;
         
         if (idxFaseActual > 0) {
           // Buscar la fase anterior que se jugó en este mismo día para esta categoría
@@ -913,9 +914,21 @@ export class CanchasSorteoService {
             if (ultimaHoraFinPorCategoriaFase[key]) {
               // 4 horas de descanso obligatorio
               horaMinimaInicio = sumarHoras(ultimaHoraFinPorCategoriaFase[key], 4);
+              faseAnteriorMismoDia = true;
               console.log(`[SorteoDebug]     [Descanso] Cat ${catNombre} | Fase ${partido.fase} debe ser >= ${horaMinimaInicio} (último de ${faseAnterior}: ${ultimaHoraFinPorCategoriaFase[key]})`);
               break;
             }
+          }
+        }
+        
+        // Si la fase anterior fue en este día pero el descanso empuja fuera del horario,
+        // saltar este día para esta fase (se asignará en el siguiente día)
+        if (faseAnteriorMismoDia && slotsDelDia.length > 0) {
+          const ultimoSlotDelDia = slotsDelDia[slotsDelDia.length - 1].horaInicio;
+          if (horaMinimaInicio > ultimoSlotDelDia) {
+            console.log(`[SorteoDebug]     [Descanso] Cat ${catNombre} | Fase ${partido.fase} NO cabe en día ${dia.fecha} (necesita >= ${horaMinimaInicio}, último slot: ${ultimoSlotDelDia}). Pasando al siguiente día.`);
+            // No incrementar i, este partido se reintentará en el siguiente día
+            continue;
           }
         }
         
@@ -1687,6 +1700,7 @@ export class CanchasSorteoService {
         // Calcular hora mínima para esta fase (descanso de 4 horas desde fase anterior)
         const idxFaseActual = ordenFases.indexOf(fase);
         let horaMinimaInicio = '00:00';
+        let faseAnteriorMismoDia = false;
         
         if (idxFaseActual > 0) {
           // Buscar la fase anterior que se jugó en este mismo día
@@ -1696,9 +1710,20 @@ export class CanchasSorteoService {
             if (ultimaHoraFinPorFase[key]) {
               // 4 horas de descanso obligatorio
               horaMinimaInicio = sumarHoras(ultimaHoraFinPorFase[key], 4);
+              faseAnteriorMismoDia = true;
               console.log(`[Descanso] Fase ${fase} debe empezar después de ${horaMinimaInicio} (último partido de ${faseAnterior} terminó a ${ultimaHoraFinPorFase[key]})`);
               break;
             }
+          }
+        }
+        
+        // Si la fase anterior fue en este día pero el descanso empuja fuera del horario,
+        // saltar este día para esta fase (se asignará en el siguiente día)
+        if (faseAnteriorMismoDia && slotsLibres.length > 0) {
+          const ultimoSlotDelDia = slotsLibres[slotsLibres.length - 1].horaInicio;
+          if (horaMinimaInicio > ultimoSlotDelDia) {
+            console.log(`[Descanso] Fase ${fase} NO cabe en día ${dia.fecha} (necesita >= ${horaMinimaInicio}, último slot: ${ultimoSlotDelDia}). Pasando al siguiente día.`);
+            continue; // Saltar al siguiente día
           }
         }
 
