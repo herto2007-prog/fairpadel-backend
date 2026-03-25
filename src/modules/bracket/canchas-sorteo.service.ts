@@ -772,6 +772,28 @@ export class CanchasSorteoService {
     // Mapa para acumular asignaciones por categoría
     const asignacionesPorCategoria = new Map<string, SlotReserva[]>();
     const distribucionPorDia: Record<string, { slots: number; categorias: Set<string> }> = {};
+    
+    // Track: última hora de finalización de cada fase por categoría y día (para descanso)
+    const ultimaHoraFinPorCategoriaFase: Record<string, string> = {};
+    
+    // Helper: Sumar horas a una hora "HH:mm"
+    const sumarHoras = (hora: string, horasASumar: number): string => {
+      const [h, m] = hora.split(':').map(Number);
+      const totalMinutos = h * 60 + m + horasASumar * 60;
+      const nuevaH = Math.floor(totalMinutos / 60);
+      const nuevaM = totalMinutos % 60;
+      return `${String(nuevaH).padStart(2, '0')}:${String(nuevaM).padStart(2, '0')}`;
+    };
+    
+    // Orden de fases (para determinar la fase anterior)
+    const ordenFases = [
+      FaseBracket.ZONA,
+      FaseBracket.REPECHAJE,
+      FaseBracket.OCTAVOS,
+      FaseBracket.CUARTOS,
+      FaseBracket.SEMIS,
+      FaseBracket.FINAL,
+    ];
 
     // PROCESAR POR DÍA (cronológicamente)
     for (const dia of diasConfig) {
@@ -873,49 +895,92 @@ export class CanchasSorteoService {
       console.log('[SorteoDebug]   ASIGNANDO partidos a slots:');
       console.log(`[SorteoDebug]     Partidos ordenados: ${partidosOrdenados.length}, Slots disponibles: ${slotsDelDia.length}`);
       
-      // Asignar partidos a slots del día
-      for (let i = 0; i < partidosOrdenados.length && i < slotsDelDia.length; i++) {
+      // Asignar partidos a slots del día con descanso de 4 horas entre fases
+      let slotIdx = 0;
+      for (let i = 0; i < partidosOrdenados.length; i++) {
         const partido = partidosOrdenados[i];
-        const slot = slotsDelDia[i];
-        
-        const slotReserva: SlotReserva = {
-          fecha: dia.fecha,
-          horaInicio: slot.horaInicio,
-          horaFin: slot.horaFin,
-          torneoCanchaId: slot.torneoCanchaId,
-          categoriaId: partido.categoriaId,
-          fase: partido.fase,
-          ordenPartido: partido.orden,
-        };
-
-        // [SorteoDebug] Log de cada asignación
         const catNombre = categoriasData.find(c => c.categoria.id === partido.categoriaId)?.nombre;
-        console.log(`[SorteoDebug]     [${i + 1}] Asignando: ${catNombre} | Fase=${partido.fase} | Orden=${partido.orden} -> Día=${dia.fecha} | Hora=${slot.horaInicio}-${slot.horaFin}`);
-
-        // Agregar a las asignaciones de la categoría
-        if (!asignacionesPorCategoria.has(partido.categoriaId)) {
-          asignacionesPorCategoria.set(partido.categoriaId, []);
-        }
-        asignacionesPorCategoria.get(partido.categoriaId)!.push(slotReserva);
-
-        // Marcar slot como reservado
-        await this.prisma.torneoSlot.update({
-          where: { id: slot.id },
-          data: { estado: 'RESERVADO' },
-        });
-
-        // Actualizar distribución por día
-        if (!distribucionPorDia[dia.fecha]) {
-          distribucionPorDia[dia.fecha] = { slots: 0, categorias: new Set() };
-        }
-        distribucionPorDia[dia.fecha].slots++;
         
-        if (catNombre) {
-          distribucionPorDia[dia.fecha].categorias.add(catNombre);
+        // Calcular hora mínima para esta fase (descanso de 4 horas desde fase anterior)
+        const idxFaseActual = ordenFases.indexOf(partido.fase);
+        let horaMinimaInicio = '00:00';
+        
+        if (idxFaseActual > 0) {
+          // Buscar la fase anterior que se jugó en este mismo día para esta categoría
+          for (let j = idxFaseActual - 1; j >= 0; j--) {
+            const faseAnterior = ordenFases[j];
+            const key = `${partido.categoriaId}-${dia.fecha}-${faseAnterior}`;
+            if (ultimaHoraFinPorCategoriaFase[key]) {
+              // 4 horas de descanso obligatorio
+              horaMinimaInicio = sumarHoras(ultimaHoraFinPorCategoriaFase[key], 4);
+              console.log(`[SorteoDebug]     [Descanso] Cat ${catNombre} | Fase ${partido.fase} debe ser >= ${horaMinimaInicio} (último de ${faseAnterior}: ${ultimaHoraFinPorCategoriaFase[key]})`);
+              break;
+            }
+          }
+        }
+        
+        // Buscar un slot que cumpla con el descanso
+        let slotEncontrado = false;
+        while (slotIdx < slotsDelDia.length && !slotEncontrado) {
+          const slot = slotsDelDia[slotIdx];
+          
+          // Verificar si el slot cumple con el descanso
+          if (slot.horaInicio < horaMinimaInicio) {
+            console.log(`[SorteoDebug]     [Descanso] Slot ${slot.horaInicio} rechazado (necesita >= ${horaMinimaInicio})`);
+            slotIdx++;
+            continue;
+          }
+          
+          // Slot válido encontrado
+          slotEncontrado = true;
+          
+          const slotReserva: SlotReserva = {
+            fecha: dia.fecha,
+            horaInicio: slot.horaInicio,
+            horaFin: slot.horaFin,
+            torneoCanchaId: slot.torneoCanchaId,
+            categoriaId: partido.categoriaId,
+            fase: partido.fase,
+            ordenPartido: partido.orden,
+          };
+
+          console.log(`[SorteoDebug]     [${i + 1}] Asignando: ${catNombre} | Fase=${partido.fase} | Orden=${partido.orden} -> Día=${dia.fecha} | Hora=${slot.horaInicio}-${slot.horaFin}`);
+
+          // Agregar a las asignaciones de la categoría
+          if (!asignacionesPorCategoria.has(partido.categoriaId)) {
+            asignacionesPorCategoria.set(partido.categoriaId, []);
+          }
+          asignacionesPorCategoria.get(partido.categoriaId)!.push(slotReserva);
+
+          // Registrar última hora de finalización de esta fase para esta categoría
+          const key = `${partido.categoriaId}-${dia.fecha}-${partido.fase}`;
+          ultimaHoraFinPorCategoriaFase[key] = slot.horaFin;
+
+          // Marcar slot como reservado
+          await this.prisma.torneoSlot.update({
+            where: { id: slot.id },
+            data: { estado: 'RESERVADO' },
+          });
+
+          // Actualizar distribución por día
+          if (!distribucionPorDia[dia.fecha]) {
+            distribucionPorDia[dia.fecha] = { slots: 0, categorias: new Set() };
+          }
+          distribucionPorDia[dia.fecha].slots++;
+          
+          if (catNombre) {
+            distribucionPorDia[dia.fecha].categorias.add(catNombre);
+          }
+          
+          slotIdx++;
+        }
+        
+        if (!slotEncontrado) {
+          console.warn(`[SorteoDebug]     [Descanso] No se encontró slot para ${catNombre} | Fase ${partido.fase} #${partido.orden} con descanso de 4h`);
         }
       }
       
-      const asignadosEnEsteDia = Math.min(partidosOrdenados.length, slotsDelDia.length);
+      const asignadosEnEsteDia = Object.values(distribucionPorDia).reduce((sum, d) => sum + d.slots, 0);
       console.log(`[SorteoDebug]   >>> DÍA COMPLETADO: ${asignadosEnEsteDia} partidos asignados`);
     }
 
@@ -1537,6 +1602,7 @@ export class CanchasSorteoService {
 
   /**
    * Helper: Asigna slots a partidos respetando fases por día (misma lógica que sorteo masivo)
+   * CON DESCANSO OBLIGATORIO: Mínimo 4 horas entre fases del mismo día
    */
   private async asignarSlotsPorFase(
     tournamentId: string,
@@ -1546,6 +1612,23 @@ export class CanchasSorteoService {
   ): Promise<SlotReserva[]> {
     const slotsAsignados: SlotReserva[] = [];
     const slotsUsados = new Set<string>();
+    
+    // Track: última hora de finalización de cada fase por día (para descanso)
+    const ultimaHoraFinPorFase: Record<string, string> = {};
+    
+    // Helper: Sumar horas a una hora "HH:mm"
+    const sumarHoras = (hora: string, horasASumar: number): string => {
+      const [h, m] = hora.split(':').map(Number);
+      const totalMinutos = h * 60 + m + horasASumar * 60;
+      const nuevaH = Math.floor(totalMinutos / 60);
+      const nuevaM = totalMinutos % 60;
+      return `${String(nuevaH).padStart(2, '0')}:${String(nuevaM).padStart(2, '0')}`;
+    };
+    
+    // Helper: Comparar horas (retorna true si horaA >= horaB)
+    const horaEsMayorOIgual = (horaA: string, horaB: string): boolean => {
+      return horaA >= horaB;
+    };
 
     // Agrupar partidos por fase
     const partidosPorFase: Record<string, any[]> = {
@@ -1556,6 +1639,16 @@ export class CanchasSorteoService {
       [FaseBracket.SEMIS]: partidos.filter(p => p.fase === FaseBracket.SEMIS),
       [FaseBracket.FINAL]: partidos.filter(p => p.fase === FaseBracket.FINAL),
     };
+
+    // Orden de fases (para determinar la fase anterior)
+    const ordenFases = [
+      FaseBracket.ZONA,
+      FaseBracket.REPECHAJE,
+      FaseBracket.OCTAVOS,
+      FaseBracket.CUARTOS,
+      FaseBracket.SEMIS,
+      FaseBracket.FINAL,
+    ];
 
     // Procesar cada día en orden cronológico
     for (const dia of diasConfig) {
@@ -1585,35 +1678,82 @@ export class CanchasSorteoService {
           !slotsAsignados.some(s => s.fase === fase && s.ordenPartido === p.orden)
         );
 
+        if (partidosPendientes.length === 0) continue;
+
+        // Calcular hora mínima para esta fase (descanso de 4 horas desde fase anterior)
+        const idxFaseActual = ordenFases.indexOf(fase);
+        let horaMinimaInicio = '00:00';
+        
+        if (idxFaseActual > 0) {
+          // Buscar la fase anterior que se jugó en este mismo día
+          for (let i = idxFaseActual - 1; i >= 0; i--) {
+            const faseAnterior = ordenFases[i];
+            const key = `${dia.fecha}-${faseAnterior}`;
+            if (ultimaHoraFinPorFase[key]) {
+              // 4 horas de descanso obligatorio
+              horaMinimaInicio = sumarHoras(ultimaHoraFinPorFase[key], 4);
+              console.log(`[Descanso] Fase ${fase} debe empezar después de ${horaMinimaInicio} (último partido de ${faseAnterior} terminó a ${ultimaHoraFinPorFase[key]})`);
+              break;
+            }
+          }
+        }
+
+        let ultimoSlotUsado: SlotReserva | null = null;
+
         for (const partido of partidosPendientes) {
-          if (slotIdx >= slotsLibres.length) break;
+          // Buscar el siguiente slot disponible que cumpla con el descanso
+          let slotEncontrado = false;
+          
+          while (slotIdx < slotsLibres.length && !slotEncontrado) {
+            const slot = slotsLibres[slotIdx];
+            const slotKey = `${dia.fecha}-${slot.horaInicio}-${slot.torneoCanchaId}`;
 
-          const slot = slotsLibres[slotIdx];
-          const slotKey = `${dia.fecha}-${slot.horaInicio}-${slot.torneoCanchaId}`;
+            // Verificar si el slot está disponible
+            if (slotsUsados.has(slotKey)) {
+              slotIdx++;
+              continue;
+            }
 
-          if (slotsUsados.has(slotKey)) {
+            // Verificar descanso de 4 horas desde fase anterior
+            if (!horaEsMayorOIgual(slot.horaInicio, horaMinimaInicio)) {
+              console.log(`[Descanso] Slot ${slot.horaInicio} rechazado (necesita ser >= ${horaMinimaInicio})`);
+              slotIdx++;
+              continue;
+            }
+
+            // Asignar slot al partido
+            const slotReserva: SlotReserva = {
+              fecha: dia.fecha,
+              horaInicio: slot.horaInicio,
+              horaFin: slot.horaFin,
+              torneoCanchaId: slot.torneoCanchaId,
+              categoriaId,
+              fase,
+              ordenPartido: partido.orden,
+            };
+
+            slotsAsignados.push(slotReserva);
+            slotsUsados.add(slotKey);
+            ultimoSlotUsado = slotReserva;
+            slotEncontrado = true;
             slotIdx++;
-            continue;
+
+            // Marcar slot como reservado
+            await this.prisma.torneoSlot.update({
+              where: { id: slot.id },
+              data: { estado: 'RESERVADO' },
+            });
           }
 
-          slotsAsignados.push({
-            fecha: dia.fecha,
-            horaInicio: slot.horaInicio,
-            horaFin: slot.horaFin,
-            torneoCanchaId: slot.torneoCanchaId,
-            categoriaId,
-            fase,
-            ordenPartido: partido.orden,
-          });
+          if (!slotEncontrado) {
+            console.warn(`[Descanso] No se encontró slot para partido ${fase} #${partido.orden} con descanso de 4h`);
+          }
+        }
 
-          slotsUsados.add(slotKey);
-          slotIdx++;
-
-          // Marcar slot como reservado
-          await this.prisma.torneoSlot.update({
-            where: { id: slot.id },
-            data: { estado: 'RESERVADO' },
-          });
+        // Registrar la última hora de finalización de esta fase
+        if (ultimoSlotUsado) {
+          const key = `${dia.fecha}-${fase}`;
+          ultimaHoraFinPorFase[key] = ultimoSlotUsado.horaFin;
         }
       }
     }
