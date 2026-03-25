@@ -828,20 +828,8 @@ export class BracketService {
         return a.horaInicio.localeCompare(b.horaInicio);
       });
       
-      // Marcar slots como reservados (usando los slots asignados)
-      for (const slotAsignado of slots) {
-        const slotOriginal = slotsFiltrados.find(s => 
-          s.disponibilidad.fecha === slotAsignado.fecha && 
-          s.horaInicio === slotAsignado.horaInicio &&
-          s.torneoCanchaId === slotAsignado.torneoCanchaId
-        );
-        if (slotOriginal) {
-          await this.prisma.torneoSlot.update({
-            where: { id: slotOriginal.id },
-            data: { estado: 'OCUPADO' },
-          });
-        }
-      }
+      // NOTA: Los slots se marcaran como OCUPADOS con matchId 
+      // después de crear cada partido (líneas 965-979)
     }
 
     // Calcular siguiente número de versión
@@ -962,6 +950,24 @@ export class BracketService {
           data: createData,
         });
         idMap.set(partido.id, created.id);
+
+        // ACTUALIZAR SLOT con matchId para poder liberarlo al re-sortear
+        if (!partido.esBye && createData.fechaProgramada && createData.horaProgramada) {
+          await this.prisma.torneoSlot.updateMany({
+            where: {
+              torneoCanchaId: createData.torneoCanchaId,
+              disponibilidad: {
+                fecha: createData.fechaProgramada,
+                tournamentId,
+              },
+              horaInicio: createData.horaProgramada,
+            },
+            data: {
+              matchId: created.id,
+              estado: 'OCUPADO',
+            },
+          });
+        }
 
         // Notificar programación del partido si tiene slot asignado (y no es BYE)
         if (!partido.esBye && createData.fechaProgramada && createData.horaProgramada) {
