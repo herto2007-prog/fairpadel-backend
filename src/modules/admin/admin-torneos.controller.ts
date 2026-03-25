@@ -1898,6 +1898,65 @@ export class AdminTorneosController {
     }
   }
 
+  /**
+   * PUT /admin/torneos/:id/sedes/reordenar
+   * Reordenar sedes del torneo
+   * Body: { ordenSedes: [{ sedeId: string, orden: number }] }
+   */
+  @Put(':id/sedes/reordenar')
+  async reordenarSedes(
+    @Param('id') tournamentId: string,
+    @Body() dto: { ordenSedes: { sedeId: string; orden: number }[] },
+  ) {
+    try {
+      // Validar que hay datos
+      if (!dto.ordenSedes || !Array.isArray(dto.ordenSedes) || dto.ordenSedes.length === 0) {
+        throw new BadRequestException('ordenSedes debe ser un array no vacío');
+      }
+
+      // Actualizar el orden de cada sede
+      const updates = dto.ordenSedes.map(async (item) => {
+        return this.prisma.torneoSede.update({
+          where: {
+            tournamentId_sedeId: {
+              tournamentId,
+              sedeId: item.sedeId,
+            },
+          },
+          data: {
+            orden: item.orden,
+          },
+        });
+      });
+
+      await Promise.all(updates);
+
+      // Retornar sedes actualizadas
+      const sedesActualizadas = await this.prisma.torneoSede.findMany({
+        where: { tournamentId },
+        include: { sede: { select: { id: true, nombre: true, ciudad: true } } },
+        orderBy: { orden: 'asc' },
+      });
+
+      return {
+        success: true,
+        message: 'Sedes reordenadas correctamente',
+        sedes: sedesActualizadas.map((s) => ({
+          id: s.sede.id,
+          nombre: s.sede.nombre,
+          ciudad: s.sede.ciudad,
+          orden: s.orden,
+        })),
+      };
+    } catch (error: any) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Error reordenando sedes',
+        error: error.message,
+      });
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════
   // HELPERS
   // ═══════════════════════════════════════════════════════════
