@@ -710,6 +710,7 @@ export class AdminBracketController {
   /**
    * POST /admin/bracket/:fixtureVersionId/sortear-nuevo
    * Realiza un nuevo sorteo y reemplaza el borrador actual
+   * NUEVO: Libera slots de partidos sin resultado, mantiene los jugados
    */
   @Post('bracket/:fixtureVersionId/sortear-nuevo')
   async reSortearBracket(
@@ -748,15 +749,80 @@ export class AdminBracketController {
         throw new NotFoundException('Categoría no encontrada');
       }
 
-      // Eliminar los partidos actuales
-      await this.prisma.match.deleteMany({
+      // NUEVO: Obtener partidos del fixture actual
+      const partidosActuales = await this.prisma.match.findMany({
         where: { fixtureVersionId },
+        select: {
+          id: true,
+          estado: true,
+          torneoCanchaId: true,
+          fechaProgramada: true,
+          horaProgramada: true,
+          set1Pareja1: true, // Si tiene resultado, no es null
+        },
       });
 
-      // Eliminar el fixture
-      await this.prisma.fixtureVersion.delete({
-        where: { id: fixtureVersionId },
-      });
+      // Separar partidos: con resultado vs sin resultado
+      const partidosConResultado = partidosActuales.filter(p => p.set1Pareja1 !== null);
+      const partidosSinResultado = partidosActuales.filter(p => p.set1Pareja1 === null);
+
+      console.log(`[Re-Sortear] Partidos con resultado: ${partidosConResultado.length}, sin resultado: ${partidosSinResultado.length}`);
+
+      // NUEVO: Liberar slots de partidos SIN resultado
+      for (const partido of partidosSinResultado) {
+        if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
+          // Liberar el slot ocupado por este partido
+          await this.prisma.torneoSlot.updateMany({
+            where: {
+              torneoCanchaId: partido.torneoCanchaId,
+              disponibilidad: {
+                fecha: partido.fechaProgramada,
+              },
+              horaInicio: partido.horaProgramada,
+              estado: 'OCUPADO',
+              matchId: partido.id,
+            },
+            data: {
+              estado: 'LIBRE',
+              matchId: null,
+            },
+          });
+          console.log(`[Re-Sortear] Slot liberado para partido ${partido.id}`);
+        }
+      }
+
+      // Eliminar SOLO los partidos SIN resultado
+      if (partidosSinResultado.length > 0) {
+        await this.prisma.match.deleteMany({
+          where: {
+            id: { in: partidosSinResultado.map(p => p.id) },
+          },
+        });
+        console.log(`[Re-Sortear] Eliminados ${partidosSinResultado.length} partidos sin resultado`);
+      }
+
+      // Si TODOS los partidos tienen resultado, no hay nada que re-sortear
+      if (partidosSinResultado.length === 0) {
+        throw new BadRequestException(
+          'No hay partidos pendientes para re-sortear. Todos los partidos ya tienen resultado cargado.',
+        );
+      }
+
+      // Si hay partidos con resultado, archivar el fixture actual y crear uno nuevo
+      if (partidosConResultado.length > 0) {
+        // Archivar versión actual
+        await this.prisma.fixtureVersion.update({
+          where: { id: fixtureVersionId },
+          data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+        });
+        console.log(`[Re-Sortear] Fixture ${fixtureVersionId} archivado (tiene ${partidosConResultado.length} partidos con resultado)`);
+      } else {
+        // Si no hay partidos con resultado, eliminar el fixture
+        await this.prisma.fixtureVersion.delete({
+          where: { id: fixtureVersionId },
+        });
+        console.log(`[Re-Sortear] Fixture ${fixtureVersionId} eliminado (sin partidos con resultado)`);
+      }
 
       // Generar nuevo sorteo
       return this.sortearBracket(categoria.id, { 
