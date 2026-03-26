@@ -5,7 +5,6 @@ import { AdminModalidadesController } from './admin-modalidades.controller';
 import { AdminTorneosController } from './admin-torneos.controller';
 import { FairpadelAdminController } from './fairpadel-admin.controller';
 import { AdminBracketController } from './admin-bracket.controller';
-import { AdminDisponibilidadController } from './admin-disponibilidad.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { BracketModule } from '../bracket';
 import { ProgramacionModule } from '../programacion';
@@ -20,7 +19,6 @@ import { DemoModule } from '../demo/demo.module';
     AdminTorneosController,
     FairpadelAdminController,
     AdminBracketController,
-    AdminDisponibilidadController,
   ],
 })
 export class AdminModule {}
