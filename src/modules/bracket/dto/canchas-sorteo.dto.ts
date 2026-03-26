@@ -127,6 +127,11 @@ export interface SorteoMasivoResponse {
     totalPartidos: number;
     slotsReservados: number;
   }[];
+  categoriasIgnoradas?: {
+    categoriaId: string;
+    nombre?: string;
+    fixtureVersionId: string | null;
+  }[];
   slotsTotalesReservados: number;
   distribucionPorDia: {
     fecha: string;

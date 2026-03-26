@@ -672,8 +672,49 @@ export class CanchasSorteoService {
   ): Promise<SorteoMasivoResponse> {
     const { tournamentId, categoriasIds } = dto;
 
-    // 1. Verificar que hay suficientes slots
-    const calculo = await this.calcularSlotsNecesarios(tournamentId, categoriasIds);
+    // 0. NUEVO: Verificar qué categorías ya están sorteadas y filtrarlas
+    const categoriasInfo = await this.prisma.tournamentCategory.findMany({
+      where: {
+        id: { in: categoriasIds },
+      },
+      include: {
+        category: true,
+      },
+    });
+
+    const categoriasYaSorteadas = categoriasInfo.filter(c => c.fixtureVersionId !== null);
+    const categoriasNuevas = categoriasInfo.filter(c => c.fixtureVersionId === null);
+    const categoriasNuevasIds = categoriasNuevas.map(c => c.id);
+
+    console.log('[SorteoIncremental] ================================================');
+    console.log(`[SorteoIncremental] Total categorías seleccionadas: ${categoriasIds.length}`);
+    console.log(`[SorteoIncremental] Categorías ya sorteadas: ${categoriasYaSorteadas.length}`);
+    console.log(`[SorteoIncremental] Categorías nuevas a sortear: ${categoriasNuevasIds.length}`);
+    
+    if (categoriasYaSorteadas.length > 0) {
+      console.log('[SorteoIncremental] Categorías ignoradas (ya sorteadas):', 
+        categoriasYaSorteadas.map(c => `${c.category?.nombre} (${c.id})`).join(', '));
+    }
+    console.log('[SorteoIncremental] =================================================');
+
+    // Si no hay categorías nuevas para sortear, retornar error
+    if (categoriasNuevasIds.length === 0) {
+      const nombresSorteadas = categoriasYaSorteadas.map(c => c.category?.nombre).join(', ');
+      throw new BadRequestException({
+        success: false,
+        message: `Todas las categorías seleccionadas ya fueron sorteadas: ${nombresSorteadas}`,
+        detalle: {
+          categoriasYaSorteadas: categoriasYaSorteadas.map(c => ({
+            id: c.id,
+            nombre: c.category?.nombre,
+            fixtureVersionId: c.fixtureVersionId,
+          })),
+        },
+      });
+    }
+
+    // 1. Verificar que hay suficientes slots (solo para categorías nuevas)
+    const calculo = await this.calcularSlotsNecesarios(tournamentId, categoriasNuevasIds);
     
     if (!calculo.valido) {
       throw new BadRequestException({
@@ -708,14 +749,20 @@ export class CanchasSorteoService {
     });
 
     // 3. Decidir estrategia basada en la configuración
+    const categoriasIgnoradasInfo = categoriasYaSorteadas.map(c => ({
+      categoriaId: c.id,
+      nombre: c.category?.nombre,
+      fixtureVersionId: c.fixtureVersionId,
+    }));
+
     if (diasConFases.length >= 2) {
       // NUEVA LÓGICA: Procesar por día respetando fases con Round-Robin
       console.log('[Sorteo] Usando estrategia NUEVA: Fases por día con Round-Robin');
-      return this.sortearConFasesPorDia(tournamentId, categoriasIds, calculo, diasConFases);
+      return this.sortearConFasesPorDia(tournamentId, categoriasNuevasIds, calculo, diasConFases, categoriasIgnoradasInfo);
     } else {
       // FALLBACK: Usar lógica secuencial original (backward compatibility)
       console.log('[Sorteo] Usando estrategia ORIGINAL: Secuencial');
-      return this.sortearSecuencialOriginal(tournamentId, categoriasIds, calculo);
+      return this.sortearSecuencialOriginal(tournamentId, categoriasNuevasIds, calculo, categoriasIgnoradasInfo);
     }
   }
 
@@ -728,6 +775,7 @@ export class CanchasSorteoService {
     categoriasIds: string[],
     calculo: CalculoSlotsResponse,
     diasConfig: any[],
+    categoriasIgnoradas?: Array<{ categoriaId: string; nombre?: string; fixtureVersionId: string | null }>,
   ): Promise<SorteoMasivoResponse> {
     // [SorteoDebug] Log inicial: días recibidos con sus fechas y fasesPermitidas
     console.log('[SorteoDebug] ================================================');
@@ -1075,6 +1123,7 @@ export class CanchasSorteoService {
       success: true,
       message: `Se sortearon ${categoriasSorteadas.length} categorías con ${totalSlotsReservados} slots reservados (con fases por día)`,
       categoriasSorteadas,
+      categoriasIgnoradas: categoriasIgnoradas && categoriasIgnoradas.length > 0 ? categoriasIgnoradas : undefined,
       slotsTotalesReservados: totalSlotsReservados,
       distribucionPorDia: distribucionResponse,
     };
@@ -1122,6 +1171,7 @@ export class CanchasSorteoService {
     tournamentId: string,
     categoriasIds: string[],
     calculo: CalculoSlotsResponse,
+    categoriasIgnoradas?: Array<{ categoriaId: string; nombre?: string; fixtureVersionId: string | null }>,
   ): Promise<SorteoMasivoResponse> {
     // Obtener slots disponibles ordenados por fecha/hora
     const slotsDisponibles = await this.obtenerSlotsDisponiblesOrdenados(tournamentId);
@@ -1235,6 +1285,7 @@ export class CanchasSorteoService {
       success: true,
       message: `Se sortearon ${categoriasSorteadas.length} categorías con ${slotIndex} slots reservados`,
       categoriasSorteadas,
+      categoriasIgnoradas: categoriasIgnoradas && categoriasIgnoradas.length > 0 ? categoriasIgnoradas : undefined,
       slotsTotalesReservados: slotIndex,
       distribucionPorDia: distribucionResponse,
     };
