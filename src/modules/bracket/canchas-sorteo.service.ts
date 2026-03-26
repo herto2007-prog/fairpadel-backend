@@ -2,6 +2,8 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { BracketService } from './bracket.service';
+import { DescansoCalculatorService } from '../programacion/descanso-calculator.service';
+import { isDescansoV2Enabled, FEATURES } from '../../config/features';
 import {
   ConfigurarFinalesDto,
   ConfigurarDiaJuegoDto,
@@ -27,6 +29,7 @@ export class CanchasSorteoService {
     private prisma: PrismaService,
     private dateService: DateService,
     private bracketService: BracketService,
+    private descansoCalculator: DescansoCalculatorService,
   ) {}
 
   /**
@@ -51,6 +54,69 @@ export class CanchasSorteoService {
       default:
         return [FaseBracket.ZONA]; // Lunes, Martes, Miércoles por defecto solo Zona
     }
+  }
+
+  /**
+   * NUEVO: Calcula la hora mínima de inicio considerando el descanso.
+   * Usa DescansoCalculatorService cuando FEATURE_DESCANSO_V2 está activo.
+   * 
+   * @param tournamentId - ID del torneo (para feature flag por torneo)
+   * @param ultimoPartidoFecha - Fecha del último partido
+   * @param ultimoPartidoHoraFin - Hora fin del último partido
+   * @param faseOrigen - Fase del último partido
+   * @param faseDestino - Fase del siguiente partido
+   * @returns Hora mínima en formato "HH:mm" (legacy) o objeto con fecha/hora (nuevo)
+   */
+  private calcularHoraMinimaConDescanso(
+    tournamentId: string,
+    ultimoPartidoFecha: string,
+    ultimoPartidoHoraFin: string,
+    faseOrigen?: string,
+    faseDestino?: string,
+  ): { hora: string; cambioDia: boolean; fechaDestino?: string } {
+    // Verificar si el nuevo algoritmo está activo
+    if (isDescansoV2Enabled(tournamentId)) {
+      // NUEVO ALGORITMO: Usar DescansoCalculatorService
+      const descansoMinutos = this.descansoCalculator.getDescansoEntreFases(
+        faseOrigen || '',
+        faseDestino || '',
+      );
+      
+      const resultado = this.descansoCalculator.calcularHoraMinimaDescanso(
+        ultimoPartidoFecha,
+        ultimoPartidoHoraFin,
+        descansoMinutos,
+      );
+
+      console.log(`[DescansoV2] ${ultimoPartidoFecha} ${ultimoPartidoHoraFin} + ${descansoMinutos}min = ${resultado.fecha} ${resultado.hora}`);
+
+      return {
+        hora: resultado.hora,
+        cambioDia: resultado.fecha !== ultimoPartidoFecha,
+        fechaDestino: resultado.fecha,
+      };
+    }
+
+    // LEGACY: Usar lógica anterior (sumarHoras)
+    const horaMinima = this.sumarHoras(ultimoPartidoHoraFin, 4);
+    
+    // Si la hora supera las 24:00, reiniciar a 00:00 (cambio de día)
+    if (horaMinima >= '24:00') {
+      return { hora: '00:00', cambioDia: true };
+    }
+
+    return { hora: horaMinima, cambioDia: false };
+  }
+
+  /**
+   * Helper: Sumar horas a una hora "HH:mm"
+   */
+  private sumarHoras(hora: string, horasASumar: number): string {
+    const [h, m] = hora.split(':').map(Number);
+    const totalMinutos = h * 60 + m + horasASumar * 60;
+    const nuevaH = Math.floor(totalMinutos / 60);
+    const nuevoM = totalMinutos % 60;
+    return `${nuevaH.toString().padStart(2, '0')}:${nuevoM.toString().padStart(2, '0')}`;
   }
 
   /**
@@ -960,9 +1026,27 @@ export class CanchasSorteoService {
             const faseAnterior = ordenFases[j];
             const key = `${partido.categoriaId}-${dia.fecha}-${faseAnterior}`;
             if (ultimaHoraFinPorCategoriaFase[key]) {
-              // 4 horas de descanso obligatorio
-              horaMinimaInicio = sumarHoras(ultimaHoraFinPorCategoriaFase[key], 4);
+              // NUEVO: Usar DescansoCalculatorService si está activo
+              const resultadoDescanso = this.calcularHoraMinimaConDescanso(
+                tournamentId,
+                dia.fecha,
+                ultimaHoraFinPorCategoriaFase[key],
+                faseAnterior,
+                partido.fase,
+              );
+              
+              horaMinimaInicio = resultadoDescanso.hora;
               faseAnteriorMismoDia = true;
+              
+              // DEBUG: Comparación legacy vs nuevo (solo en desarrollo)
+              if (process.env.NODE_ENV === 'development') {
+                const legacyHora = this.sumarHoras(ultimaHoraFinPorCategoriaFase[key], 4);
+                const nuevaHora = resultadoDescanso.hora;
+                if (legacyHora !== nuevaHora || resultadoDescanso.cambioDia) {
+                  console.log(`[DescansoCompare] Cat ${catNombre} | ${faseAnterior}→${partido.fase} | Legacy: ${legacyHora} | Nuevo: ${nuevaHora} | CambioDía: ${resultadoDescanso.cambioDia}`);
+                }
+              }
+              
               console.log(`[SorteoDebug]     [Descanso] Cat ${catNombre} | Fase ${partido.fase} debe ser >= ${horaMinimaInicio} (último de ${faseAnterior}: ${ultimaHoraFinPorCategoriaFase[key]})`);
               break;
             }
@@ -982,6 +1066,7 @@ export class CanchasSorteoService {
         
         // FIX: Si la hora mínima supera las 24:00 (ej: 28:00 = 4am), reiniciar a 00:00
         // porque el descanso de 4 horas ya se cumplió durante la noche
+        // NOTA: Con el nuevo algoritmo esto ya no debería pasar porque se maneja el cambio de día
         if (horaMinimaInicio >= '24:00') {
           console.log(`[SorteoDebug]     [Descanso FIX] Hora ${horaMinimaInicio} >= 24:00, reiniciando a 00:00`);
           horaMinimaInicio = '00:00';
@@ -1057,26 +1142,59 @@ export class CanchasSorteoService {
     }
 
     // NUEVO: Verificar que TODAS las categorías tienen TODOS sus slots asignados
-    const categoriasSinSlotsCompletos: string[] = [];
+    // y recolectar información detallada de qué fases faltan
+    interface InfoFaltante {
+      categoriaId: string;
+      categoriaNombre: string;
+      slotsFaltantes: number;
+      slotsAsignados: number;
+      slotsNecesarios: number;
+      fasesFaltantes: string[];
+    }
+    const infoCategoriasFaltantes: InfoFaltante[] = [];
+    
     for (const catData of categoriasData) {
       const slotsAsignados = asignacionesPorCategoria.get(catData.categoria.id) || [];
       const slotsNecesarios = catData.slotsNecesarios;
       
       if (slotsAsignados.length < slotsNecesarios) {
-        const faltantes = slotsNecesarios - slotsAsignados.length;
-        console.error(`[Sorteo ERROR] Categoría ${catData.nombre}: solo ${slotsAsignados.length}/${slotsNecesarios} slots asignados (${faltantes} faltantes)`);
-        categoriasSinSlotsCompletos.push(`${catData.nombre} (${faltantes} slots faltantes)`);
+        const slotsFaltantes = slotsNecesarios - slotsAsignados.length;
+        
+        // Calcular qué fases no se completaron
+        const fasesAsignadas = new Map<string, number>();
+        slotsAsignados.forEach(s => {
+          fasesAsignadas.set(s.fase, (fasesAsignadas.get(s.fase) || 0) + 1);
+        });
+        
+        const fasesFaltantes: string[] = [];
+        for (const faseInfo of catData.detallePorFase) {
+          const asignados = fasesAsignadas.get(faseInfo.fase) || 0;
+          if (asignados < faseInfo.partidos) {
+            fasesFaltantes.push(`${faseInfo.fase} (${faseInfo.partidos - asignados} de ${faseInfo.partidos})`);
+          }
+        }
+        
+        console.error(`[Sorteo ERROR] Categoría ${catData.nombre}: solo ${slotsAsignados.length}/${slotsNecesarios} slots asignados (${slotsFaltantes} faltantes)`);
+        console.error(`[Sorteo ERROR]   Fases incompletas: ${fasesFaltantes.join(', ')}`);
+        
+        infoCategoriasFaltantes.push({
+          categoriaId: catData.categoria.id,
+          categoriaNombre: catData.nombre,
+          slotsFaltantes,
+          slotsAsignados: slotsAsignados.length,
+          slotsNecesarios,
+          fasesFaltantes,
+        });
       }
     }
     
-    if (categoriasSinSlotsCompletos.length > 0) {
+    if (infoCategoriasFaltantes.length > 0) {
       // NUEVO: Liberar los slots que se marcaron como RESERVADO durante este proceso
-      // ya que no se completó el sorteo
       const slotsReservadosEnProceso = await this.prisma.torneoSlot.findMany({
         where: {
           disponibilidad: { tournamentId },
           estado: 'RESERVADO',
-          matchId: null, // Solo los que no tienen partido asignado
+          matchId: null,
         },
       });
       
@@ -1088,13 +1206,43 @@ export class CanchasSorteoService {
         });
       }
       
-      // Lanzar error
+      // Construir mensaje detallado
+      const mensajesCategoria = infoCategoriasFaltantes.map(c => {
+        return `${c.categoriaNombre}: faltan ${c.slotsFaltantes} slots (${c.fasesFaltantes.join(', ')})`;
+      });
+      
+      // Identificar en qué días faltaron slots (basado en las fases)
+      const fasesAfectadas = new Set<string>();
+      infoCategoriasFaltantes.forEach(c => {
+        c.fasesFaltantes.forEach(f => {
+          const faseNombre = f.split(' ')[0];
+          fasesAfectadas.add(faseNombre);
+        });
+      });
+      
+      // Mapear fases a días típicos para dar contexto
+      const diasSugeridos: string[] = [];
+      if ([...fasesAfectadas].some(f => ['ZONA', 'REPECHAJE'].includes(f))) {
+        diasSugeridos.push('Jueves/Viernes (Zona/Repechaje)');
+      }
+      if ([...fasesAfectadas].some(f => ['OCTAVOS', 'CUARTOS'].includes(f))) {
+        diasSugeridos.push('Sábado (Octavos/Cuartos)');
+      }
+      if ([...fasesAfectadas].some(f => ['SEMIS', 'FINAL'].includes(f))) {
+        diasSugeridos.push('Domingo (Semifinales/Finales)');
+      }
+      
       throw new BadRequestException({
         success: false,
-        message: `No se pudieron asignar todos los slots necesarios. Faltan slots para: ${categoriasSinSlotsCompletos.join(', ')}`,
+        message: `Faltan slots para completar el sorteo:\n${mensajesCategoria.join('\n')}`,
         detalle: {
-          categoriasAfectadas: categoriasSinSlotsCompletos,
-          sugerencia: 'Agrega más días/horarios o extiende los horarios existentes',
+          categoriasAfectadas: infoCategoriasFaltantes.map(c => ({
+            nombre: c.categoriaNombre,
+            slotsFaltantes: c.slotsFaltantes,
+            fasesFaltantes: c.fasesFaltantes,
+          })),
+          fasesAfectadas: [...fasesAfectadas],
+          sugerencia: `Agrega más slots en: ${diasSugeridos.join(', ')}, o extiende los horarios existentes. Recuerda que entre fases se necesitan 4 horas de descanso.`,
         },
       });
     }
@@ -1955,5 +2103,114 @@ export class CanchasSorteoService {
         return a.mejorPosicion - b.mejorPosicion;
       })
       .map(({ puntosTotal, mejorPosicion, ...rest }) => rest);
+  }
+
+  /**
+   * TEST: Probar el DescansoCalculatorService
+   * 
+   * Este método compara el algoritmo legacy vs el nuevo y retorna ambos resultados
+   * para validar que el nuevo algoritmo funciona correctamente.
+   */
+  async testDescansoCalculator(body: {
+    tournamentId?: string;
+    ultimoPartidoFecha: string;
+    ultimoPartidoHoraFin: string;
+    faseOrigen: string;
+    faseDestino: string;
+  }): Promise<{
+    input: {
+      fecha: string;
+      horaFin: string;
+      faseOrigen: string;
+      faseDestino: string;
+    };
+    legacy: {
+      horaMinima: string;
+      cambioDia: boolean;
+    };
+    nuevo: {
+      horaMinima: string;
+      fechaDestino: string;
+      cambioDia: boolean;
+      descansoMinutos: number;
+    };
+    comparacion: {
+      horasDiferentes: boolean;
+      recomendacion: string;
+    };
+  }> {
+    const { tournamentId, ultimoPartidoFecha, ultimoPartidoHoraFin, faseOrigen, faseDestino } = body;
+
+    // Calcular usando algoritmo LEGACY
+    const legacyHoraMinima = this.sumarHoras(ultimoPartidoHoraFin, 4);
+    const legacyCambioDia = legacyHoraMinima >= '24:00';
+    const legacyHoraNormalizada = legacyCambioDia ? '00:00' : legacyHoraMinima;
+
+    // Calcular usando NUEVO algoritmo
+    const descansoMinutos = this.descansoCalculator.getDescansoEntreFases(faseOrigen, faseDestino);
+    const nuevoResultado = this.descansoCalculator.calcularHoraMinimaDescanso(
+      ultimoPartidoFecha,
+      ultimoPartidoHoraFin,
+      descansoMinutos,
+    );
+
+    // Comparar
+    const horasDiferentes = legacyHoraNormalizada !== nuevoResultado.hora;
+    const fechasDiferentes = legacyCambioDia !== (nuevoResultado.fecha !== ultimoPartidoFecha);
+
+    let recomendacion = 'Ambos algoritmos producen el mismo resultado.';
+    if (horasDiferentes || fechasDiferentes) {
+      recomendacion = 'DIFERENCIA DETECTADA: Revisar cuál es el comportamiento esperado.';
+    }
+
+    return {
+      input: {
+        fecha: ultimoPartidoFecha,
+        horaFin: ultimoPartidoHoraFin,
+        faseOrigen,
+        faseDestino,
+      },
+      legacy: {
+        horaMinima: legacyHoraNormalizada,
+        cambioDia: legacyCambioDia,
+      },
+      nuevo: {
+        horaMinima: nuevoResultado.hora,
+        fechaDestino: nuevoResultado.fecha,
+        cambioDia: nuevoResultado.fecha !== ultimoPartidoFecha,
+        descansoMinutos,
+      },
+      comparacion: {
+        horasDiferentes: horasDiferentes || fechasDiferentes,
+        recomendacion,
+      },
+    };
+  }
+
+  /**
+   * Obtiene el estado de los feature flags
+   */
+  async getFeaturesStatus(tournamentId?: string): Promise<{
+    features: {
+      descansoCalculatorV2: {
+        enabled: boolean;
+        torneoEspecifico: string | null;
+        activoParaTorneo: boolean;
+      };
+    };
+    environment: string;
+    timestamp: string;
+  }> {
+    return {
+      features: {
+        descansoCalculatorV2: {
+          enabled: FEATURES.DESCANSO_CALCULATOR_V2,
+          torneoEspecifico: FEATURES.DESCANSO_CALCULATOR_V2_TORNEO_ID,
+          activoParaTorneo: tournamentId ? isDescansoV2Enabled(tournamentId) : false,
+        },
+      },
+      environment: process.env.NODE_ENV || 'unknown',
+      timestamp: new Date().toISOString(),
+    };
   }
 }
