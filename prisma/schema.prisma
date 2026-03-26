@@ -990,6 +990,7 @@ model Inscripcion {
   pagos        Pago[]
   comprobantes ComprobantePago[]
   invitacion   InvitacionJugador?
+  controlPagos ControlPagoOrganizador[] // Pagos registrados por el organizador
 
   @@unique([tournamentId, categoryId, jugador1Id, jugador2Documento])
   @@map("inscripciones")
@@ -1010,6 +1011,27 @@ model InvitacionJugador {
   inscripcion     Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
 
   @@map("invitaciones_jugador")
+}
+
+// Control de pagos del organizador (sistema paralelo, no relacionado con pagos premium)
+model ControlPagoOrganizador {
+  id             String   @id @default(uuid())
+  inscripcionId  String   @map("inscripcion_id")
+  jugadorId      String   @map("jugador_id")
+  monto          Int      // Monto en guaraníes
+  metodo         String   // EFECTIVO | TRANSFERENCIA
+  fecha          String   // YYYY-MM-DD
+  nota           String?  @db.Text
+  registradoPor  String   @map("registrado_por")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+
+  @@index([inscripcionId])
+  @@index([jugadorId])
+  @@index([fecha])
+  @@map("control_pagos_organizador")
 }
 
 model Pago {

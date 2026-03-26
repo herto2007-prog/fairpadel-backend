@@ -2,7 +2,110 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-25 - DISTRIBUCIÓN REPECHAJE + DESCANSO 4H ✅
+> **Última actualización:** 2026-03-25 - LIMPIEZA Y REFINAMIENTO DE UI ✅
+> - **ELIMINADO:** Tab "Canchas" viejo + admin-disponibilidad.controller
+> - **ELIMINADO:** Campo "Duración por partido" del wizard (no se usaba)
+> - **WIZARD SIMPLIFICADO:** Solo fechaInicio/fin obligatorias (visuales)
+> - **SEDES:** Ordenamiento por prioridad, cambiar/eliminar con modales
+> - **CANCHAS:** Muestra sede + ordenadas por sede
+> - **MODAL SLOTS:** Error cuando faltan slots con solución
+> - **BUILD:** ✅ Backend y Frontend compilan
+> - **DEPLOY:** ✅ Commits pushados a producción
+
+---
+
+## 🆕 COMPLETADO (2026-03-25) - Limpieza y Refinamiento de UI
+
+### ✅ Eliminado Tab "Canchas" Viejo
+
+**Problema:** Teníamos dos tabs duplicados: "Canchas" (viejo) y "Canchas y Sorteo" (nuevo). El viejo usaba endpoints separados y causaba confusión.
+
+**Eliminado:**
+- Frontend: `CanchasManager.tsx`, carpeta `disponibilidad/`, tab del menú
+- Backend: `admin-disponibilidad.controller.ts` (639 líneas)
+- Actualizado: `admin.module.ts`
+
+**Commits:**
+- Backend: `0460682`
+- Frontend: `69f9360`
+
+---
+
+### ✅ Eliminado Campo "Duración por partido"
+
+**Problema:** Campo en wizard que no se usaba funcionalmente.
+
+**Cambios:**
+- Eliminado de `TorneoWizard.tsx` interface, state, JSX
+- Eliminado de Step 5 confirmación
+- Backend mantiene default de 120 minutos si no se envía
+
+**Commit:** Frontend pendiente de push con otros cambios
+
+---
+
+### ✅ Wizard Simplificado - Fechas
+
+**Antes:** Fecha finales + fecha inicio opcional
+**Ahora:** Solo fechaInicio y fechaFin (ambas obligatorias)
+
+**Razón:** Las fechas son meramente visuales para listado/overview. El calendario real se configura en "Canchas y Sorteo".
+
+**Commit:** `cc9a2ff`
+
+---
+
+### ✅ Gestión de Sedes Mejorada
+
+**Nuevas funcionalidades:**
+1. **Ordenamiento:** Flechas ↑ ↓ para reordenar prioridad
+2. **Cambiar sede:** Botón para reemplazar una sede manteniendo orden
+3. **Eliminar sede:** Botón con modal de confirmación
+4. **Sede #1 destacada:** Borde rojo, "Prioridad alta"
+
+**Backend:** Nuevos endpoints
+- `PUT /sedes/reordenar` - Cambiar orden
+- `PUT /sedes/:id/cambiar` - Reemplazar sede
+- `DELETE /sedes/:id` - Eliminar sede + reordenar restantes
+
+**Commit Backend:** `27d9dde`
+**Commit Frontend:** `0f7c56b`
+
+---
+
+### ✅ Selector de Canchas Mejorado
+
+**Cambios:**
+- Muestra nombre de sede debajo de cada cancha
+- Ordenadas por sede primero, luego por nombre
+- Permite distinguir "Cancha 1" de diferentes sedes
+
+**Commit:** `73335fd`, `2af0d07`
+
+---
+
+### ✅ Modal de Error - Slots Faltantes
+
+**Comportamiento anterior:** Toast genérico de error
+**Comportamiento nuevo:** Modal detallado con solución
+
+**Contenido del modal:**
+- Slots necesarios / disponibles / faltantes
+- Mensaje: "Agrega más sedes o configura más días en el Paso 2"
+- Botón: "Entendido, agregaré más sedes"
+
+**Flujo:**
+1. Usuario da "Sortear"
+2. Backend calcula y detecta slots faltantes
+3. Devuelve error 400 con detalle
+4. Frontend muestra modal informativo
+5. Sorteo NO ocurre hasta resolver
+
+**Commit:** `736ae2a`
+
+---
+
+## 🆕 COMPLETADO (2026-03-25) - Distribución Correcta de Repechaje
 > - **FIX REPECHAJE:** Todos los perdedores de zona + algunos ganadores van a repechaje (tabla 8-31 parejas)
 > - **DESCANSO 4H:** Entre fases del mismo día, si no cabe pasa al siguiente día
 > - **MATCHID EN SLOTS:** Para liberación correcta en re-sorteo
@@ -3113,3 +3216,74 @@ total_partidos: 25
 
 **Última actualización:** 2026-03-21 - Primer bracket finalizado exitosamente
 
+
+
+---
+
+## 🆕 EN PROGRESO (2026-03-25) - Control de Pagos del Organizador
+
+### 📋 Resumen
+Nuevo sistema paralelo para que el organizador controle quien le pago la inscripcion (efectivo/transferencia). Separado del sistema de pagos premium de FairPadel.
+
+### ✅ Backend Implementado
+
+**Nueva Tabla:** `control_pagos_organizador`
+- `id`, `inscripcionId`, `jugadorId`
+- `monto` (Int), `metodo` (EFECTIVO|TRANSFERENCIA)
+- `fecha` (YYYY-MM-DD), `nota`, `registradoPor`
+- Indices: inscripcionId, jugadorId, fecha
+
+**Endpoints Nuevos:**
+```
+GET    /admin/torneos/:id/control-pagos?filtro=&categoriaId=&busqueda=
+POST   /admin/torneos/:id/control-pagos
+DELETE /admin/torneos/:id/control-pagos/:pagoId
+```
+
+**Logica:**
+- Vista individual por jugador (cada uno paga la mitad del costo)
+- Stats: total cobrado, total deben, al dia vs deudores
+- Filtros: deudores, pagados, por categoria, busqueda
+
+### ⏳ Frontend Pendiente
+
+**Nueva UI:**
+- Tab o seccion "Control de Cobranza"
+- Stats cards: Cobrado vs Deben
+- Tabla por jugador: Nombre, Pareja, Categoria, Debe, Pagado, Acciones
+- Modal rapido para registrar pago (monto, metodo, fecha, nota)
+- Filtros: Todos, Deudores, Pagados
+
+**Archivos a crear/modificar:**
+- `frontend/src/features/organizador/components/inscripciones/ControlPagosManager.tsx` (nuevo)
+- Agregar pestaña en panel de organizador
+
+### 📁 Archivos Modificados
+
+**Backend:**
+- `prisma/schema.prisma` - Nuevo modelo + relacion
+- `src/modules/admin/admin-torneos.controller.ts` - 3 endpoints
+- `prisma/migrations/control_pagos_organizador.sql` - SQL manual
+
+**Build:** ✅ Backend compila sin errores
+
+**SQL para crear tabla:**
+```sql
+CREATE TABLE "control_pagos_organizador" (
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "inscripcion_id" TEXT NOT NULL,
+    "jugador_id" TEXT NOT NULL,
+    "monto" INTEGER NOT NULL,
+    "metodo" TEXT NOT NULL CHECK ("metodo" IN ('EFECTIVO', 'TRANSFERENCIA')),
+    "fecha" TEXT NOT NULL,
+    "nota" TEXT,
+    "registrado_por" TEXT NOT NULL,
+    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "control_pagos_inscripcion_fk" FOREIGN KEY ("inscripcion_id") REFERENCES "inscripciones"("id") ON DELETE CASCADE,
+    CONSTRAINT "control_pagos_jugador_fk" FOREIGN KEY ("jugador_id") REFERENCES "users"("id") ON DELETE CASCADE
+);
+CREATE INDEX "idx_control_pagos_inscripcion" ON "control_pagos_organizador"("inscripcion_id");
+CREATE INDEX "idx_control_pagos_jugador" ON "control_pagos_organizador"("jugador_id");
+CREATE INDEX "idx_control_pagos_fecha" ON "control_pagos_organizador"("fecha");
+```
