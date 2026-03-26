@@ -1056,6 +1056,49 @@ export class CanchasSorteoService {
       console.log(`[SorteoDebug]   >>> DÍA COMPLETADO: ${asignadosEnEsteDia} partidos asignados`);
     }
 
+    // NUEVO: Verificar que TODAS las categorías tienen TODOS sus slots asignados
+    const categoriasSinSlotsCompletos: string[] = [];
+    for (const catData of categoriasData) {
+      const slotsAsignados = asignacionesPorCategoria.get(catData.categoria.id) || [];
+      const slotsNecesarios = catData.slotsNecesarios;
+      
+      if (slotsAsignados.length < slotsNecesarios) {
+        const faltantes = slotsNecesarios - slotsAsignados.length;
+        console.error(`[Sorteo ERROR] Categoría ${catData.nombre}: solo ${slotsAsignados.length}/${slotsNecesarios} slots asignados (${faltantes} faltantes)`);
+        categoriasSinSlotsCompletos.push(`${catData.nombre} (${faltantes} slots faltantes)`);
+      }
+    }
+    
+    if (categoriasSinSlotsCompletos.length > 0) {
+      // NUEVO: Liberar los slots que se marcaron como RESERVADO durante este proceso
+      // ya que no se completó el sorteo
+      const slotsReservadosEnProceso = await this.prisma.torneoSlot.findMany({
+        where: {
+          disponibilidad: { tournamentId },
+          estado: 'RESERVADO',
+          matchId: null, // Solo los que no tienen partido asignado
+        },
+      });
+      
+      if (slotsReservadosEnProceso.length > 0) {
+        console.log(`[Sorteo Rollback] Liberando ${slotsReservadosEnProceso.length} slots marcados como RESERVADO`);
+        await this.prisma.torneoSlot.updateMany({
+          where: { id: { in: slotsReservadosEnProceso.map(s => s.id) } },
+          data: { estado: 'LIBRE' },
+        });
+      }
+      
+      // Lanzar error
+      throw new BadRequestException({
+        success: false,
+        message: `No se pudieron asignar todos los slots necesarios. Faltan slots para: ${categoriasSinSlotsCompletos.join(', ')}`,
+        detalle: {
+          categoriasAfectadas: categoriasSinSlotsCompletos,
+          sugerencia: 'Agrega más días/horarios o extiende los horarios existentes',
+        },
+      });
+    }
+
     // Generar brackets y guardar con las asignaciones
     const categoriasSorteadas = [];
     let totalSlotsReservados = 0;
