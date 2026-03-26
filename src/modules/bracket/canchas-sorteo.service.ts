@@ -980,6 +980,13 @@ export class CanchasSorteoService {
           }
         }
         
+        // FIX: Si la hora mínima supera las 24:00 (ej: 28:00 = 4am), reiniciar a 00:00
+        // porque el descanso de 4 horas ya se cumplió durante la noche
+        if (horaMinimaInicio >= '24:00') {
+          console.log(`[SorteoDebug]     [Descanso FIX] Hora ${horaMinimaInicio} >= 24:00, reiniciando a 00:00`);
+          horaMinimaInicio = '00:00';
+        }
+        
         // Buscar un slot que cumpla con el descanso
         let slotEncontrado = false;
         while (slotIdx < slotsDelDia.length && !slotEncontrado) {
