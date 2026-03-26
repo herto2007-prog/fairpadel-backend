@@ -339,7 +339,12 @@ export class CanchasSorteoService {
         const minutosFin = minutosInicio + minutosSlot;
         
         const slotInicio = `${String(Math.floor(minutosInicio / 60)).padStart(2, '0')}:${String(minutosInicio % 60).padStart(2, '0')}`;
-        const slotFin = `${String(Math.floor(minutosFin / 60)).padStart(2, '0')}:${String(minutosFin % 60).padStart(2, '0')}`;
+        
+        // FIX: Si el slot termina a las 24:00 o más, ajustar a 23:59 para evitar problemas de cálculo de descanso
+        let slotFin = `${String(Math.floor(minutosFin / 60)).padStart(2, '0')}:${String(minutosFin % 60).padStart(2, '0')}`;
+        if (slotFin >= '24:00') {
+          slotFin = '23:59';
+        }
 
         // FIX: Usar upsert para evitar error de unique constraint
         await this.prisma.torneoSlot.upsert({
