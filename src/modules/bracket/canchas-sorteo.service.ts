@@ -12,6 +12,7 @@ import {
   SorteoMasivoResponse,
 } from './dto/canchas-sorteo.dto';
 import { FaseBracket } from './dto/generate-bracket.dto';
+import { Prisma, CategoriaEstado, FixtureVersionEstado } from '@prisma/client';
 
 interface SlotReserva {
   fecha: string;
@@ -899,14 +900,14 @@ export class CanchasSorteoService {
       // Cerrar inscripciones
       await this.prisma.tournamentCategory.update({
         where: { id: catData.categoria.id },
-        data: { estado: 'INSCRIPCIONES_CERRADAS' },
+        data: { estado: CategoriaEstado.INSCRIPCIONES_CERRADAS },
       });
 
       // Archivar versión anterior si existe
       if (catData.categoria.fixtureVersionId) {
         await this.prisma.fixtureVersion.update({
           where: { id: catData.categoria.fixtureVersionId },
-          data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+          data: { estado: FixtureVersionEstado.ARCHIVADO, archivadoAt: new Date() },
         });
       }
 
@@ -1404,12 +1405,16 @@ export class CanchasSorteoService {
     }
     
     if (infoCategoriasFaltantes.length > 0) {
-      // NUEVO: Liberar los slots que se marcaron como RESERVADO durante este proceso
+      // ROLLBACK COMPLETO: Si falla el sorteo, revertir TODO a como estaba antes
+      console.log('[Sorteo Rollback] ================================================');
+      console.log('[Sorteo Rollback] INICIANDO ROLLBACK COMPLETO DEL SORTEO');
+      console.log('[Sorteo Rollback] ================================================');
+      
+      // 1. Liberar los slots que se marcaron como RESERVADO durante este proceso
       const slotsReservadosEnProceso = await this.prisma.torneoSlot.findMany({
         where: {
           disponibilidad: { tournamentId },
           estado: 'RESERVADO',
-          matchId: null,
         },
       });
       
@@ -1417,9 +1422,67 @@ export class CanchasSorteoService {
         console.log(`[Sorteo Rollback] Liberando ${slotsReservadosEnProceso.length} slots marcados como RESERVADO`);
         await this.prisma.torneoSlot.updateMany({
           where: { id: { in: slotsReservadosEnProceso.map(s => s.id) } },
-          data: { estado: 'LIBRE' },
+          data: { estado: 'LIBRE', matchId: null },
         });
       }
+      
+      // 2. ELIMINAR brackets generados y restaurar estado anterior
+      for (const catData of categoriasData) {
+        const categoria = catData.categoria;
+        
+        // Si se generó un nuevo fixture en este proceso, eliminarlo
+        if (categoria.fixtureVersionId) {
+          // Obtener el fixtureVersion actual
+          const fixtureActual = await this.prisma.fixtureVersion.findUnique({
+            where: { id: categoria.fixtureVersionId },
+          });
+          
+          if (fixtureActual && fixtureActual.estado === FixtureVersionEstado.PUBLICADO) {
+            console.log(`[Sorteo Rollback] Eliminando fixture ${categoria.fixtureVersionId} de ${catData.nombre}`);
+            
+            // Eliminar los partidos asociados a este fixture
+            await this.prisma.match.deleteMany({
+              where: { fixtureVersionId: categoria.fixtureVersionId },
+            });
+            
+            // Eliminar el fixtureVersion
+            await this.prisma.fixtureVersion.delete({
+              where: { id: categoria.fixtureVersionId },
+            });
+          }
+        }
+        
+        // 3. RESTAURAR versión anterior si fue archivada
+        const fixtureAnteriorArchivado = await this.prisma.fixtureVersion.findFirst({
+          where: {
+            tournamentCategory: { id: categoria.id },
+            estado: 'ARCHIVADO',
+          },
+          orderBy: { archivadoAt: 'desc' },
+        });
+        
+        if (fixtureAnteriorArchivado) {
+          console.log(`[Sorteo Rollback] Restaurando fixture anterior ${fixtureAnteriorArchivado.id} de ${catData.nombre}`);
+          await this.prisma.fixtureVersion.update({
+            where: { id: fixtureAnteriorArchivado.id },
+            data: { estado: FixtureVersionEstado.PUBLICADO, archivadoAt: null },
+          });
+        }
+        
+        // 4. REABRIR inscripciones - volver al estado ABIERTAS
+        console.log(`[Sorteo Rollback] Reabriendo inscripciones de ${catData.nombre}`);
+        await this.prisma.tournamentCategory.update({
+          where: { id: categoria.id },
+          data: { 
+            estado: CategoriaEstado.INSCRIPCIONES_ABIERTAS,
+            fixtureVersionId: fixtureAnteriorArchivado ? fixtureAnteriorArchivado.id : null,
+          },
+        });
+      }
+      
+      console.log('[Sorteo Rollback] ================================================');
+      console.log('[Sorteo Rollback] ROLLBACK COMPLETO FINALIZADO');
+      console.log('[Sorteo Rollback] ================================================');
       
       // Construir mensaje detallado
       const mensajesCategoria = infoCategoriasFaltantes.map(c => {
@@ -1473,7 +1536,7 @@ export class CanchasSorteoService {
       // Cerrar inscripciones
       await this.prisma.tournamentCategory.update({
         where: { id: catData.categoria.id },
-        data: { estado: 'INSCRIPCIONES_CERRADAS' },
+        data: { estado: CategoriaEstado.INSCRIPCIONES_CERRADAS },
       });
 
       // Generar bracket
@@ -1488,7 +1551,7 @@ export class CanchasSorteoService {
       if (catData.categoria.fixtureVersionId) {
         await this.prisma.fixtureVersion.update({
           where: { id: catData.categoria.fixtureVersionId },
-          data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+          data: { estado: FixtureVersionEstado.ARCHIVADO, archivadoAt: new Date() },
         });
       }
       
@@ -1509,7 +1572,7 @@ export class CanchasSorteoService {
       await this.prisma.tournamentCategory.update({
         where: { id: catData.categoria.id },
         data: {
-          estado: 'INSCRIPCIONES_CERRADAS',
+          estado: CategoriaEstado.INSCRIPCIONES_CERRADAS,
           fixtureVersionId,
         },
       });
@@ -1637,6 +1700,7 @@ export class CanchasSorteoService {
   /**
    * LÓGICA ORIGINAL: Sorteo secuencial (mantenida para compatibilidad)
    * Esta es la lógica original que asigna slots secuencialmente sin filtrar por fase
+   * ATÓMICO: Si falla, hace rollback completo de TODO
    */
   private async sortearSecuencialOriginal(
     tournamentId: string,
@@ -1648,7 +1712,14 @@ export class CanchasSorteoService {
     const slotsDisponibles = await this.obtenerSlotsDisponiblesOrdenados(tournamentId);
 
     // Procesar cada categoría
-    const categoriasSorteadas = [];
+    const categoriasSorteadas: Array<{
+      categoriaId: string;
+      nombre: string;
+      fixtureVersionId: string;
+      totalPartidos: number;
+      slotsReservados: number;
+      fixtureAnteriorId?: string | null;
+    }> = [];
     const distribucionPorDia: Record<string, { slots: number; categorias: Set<string> }> = {};
     let slotIndex = 0;
 
@@ -1660,87 +1731,179 @@ export class CanchasSorteoService {
       },
     });
     
-    for (const categoriaInfo of calculo.detallePorCategoria) {
-      const categoria = await this.prisma.tournamentCategory.findUnique({
-        where: { id: categoriaInfo.categoriaId },
+    // Guardar estado inicial para posible rollback
+    const estadoInicialCategorias: Array<{
+      id: string;
+      estado: CategoriaEstado;
+      fixtureVersionId: string | null;
+    }> = [];
+    
+    try {
+      for (const categoriaInfo of calculo.detallePorCategoria) {
+        const categoria = await this.prisma.tournamentCategory.findUnique({
+          where: { id: categoriaInfo.categoriaId },
+        });
+
+        if (!categoria) continue;
+        
+        // Guardar estado inicial antes de modificar
+        estadoInicialCategorias.push({
+          id: categoria.id,
+          estado: categoria.estado,
+          fixtureVersionId: categoria.fixtureVersionId,
+        });
+        
+        // Obtener inscripciones para esta categoría
+        const inscripcionesCategoria = todasInscripciones.filter(
+          i => i.categoryId === categoria.categoryId
+        );
+
+        // Cerrar inscripciones de la categoría
+        await this.prisma.tournamentCategory.update({
+          where: { id: categoria.id },
+          data: { estado: CategoriaEstado.INSCRIPCIONES_CERRADAS },
+        });
+
+        // Crear objeto con inscripciones para compatibilidad
+        const categoriaConInscripciones = {
+          ...categoria,
+          inscripciones: inscripcionesCategoria,
+        };
+        
+        // Reservar slots para esta categoría
+        const slotsReservados = await this.reservarSlotsParaCategoria(
+          categoriaConInscripciones,
+          categoriaInfo.nombre,
+          slotsDisponibles,
+          slotIndex,
+          distribucionPorDia,
+        );
+
+        slotIndex += slotsReservados.length;
+
+        // Generar bracket real usando bracketService
+        const numParejas = inscripcionesCategoria.length;
+        const config = this.bracketService.calcularConfiguracion(numParejas);
+        
+        // Generar partidos del bracket
+        const { partidos } = await this.bracketService.generarBracket({
+          tournamentCategoryId: categoria.id,
+          totalParejas: numParejas,
+        });
+        
+        // Guardar el fixture anterior para posible rollback
+        const fixtureAnteriorId = categoria.fixtureVersionId;
+        
+        // Archivar versión anterior si existe
+        if (categoria.fixtureVersionId) {
+          await this.prisma.fixtureVersion.update({
+            where: { id: categoria.fixtureVersionId },
+            data: { estado: FixtureVersionEstado.ARCHIVADO, archivadoAt: new Date() },
+          });
+        }
+        
+        // Ordenar inscripciones aleatoriamente para el sorteo
+        const inscripcionesOrdenadas = [...inscripcionesCategoria]
+          .sort(() => Math.random() - 0.5);
+        
+        const fixtureVersionId = await this.bracketService.guardarBracket(
+          categoria.id,
+          config,
+          partidos,
+          inscripcionesOrdenadas,
+          slotsReservados,
+        );
+
+        // Actualizar categoría con el fixture
+        await this.prisma.tournamentCategory.update({
+          where: { id: categoria.id },
+          data: {
+            estado: CategoriaEstado.INSCRIPCIONES_CERRADAS,
+            fixtureVersionId,
+          },
+        });
+
+        categoriasSorteadas.push({
+          categoriaId: categoria.id,
+          nombre: categoriaInfo.nombre,
+          fixtureVersionId,
+          totalPartidos: categoriaInfo.slotsNecesarios,
+          slotsReservados: slotsReservados.length,
+          fixtureAnteriorId,
+        });
+      }
+    } catch (error) {
+      // ROLLBACK COMPLETO: Si algo falla, revertir TODO
+      console.log('[Sorteo Rollback] ================================================');
+      console.log('[Sorteo Rollback] ERROR EN SORTEO SECUENCIAL - INICIANDO ROLLBACK');
+      console.log('[Sorteo Rollback] ================================================');
+      
+      // 1. Liberar todos los slots reservados
+      const slotsReservados = await this.prisma.torneoSlot.findMany({
+        where: {
+          disponibilidad: { tournamentId },
+          estado: 'RESERVADO',
+        },
       });
-
-      if (!categoria) continue;
       
-      // Obtener inscripciones para esta categoría
-      const inscripcionesCategoria = todasInscripciones.filter(
-        i => i.categoryId === categoria.categoryId
-      );
-
-      // Cerrar inscripciones de la categoría
-      await this.prisma.tournamentCategory.update({
-        where: { id: categoria.id },
-        data: { estado: 'INSCRIPCIONES_CERRADAS' },
-      });
-
-      // Crear objeto con inscripciones para compatibilidad
-      const categoriaConInscripciones = {
-        ...categoria,
-        inscripciones: inscripcionesCategoria,
-      };
-      
-      // Reservar slots para esta categoría
-      const slotsReservados = await this.reservarSlotsParaCategoria(
-        categoriaConInscripciones,
-        categoriaInfo.nombre,
-        slotsDisponibles,
-        slotIndex,
-        distribucionPorDia,
-      );
-
-      slotIndex += slotsReservados.length;
-
-      // Generar bracket real usando bracketService
-      const numParejas = inscripcionesCategoria.length;
-      const config = this.bracketService.calcularConfiguracion(numParejas);
-      
-      // Generar partidos del bracket
-      const { partidos } = await this.bracketService.generarBracket({
-        tournamentCategoryId: categoria.id,
-        totalParejas: numParejas,
-      });
-      
-      // Archivar versión anterior si existe
-      if (categoria.fixtureVersionId) {
-        await this.prisma.fixtureVersion.update({
-          where: { id: categoria.fixtureVersionId },
-          data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+      if (slotsReservados.length > 0) {
+        console.log(`[Sorteo Rollback] Liberando ${slotsReservados.length} slots`);
+        await this.prisma.torneoSlot.updateMany({
+          where: { id: { in: slotsReservados.map(s => s.id) } },
+          data: { estado: 'LIBRE', matchId: null },
         });
       }
       
-      // Ordenar inscripciones aleatoriamente para el sorteo
-      const inscripcionesOrdenadas = [...inscripcionesCategoria]
-        .sort(() => Math.random() - 0.5);
+      // 2. Eliminar brackets generados y restaurar estado anterior
+      for (const catSorteada of categoriasSorteadas) {
+        console.log(`[Sorteo Rollback] Revirtiendo categoría ${catSorteada.nombre}`);
+        
+        // Eliminar el nuevo fixture si se generó
+        if (catSorteada.fixtureVersionId) {
+          const fixture = await this.prisma.fixtureVersion.findUnique({
+            where: { id: catSorteada.fixtureVersionId },
+          });
+          
+          if (fixture) {
+            // Eliminar partidos
+            await this.prisma.match.deleteMany({
+              where: { fixtureVersionId: fixture.id },
+            });
+            
+            // Eliminar fixture
+            await this.prisma.fixtureVersion.delete({
+              where: { id: fixture.id },
+            });
+          }
+        }
+        
+        // Restaurar fixture anterior si existe
+        if (catSorteada.fixtureAnteriorId) {
+          await this.prisma.fixtureVersion.update({
+            where: { id: catSorteada.fixtureAnteriorId },
+            data: { estado: FixtureVersionEstado.PUBLICADO, archivadoAt: null },
+          });
+        }
+        
+        // Restaurar estado de la categoría
+        const estadoInicial = estadoInicialCategorias.find(e => e.id === catSorteada.categoriaId);
+        if (estadoInicial) {
+          await this.prisma.tournamentCategory.update({
+            where: { id: catSorteada.categoriaId },
+            data: {
+              estado: estadoInicial.estado,
+              fixtureVersionId: estadoInicial.fixtureVersionId,
+            },
+          });
+        }
+      }
       
-      const fixtureVersionId = await this.bracketService.guardarBracket(
-        categoria.id,
-        config,
-        partidos,
-        inscripcionesOrdenadas,
-        slotsReservados,
-      );
-
-      // Actualizar categoría con el fixture
-      await this.prisma.tournamentCategory.update({
-        where: { id: categoria.id },
-        data: {
-          estado: 'INSCRIPCIONES_CERRADAS',
-          fixtureVersionId,
-        },
-      });
-
-      categoriasSorteadas.push({
-        categoriaId: categoria.id,
-        nombre: categoriaInfo.nombre,
-        fixtureVersionId,
-        totalPartidos: categoriaInfo.slotsNecesarios,
-        slotsReservados: slotsReservados.length,
-      });
+      console.log('[Sorteo Rollback] ================================================');
+      console.log('[Sorteo Rollback] ROLLBACK COMPLETO FINALIZADO');
+      console.log('[Sorteo Rollback] ================================================');
+      
+      // Relanzar el error original
+      throw error;
     }
 
     // Generar distribución por día para la respuesta
@@ -2061,7 +2224,7 @@ export class CanchasSorteoService {
     if (partidosConResultado.length > 0) {
       await this.prisma.fixtureVersion.update({
         where: { id: fixtureVersionId },
-        data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+        data: { estado: FixtureVersionEstado.ARCHIVADO, archivadoAt: new Date() },
       });
       console.log(`[Re-Sortear] Fixture anterior archivado`);
     } else {
