@@ -888,6 +888,46 @@ export class CanchasSorteoService {
       });
     }
 
+    // NUEVO: Generar brackets para todas las categorías ANTES de asignar slots
+    console.log('[SorteoDebug] Generando brackets para', categoriasData.length, 'categorías...');
+    for (const catData of categoriasData) {
+      if (catData.inscripciones.length === 0) {
+        console.log(`[SorteoDebug]   Saltando ${catData.nombre}: sin inscripciones`);
+        continue;
+      }
+
+      // Cerrar inscripciones
+      await this.prisma.tournamentCategory.update({
+        where: { id: catData.categoria.id },
+        data: { estado: 'INSCRIPCIONES_CERRADAS' },
+      });
+
+      // Archivar versión anterior si existe
+      if (catData.categoria.fixtureVersionId) {
+        await this.prisma.fixtureVersion.update({
+          where: { id: catData.categoria.fixtureVersionId },
+          data: { estado: 'ARCHIVADO', archivadoAt: new Date() },
+        });
+      }
+
+      // Generar bracket
+      const numParejas = catData.inscripciones.length;
+      console.log(`[SorteoDebug]   Generando bracket para ${catData.nombre} (${numParejas} parejas)...`);
+      await this.bracketService.generarBracket({
+        tournamentCategoryId: catData.categoria.id,
+        totalParejas: numParejas,
+      });
+      
+      // Recargar la categoría para obtener el nuevo fixtureVersionId
+      const categoriaActualizada = await this.prisma.tournamentCategory.findUnique({
+        where: { id: catData.categoria.id },
+      });
+      if (categoriaActualizada) {
+        catData.categoria = categoriaActualizada;
+      }
+    }
+    console.log('[SorteoDebug] Brackets generados correctamente');
+
     // Mapa para acumular asignaciones por categoría
     const asignacionesPorCategoria = new Map<string, SlotReserva[]>();
     const distribucionPorDia: Record<string, { slots: number; categorias: Set<string> }> = {};
