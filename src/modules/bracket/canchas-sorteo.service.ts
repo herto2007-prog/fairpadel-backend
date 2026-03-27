@@ -957,6 +957,9 @@ export class CanchasSorteoService {
         continue;
       }
 
+      // NUEVO: Set para trackear slots ya asignados en este día (evita perder slots rechazados)
+      const slotsUsadosEnEsteDia = new Set<string>();
+
       // [SorteoDebug] Log de búsqueda de partidos pendientes
       console.log('[SorteoDebug]   Buscando partidos pendientes para fases:', fasesPermitidas);
       
@@ -1019,7 +1022,7 @@ export class CanchasSorteoService {
       console.log(`[SorteoDebug]     Partidos ordenados: ${partidosOrdenados.length}, Slots disponibles: ${slotsDelDia.length}`);
       
       // Asignar partidos a slots del día con descanso de 4 horas entre fases
-      let slotIdx = 0;
+      // FIX: Ya no usamos slotIdx secuencial. Ahora buscamos el mejor slot para cada partido.
       for (let i = 0; i < partidosOrdenados.length; i++) {
         const partido = partidosOrdenados[i];
         const catNombre = categoriasData.find(c => c.categoria.id === partido.categoriaId)?.nombre;
@@ -1082,20 +1085,30 @@ export class CanchasSorteoService {
         }
         
         // Buscar un slot que cumpla con el descanso
+        // FIX: Buscar en TODOS los slots disponibles, no solo desde slotIdx en adelante
+        // Esto evita que slots rechazados por descanso se pierdan para otros partidos
         let slotEncontrado = false;
-        while (slotIdx < slotsDelDia.length && !slotEncontrado) {
-          const slot = slotsDelDia[slotIdx];
+        let slotIndexParaAsignar = -1;
+        
+        // Obtener IDs de parejas antes del bucle
+        const inscripcion1Id = (partido as any).inscripcion1Id;
+        const inscripcion2Id = (partido as any).inscripcion2Id;
+        
+        for (let j = 0; j < slotsDelDia.length; j++) {
+          const slot = slotsDelDia[j];
+          const slotKey = `${slot.torneoCanchaId}-${slot.horaInicio}`;
+          
+          // Saltar slots ya usados en este día
+          if (slotsUsadosEnEsteDia.has(slotKey)) {
+            continue;
+          }
           
           // Verificar si el slot cumple con el descanso de fase
           if (slot.horaInicio < horaMinimaInicio) {
-            console.log(`[SorteoDebug]     [Descanso] Slot ${slot.horaInicio} rechazado (necesita >= ${horaMinimaInicio})`);
-            slotIdx++;
             continue;
           }
           
           // NUEVO: Verificar descanso individual de cada pareja (4 horas entre partidos)
-          const inscripcion1Id = (partido as any).inscripcion1Id;
-          const inscripcion2Id = (partido as any).inscripcion2Id;
           
           let pareja1TieneDescanso = true;
           let pareja2TieneDescanso = true;
@@ -1109,9 +1122,6 @@ export class CanchasSorteoService {
               240 // 4 horas de descanso
             );
             pareja1TieneDescanso = validacion.valido;
-            if (!pareja1TieneDescanso) {
-              console.log(`[SorteoDebug]     [Descanso Pareja] ${inscripcion1Id} necesita más descanso (último: ${ultimaHora.fecha} ${ultimaHora.horaFin}, propuesto: ${dia.fecha} ${slot.horaInicio})`);
-            }
           }
           
           // Verificar pareja 2
@@ -1123,19 +1133,26 @@ export class CanchasSorteoService {
               240 // 4 horas de descanso
             );
             pareja2TieneDescanso = validacion.valido;
-            if (!pareja2TieneDescanso) {
-              console.log(`[SorteoDebug]     [Descanso Pareja] ${inscripcion2Id} necesita más descanso (último: ${ultimaHora.fecha} ${ultimaHora.horaFin}, propuesto: ${dia.fecha} ${slot.horaInicio})`);
-            }
           }
           
-          // Si alguna pareja no tiene descanso suficiente, buscar otro slot
-          if (!pareja1TieneDescanso || !pareja2TieneDescanso) {
-            slotIdx++;
-            continue;
+          // Si ambas parejas tienen descanso suficiente, usar este slot
+          if (pareja1TieneDescanso && pareja2TieneDescanso) {
+            slotEncontrado = true;
+            slotIndexParaAsignar = j;
+            break; // Encontramos el primer slot válido
           }
+        }
+        
+        if (slotEncontrado && slotIndexParaAsignar >= 0) {
+          const slot = slotsDelDia[slotIndexParaAsignar];
+          const slotKey = `${slot.torneoCanchaId}-${slot.horaInicio}`;
+          slotsUsadosEnEsteDia.add(slotKey); // Marcar como usado
           
-          // Slot válido encontrado (cumple descanso de fase y de parejas)
-          slotEncontrado = true;
+          // Logging de descanso si fue rechazado antes
+          if ((inscripcion1Id && ultimaHoraPorPareja.has(inscripcion1Id)) || 
+              (inscripcion2Id && ultimaHoraPorPareja.has(inscripcion2Id))) {
+            console.log(`[SorteoDebug]     [Descanso OK] Slot ${slot.horaInicio} cumple descanso para ambas parejas`);
+          }
           
           const slotReserva: SlotReserva = {
             fecha: dia.fecha,
@@ -1182,15 +1199,15 @@ export class CanchasSorteoService {
           if (catNombre) {
             distribucionPorDia[dia.fecha].categorias.add(catNombre);
           }
-          
-          slotIdx++;
         }
         
         if (!slotEncontrado) {
           console.warn(`[SorteoDebug]     [FALLO] No se encontró slot para ${catNombre} | Fase ${partido.fase} #${partido.orden}`);
-          console.warn(`[SorteoDebug]            Hora mínima requerida: ${horaMinimaInicio}, Slots revisados: ${slotIdx}/${slotsDelDia.length}`);
-          if (slotIdx >= slotsDelDia.length) {
-            console.warn(`[SorteoDebug]            RAZÓN: Se agotaron los slots del día`);
+          console.warn(`[SorteoDebug]            Hora mínima requerida: ${horaMinimaInicio}, Slots usados: ${slotsUsadosEnEsteDia.size}/${slotsDelDia.length}`);
+          if (slotsUsadosEnEsteDia.size >= slotsDelDia.length) {
+            console.warn(`[SorteoDebug]            RAZÓN: Todos los slots del día están ocupados`);
+          } else {
+            console.warn(`[SorteoDebug]            RAZÓN: Slots disponibles pero ninguno cumple con los descansos requeridos`);
           }
         }
       }
