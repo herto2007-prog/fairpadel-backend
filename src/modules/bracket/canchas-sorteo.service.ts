@@ -974,10 +974,13 @@ export class CanchasSorteoService {
       console.log('[SorteoDebug]   Buscando partidos pendientes para fases:', fasesPermitidas);
       
       // NUEVO: Obtener partidos reales de la BD con sus inscripciones para descanso individual
-      // Obtener todos los partidos del torneo que están en fases permitidas
+      // Obtener categoryIds de las categorías que estamos procesando
+      const categoryIds = categoriasData.map(c => c.categoria.categoryId);
+      
+      // Obtener todos los partidos de estas categorías que están en fases permitidas
       const todosLosPartidos = await this.prisma.match.findMany({
         where: {
-          tournamentId,
+          categoryId: { in: categoryIds },
           ronda: { in: fasesPermitidas },
         },
         select: {
