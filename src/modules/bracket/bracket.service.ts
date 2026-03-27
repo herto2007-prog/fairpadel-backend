@@ -552,20 +552,43 @@ export class BracketService {
     // Contador global de slots de repechaje usados
     // Los primeros slots van a perdedores, los siguientes a ganadores
     let slotRepechajeIdx = 0;
+    const maxSlotsRepechaje = rondaAjuste.length * 2; // Cada partido de repechaje tiene 2 slots
+    
+    console.log(`[DistribucionBracket] Máximo slots de repechaje disponibles: ${maxSlotsRepechaje}`);
     
     partidosZonaShuffled.forEach((partidoZona, index) => {
       // Determinar destino del PERDEDOR primero (siempre van primero en el repechaje)
-      if (indicesPerdedoresRepechaje.has(index) && slotsRepechaje > 0) {
+      if (indicesPerdedoresRepechaje.has(index) && slotRepechajeIdx < maxSlotsRepechaje) {
         // Calcular qué partido de repechaje y posición le toca
         const repechajeIndex = Math.floor(slotRepechajeIdx / 2);
         const posicionEnRepechaje = (slotRepechajeIdx % 2) + 1;
-        slotRepechajeIdx++;
         
-        console.log(`[DistribucionBracket] Zona ${index} -> Perdedor va a Repechaje ${repechajeIndex} pos ${posicionEnRepechaje}`);
-        
-        const partidoRepechaje = rondaAjuste[repechajeIndex];
-        partidoZona.partidoPerdedorSiguienteId = partidoRepechaje.id;
-        partidoZona.posicionEnPerdedor = posicionEnRepechaje;
+        // VALIDACIÓN: Verificar que el índice esté dentro del rango
+        if (repechajeIndex >= rondaAjuste.length) {
+          console.warn(`[DistribucionBracket] Zona ${index} -> No hay más slots de repechaje disponibles. Perdedor va al bracket.`);
+          // Perdedor va directo al bracket (slot aleatorio)
+          const slot = slotsBracketShuffled[slotIndex++];
+          partidoZona.partidoPerdedorSiguienteId = slot.partido.id;
+          partidoZona.posicionEnPerdedor = slot.posicion;
+          
+          if (slot.posicion === 1) {
+            slot.partido.tipoEntrada1 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
+          } else {
+            slot.partido.tipoEntrada2 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
+          }
+        } else {
+          slotRepechajeIdx++;
+          console.log(`[DistribucionBracket] Zona ${index} -> Perdedor va a Repechaje ${repechajeIndex} pos ${posicionEnRepechaje}`);
+          
+          const partidoRepechaje = rondaAjuste[repechajeIndex];
+          if (!partidoRepechaje) {
+            console.error(`[DistribucionBracket] ERROR: partidoRepechaje[${repechajeIndex}] es undefined`);
+            throw new Error(`Partido de repechaje no encontrado en índice ${repechajeIndex}`);
+          }
+          
+          partidoZona.partidoPerdedorSiguienteId = partidoRepechaje.id;
+          partidoZona.posicionEnPerdedor = posicionEnRepechaje;
+        }
       } else {
         // Perdedor va directo al bracket (slot aleatorio)
         const slot = slotsBracketShuffled[slotIndex++];
@@ -580,16 +603,34 @@ export class BracketService {
       }
       
       // Determinar destino del GANADOR (después de los perdedores en el repechaje)
-      if (indicesGanadoresRepechaje.has(index)) {
+      if (indicesGanadoresRepechaje.has(index) && slotRepechajeIdx < maxSlotsRepechaje) {
         // Ganador va al repechaje (después de los perdedores)
         const repechajeIndex = Math.floor(slotRepechajeIdx / 2);
         const posicionEnRepechaje = (slotRepechajeIdx % 2) + 1;
-        slotRepechajeIdx++;
         
-        console.log(`[DistribucionBracket] Zona ${index} -> Ganador va a Repechaje ${repechajeIndex} pos ${posicionEnRepechaje}`);
-        
-        if (repechajeIndex < rondaAjuste.length) {
+        // VALIDACIÓN: Verificar que el índice esté dentro del rango
+        if (repechajeIndex >= rondaAjuste.length) {
+          console.warn(`[DistribucionBracket] Zona ${index} -> No hay más slots de repechaje para ganadores. Ganador va al bracket.`);
+          // Ganador va directo al bracket (slot aleatorio)
+          const slot = slotsBracketShuffled[slotIndex++];
+          partidoZona.partidoSiguienteId = slot.partido.id;
+          partidoZona.posicionEnSiguiente = slot.posicion;
+          
+          if (slot.posicion === 1) {
+            slot.partido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
+          } else {
+            slot.partido.tipoEntrada2 = TipoEntrada.GANADOR_ZONA;
+          }
+        } else {
+          slotRepechajeIdx++;
+          console.log(`[DistribucionBracket] Zona ${index} -> Ganador va a Repechaje ${repechajeIndex} pos ${posicionEnRepechaje}`);
+          
           const partidoRepechaje = rondaAjuste[repechajeIndex];
+          if (!partidoRepechaje) {
+            console.error(`[DistribucionBracket] ERROR: partidoRepechaje[${repechajeIndex}] es undefined`);
+            throw new Error(`Partido de repechaje no encontrado en índice ${repechajeIndex}`);
+          }
+          
           partidoZona.partidoSiguienteId = partidoRepechaje.id;
           partidoZona.posicionEnSiguiente = posicionEnRepechaje;
         }
