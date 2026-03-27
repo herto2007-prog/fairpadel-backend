@@ -974,13 +974,20 @@ export class CanchasSorteoService {
       console.log('[SorteoDebug]   Buscando partidos pendientes para fases:', fasesPermitidas);
       
       // NUEVO: Obtener partidos reales de la BD con sus inscripciones para descanso individual
-      // Obtener categoryIds de las categorías que estamos procesando
-      const categoryIds = categoriasData.map(c => c.categoria.categoryId);
+      // Obtener los fixtureVersionId de las categorías que tienen bracket generado
+      const fixtureVersionIds = categoriasData
+        .filter(c => c.categoria.fixtureVersionId)
+        .map(c => c.categoria.fixtureVersionId!);
       
-      // Obtener todos los partidos de estas categorías que están en fases permitidas
+      if (fixtureVersionIds.length === 0) {
+        console.log('[SorteoDebug]   >>> SKIP: Ninguna categoría tiene fixture generado (fixtureVersionId null)');
+        continue;
+      }
+      
+      // Obtener todos los partidos de estos fixtures que están en fases permitidas
       const todosLosPartidos = await this.prisma.match.findMany({
         where: {
-          categoryId: { in: categoryIds },
+          fixtureVersionId: { in: fixtureVersionIds },
           ronda: { in: fasesPermitidas },
         },
         select: {
@@ -1020,7 +1027,19 @@ export class CanchasSorteoService {
       
       const partidosPorCategoria = new Map<string, PartidoPendiente[]>();
       
+      // Crear map de categoryId -> categoria.id para referencia
+      const categoryIdToCategoriaId = new Map<string, string>();
       for (const catData of categoriasData) {
+        categoryIdToCategoriaId.set(catData.categoria.categoryId, catData.categoria.id);
+      }
+      
+      for (const catData of categoriasData) {
+        // Solo procesar categorías que tienen fixtureVersionId
+        if (!catData.categoria.fixtureVersionId) {
+          console.log(`[SorteoDebug]     Categoría ${catData.nombre}: Sin fixture generado (fixtureVersionId null)`);
+          continue;
+        }
+        
         // Filtrar partidos de esta categoría que no tienen slot asignado
         const partidosPendientes = todosLosPartidos
           .filter(p => 
