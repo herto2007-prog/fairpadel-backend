@@ -959,49 +959,85 @@ export class CanchasSorteoService {
 
       // NUEVO: Set para trackear slots ya asignados en este día (evita perder slots rechazados)
       const slotsUsadosEnEsteDia = new Set<string>();
+      
+      // NUEVO: Array para partidos que no se pudieron asignar por falta de descanso (se pasan al siguiente día)
+      const partidosPendientesPorDescanso: Array<{
+        categoriaId: string;
+        fase: FaseBracket;
+        orden: number;
+        matchId: string;
+        inscripcion1Id?: string;
+        inscripcion2Id?: string;
+      }> = [];
 
       // [SorteoDebug] Log de búsqueda de partidos pendientes
       console.log('[SorteoDebug]   Buscando partidos pendientes para fases:', fasesPermitidas);
       
+      // NUEVO: Obtener partidos reales de la BD con sus inscripciones para descanso individual
+      // Obtener todos los partidos del torneo que están en fases permitidas
+      const todosLosPartidos = await this.prisma.match.findMany({
+        where: {
+          tournamentId,
+          ronda: { in: fasesPermitidas },
+        },
+        select: {
+          id: true,
+          ronda: true,
+          categoryId: true,
+          inscripcion1Id: true,
+          inscripcion2Id: true,
+          posicionEnSiguiente: true,
+        },
+        orderBy: [
+          { categoryId: 'asc' },
+          { ronda: 'asc' },
+          { posicionEnSiguiente: 'asc' },
+        ],
+      });
+      
+      // Filtrar partidos que ya tienen slot asignado (estado OCUPADO o RESERVADO)
+      const partidosConSlotAsignado = await this.prisma.torneoSlot.findMany({
+        where: {
+          disponibilidad: { tournamentId },
+          estado: { in: ['OCUPADO', 'RESERVADO'] },
+          matchId: { not: null },
+        },
+        select: { matchId: true },
+      });
+      const matchIdsAsignados = new Set(partidosConSlotAsignado.map(s => s.matchId));
+      
       // Obtener partidos pendientes de TODAS las categorías para estas fases
-      const partidosPorCategoria = new Map<string, Array<{ fase: FaseBracket; orden: number }>>();
+      interface PartidoPendiente {
+        fase: FaseBracket;
+        orden: number;
+        matchId: string;
+        inscripcion1Id?: string;
+        inscripcion2Id?: string;
+      }
+      
+      const partidosPorCategoria = new Map<string, PartidoPendiente[]>();
       
       for (const catData of categoriasData) {
-        const partidosPendientes: Array<{ fase: FaseBracket; orden: number }> = [];
-        
-        // Calcular partidos por fase para esta categoría
-        const numParejas = catData.inscripciones.length;
-        const calculoCat = this.bracketService.calcularSlotsNecesarios(numParejas);
+        // Filtrar partidos de esta categoría que no tienen slot asignado
+        const partidosPendientes = todosLosPartidos
+          .filter(p => 
+            p.categoryId === catData.categoria.categoryId &&
+            fasesPermitidas.includes(p.ronda as FaseBracket) &&
+            !matchIdsAsignados.has(p.id)
+          )
+          .map(p => ({
+            fase: p.ronda as FaseBracket,
+            orden: p.posicionEnSiguiente || 1,
+            matchId: p.id,
+            inscripcion1Id: p.inscripcion1Id || undefined,
+            inscripcion2Id: p.inscripcion2Id || undefined,
+          }));
         
         console.log(`[SorteoDebug]     Categoría ${catData.nombre} (${catData.categoria.id}):`);
-        console.log(`[SorteoDebug]       Parejas inscritas: ${numParejas}`);
-        
-        for (const faseInfo of calculoCat.detallePorFase) {
-          const fase = faseInfo.fase as FaseBracket;
-          console.log(`[SorteoDebug]       Fase ${fase}: ${faseInfo.partidos} partidos totales`);
-          
-          if (fasesPermitidas.includes(fase)) {
-            // Verificar cuántos slots ya están asignados para esta fase
-            const asignacionesExistentes = asignacionesPorCategoria.get(catData.categoria.id) || [];
-            const asignadosEnEstaFase = asignacionesExistentes.filter(s => s.fase === fase).length;
-            const pendientes = faseInfo.partidos - asignadosEnEstaFase;
-            
-            console.log(`[SorteoDebug]         >> Fase ${fase} PERMITIDA: ${asignadosEnEstaFase} asignados, ${pendientes} pendientes`);
-            
-            for (let i = 0; i < pendientes; i++) {
-              partidosPendientes.push({
-                fase,
-                orden: asignadosEnEstaFase + i + 1,
-              });
-            }
-          } else {
-            console.log(`[SorteoDebug]         >> Fase ${fase} NO permitida en este día`);
-          }
-        }
+        console.log(`[SorteoDebug]       Partidos pendientes: ${partidosPendientes.length}`);
         
         if (partidosPendientes.length > 0) {
           partidosPorCategoria.set(catData.categoria.id, partidosPendientes);
-          console.log(`[SorteoDebug]       Total pendientes para esta categoría: ${partidosPendientes.length}`);
         }
       }
 
@@ -1012,7 +1048,16 @@ export class CanchasSorteoService {
       }
 
       // Ordenar con Round-Robin entre categorías
-      const partidosOrdenados = this.ordenarRoundRobin(
+      interface PartidoOrdenado {
+        categoriaId: string;
+        fase: FaseBracket;
+        orden: number;
+        matchId: string;
+        inscripcion1Id?: string;
+        inscripcion2Id?: string;
+      }
+      
+      const partidosOrdenados: PartidoOrdenado[] = this.ordenarRoundRobinConParejas(
         partidosPorCategoria, 
         categoriasData.map(c => c.categoria.id)
       );
@@ -1184,10 +1229,13 @@ export class CanchasSorteoService {
             ultimaHoraPorPareja.set(inscripcion2Id, { fecha: dia.fecha, horaFin: slot.horaFin });
           }
 
-          // Marcar slot como reservado
+          // Marcar slot como reservado y asociar al partido (match)
           await this.prisma.torneoSlot.update({
             where: { id: slot.id },
-            data: { estado: 'RESERVADO' },
+            data: { 
+              estado: 'RESERVADO',
+              matchId: partido.matchId,
+            },
           });
 
           // Actualizar distribución por día
@@ -1202,13 +1250,43 @@ export class CanchasSorteoService {
         }
         
         if (!slotEncontrado) {
-          console.warn(`[SorteoDebug]     [FALLO] No se encontró slot para ${catNombre} | Fase ${partido.fase} #${partido.orden}`);
-          console.warn(`[SorteoDebug]            Hora mínima requerida: ${horaMinimaInicio}, Slots usados: ${slotsUsadosEnEsteDia.size}/${slotsDelDia.length}`);
-          if (slotsUsadosEnEsteDia.size >= slotsDelDia.length) {
-            console.warn(`[SorteoDebug]            RAZÓN: Todos los slots del día están ocupados`);
+          // NUEVO: Si no se encontró slot por falta de descanso, pasar al siguiente día
+          const inscripcion1Id = (partido as any).inscripcion1Id;
+          const inscripcion2Id = (partido as any).inscripcion2Id;
+          
+          if (slotsUsadosEnEsteDia.size < slotsDelDia.length) {
+            // Hay slots disponibles pero ninguno cumple descanso → Pasar al siguiente día
+            console.log(`[SorteoDebug]     [DESCANSO INSUFICIENTE] ${catNombre} | Fase ${partido.fase} #${partido.orden} se pasa al siguiente día`);
+            partidosPendientesPorDescanso.push({
+              categoriaId: partido.categoriaId,
+              fase: partido.fase,
+              orden: partido.orden,
+              matchId: partido.matchId,
+              inscripcion1Id,
+              inscripcion2Id,
+            });
           } else {
-            console.warn(`[SorteoDebug]            RAZÓN: Slots disponibles pero ninguno cumple con los descansos requeridos`);
+            // No hay slots disponibles → Error real
+            console.warn(`[SorteoDebug]     [FALLO] No se encontró slot para ${catNombre} | Fase ${partido.fase} #${partido.orden}`);
+            console.warn(`[SorteoDebug]            RAZÓN: Todos los slots del día están ocupados`);
           }
+        }
+      }
+      
+      // NUEVO: Agregar partidos pendientes por descanso al mapa para el siguiente día
+      if (partidosPendientesPorDescanso.length > 0) {
+        console.log(`[SorteoDebug]   >>> ${partidosPendientesPorDescanso.length} partidos pendientes por descanso se pasan al siguiente día`);
+        for (const pendiente of partidosPendientesPorDescanso) {
+          if (!partidosPorCategoria.has(pendiente.categoriaId)) {
+            partidosPorCategoria.set(pendiente.categoriaId, []);
+          }
+          partidosPorCategoria.get(pendiente.categoriaId)!.push({
+            fase: pendiente.fase,
+            orden: pendiente.orden,
+            matchId: pendiente.matchId,
+            inscripcion1Id: pendiente.inscripcion1Id,
+            inscripcion2Id: pendiente.inscripcion2Id,
+          });
         }
       }
       
@@ -1426,6 +1504,64 @@ export class CanchasSorteoService {
             categoriaId: catId,
             fase: partidos[idx].fase,
             orden: partidos[idx].orden,
+          });
+          indices.set(catId, idx + 1);
+          hayMas = true;
+        }
+      }
+    }
+
+    return resultado;
+  }
+
+  /**
+   * NUEVO: Ordena partidos con Round-Robin incluyendo IDs de parejas
+   * Ej: CatA-1, CatB-1, CatC-1, CatA-2, CatB-2, CatC-2...
+   * Incluye matchId, inscripcion1Id e inscripcion2Id para descanso individual
+   */
+  private ordenarRoundRobinConParejas(
+    partidosPorCategoria: Map<string, Array<{
+      fase: FaseBracket;
+      orden: number;
+      matchId: string;
+      inscripcion1Id?: string;
+      inscripcion2Id?: string;
+    }>>,
+    categoriasIds: string[],
+  ): Array<{
+    categoriaId: string;
+    fase: FaseBracket;
+    orden: number;
+    matchId: string;
+    inscripcion1Id?: string;
+    inscripcion2Id?: string;
+  }> {
+    const resultado: Array<{
+      categoriaId: string;
+      fase: FaseBracket;
+      orden: number;
+      matchId: string;
+      inscripcion1Id?: string;
+      inscripcion2Id?: string;
+    }> = [];
+    const indices = new Map<string, number>();
+
+    let hayMas = true;
+    while (hayMas) {
+      hayMas = false;
+      
+      for (const catId of categoriasIds) {
+        const partidos = partidosPorCategoria.get(catId) || [];
+        const idx = indices.get(catId) || 0;
+        
+        if (idx < partidos.length) {
+          resultado.push({
+            categoriaId: catId,
+            fase: partidos[idx].fase,
+            orden: partidos[idx].orden,
+            matchId: partidos[idx].matchId,
+            inscripcion1Id: partidos[idx].inscripcion1Id,
+            inscripcion2Id: partidos[idx].inscripcion2Id,
           });
           indices.set(catId, idx + 1);
           hayMas = true;
