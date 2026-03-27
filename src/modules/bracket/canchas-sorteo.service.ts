@@ -892,8 +892,12 @@ export class CanchasSorteoService {
     const asignacionesPorCategoria = new Map<string, SlotReserva[]>();
     const distribucionPorDia: Record<string, { slots: number; categorias: Set<string> }> = {};
     
-    // Track: última hora de finalización de cada fase por categoría y día (para descanso)
+    // Track: última hora de finalización de cada fase por categoría y día (para descanso entre fases)
     const ultimaHoraFinPorCategoriaFase: Record<string, string> = {};
+    
+    // NUEVO: Track última hora de juego por pareja (inscripción) para descanso individual
+    // Map<inscripcionId, { fecha: string, horaFin: string }>
+    const ultimaHoraPorPareja = new Map<string, { fecha: string; horaFin: string }>();
     
     // Helper: Sumar horas a una hora "HH:mm"
     const sumarHoras = (hora: string, horasASumar: number): string => {
@@ -1082,14 +1086,55 @@ export class CanchasSorteoService {
         while (slotIdx < slotsDelDia.length && !slotEncontrado) {
           const slot = slotsDelDia[slotIdx];
           
-          // Verificar si el slot cumple con el descanso
+          // Verificar si el slot cumple con el descanso de fase
           if (slot.horaInicio < horaMinimaInicio) {
             console.log(`[SorteoDebug]     [Descanso] Slot ${slot.horaInicio} rechazado (necesita >= ${horaMinimaInicio})`);
             slotIdx++;
             continue;
           }
           
-          // Slot válido encontrado
+          // NUEVO: Verificar descanso individual de cada pareja (4 horas entre partidos)
+          const inscripcion1Id = (partido as any).inscripcion1Id;
+          const inscripcion2Id = (partido as any).inscripcion2Id;
+          
+          let pareja1TieneDescanso = true;
+          let pareja2TieneDescanso = true;
+          
+          // Verificar pareja 1
+          if (inscripcion1Id && ultimaHoraPorPareja.has(inscripcion1Id)) {
+            const ultimaHora = ultimaHoraPorPareja.get(inscripcion1Id)!;
+            const validacion = this.descansoCalculator.validarSlotConDescanso(
+              { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+              { fecha: ultimaHora.fecha, horaInicio: '', horaFin: ultimaHora.horaFin },
+              240 // 4 horas de descanso
+            );
+            pareja1TieneDescanso = validacion.valido;
+            if (!pareja1TieneDescanso) {
+              console.log(`[SorteoDebug]     [Descanso Pareja] ${inscripcion1Id} necesita más descanso (último: ${ultimaHora.fecha} ${ultimaHora.horaFin}, propuesto: ${dia.fecha} ${slot.horaInicio})`);
+            }
+          }
+          
+          // Verificar pareja 2
+          if (inscripcion2Id && ultimaHoraPorPareja.has(inscripcion2Id)) {
+            const ultimaHora = ultimaHoraPorPareja.get(inscripcion2Id)!;
+            const validacion = this.descansoCalculator.validarSlotConDescanso(
+              { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+              { fecha: ultimaHora.fecha, horaInicio: '', horaFin: ultimaHora.horaFin },
+              240 // 4 horas de descanso
+            );
+            pareja2TieneDescanso = validacion.valido;
+            if (!pareja2TieneDescanso) {
+              console.log(`[SorteoDebug]     [Descanso Pareja] ${inscripcion2Id} necesita más descanso (último: ${ultimaHora.fecha} ${ultimaHora.horaFin}, propuesto: ${dia.fecha} ${slot.horaInicio})`);
+            }
+          }
+          
+          // Si alguna pareja no tiene descanso suficiente, buscar otro slot
+          if (!pareja1TieneDescanso || !pareja2TieneDescanso) {
+            slotIdx++;
+            continue;
+          }
+          
+          // Slot válido encontrado (cumple descanso de fase y de parejas)
           slotEncontrado = true;
           
           const slotReserva: SlotReserva = {
@@ -1113,6 +1158,14 @@ export class CanchasSorteoService {
           // Registrar última hora de finalización de esta fase para esta categoría
           const key = `${partido.categoriaId}-${dia.fecha}-${partido.fase}`;
           ultimaHoraFinPorCategoriaFase[key] = slot.horaFin;
+
+          // NUEVO: Registrar última hora de juego para cada pareja (descanso individual)
+          if (inscripcion1Id) {
+            ultimaHoraPorPareja.set(inscripcion1Id, { fecha: dia.fecha, horaFin: slot.horaFin });
+          }
+          if (inscripcion2Id) {
+            ultimaHoraPorPareja.set(inscripcion2Id, { fecha: dia.fecha, horaFin: slot.horaFin });
+          }
 
           // Marcar slot como reservado
           await this.prisma.torneoSlot.update({
