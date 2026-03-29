@@ -589,6 +589,29 @@ export class CanchasSorteoService {
     // Cerrar inscripciones y generar brackets
     await this.cerrarInscripcionesYGenerarBrackets(categoriasData);
 
+    // Guardar brackets en DB (como BORRADOR) y asignar fixtureVersionId
+    for (const catData of categoriasData) {
+      const config = (catData as any).bracketConfig;
+      const partidos = (catData as any).bracketPartidos;
+      
+      if (config && partidos) {
+        const fixtureVersionId = await this.bracketService.guardarBracket(
+          catData.categoria.id,
+          config,
+          partidos,
+          catData.inscripciones,
+        );
+        
+        // Actualizar la categoría con el fixtureVersionId
+        await this.prisma.tournamentCategory.update({
+          where: { id: catData.categoria.id },
+          data: { fixtureVersionId },
+        });
+        
+        catData.categoria.fixtureVersionId = fixtureVersionId;
+      }
+    }
+
     // Asignar slots a partidos
     const asignaciones = await this.asignarSlots(tournamentId, categoriasData, diasConfig);
 
@@ -664,17 +687,14 @@ export class CanchasSorteoService {
         });
       }
 
-      await this.bracketService.generarBracket({
+      const resultado = await this.bracketService.generarBracket({
         tournamentCategoryId: catData.categoria.id,
         totalParejas: catData.inscripciones.length,
       });
 
-      const categoriaActualizada = await this.prisma.tournamentCategory.findUnique({
-        where: { id: catData.categoria.id },
-      });
-      if (categoriaActualizada) {
-        catData.categoria = categoriaActualizada;
-      }
+      // Guardar config y partidos en catData para usarlos después de la validación
+      (catData as any).bracketConfig = resultado.config;
+      (catData as any).bracketPartidos = resultado.partidos;
     }
   }
 
@@ -1059,11 +1079,19 @@ export class CanchasSorteoService {
   ) {
     console.log('[Sorteo] Ejecutando rollback...');
 
-    // Restaurar estado de categorías
+    // Obtener categorías actuales para conseguir los fixtureVersionId nuevos
+    const categoriasActuales = await this.prisma.tournamentCategory.findMany({
+      where: { id: { in: estadoInicialCategorias.map(c => c.id) } },
+    });
+
+    // Restaurar estado de categorías (y limpiar fixtureVersionId)
     for (const cat of estadoInicialCategorias) {
       await this.prisma.tournamentCategory.update({
         where: { id: cat.id },
-        data: { estado: cat.estado },
+        data: { 
+          estado: cat.estado,
+          fixtureVersionId: cat.fixtureVersionId, // Restaurar valor original
+        },
       });
     }
 
@@ -1076,8 +1104,8 @@ export class CanchasSorteoService {
       data: { estado: 'LIBRE', matchId: null },
     });
 
-    // Eliminar brackets generados
-    const fixtureVersionIds = estadoInicialCategorias
+    // Eliminar brackets generados (incluyendo los nuevos)
+    const fixtureVersionIds = categoriasActuales
       .filter(c => c.fixtureVersionId)
       .map(c => c.fixtureVersionId);
 
