@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Delete, Param, UseGuards, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Delete, Param, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -82,34 +82,5 @@ export class CanchasSorteoController {
   @Delete('dias/:diaId')
   async eliminarDia(@Param('diaId') diaId: string) {
     return this.canchasSorteoService.eliminarDia(diaId);
-  }
-
-  /**
-   * TEST: Probar el nuevo algoritmo de descanso
-   * POST /admin/canchas-sorteo/test-descanso
-   * 
-   * Endpoint para comparar el algoritmo legacy vs el nuevo
-   * sin afectar el sorteo real.
-   */
-  @Post('test-descanso')
-  async testDescanso(@Body() body: {
-    tournamentId?: string;
-    ultimoPartidoFecha: string;
-    ultimoPartidoHoraFin: string;
-    faseOrigen: string;
-    faseDestino: string;
-  }) {
-    return this.canchasSorteoService.testDescansoCalculator(body);
-  }
-
-  /**
-   * Obtener estado de feature flags
-   * GET /admin/canchas-sorteo/features
-   * 
-   * Permite ver qué features están activos y para qué torneos.
-   */
-  @Get('features')
-  async getFeaturesStatus(@Query('tournamentId') tournamentId?: string) {
-    return this.canchasSorteoService.getFeaturesStatus(tournamentId);
   }
 }

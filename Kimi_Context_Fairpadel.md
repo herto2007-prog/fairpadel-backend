@@ -2,7 +2,74 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-25 - LIMPIEZA Y REFINAMIENTO DE UI ✅
+> **Última actualización:** 2026-03-25 - ROLLBACK ATÓMICO EN SORTEO ✅
+> - **CRÍTICO:** Sorteo ahora es atómico - si falla, TODO se revierte
+> - **FIX:** Categorías no quedan "Sorteadas" a medias si hay error
+> - **ROLLBACK:** Libera slots, elimina brackets, restaura fixtures, reabre inscripciones
+> - **BUILD:** ✅ Backend compila
+> - **DEPLOY:** ✅ Commit pushado a producción
+
+---
+
+## 🆕 COMPLETADO (2026-03-25) - Rollback Atómico en Sorteo de Torneos
+
+### ✅ Problema: Sorteo Parcial Dejaba Categorías en Estado Inconsistente
+
+**Situación:** Al intentar sortear múltiples categorías, si faltaban slots para una de ellas, el proceso fallaba pero algunas categorías quedaban marcadas como "Sorteadas" (fixture generado, inscripciones cerradas) mientras otras no.
+
+**Consecuencias del bug:**
+- Categorías con `estado = 'INSCRIPCIONES_CERRADAS'` y `fixtureVersionId = null`
+- Brackets generados sin slots asignados
+- Inscripciones cerradas sin fixture válido
+- Usuario no podía reintentar el sorteo
+
+### ✅ Solución: Transacción Atómica con Rollback Completo
+
+**Implementación en `canchas-sorteo.service.ts`:**
+
+```typescript
+// Guardar estado inicial antes de modificar
+const estadoInicialCategorias = [...]
+
+try {
+  // Intentar sortear todas las categorías
+  // Cerrar inscripciones → Generar brackets → Asignar slots
+} catch (error) {
+  // ROLLBACK COMPLETO:
+  // 1. Liberar todos los slots reservados
+  // 2. Eliminar brackets generados
+  // 3. Restaurar fixtures anteriores archivados
+  // 4. Reabrir inscripciones
+  throw error; // Relanzar para mostrar error al usuario
+}
+```
+
+**Qué se revierte si falla:**
+1. **Slots:** Todos los marcados como `RESERVADO` → `LIBRE`
+2. **Matches:** Partidos generados se eliminan
+3. **Fixtures:** Nuevos se eliminan, anteriores se restauran a `PUBLICADO`
+4. **Categorías:** Estado vuelve a `INSCRIPCIONES_ABIERTAS`
+
+### ✅ Métodos Modificados
+
+| Método | Cambio |
+|--------|--------|
+| `sortearConFasesPorDia()` | Rollback completo si faltan slots |
+| `sortearSecuencialOriginal()` | Try-catch con rollback en error |
+| `cerrarInscripcionesYsortear()` | Llama a métodos con rollback |
+
+### ✅ Enums Corregidos
+
+- `CategoriaEstado.INSCRIPCIONES_ABIERTAS`
+- `CategoriaEstado.INSCRIPCIONES_CERRADAS`
+- `FixtureVersionEstado.PUBLICADO`
+- `FixtureVersionEstado.ARCHIVADO`
+
+**Commit:** `8d1d866`
+
+---
+
+## 🆕 COMPLETADO (2026-03-25) - LIMPIEZA Y REFINAMIENTO DE UI ✅
 > - **ELIMINADO:** Tab "Canchas" viejo + admin-disponibilidad.controller
 > - **ELIMINADO:** Campo "Duración por partido" del wizard (no se usaba)
 > - **WIZARD SIMPLIFICADO:** Solo fechaInicio/fin obligatorias (visuales)

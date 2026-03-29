@@ -747,10 +747,7 @@ export class AdminBracketController {
       }
 
       // Usar el nuevo método que distribuye por fases
-      const resultado = await this.canchasSorteoService.reSortearCategoria(
-        categoria.id,
-        body?.usarSemillas,
-      );
+      const resultado = await this.canchasSorteoService.reSortearCategoria(categoria.id);
 
       return resultado;
     } catch (error: any) {

@@ -1,4 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+import { horaAMinutos, minutosAHora, formatearMinutos } from '../../common/utils/time-helpers';
+
+// Configurar dayjs con plugins
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const TZ_PARAGUAY = 'America/Asuncion';
 
 export interface DescansoConfig {
   /** Descanso entre fases ZONA (minutos) */
@@ -28,6 +38,46 @@ export interface ValidacionDescansoResultado {
 }
 
 /**
+ * TABLA COMPLETA DE DESCANSOS ENTRE FASES
+ * Todas las transiciones de fase deben estar aquí.
+ * Default: 240 minutos (4 horas)
+ */
+const DESCANSOS_ENTRE_FASES: Record<string, number> = {
+  // Misma fase: sin descanso
+  'ZONA-ZONA': 0,
+  'REPECHAJE-REPECHAJE': 0,
+  'OCTAVOS-OCTAVOS': 0,
+  'CUARTOS-CUARTOS': 0,
+  'SEMIS-SEMIS': 0,
+  'FINAL-FINAL': 0,
+  
+  // Transiciones ZONA → X: 4 horas
+  'ZONA-REPECHAJE': 240,
+  'ZONA-OCTAVOS': 240,
+  'ZONA-CUARTOS': 240,
+  'ZONA-SEMIS': 240,
+  'ZONA-FINAL': 240,
+  
+  // Transiciones REPECHAJE → X: 4 horas
+  'REPECHAJE-OCTAVOS': 240,
+  'REPECHAJE-CUARTOS': 240,
+  'REPECHAJE-SEMIS': 240,
+  'REPECHAJE-FINAL': 240,
+  
+  // Transiciones OCTAVOS → X: 4 horas
+  'OCTAVOS-CUARTOS': 240,
+  'OCTAVOS-SEMIS': 240,
+  'OCTAVOS-FINAL': 240,
+  
+  // Transiciones CUARTOS → X: 4 horas
+  'CUARTOS-SEMIS': 240,
+  'CUARTOS-FINAL': 240,
+  
+  // Transiciones SEMIS → X: 4 horas
+  'SEMIS-FINAL': 240,
+};
+
+/**
  * Servicio dedicado al cálculo de descansos entre partidos/fases.
  * 
  * ALGORITMO PRINCIPAL:
@@ -49,8 +99,6 @@ export class DescansoCalculatorService {
    * Calcula la hora mínima de inicio para el siguiente partido
    * considerando el descanso requerido.
    * 
-   * TU ALGORITMO: Hora último partido + descanso = hora mínima
-   * 
    * @param ultimoPartidoFecha - Fecha del último partido ("2024-03-17")
    * @param ultimoPartidoHoraFin - Hora fin del último partido ("22:30")
    * @param descansoMinutos - Minutos de descanso requeridos (default: 240 = 4h)
@@ -68,17 +116,18 @@ export class DescansoCalculatorService {
     ultimoPartidoHoraFin: string,
     descansoMinutos: number = 240
   ): HoraMinimaResultado {
-    // Crear fecha completa del último partido
-    const fechaHora = new Date(`${ultimoPartidoFecha}T${ultimoPartidoHoraFin}`);
+    // Usar dayjs con zona horaria explícita de Paraguay
+    const fechaHora = dayjs.tz(
+      `${ultimoPartidoFecha}T${ultimoPartidoHoraFin}`,
+      TZ_PARAGUAY
+    );
     
-    // Sumar minutos de descanso
-    fechaHora.setMinutes(fechaHora.getMinutes() + descansoMinutos);
+    const resultado = fechaHora.add(descansoMinutos, 'minute');
     
-    // Extraer fecha y hora del resultado
-    const fecha = fechaHora.toISOString().split('T')[0];
-    const hora = fechaHora.toTimeString().slice(0, 5);
-    
-    return { fecha, hora };
+    return {
+      fecha: resultado.format('YYYY-MM-DD'),
+      hora: resultado.format('HH:mm'),
+    };
   }
 
   /**
@@ -96,27 +145,37 @@ export class DescansoCalculatorService {
   ): number {
     const cfg = { ...this.defaultConfig, ...config };
     
-    // Si es la misma fase, usar descanso entre zonas
+    // Si hay config personalizada, usarla
+    if (config) {
+      if (faseOrigen === faseDestino) {
+        return cfg.descansoEntreZonas;
+      }
+      if (faseOrigen === 'ZONA' && faseDestino === 'SEMIS') {
+        return cfg.descansoZonaASemis;
+      }
+      if (faseOrigen === 'SEMIS' && faseDestino === 'FINAL') {
+        return cfg.descansoSemisAFinal;
+      }
+    }
+    
+    const key = `${faseOrigen}-${faseDestino}`;
+    
+    // Buscar en tabla completa
+    if (key in DESCANSOS_ENTRE_FASES) {
+      return DESCANSOS_ENTRE_FASES[key];
+    }
+    
+    // Fallback: misma fase = 0, diferente fase = 240
     if (faseOrigen === faseDestino) {
-      return cfg.descansoEntreZonas;
+      return 0;
     }
     
-    // Transición ZONA → SEMIS
-    if (faseOrigen === 'ZONA' && faseDestino === 'SEMIS') {
-      return cfg.descansoZonaASemis;
-    }
-    
-    // Transición SEMIS → FINAL
-    if (faseOrigen === 'SEMIS' && faseDestino === 'FINAL') {
-      return cfg.descansoSemisAFinal;
-    }
-    
-    // Por defecto, usar descanso entre zonas
-    return cfg.descansoEntreZonas;
+    return 240; // Default 4 horas
   }
 
   /**
    * Verifica si un slot específico cumple con las reglas de descanso.
+   * Usa comparación numérica de minutos (NO strings).
    * 
    * @param slot - Información del slot a validar
    * @param ultimoPartido - Información del último partido jugado
@@ -128,30 +187,42 @@ export class DescansoCalculatorService {
     ultimoPartido: SlotInfo,
     descansoMinutos: number = 240
   ): ValidacionDescansoResultado {
-    // Calcular hora mínima permitida
+    // Calcular hora mínima permitida usando dayjs
     const horaMinima = this.calcularHoraMinimaDescanso(
       ultimoPartido.fecha,
       ultimoPartido.horaFin,
       descansoMinutos
     );
 
-    // Crear objetos Date para comparación
-    const slotDateTime = new Date(`${slot.fecha}T${slot.horaInicio}`);
-    const minimaDateTime = new Date(`${horaMinima.fecha}T${horaMinima.hora}`);
+    // Comparar usando minutos (NO strings)
+    const slotMinutos = horaAMinutos(slot.horaInicio);
+    const minimaMinutos = horaAMinutos(horaMinima.hora);
+    
+    // Si es diferente día, siempre es válido (asume día siguiente tiene slots disponibles)
+    const mismoDia = slot.fecha === ultimoPartido.fecha;
+    const slotEsPosterior = slot.fecha > horaMinima.fecha || 
+                           (slot.fecha === horaMinima.fecha && slotMinutos >= minimaMinutos);
 
     // Calcular tiempo de descanso real en minutos
-    const tiempoDescansoMs = slotDateTime.getTime() - new Date(`${ultimoPartido.fecha}T${ultimoPartido.horaFin}`).getTime();
-    const tiempoDescansoMinutos = Math.floor(tiempoDescansoMs / (1000 * 60));
+    const ultimoDateTime = dayjs.tz(
+      `${ultimoPartido.fecha}T${ultimoPartido.horaFin}`,
+      TZ_PARAGUAY
+    );
+    const slotDateTime = dayjs.tz(
+      `${slot.fecha}T${slot.horaInicio}`,
+      TZ_PARAGUAY
+    );
+    const tiempoDescansoMinutos = slotDateTime.diff(ultimoDateTime, 'minute');
 
     // Validar
-    const valido = slotDateTime >= minimaDateTime;
+    const valido = slotEsPosterior && tiempoDescansoMinutos >= descansoMinutos;
 
     return {
       valido,
       tiempoDescansoMinutos,
       tiempoRequeridoMinutos: descansoMinutos,
       razon: valido ? undefined : 
-        `Slot empieza a ${slot.horaInicio}, pero se requiere descanso hasta ${horaMinima.hora} (${descansoMinutos} min)`,
+        `Slot empieza a ${slot.horaInicio}, pero se requiere descanso hasta ${horaMinima.hora} (${formatearMinutos(descansoMinutos)})`,
     };
   }
 
