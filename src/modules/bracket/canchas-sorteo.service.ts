@@ -416,26 +416,23 @@ export class CanchasSorteoService {
    */
   async obtenerCanchas(tournamentId: string) {
     const torneoCanchas = await this.prisma.torneoCancha.findMany({
-      where: { tournamentId },
+      where: { tournamentId, activa: true },
       include: {
         sedeCancha: {
-          include: {
-            sede: true,
-          },
+          include: { sede: { select: { id: true, nombre: true } } },
         },
       },
-      orderBy: {
-        orden: 'asc',
-      },
+      orderBy: { orden: 'asc' },
     });
 
     return {
       success: true,
-      data: torneoCanchas.map(tc => ({
+      canchas: torneoCanchas.map(tc => ({
         id: tc.id,
-        nombre: `Cancha ${tc.orden + 1}`,
-        sede: tc.sedeCancha.sede.nombre,
-        orden: tc.orden,
+        nombre: tc.sedeCancha.nombre,
+        tipo: tc.sedeCancha.tipo,
+        iluminacion: tc.sedeCancha.tieneLuz,
+        sede: tc.sedeCancha.sede,
       })),
     };
   }
