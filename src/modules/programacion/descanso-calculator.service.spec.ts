@@ -17,39 +17,39 @@ describe('DescansoCalculatorService', () => {
   });
 
   describe('calcularHoraMinimaDescanso', () => {
-    it('debe calcular correctamente 22:30 + 4h = 02:30 siguiente día', () => {
-      const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '22:30', 240);
+    it('debe calcular correctamente 22:30 + 3h = 01:30 siguiente día', () => {
+      const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '22:30', 180);
       
       expect(resultado).toEqual({
         fecha: '2024-03-18',
-        hora: '02:30',
+        hora: '01:30',
       });
     });
 
-    it('debe calcular correctamente 14:00 + 4h = 18:00 mismo día', () => {
-      const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '14:00', 240);
+    it('debe calcular correctamente 14:00 + 3h = 17:00 mismo día', () => {
+      const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '14:00', 180);
       
       expect(resultado).toEqual({
         fecha: '2024-03-17',
-        hora: '18:00',
+        hora: '17:00',
       });
     });
 
-    it('debe calcular correctamente 23:00 + 4h = 03:00 siguiente día', () => {
-      const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '23:00', 240);
+    it('debe calcular correctamente 23:00 + 3h = 02:00 siguiente día', () => {
+      const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '23:00', 180);
       
       expect(resultado).toEqual({
         fecha: '2024-03-18',
-        hora: '03:00',
+        hora: '02:00',
       });
     });
 
-    it('debe usar 4 horas (240 min) por defecto si no se especifica', () => {
+    it('debe usar 3 horas (180 min) por defecto si no se especifica', () => {
       const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '10:00');
       
       expect(resultado).toEqual({
         fecha: '2024-03-17',
-        hora: '14:00',
+        hora: '13:00',
       });
     });
 
@@ -63,7 +63,7 @@ describe('DescansoCalculatorService', () => {
     });
 
     it('debe manejar medianoche exacta (00:00)', () => {
-      const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '20:00', 240);
+      const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '21:00', 180);
       
       expect(resultado).toEqual({
         fecha: '2024-03-18',
@@ -82,83 +82,80 @@ describe('DescansoCalculatorService', () => {
   });
 
   describe('validarSlotConDescanso', () => {
-    it('debe validar slot 08:00 cuando hora mínima es 02:30 (válido)', () => {
+    it('debe validar slot día siguiente sin importar descanso (siempre válido)', () => {
       const ultimoPartido = { fecha: '2024-03-17', horaInicio: '20:00', horaFin: '22:30' };
       const slot = { fecha: '2024-03-18', horaInicio: '08:00', horaFin: '09:00' };
       
-      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 240);
+      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 180);
       
+      // Día siguiente: siempre válido (descanso reinicia)
       expect(resultado.valido).toBe(true);
-      expect(resultado.tiempoDescansoMinutos).toBe(570); // 9h 30m = 570 min
-      expect(resultado.tiempoRequeridoMinutos).toBe(240);
+      expect(resultado.tiempoDescansoMinutos).toBe(0);
     });
 
-    it('debe rechazar slot 02:00 cuando hora mínima es 02:30 (inválido)', () => {
-      const ultimoPartido = { fecha: '2024-03-17', horaInicio: '20:00', horaFin: '22:30' };
-      const slot = { fecha: '2024-03-18', horaInicio: '02:00', horaFin: '03:00' };
+    it('debe rechazar slot mismo día sin suficiente descanso (2h < 3h)', () => {
+      const ultimoPartido = { fecha: '2024-03-17', horaInicio: '18:00', horaFin: '19:30' };
+      const slot = { fecha: '2024-03-17', horaInicio: '21:00', horaFin: '22:30' }; // 1.5h después
       
-      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 240);
+      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 180);
       
       expect(resultado.valido).toBe(false);
-      expect(resultado.tiempoDescansoMinutos).toBe(210); // 3h 30m = 210 min (< 240)
-      expect(resultado.razon).toContain('02:00');
-      expect(resultado.razon).toContain('02:30');
+      expect(resultado.tiempoDescansoMinutos).toBe(90); // 1.5h = 90 min (< 180)
     });
 
     it('debe validar slot exacto en hora mínima (válido)', () => {
       const ultimoPartido = { fecha: '2024-03-17', horaInicio: '10:00', horaFin: '10:00' };
-      const slot = { fecha: '2024-03-17', horaInicio: '14:00', horaFin: '15:00' };
-      
-      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 240);
-      
-      expect(resultado.valido).toBe(true);
-      expect(resultado.tiempoDescansoMinutos).toBe(240); // Exacto 4h
-    });
-
-    it('debe validar slot mismo día con suficiente descanso', () => {
-      const ultimoPartido = { fecha: '2024-03-17', horaInicio: '10:00', horaFin: '10:30' };
-      const slot = { fecha: '2024-03-17', horaInicio: '15:00', horaFin: '16:00' };
-      
-      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 240);
-      
-      expect(resultado.valido).toBe(true);
-      expect(resultado.tiempoDescansoMinutos).toBe(270); // 4h 30m
-    });
-
-    it('debe rechazar slot mismo día sin suficiente descanso', () => {
-      const ultimoPartido = { fecha: '2024-03-17', horaInicio: '10:00', horaFin: '10:30' };
       const slot = { fecha: '2024-03-17', horaInicio: '13:00', horaFin: '14:00' };
       
-      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 240);
+      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 180);
+      
+      expect(resultado.valido).toBe(true);
+      expect(resultado.tiempoDescansoMinutos).toBe(180); // Exacto 3h
+    });
+
+    it('debe validar slot mismo día con suficiente descanso (3h30m)', () => {
+      const ultimoPartido = { fecha: '2024-03-17', horaInicio: '10:00', horaFin: '10:30' };
+      const slot = { fecha: '2024-03-17', horaInicio: '14:00', horaFin: '15:00' };
+      
+      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 180);
+      
+      expect(resultado.valido).toBe(true);
+      expect(resultado.tiempoDescansoMinutos).toBe(210); // 3h 30m
+    });
+
+    it('debe rechazar slot mismo día sin suficiente descanso (2h < 3h)', () => {
+      const ultimoPartido = { fecha: '2024-03-17', horaInicio: '10:00', horaFin: '10:30' };
+      const slot = { fecha: '2024-03-17', horaInicio: '12:30', horaFin: '13:30' };
+      
+      const resultado = service.validarSlotConDescanso(slot, ultimoPartido, 180);
       
       expect(resultado.valido).toBe(false);
-      expect(resultado.tiempoDescansoMinutos).toBe(150); // 2h 30m (< 240)
+      expect(resultado.tiempoDescansoMinutos).toBe(120); // 2h (< 180)
     });
   });
 
   describe('encontrarPrimerSlotValido', () => {
-    it('debe encontrar el primer slot válido de la lista', () => {
+    it('debe encontrar el primer slot válido de la lista (día siguiente siempre válido)', () => {
       const ultimoPartido = { fecha: '2024-03-17', horaInicio: '20:00', horaFin: '22:30' };
       const slots = [
-        { fecha: '2024-03-17', horaInicio: '23:00', horaFin: '24:00' }, // Inválido
-        { fecha: '2024-03-18', horaInicio: '02:00', horaFin: '03:00' }, // Inválido (antes 02:30)
-        { fecha: '2024-03-18', horaInicio: '08:00', horaFin: '09:00' }, // Válido ✓
-        { fecha: '2024-03-18', horaInicio: '10:00', horaFin: '11:00' }, // Válido
+        { fecha: '2024-03-17', horaInicio: '23:00', horaFin: '24:00' }, // Inválido (mismo día, < 3h)
+        { fecha: '2024-03-18', horaInicio: '01:00', horaFin: '02:00' }, // Válido (día siguiente)
+        { fecha: '2024-03-18', horaInicio: '08:00', horaFin: '09:00' }, // Válido
       ];
       
-      const resultado = service.encontrarPrimerSlotValido(slots, ultimoPartido, 240);
+      const resultado = service.encontrarPrimerSlotValido(slots, ultimoPartido, 180);
       
-      expect(resultado).toEqual(slots[2]); // El de las 08:00
+      expect(resultado).toEqual(slots[1]); // El de las 01:00 (día siguiente, siempre válido)
     });
 
-    it('debe retornar null si ningún slot es válido', () => {
+    it('debe retornar null si ningún slot es válido mismo día', () => {
       const ultimoPartido = { fecha: '2024-03-17', horaInicio: '20:00', horaFin: '22:30' };
       const slots = [
-        { fecha: '2024-03-17', horaInicio: '23:00', horaFin: '24:00' },
-        { fecha: '2024-03-18', horaInicio: '01:00', horaFin: '02:00' },
+        { fecha: '2024-03-17', horaInicio: '23:00', horaFin: '24:00' }, // < 3h
+        { fecha: '2024-03-17', horaInicio: '23:30', horaFin: '00:30' }, // < 3h
       ];
       
-      const resultado = service.encontrarPrimerSlotValido(slots, ultimoPartido, 240);
+      const resultado = service.encontrarPrimerSlotValido(slots, ultimoPartido, 180);
       
       expect(resultado).toBeNull();
     });
@@ -166,31 +163,30 @@ describe('DescansoCalculatorService', () => {
     it('debe retornar el primer slot si todos son válidos', () => {
       const ultimoPartido = { fecha: '2024-03-17', horaInicio: '10:00', horaFin: '11:00' };
       const slots = [
-        { fecha: '2024-03-17', horaInicio: '16:00', horaFin: '17:00' },
-        { fecha: '2024-03-17', horaInicio: '17:00', horaFin: '18:00' },
+        { fecha: '2024-03-17', horaInicio: '14:00', horaFin: '15:00' }, // 3h después
+        { fecha: '2024-03-17', horaInicio: '15:00', horaFin: '16:00' },
       ];
       
-      const resultado = service.encontrarPrimerSlotValido(slots, ultimoPartido, 240);
+      const resultado = service.encontrarPrimerSlotValido(slots, ultimoPartido, 180);
       
       expect(resultado).toEqual(slots[0]);
     });
   });
 
   describe('filtrarSlotsValidos', () => {
-    it('debe filtrar solo los slots válidos', () => {
+    it('debe incluir slots del día siguiente (siempre válidos)', () => {
       const ultimoPartido = { fecha: '2024-03-17', horaInicio: '20:00', horaFin: '22:30' };
       const slots = [
-        { fecha: '2024-03-17', horaInicio: '23:00', horaFin: '24:00' }, // Inválido
-        { fecha: '2024-03-18', horaInicio: '02:00', horaFin: '03:00' }, // Inválido
-        { fecha: '2024-03-18', horaInicio: '08:00', horaFin: '09:00' }, // Válido
-        { fecha: '2024-03-18', horaInicio: '10:00', horaFin: '11:00' }, // Válido
+        { fecha: '2024-03-17', horaInicio: '23:00', horaFin: '24:00' }, // Inválido (mismo día, < 3h)
+        { fecha: '2024-03-18', horaInicio: '01:00', horaFin: '02:00' }, // Válido (día siguiente)
+        { fecha: '2024-03-18', horaInicio: '08:00', horaFin: '09:00' }, // Válido (día siguiente)
       ];
       
-      const resultado = service.filtrarSlotsValidos(slots, ultimoPartido, 240);
+      const resultado = service.filtrarSlotsValidos(slots, ultimoPartido, 180);
       
       expect(resultado).toHaveLength(2);
+      expect(resultado).toContainEqual(slots[1]);
       expect(resultado).toContainEqual(slots[2]);
-      expect(resultado).toContainEqual(slots[3]);
     });
   });
 
@@ -200,14 +196,14 @@ describe('DescansoCalculatorService', () => {
       expect(resultado).toBe(0);
     });
 
-    it('debe retornar 240 min (4h) para ZONA → SEMIS', () => {
+    it('debe retornar 180 min (3h) para ZONA → SEMIS', () => {
       const resultado = service.getDescansoEntreFases('ZONA', 'SEMIS');
-      expect(resultado).toBe(240);
+      expect(resultado).toBe(180);
     });
 
-    it('debe retornar 240 min (4h) para SEMIS → FINAL', () => {
+    it('debe retornar 180 min (3h) para SEMIS → FINAL', () => {
       const resultado = service.getDescansoEntreFases('SEMIS', 'FINAL');
-      expect(resultado).toBe(240);
+      expect(resultado).toBe(180);
     });
 
     it('debe permitir configuración personalizada', () => {
@@ -225,12 +221,12 @@ describe('DescansoCalculatorService', () => {
       expect(service.formatearTiempo(30)).toBe('30 minutos');
     });
 
-    it('debe formatear horas exactas como "4 horas"', () => {
-      expect(service.formatearTiempo(240)).toBe('4 horas');
+    it('debe formatear horas exactas como "3 horas"', () => {
+      expect(service.formatearTiempo(180)).toBe('3 horas');
     });
 
-    it('debe formatear horas y minutos como "4h 30m"', () => {
-      expect(service.formatearTiempo(270)).toBe('4h 30m');
+    it('debe formatear horas y minutos como "3h 30m"', () => {
+      expect(service.formatearTiempo(210)).toBe('3h 30m');
     });
 
     it('debe formatear 0 minutos', () => {

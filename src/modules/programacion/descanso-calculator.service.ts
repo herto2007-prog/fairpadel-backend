@@ -51,30 +51,23 @@ const DESCANSOS_ENTRE_FASES: Record<string, number> = {
   'SEMIS-SEMIS': 0,
   'FINAL-FINAL': 0,
   
-  // Transiciones ZONA → X: 4 horas
-  'ZONA-REPECHAJE': 240,
-  'ZONA-OCTAVOS': 240,
-  'ZONA-CUARTOS': 240,
-  'ZONA-SEMIS': 240,
-  'ZONA-FINAL': 240,
-  
-  // Transiciones REPECHAJE → X: 4 horas
-  'REPECHAJE-OCTAVOS': 240,
-  'REPECHAJE-CUARTOS': 240,
-  'REPECHAJE-SEMIS': 240,
-  'REPECHAJE-FINAL': 240,
-  
-  // Transiciones OCTAVOS → X: 4 horas
-  'OCTAVOS-CUARTOS': 240,
-  'OCTAVOS-SEMIS': 240,
-  'OCTAVOS-FINAL': 240,
-  
-  // Transiciones CUARTOS → X: 4 horas
-  'CUARTOS-SEMIS': 240,
-  'CUARTOS-FINAL': 240,
-  
-  // Transiciones SEMIS → X: 4 horas
-  'SEMIS-FINAL': 240,
+  // Transiciones entre fases: 3 horas (recomendado, no obligatorio)
+  // El descanso real es por pareja (3h entre partidos de la misma pareja)
+  'ZONA-REPECHAJE': 180,
+  'ZONA-OCTAVOS': 180,
+  'ZONA-CUARTOS': 180,
+  'ZONA-SEMIS': 180,
+  'ZONA-FINAL': 180,
+  'REPECHAJE-OCTAVOS': 180,
+  'REPECHAJE-CUARTOS': 180,
+  'REPECHAJE-SEMIS': 180,
+  'REPECHAJE-FINAL': 180,
+  'OCTAVOS-CUARTOS': 180,
+  'OCTAVOS-SEMIS': 180,
+  'OCTAVOS-FINAL': 180,
+  'CUARTOS-SEMIS': 180,
+  'CUARTOS-FINAL': 180,
+  'SEMIS-FINAL': 180,
 };
 
 /**
@@ -91,30 +84,33 @@ export class DescansoCalculatorService {
   
   private readonly defaultConfig: DescansoConfig = {
     descansoEntreZonas: 0,
-    descansoZonaASemis: 240, // 4 horas
-    descansoSemisAFinal: 240, // 4 horas
+    descansoZonaASemis: 180, // 3 horas
+    descansoSemisAFinal: 180, // 3 horas
   };
 
   /**
    * Calcula la hora mínima de inicio para el siguiente partido
    * considerando el descanso requerido.
    * 
+   * NOTA: El descanso solo aplica si es el MISMO DÍA.
+   * Si el partido es al día siguiente, no hay restricción de descanso.
+   * 
    * @param ultimoPartidoFecha - Fecha del último partido ("2024-03-17")
    * @param ultimoPartidoHoraFin - Hora fin del último partido ("22:30")
-   * @param descansoMinutos - Minutos de descanso requeridos (default: 240 = 4h)
+   * @param descansoMinutos - Minutos de descanso requeridos (default: 180 = 3h)
    * @returns Objeto con fecha y hora mínima permitida
    * 
    * Ejemplos:
-   * - calcularHoraMinimaDescanso("2024-03-17", "22:30", 240) 
-   *   → { fecha: "2024-03-18", hora: "02:30" }
+   * - calcularHoraMinimaDescanso("2024-03-17", "22:30", 180) 
+   *   → { fecha: "2024-03-18", hora: "01:30" }
    * 
-   * - calcularHoraMinimaDescanso("2024-03-17", "14:00", 240)
-   *   → { fecha: "2024-03-17", hora: "18:00" }
+   * - calcularHoraMinimaDescanso("2024-03-17", "14:00", 180)
+   *   → { fecha: "2024-03-17", hora: "17:00" }
    */
   calcularHoraMinimaDescanso(
     ultimoPartidoFecha: string,
     ultimoPartidoHoraFin: string,
-    descansoMinutos: number = 240
+    descansoMinutos: number = 180
   ): HoraMinimaResultado {
     // Usar dayjs con zona horaria explícita de Paraguay
     const fechaHora = dayjs.tz(
@@ -165,12 +161,12 @@ export class DescansoCalculatorService {
       return DESCANSOS_ENTRE_FASES[key];
     }
     
-    // Fallback: misma fase = 0, diferente fase = 240
+    // Fallback: misma fase = 0, diferente fase = 180
     if (faseOrigen === faseDestino) {
       return 0;
     }
     
-    return 240; // Default 4 horas
+    return 180; // Default 3 horas
   }
 
   /**
@@ -185,7 +181,7 @@ export class DescansoCalculatorService {
   validarSlotConDescanso(
     slot: SlotInfo,
     ultimoPartido: SlotInfo,
-    descansoMinutos: number = 240
+    descansoMinutos: number = 180
   ): ValidacionDescansoResultado {
     // Calcular hora mínima permitida usando dayjs
     const horaMinima = this.calcularHoraMinimaDescanso(
@@ -194,14 +190,20 @@ export class DescansoCalculatorService {
       descansoMinutos
     );
 
-    // Comparar usando minutos (NO strings)
+    // Si es diferente día, siempre es válido (el descanso reinicia cada día)
+    const mismoDia = slot.fecha === ultimoPartido.fecha;
+    if (!mismoDia) {
+      return {
+        valido: true,
+        tiempoDescansoMinutos: 0,
+        tiempoRequeridoMinutos: descansoMinutos,
+      };
+    }
+    
+    // Comparar usando minutos (NO strings) - solo si es mismo día
     const slotMinutos = horaAMinutos(slot.horaInicio);
     const minimaMinutos = horaAMinutos(horaMinima.hora);
-    
-    // Si es diferente día, siempre es válido (asume día siguiente tiene slots disponibles)
-    const mismoDia = slot.fecha === ultimoPartido.fecha;
-    const slotEsPosterior = slot.fecha > horaMinima.fecha || 
-                           (slot.fecha === horaMinima.fecha && slotMinutos >= minimaMinutos);
+    const slotEsPosterior = slotMinutos >= minimaMinutos;
 
     // Calcular tiempo de descanso real en minutos
     const ultimoDateTime = dayjs.tz(
@@ -214,7 +216,7 @@ export class DescansoCalculatorService {
     );
     const tiempoDescansoMinutos = slotDateTime.diff(ultimoDateTime, 'minute');
 
-    // Validar
+    // Validar (solo aplica si es mismo día)
     const valido = slotEsPosterior && tiempoDescansoMinutos >= descansoMinutos;
 
     return {
