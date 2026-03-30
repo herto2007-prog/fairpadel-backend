@@ -707,16 +707,8 @@ export class CanchasSorteoService {
    * 
    * Algoritmo:
    * 1. Ordenar categorias por cantidad de inscriptos (mas primero)
-   * 2. Para cada dia, round-robin por fase
-   * 3. Descanso de 3h solo si es mismo dia (dia diferente = siempre valido)
-   * 4. BYE ignorados (no reciben slots)
-   */
-  /**
-   * PARTE 3: Asigna slots a partidos
-   * 
-   * Algoritmo:
-   * 1. Ordenar categorias por cantidad de inscriptos (mas primero)
-   * 2. Para cada dia, round-robin por fase
+   * 2. Para cada dia, asignar TODAS las fases N antes que cualquier fase N+1
+   *    (ZONA completa → REPECHAJE completo → OCTAVOS completos...)
    * 3. Descanso de 3h solo si es mismo dia (dia diferente = siempre valido)
    * 4. BYE ignorados (no reciben slots)
    */
@@ -759,14 +751,15 @@ export class CanchasSorteoService {
 
       const slotsUsados = new Set<number>();
 
-      // 3. ROUND-ROBIN: repetir hasta que no haya mas asignaciones
-      let huboAsignaciones = true;
-      while (huboAsignaciones) {
-        huboAsignaciones = false;
+      // 3. ASIGNAR POR FASE (estricto): Toda la fase N antes que cualquier fase N+1
+      for (const fase of fasesPermitidas) {
+        // Repetir hasta que no haya mas partidos de esta fase para asignar
+        let huboAsignacionesEnEstaFase = true;
+        
+        while (huboAsignacionesEnEstaFase) {
+          huboAsignacionesEnEstaFase = false;
 
-        for (const fase of fasesPermitidas) {
           for (const catData of categoriasOrdenadas) {
-            
             // Buscar primer partido de esta fase/categoria sin asignar (y no BYE)
             const partido = await this.prisma.match.findFirst({
               where: {
@@ -849,7 +842,7 @@ export class CanchasSorteoService {
 
               partidosAsignados.add(partido.id);
               distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
-              huboAsignaciones = true;
+              huboAsignacionesEnEstaFase = true;
               slotAsignado = true;
               break;
             }
