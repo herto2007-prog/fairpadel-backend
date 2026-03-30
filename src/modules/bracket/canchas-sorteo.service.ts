@@ -1072,7 +1072,7 @@ export class CanchasSorteoService {
    * PARTE 1: Validacion de Slots
    * 
    * Verifica que todos los partidos (excepto BYE) tengan slot asignado.
-   * Si hay partidos sin slot, lanza error con detalle por categoria y fase.
+   * Si hay partidos sin slot, lanza error agrupado por FASE (sin distincion de categoria).
    */
   private async validarTodosLosPartidosAsignados(
     tournamentId: string,
@@ -1084,48 +1084,41 @@ export class CanchasSorteoService {
 
     if (fixtureVersionIds.length === 0) return;
 
-    const errores: string[] = [];
+    // Buscar TODOS los partidos sin slot de TODAS las categorias
+    const todosLosPartidosSinSlot = await this.prisma.match.findMany({
+      where: {
+        fixtureVersionId: { in: fixtureVersionIds },
+        esBye: false,
+        fechaProgramada: null,
+      },
+      select: {
+        id: true,
+        ronda: true,
+      },
+    });
 
-    for (const catData of categoriasData) {
-      if (!catData.categoria.fixtureVersionId) continue;
+    if (todosLosPartidosSinSlot.length === 0) return;
 
-      // Contar partidos no-BYE sin slot
-      const partidosSinSlot = await this.prisma.match.findMany({
-        where: {
-          fixtureVersionId: catData.categoria.fixtureVersionId,
-          esBye: false,
-          fechaProgramada: null,
-        },
-        select: {
-          id: true,
-          ronda: true,
-        },
-      });
+    // Agrupar por FASE (sin importar la categoria)
+    const porFase: Record<string, number> = {};
+    for (const p of todosLosPartidosSinSlot) {
+      porFase[p.ronda] = (porFase[p.ronda] || 0) + 1;
+    }
 
-      if (partidosSinSlot.length > 0) {
-        // Agrupar por fase
-        const porFase: Record<string, number> = {};
-        for (const p of partidosSinSlot) {
-          porFase[p.ronda] = (porFase[p.ronda] || 0) + 1;
-        }
+    // Crear mensaje simple: "X partidos (FASE)"
+    const detalleFases = Object.entries(porFase)
+      .map(([fase, cantidad]) => `${cantidad} ${fase}`)
+      .join(', ');
 
-        const detalleFases = Object.entries(porFase)
-          .map(([fase, cantidad]) => `${cantidad} ${fase}`)
-          .join(', ');
+    const mensaje = `${todosLosPartidosSinSlot.length} partidos sin cancha: ${detalleFases}`;
 
-        errores.push(`${catData.nombre}: ${partidosSinSlot.length} partidos (${detalleFases})`);
+    throw new BadRequestException({
+      message: mensaje,
+      detalle: {
+        totalPartidosSinSlot: todosLosPartidosSinSlot.length,
+        porFase,
       }
-    }
-
-    if (errores.length > 0) {
-      throw new BadRequestException(
-        `No se pudieron asignar slots para:\n${errores.join('\n')}\n\n` +
-        `Soluciones:\n` +
-        `1. Agrega mas dias de juego\n` +
-        `2. Aumenta el horario de los dias existentes\n` +
-        `3. Agrega mas canchas`
-      );
-    }
+    });
   }
 
   /**
