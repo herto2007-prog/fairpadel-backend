@@ -1064,6 +1064,12 @@ export class CanchasSorteoService {
   /**
    * Valida que todos los partidos tienen slot asignado
    */
+  /**
+   * PARTE 1: Validacion de Slots
+   * 
+   * Verifica que todos los partidos (excepto BYE) tengan slot asignado.
+   * Si hay partidos sin slot, lanza error con detalle por categoria y fase.
+   */
   private async validarTodosLosPartidosAsignados(
     tournamentId: string,
     categoriasData: Array<{ categoria: any; nombre: string; inscripciones: any[] }>,
@@ -1074,29 +1080,54 @@ export class CanchasSorteoService {
 
     if (fixtureVersionIds.length === 0) return;
 
-    const totalPartidos = await this.prisma.match.count({
-      where: { fixtureVersionId: { in: fixtureVersionIds } },
-    });
+    const errores: string[] = [];
 
-    const partidosConSlot = await this.prisma.match.count({
-      where: {
-        fixtureVersionId: { in: fixtureVersionIds },
-        torneoCanchaId: { not: null },
-        fechaProgramada: { not: null },
-      },
-    });
+    for (const catData of categoriasData) {
+      if (!catData.categoria.fixtureVersionId) continue;
 
-    if (partidosConSlot < totalPartidos) {
-      const partidosSinSlot = totalPartidos - partidosConSlot;
+      // Contar partidos no-BYE sin slot
+      const partidosSinSlot = await this.prisma.match.findMany({
+        where: {
+          fixtureVersionId: catData.categoria.fixtureVersionId,
+          esBye: false,
+          fechaProgramada: null,
+        },
+        select: {
+          id: true,
+          ronda: true,
+        },
+      });
+
+      if (partidosSinSlot.length > 0) {
+        // Agrupar por fase
+        const porFase: Record<string, number> = {};
+        for (const p of partidosSinSlot) {
+          porFase[p.ronda] = (porFase[p.ronda] || 0) + 1;
+        }
+
+        const detalleFases = Object.entries(porFase)
+          .map(([fase, cantidad]) => `${cantidad} ${fase}`)
+          .join(', ');
+
+        errores.push(`${catData.nombre}: ${partidosSinSlot.length} partidos (${detalleFases})`);
+      }
+    }
+
+    if (errores.length > 0) {
       throw new BadRequestException(
-        `No se pudieron asignar ${partidosSinSlot} partidos. ` +
-        `Verifica que haya suficientes slots configurados y que los descansos entre fases permitan asignar todos los partidos.`
+        `No se pudieron asignar slots para:\n${errores.join('\n')}\n\n` +
+        `Soluciones:\n` +
+        `1. Agrega mas dias de juego\n` +
+        `2. Aumenta el horario de los dias existentes\n` +
+        `3. Agrega mas canchas`
       );
     }
   }
 
   /**
-   * Rollback del sorteo en caso de error
+   * PARTE 4: Rollback del sorteo
+   * 
+   * Si ocurre cualquier error, restaura todo al estado anterior.
    */
   private async rollbackSorteo(
     tournamentId: string,
@@ -1104,31 +1135,41 @@ export class CanchasSorteoService {
   ) {
     console.log('[Sorteo] Ejecutando rollback...');
 
-    // Restaurar estado de categor├¡as
+    // Obtener categorias actuales para conseguir los fixtureVersionId NUEVOS
+    const categoriasActuales = await this.prisma.tournamentCategory.findMany({
+      where: { id: { in: estadoInicialCategorias.map(c => c.id) } },
+    });
+
+    // 1. Restaurar estado de categorias (incluyendo fixtureVersionId original)
     for (const cat of estadoInicialCategorias) {
       await this.prisma.tournamentCategory.update({
         where: { id: cat.id },
-        data: { estado: cat.estado },
+        data: { 
+          estado: cat.estado,
+          fixtureVersionId: cat.fixtureVersionId, // Restaurar valor original
+        },
       });
     }
 
-    // Liberar slots reservados
+    // 2. Liberar slots ocupados (tanto RESERVADO como OCUPADO)
     await this.prisma.torneoSlot.updateMany({
       where: {
         disponibilidad: { tournamentId },
-        estado: 'RESERVADO',
+        estado: { in: ['RESERVADO', 'OCUPADO'] },
+        matchId: { not: null },
       },
       data: { estado: 'LIBRE', matchId: null },
     });
 
-    // Eliminar brackets generados
-    const fixtureVersionIds = estadoInicialCategorias
+    // 3. Eliminar partidos creados (los de los nuevos fixtureVersionId)
+    const fixtureVersionIdsNuevos = categoriasActuales
       .filter(c => c.fixtureVersionId)
-      .map(c => c.fixtureVersionId);
+      .map(c => c.fixtureVersionId)
+      .filter(id => !estadoInicialCategorias.some(c => c.fixtureVersionId === id)); // Solo los nuevos
 
-    if (fixtureVersionIds.length > 0) {
+    if (fixtureVersionIdsNuevos.length > 0) {
       await this.prisma.match.deleteMany({
-        where: { fixtureVersionId: { in: fixtureVersionIds } },
+        where: { fixtureVersionId: { in: fixtureVersionIdsNuevos } },
       });
     }
 
