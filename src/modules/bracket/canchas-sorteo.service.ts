@@ -736,8 +736,10 @@ export class CanchasSorteoService {
     const distribucionPorDia: Record<string, number> = {};
     const ultimoPartidoPorPareja = new Map<string, { fecha: string; horaFin: string }>();
     const partidosAsignados = new Set<string>();
-    // NUEVO: Mapa para rastrear horario de ZONA que alimenta a REPECHAJE (para verificar descanso)
-    const horaZonaPorRepechaje = new Map<string, { fecha: string; horaFin: string }>();
+    // NUEVO: Mapa para rastrear horario de partidos para verificar descanso entre fases intermedias
+    const horaOrigenPorPartido = new Map<string, { fecha: string; horaFin: string }>();
+    // Fases intermedias que pueden desbordarse entre si (no incluye SEMIS/FINAL)
+    const fasesIntermedias = [FaseBracket.ZONA, FaseBracket.REPECHAJE, FaseBracket.OCTAVOS, FaseBracket.CUARTOS];
 
     // 1. ORDENAR CATEGORIAS: mas inscriptos primero
     const categoriasOrdenadas = [...categoriasData].sort((a, b) => 
@@ -836,20 +838,20 @@ export class CanchasSorteoService {
                 }
               }
 
-              // NUEVO: Para REPECHAJE sin inscripciones, verificar descanso usando el mapa de ZONA
-              if (fase === FaseBracket.REPECHAJE && !insc1 && !insc2) {
-                const horaZona = horaZonaPorRepechaje.get(partido.id);
-                if (horaZona && horaZona.fecha === dia.fecha) {
+              // NUEVO: Para fases intermedias sin inscripciones, verificar descanso usando el mapa
+              if (fasesIntermedias.includes(fase) && !insc1 && !insc2) {
+                const horaOrigen = horaOrigenPorPartido.get(partido.id);
+                if (horaOrigen && horaOrigen.fecha === dia.fecha) {
                   puedeJugar = this.descansoCalculator.validarSlotConDescanso(
                     { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-                    { fecha: horaZona.fecha, horaInicio: horaZona.horaFin, horaFin: horaZona.horaFin },
+                    { fecha: horaOrigen.fecha, horaInicio: horaOrigen.horaFin, horaFin: horaOrigen.horaFin },
                     180
                   ).valido;
                   // Si no puede jugar por descanso, intentar desborde a siguiente día
                   if (!puedeJugar) {
                     const asignadoEnDesborde = await this.intentarDesborde(
-                      partido, horaZona, diasConfig, diaIndex, fase, ultimoPartidoPorPareja, 
-                      horaZonaPorRepechaje, partidosAsignados, distribucionPorDia
+                      partido, horaOrigen, diasConfig, diaIndex, fase, ultimoPartidoPorPareja, 
+                      horaOrigenPorPartido, partidosAsignados, distribucionPorDia, fasesIntermedias
                     );
                     if (asignadoEnDesborde) {
                       huboAsignacionesEnEstaFase = true;
@@ -885,13 +887,13 @@ export class CanchasSorteoService {
                 ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
               }
 
-              // NUEVO: Si es ZONA y tiene conexión a REPECHAJE, guardar horario para verificar descanso
-              if (fase === FaseBracket.ZONA) {
+              // NUEVO: Si es fase intermedia y tiene conexión a siguiente fase, guardar horario para verificar descanso
+              if (fasesIntermedias.includes(fase)) {
                 if (partido.partidoSiguienteId) {
-                  horaZonaPorRepechaje.set(partido.partidoSiguienteId, { fecha: dia.fecha, horaFin: slot.horaFin });
+                  horaOrigenPorPartido.set(partido.partidoSiguienteId, { fecha: dia.fecha, horaFin: slot.horaFin });
                 }
                 if (partido.partidoPerdedorSiguienteId) {
-                  horaZonaPorRepechaje.set(partido.partidoPerdedorSiguienteId, { fecha: dia.fecha, horaFin: slot.horaFin });
+                  horaOrigenPorPartido.set(partido.partidoPerdedorSiguienteId, { fecha: dia.fecha, horaFin: slot.horaFin });
                 }
               }
 
@@ -925,13 +927,25 @@ export class CanchasSorteoService {
     diaIndexActual: number,
     fase: FaseBracket,
     ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
-    horaZonaPorRepechaje: Map<string, { fecha: string; horaFin: string }>,
+    horaOrigenPorPartido: Map<string, { fecha: string; horaFin: string }>,
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
+    fasesIntermedias: FaseBracket[],
   ): Promise<boolean> {
     // Buscar en días posteriores
     for (let i = diaIndexActual + 1; i < diasConfig.length; i++) {
       const diaSiguiente = diasConfig[i];
+      
+      // Verificar que el día destino NO esté configurado específicamente para SEMIS/FINAL
+      const fasesDestino = (diaSiguiente.fasesPermitidas as string)?.split(',') as FaseBracket[] || 
+        this.obtenerFasesParaDia(diaSiguiente.fecha);
+      const esDiaSemisFinal = fasesDestino.includes(FaseBracket.SEMIS) || fasesDestino.includes(FaseBracket.FINAL);
+      
+      // Si es día de SEMIS/FINAL, no permitir desborde (proteger estas fases)
+      if (esDiaSemisFinal) {
+        console.log(`[Desborde] Día ${diaSiguiente.fecha} protegido para SEMIS/FINAL, buscando siguiente...`);
+        continue;
+      }
       
       // Obtener slots libres del día siguiente
       const slotsLibres = await this.prisma.torneoSlot.findMany({
@@ -981,7 +995,7 @@ export class CanchasSorteoService {
 
           // Si es repechaje, actualizar el mapa para futuras verificaciones
           if (fase === FaseBracket.REPECHAJE) {
-            horaZonaPorRepechaje.set(partido.id, { fecha: diaSiguiente.fecha, horaFin: slot.horaFin });
+            horaOrigenPorPartido.set(partido.id, { fecha: diaSiguiente.fecha, horaFin: slot.horaFin });
           }
 
           partidosAsignados.add(partido.id);
