@@ -91,6 +91,18 @@ export class CerrarInscripcionesSortearDto {
   @IsString({ each: true })
   @ArrayMinSize(1)
   categoriasIds: string[]; // TournamentCategory IDs a cerrar/sortear
+
+  /**
+   * Fecha desde la cual se pueden asignar slots (formato YYYY-MM-DD).
+   * Útil para sortear por lotes: el segundo lote no usa días del pasado.
+   * @example "2026-06-19" - Solo asigna slots desde el 19 en adelante
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'fechaDesde debe tener formato YYYY-MM-DD (ej: 2026-06-19)',
+  })
+  fechaDesde?: string;
 }
 
 /**

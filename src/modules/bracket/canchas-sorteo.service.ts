@@ -537,7 +537,7 @@ export class CanchasSorteoService {
   async cerrarInscripcionesYsortear(
     dto: CerrarInscripcionesSortearDto,
   ): Promise<SorteoMasivoResponse> {
-    const { tournamentId, categoriasIds } = dto;
+    const { tournamentId, categoriasIds, fechaDesde } = dto;
 
     // Guardar estado inicial para rollback si es necesario
     const estadoInicialCategorias = await this.prisma.tournamentCategory.findMany({
@@ -545,7 +545,7 @@ export class CanchasSorteoService {
     });
 
     try {
-      const resultado = await this.ejecutarSorteo(tournamentId, categoriasIds);
+      const resultado = await this.ejecutarSorteo(tournamentId, categoriasIds, fechaDesde);
       return resultado;
     } catch (error) {
       // Rollback: restaurar estado inicial
@@ -563,6 +563,7 @@ export class CanchasSorteoService {
   private async ejecutarSorteo(
     tournamentId: string,
     categoriasIds: string[],
+    fechaDesde?: string,
   ): Promise<SorteoMasivoResponse> {
     // Obtener informaci├│n completa de categor├¡as
     const categoriasData = await this.obtenerCategoriasData(tournamentId, categoriasIds);
@@ -584,6 +585,16 @@ export class CanchasSorteoService {
 
     if (diasConfig.length === 0) {
       throw new BadRequestException('No hay d├¡as configurados para el torneo');
+    }
+
+    // Filtrar d├¡as por fechaDesde si se proporciona (para sorteo por lotes)
+    let diasFiltrados = diasConfig;
+    if (fechaDesde) {
+      diasFiltrados = diasConfig.filter(d => d.fecha >= fechaDesde);
+      if (diasFiltrados.length === 0) {
+        throw new BadRequestException(`No hay d├¡as disponibles desde la fecha ${fechaDesde}`);
+      }
+      console.log(`[Sorteo] Filtrando desde ${fechaDesde}: ${diasFiltrados.length} d├¡as disponibles (de ${diasConfig.length} total)`);
     }
 
     // Cerrar inscripciones y generar brackets
@@ -613,8 +624,8 @@ export class CanchasSorteoService {
       }
     }
 
-    // Asignar slots a partidos
-    const asignaciones = await this.asignarSlots(tournamentId, categoriasData, diasConfig);
+    // Asignar slots a partidos (usando días filtrados por fechaDesde si aplica)
+    const asignaciones = await this.asignarSlots(tournamentId, categoriasData, diasFiltrados);
 
     // Validar que todos los partidos tienen slot asignado
     await this.validarTodosLosPartidosAsignados(tournamentId, categoriasData);
