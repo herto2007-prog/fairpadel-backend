@@ -786,111 +786,11 @@ export class BracketService {
       }
     }
 
-    // MVP: Si no hay slots, buscar slots disponibles del torneo
+    // MVP: Si no hay slots, los partidos se crearán sin programación
+    // Los slots serán asignados posteriormente por asignarSlots()
     if (!slots || slots.length === 0) {
-      // Obtener configuración de días para filtrar por horario correcto
-      const diasConfig = await this.prisma.torneoDisponibilidadDia.findMany({
-        where: { tournamentId },
-        select: { fecha: true, horaInicio: true, horaFin: true },
-      });
-
-      const slotsDisponibles = await this.prisma.torneoSlot.findMany({
-        where: { 
-          estado: 'LIBRE',
-          disponibilidad: {
-            tournamentId,
-          },
-        },
-        include: {
-          disponibilidad: true,
-        },
-        orderBy: [
-          { disponibilidad: { fecha: 'asc' } },
-          { horaInicio: 'asc' },
-        ],
-      });
-
-      // Filtrar slots que estén dentro del horario configurado para su día
-      // FIX: fecha ahora es String YYYY-MM-DD
-      let slotsFiltrados = slotsDisponibles.filter(slot => {
-        const fechaSlot = slot.disponibilidad.fecha;
-        const configDia = diasConfig.find(d => d.fecha === fechaSlot);
-        if (!configDia) return false;
-        
-        // Verificar que el slot esté dentro del rango horario del día
-        return slot.horaInicio >= configDia.horaInicio && slot.horaFin <= configDia.horaFin;
-      });
-
-      // DISTRIBUCIÓN INTELIGENTE POR DÍAS
-      // Agrupar slots por día
-      const slotsPorDia = new Map<string, typeof slotsFiltrados>();
-      for (const slot of slotsFiltrados) {
-        const fecha = slot.disponibilidad.fecha;
-        if (!slotsPorDia.has(fecha)) {
-          slotsPorDia.set(fecha, []);
-        }
-        slotsPorDia.get(fecha)!.push(slot);
-      }
-
-      // Ordenar días cronológicamente
-      const diasOrdenados = Array.from(slotsPorDia.keys()).sort();
-      const totalDias = diasOrdenados.length;
-
-      // Calcular slots necesarios por fase
-      const slotsNecesarios = {
-        [FaseBracket.ZONA]: partidos.filter(p => p.fase === FaseBracket.ZONA).length,
-        [FaseBracket.REPECHAJE]: partidos.filter(p => p.fase === FaseBracket.REPECHAJE).length,
-        [FaseBracket.OCTAVOS]: partidos.filter(p => p.fase === FaseBracket.OCTAVOS).length,
-        [FaseBracket.CUARTOS]: partidos.filter(p => p.fase === FaseBracket.CUARTOS).length,
-        [FaseBracket.SEMIS]: partidos.filter(p => p.fase === FaseBracket.SEMIS).length,
-        [FaseBracket.FINAL]: partidos.filter(p => p.fase === FaseBracket.FINAL).length,
-      };
-
-      // Asignar fases a días según distribución propuesta:
-      // Día 1-2: Zonas | Día 2-3: Repechaje/Octavos | Día 3: Cuartos | Día 4: Semis/Finales
-      // Asignar fases a días SECUENCIALMENTE (sin solapamientos)
-      // Orden cronológico: ZONA → REPECHAJE → OCTAVOS → CUARTOS → SEMIS → FINAL
-      const fasesEnOrden = [
-        FaseBracket.ZONA,
-        FaseBracket.REPECHAJE,
-        FaseBracket.OCTAVOS,
-        FaseBracket.CUARTOS,
-        FaseBracket.SEMIS,
-        FaseBracket.FINAL,
-      ];
-
-      const slotsPorFase: typeof slots = [];
-      let slotIndexGlobal = 0; // Índice en slotsFiltrados
-
-      for (const fase of fasesEnOrden) {
-        const partidosFase = partidos.filter(p => p.fase === fase);
-        if (partidosFase.length === 0) continue;
-
-        // Asignar slots para esta fase usando slots disponibles desde el índice actual
-        for (let i = 0; i < partidosFase.length; i++) {
-          if (slotIndexGlobal < slotsFiltrados.length) {
-            const slot = slotsFiltrados[slotIndexGlobal];
-            slotsPorFase.push({
-              fecha: slot.disponibilidad.fecha,
-              horaInicio: slot.horaInicio,
-              horaFin: slot.horaFin,
-              torneoCanchaId: slot.torneoCanchaId,
-              fase,
-              ordenPartido: i + 1,
-            });
-            slotIndexGlobal++;
-          }
-        }
-      }
-
-      slots = slotsPorFase.sort((a, b) => {
-        // Ordenar por fecha y hora
-        if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
-        return a.horaInicio.localeCompare(b.horaInicio);
-      });
-      
-      // NOTA: Los slots se marcaran como OCUPADOS con matchId 
-      // después de crear cada partido (líneas 965-979)
+      // No asignar slots automáticamente - se asignarán después
+      slots = [];
     }
 
     // Calcular siguiente número de versión

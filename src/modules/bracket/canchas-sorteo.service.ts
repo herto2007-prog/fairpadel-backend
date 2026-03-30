@@ -589,25 +589,18 @@ export class CanchasSorteoService {
     // Cerrar inscripciones y generar brackets
     await this.cerrarInscripcionesYGenerarBrackets(categoriasData);
 
-    // Asignar slots a partidos (PRIMERO - para respetar fases por día y descansos)
-    const asignaciones = await this.asignarSlots(tournamentId, categoriasData, diasConfig);
-
-    // Validar que todos los partidos tienen slot asignado
-    await this.validarTodosLosPartidosAsignados(tournamentId, categoriasData);
-
-    // Guardar brackets en DB con los slots asignados y asignar fixtureVersionId
+    // Guardar brackets en DB (sin slots) y obtener fixtureVersionId
     for (const catData of categoriasData) {
       const config = (catData as any).bracketConfig;
       const partidos = (catData as any).bracketPartidos;
-      const slots = asignaciones.slotsPorCategoria.get(catData.categoria.id);
       
-      if (config && partidos && slots && slots.length > 0) {
+      if (config && partidos) {
         const fixtureVersionId = await this.bracketService.guardarBracket(
           catData.categoria.id,
           config,
           partidos,
           catData.inscripciones,
-          slots, // Pasar los slots asignados
+          [], // Slots vacíos - se asignarán después
         );
         
         // Actualizar la categoría con el fixtureVersionId
@@ -619,6 +612,12 @@ export class CanchasSorteoService {
         catData.categoria.fixtureVersionId = fixtureVersionId;
       }
     }
+
+    // Asignar slots a partidos (ahora los partidos existen en BD)
+    const asignaciones = await this.asignarSlots(tournamentId, categoriasData, diasConfig);
+
+    // Validar que todos los partidos tienen slot asignado
+    await this.validarTodosLosPartidosAsignados(tournamentId, categoriasData);
 
     const response: SorteoMasivoResponse = {
       success: true,
@@ -707,7 +706,7 @@ export class CanchasSorteoService {
     tournamentId: string,
     categoriasData: Array<{ categoria: any; nombre: string; inscripciones: any[] }>,
     diasConfig: any[],
-  ): Promise<{ totalPartidosAsignados: number; distribucionPorDia: Record<string, number>; slotsPorCategoria: Map<string, SlotReserva[]> }> {
+  ): Promise<{ totalPartidosAsignados: number; distribucionPorDia: Record<string, number> }> {
     const asignacionesPorCategoria = new Map<string, SlotReserva[]>();
     const distribucionPorDia: Record<string, number> = {};
     const ultimaHoraFinPorCategoriaFase: Record<string, string> = {};
@@ -841,7 +840,6 @@ export class CanchasSorteoService {
     return {
       totalPartidosAsignados: partidosAsignados.size,
       distribucionPorDia,
-      slotsPorCategoria: asignacionesPorCategoria,
     };
   }
 
