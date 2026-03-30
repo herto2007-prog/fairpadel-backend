@@ -836,54 +836,71 @@ export class CanchasSorteoService {
                 }
               }
 
-              // NUEVO: Para fases intermedias sin inscripciones, verificar descanso desde partido origen
+              // NUEVO: Para fases intermedias sin inscripciones, verificar descanso desde fase anterior
               if (fasesIntermedias.includes(fase) && !insc1 && !insc2) {
-                // Buscar el partido de fase anterior que alimenta a este partido
-                const partidoOrigen = await this.prisma.match.findFirst({
-                  where: {
-                    fixtureVersionId: catData.categoria.fixtureVersionId,
-                    OR: [
-                      { partidoSiguienteId: partido.id },
-                      { partidoPerdedorSiguienteId: partido.id }
-                    ],
-                    fechaProgramada: { not: null }, // Ya debe estar asignado
-                  },
-                  select: {
-                    fechaProgramada: true,
-                    horaProgramada: true,
-                  },
-                });
-
-                if (partidoOrigen?.fechaProgramada && partidoOrigen?.horaProgramada) {
-                  // Calcular hora fin del partido origen (asumimos 90 minutos)
-                  const horaInicioMinutos = horaAMinutos(partidoOrigen.horaProgramada);
-                  const horaFinMinutos = horaInicioMinutos + 90;
-                  const horaFinOrigen = minutosAHora(horaFinMinutos);
+                // Encontrar índice de la fase actual en el orden
+                const faseIndex = ordenFases.indexOf(fase);
+                console.log(`[DEBUG] Fase ${fase}, index ${faseIndex}, ordenFases: ${ordenFases}`);
+                if (faseIndex > 0) {
+                  // Obtener todas las fases anteriores
+                  const fasesAnteriores = ordenFases.slice(0, faseIndex);
+                  console.log(`[DEBUG] Buscando partidos de fases anteriores: ${fasesAnteriores} en fecha ${dia.fecha}`);
                   
-                  // Si es mismo día, verificar descanso
-                  if (partidoOrigen.fechaProgramada === dia.fecha) {
+                  // Buscar el partido más tarde de las fases anteriores asignado hoy
+                  const partidoOrigen = await this.prisma.match.findFirst({
+                    where: {
+                      fixtureVersionId: catData.categoria.fixtureVersionId,
+                      ronda: { in: fasesAnteriores },
+                      fechaProgramada: dia.fecha,
+                      esBye: false,
+                    },
+                    orderBy: [
+                      { horaProgramada: 'desc' },
+                    ],
+                    select: {
+                      fechaProgramada: true,
+                      horaProgramada: true,
+                    },
+                  });
+
+                  console.log(`[DEBUG] Partido origen encontrado:`, partidoOrigen);
+
+                  if (partidoOrigen?.horaProgramada) {
+                    // Calcular hora fin del partido origen (asumimos 90 minutos)
+                    const horaInicioMinutos = horaAMinutos(partidoOrigen.horaProgramada);
+                    const horaFinMinutos = horaInicioMinutos + 90;
+                    const horaFinOrigen = minutosAHora(horaFinMinutos);
+                    
+                    console.log(`[DEBUG] Verificando descanso: slot ${slot.horaInicio} vs origen ${partidoOrigen.horaProgramada} (fin: ${horaFinOrigen})`);
+                    
                     puedeJugar = this.descansoCalculator.validarSlotConDescanso(
                       { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-                      { fecha: partidoOrigen.fechaProgramada, horaInicio: horaFinOrigen, horaFin: horaFinOrigen },
+                      { fecha: dia.fecha, horaInicio: horaFinOrigen, horaFin: horaFinOrigen },
                       180
                     ).valido;
                     
+                    console.log(`[DEBUG] Resultado validación: ${puedeJugar}`);
+                    
                     if (!puedeJugar) {
+                      console.log(`[DEBUG] Intentando desborde...`);
                       // Intentar desborde a siguiente día
                       const horaOrigenData = { 
-                        fecha: partidoOrigen.fechaProgramada, 
+                        fecha: dia.fecha, 
                         horaFin: horaFinOrigen 
                       };
                       const asignadoEnDesborde = await this.intentarDesborde(
                         partido, horaOrigenData, diasConfig, diaIndex, fase, ultimoPartidoPorPareja, 
                         partidosAsignados, distribucionPorDia, fasesIntermedias
                       );
+                      console.log(`[DEBUG] Resultado desborde: ${asignadoEnDesborde}`);
                       if (asignadoEnDesborde) {
                         huboAsignacionesEnEstaFase = true;
                         break;
                       }
                       continue;
                     }
+                  } else {
+                    console.log(`[DEBUG] No se encontró partido origen para ${partido.id}`);
                   }
                 }
               }
