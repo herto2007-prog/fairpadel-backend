@@ -2,12 +2,66 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-25 - ROLLBACK ATÓMICO EN SORTEO ✅
-> - **CRÍTICO:** Sorteo ahora es atómico - si falla, TODO se revierte
-> - **FIX:** Categorías no quedan "Sorteadas" a medias si hay error
-> - **ROLLBACK:** Libera slots, elimina brackets, restaura fixtures, reabre inscripciones
+> **Última actualización:** 2026-03-29 - SISTEMA DE SORTEO V3 - PERFECTO ✅
+> - **ALGORITMO:** Asignación estricta por fase (ZONA → REPECHAJE → OCTAVOS...)
+> - **PRIORIDAD:** Categorías con más inscriptos primero
+> - **DESCANSO:** 3h solo si es mismo día (día diferente = siempre válido)
+> - **BYE:** No reciben slots (avanzan automático)
+> - **ROLLBACK:** Atómico - si falla, TODO se revierte
 > - **BUILD:** ✅ Backend compila
 > - **DEPLOY:** ✅ Commit pushado a producción
+
+---
+
+## 🆕 COMPLETADO (2026-03-29) - Sistema de Sorteo V3 - Algoritmo Perfecto
+
+### ✅ Arquitectura del Sorteo (4 Partes)
+
+**Flujo del Sorteo:**
+```
+Parte 2: Guardar Bracket (sin slots) → Parte 3: Asignar Slots → Parte 1: Validar → Parte 4: Rollback (si error)
+```
+
+### Parte 2: Guardar Bracket (sin slots)
+- Cierra inscripciones
+- Genera estructura del bracket en memoria
+- Crea partidos en BD **sin** fecha/hora/cancha
+- Guarda `fixtureVersionId` en `TournamentCategory`
+- **Resultado:** Botón "Ver" aparece inmediatamente
+
+### Parte 3: Asignar Slots (Algoritmo Optimizado)
+
+**Orden de asignación estricto:**
+1. **TODAS** las ZONAS de todas las categorías (por prioridad de inscriptos)
+2. **TODOS** los REPECHAJES de todas las categorías
+3. **TODOS** los OCTAVOS de todas las categorías
+4. **TODOS** los CUARTOS de todas las categorías
+5. **TODAS** las SEMIS de todas las categorías
+6. **TODAS** las FINALES de todas las categorías
+
+**Reglas:**
+- Prioridad: Categorías con más inscriptos primero
+- Descanso: 3h mínimo si es **mismo día** (día diferente = siempre válido)
+- BYE: No reciben slots (avanzan automático)
+- Garantía: Fase N+1 nunca tiene horario anterior a fase N
+
+### Parte 1: Validación
+- Verifica que todos los partidos (excepto BYE) tengan slot
+- Si falta alguno: error con detalle exacto (cuántos, de qué fase, de qué categoría)
+
+### Parte 4: Rollback (si hay error)
+- Restaura estado e `fixtureVersionId` original
+- Libera slots ocupados
+- Elimina partidos creados
+
+---
+
+## Historial de cambios previos (archivado)
+
+> **2026-03-25** - ROLLBACK ATÓMICO EN SORTEO
+> - Sorteo ahora es atómico - si falla, TODO se revierte
+> - Categorías no quedan "Sorteadas" a medias si hay error
+> - Libera slots, elimina brackets, restaura fixtures, reabre inscripciones
 
 ---
 
