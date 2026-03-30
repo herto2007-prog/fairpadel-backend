@@ -476,16 +476,21 @@ export class CanchasSorteoService {
           horaInicioFinales: torneo.horaInicioFinales,
           horaFinFinales: torneo.horaFinFinales,
         },
-        dias: disponibilidadDias.map(d => ({
-          id: d.id,
-          fecha: d.fecha,
-          horaInicio: d.horaInicio,
-          horaFin: d.horaFin,
-          minutosSlot: d.minutosSlot,
-          fasesPermitidas: d.fasesPermitidas,
-          totalSlots: d.slots.length,
-          slotsLibres: d.slots.filter(s => s.estado === 'LIBRE').length,
-        })),
+        dias: disponibilidadDias.map(d => {
+          const slotsLibres = d.slots.filter(s => s.estado === 'LIBRE').length;
+          const slotsOcupados = d.slots.filter(s => s.estado === 'OCUPADO' || s.estado === 'RESERVADO').length;
+          return {
+            id: d.id,
+            fecha: d.fecha,
+            horaInicio: d.horaInicio,
+            horaFin: d.horaFin,
+            minutosSlot: d.minutosSlot,
+            fasesPermitidas: d.fasesPermitidas,
+            totalSlots: d.slots.length,
+            slotsLibres,
+            slotsOcupados,
+          };
+        }),
         canchas: torneoCanchas.map(tc => ({
           id: tc.id,
           nombre: `Cancha ${tc.orden + 1}`,
@@ -731,6 +736,8 @@ export class CanchasSorteoService {
     const distribucionPorDia: Record<string, number> = {};
     const ultimoPartidoPorPareja = new Map<string, { fecha: string; horaFin: string }>();
     const partidosAsignados = new Set<string>();
+    // NUEVO: Mapa para rastrear horario de ZONA que alimenta a REPECHAJE (para verificar descanso)
+    const horaZonaPorRepechaje = new Map<string, { fecha: string; horaFin: string }>();
 
     // 1. ORDENAR CATEGORIAS: mas inscriptos primero
     const categoriasOrdenadas = [...categoriasData].sort((a, b) => 
@@ -784,6 +791,8 @@ export class CanchasSorteoService {
                 ronda: true,
                 inscripcion1Id: true,
                 inscripcion2Id: true,
+                partidoSiguienteId: true,
+                partidoPerdedorSiguienteId: true,
               },
             });
 
@@ -826,6 +835,19 @@ export class CanchasSorteoService {
                 }
               }
 
+              // NUEVO: Para REPECHAJE sin inscripciones, verificar descanso usando el mapa de ZONA
+              if (fase === FaseBracket.REPECHAJE && !insc1 && !insc2) {
+                const horaZona = horaZonaPorRepechaje.get(partido.id);
+                if (horaZona && horaZona.fecha === dia.fecha) {
+                  puedeJugar = this.descansoCalculator.validarSlotConDescanso(
+                    { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+                    { fecha: horaZona.fecha, horaInicio: horaZona.horaFin, horaFin: horaZona.horaFin },
+                    180
+                  ).valido;
+                  if (!puedeJugar) continue;
+                }
+              }
+
               // 5. ASIGNAR SLOT
               slotsUsados.add(i);
               
@@ -849,6 +871,16 @@ export class CanchasSorteoService {
               }
               if (insc2) {
                 ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
+              }
+
+              // NUEVO: Si es ZONA y tiene conexión a REPECHAJE, guardar horario para verificar descanso
+              if (fase === FaseBracket.ZONA) {
+                if (partido.partidoSiguienteId) {
+                  horaZonaPorRepechaje.set(partido.partidoSiguienteId, { fecha: dia.fecha, horaFin: slot.horaFin });
+                }
+                if (partido.partidoPerdedorSiguienteId) {
+                  horaZonaPorRepechaje.set(partido.partidoPerdedorSiguienteId, { fecha: dia.fecha, horaFin: slot.horaFin });
+                }
               }
 
               partidosAsignados.add(partido.id);

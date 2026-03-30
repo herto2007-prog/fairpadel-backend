@@ -81,6 +81,7 @@ export class AdminBracketController {
         id: cat.id,
         categoryId: cat.categoryId,
         category: cat.category,
+        nombre: cat.category.nombre, // Nombre directo para el frontend
         inscripcionAbierta: cat.inscripcionAbierta,
         estado: cat.estado,
         fixtureVersionId: cat.fixtureVersionId || cat.fixtureVersion?.id || null,
