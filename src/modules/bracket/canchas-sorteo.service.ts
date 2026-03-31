@@ -779,6 +779,9 @@ export class CanchasSorteoService {
       if (slotsDelDia.length === 0) continue;
 
       const slotsUsados = new Set<number>();
+      
+      // NUEVO: Registrar última hora de fin de partido en este día para descanso entre partidos
+      let ultimaHoraFinDelDia: string | null = null;
 
       // NUEVO: Buscar partidos de días anteriores con fecha pero SIN cancha (pendientes)
       // Estos partidos "flotan" y se intentan asignar en el día actual si hay slots libres
@@ -837,6 +840,18 @@ export class CanchasSorteoService {
             }
           }
 
+          // NUEVO: Verificar descanso 3h desde el último partido del día (cualquiera)
+          if (ultimaHoraFinDelDia) {
+            const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
+              { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+              { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia, horaFin: ultimaHoraFinDelDia },
+              180
+            );
+            if (!validacionDescansoDia.valido) {
+              continue;
+            }
+          }
+
           // Mover partido al día actual
           slotsUsados.add(i);
           
@@ -861,6 +876,9 @@ export class CanchasSorteoService {
           if (insc2) {
             ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
           }
+
+          // NUEVO: Registrar última hora de fin del día para descanso entre partidos
+          ultimaHoraFinDelDia = slot.horaFin;
 
           partidosAsignados.add(partidoPendiente.id);
           distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
@@ -935,6 +953,18 @@ export class CanchasSorteoService {
                 }
               }
 
+              // NUEVO: Verificar descanso 3h desde el último partido del día (cualquiera)
+              if (ultimaHoraFinDelDia) {
+                const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
+                  { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+                  { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia, horaFin: ultimaHoraFinDelDia },
+                  180
+                );
+                if (!validacionDescansoDia.valido) {
+                  continue;
+                }
+              }
+
               // 5. ASIGNAR SLOT CON CANCHA
               slotsUsados.add(i);
               horaAsignada = slot.horaInicio;
@@ -960,6 +990,9 @@ export class CanchasSorteoService {
               if (insc2) {
                 ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
               }
+
+              // NUEVO: Registrar última hora de fin del día para descanso entre partidos
+              ultimaHoraFinDelDia = slot.horaFin;
 
               partidosAsignados.add(partido.id);
               distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
