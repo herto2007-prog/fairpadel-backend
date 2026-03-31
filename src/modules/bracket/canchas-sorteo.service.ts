@@ -779,6 +779,9 @@ export class CanchasSorteoService {
       if (slotsDelDia.length === 0) continue;
 
       const slotsUsados = new Set<number>();
+      
+      // NUEVO: Registrar última hora de fin de partido en este día para descanso entre partidos
+      let ultimaHoraFinDelDia: string | null = null;
 
       // NUEVO: Buscar partidos de días anteriores con fecha pero SIN cancha (pendientes)
       // Estos partidos "flotan" y se intentan asignar en el día actual si hay slots libres
@@ -837,6 +840,18 @@ export class CanchasSorteoService {
             }
           }
 
+          // NUEVO: Verificar descanso 3h desde el último partido del día (cualquiera)
+          if (ultimaHoraFinDelDia) {
+            const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
+              { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+              { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia, horaFin: ultimaHoraFinDelDia },
+              180
+            );
+            if (!validacionDescansoDia.valido) {
+              continue;
+            }
+          }
+
           // Mover partido al día actual
           slotsUsados.add(i);
           
@@ -861,6 +876,9 @@ export class CanchasSorteoService {
           if (insc2) {
             ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
           }
+
+          // NUEVO: Registrar última hora de fin del día para descanso entre partidos
+          ultimaHoraFinDelDia = slot.horaFin;
 
           partidosAsignados.add(partidoPendiente.id);
           distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
@@ -935,6 +953,18 @@ export class CanchasSorteoService {
                 }
               }
 
+              // NUEVO: Verificar descanso 3h desde el último partido del día (cualquiera)
+              if (ultimaHoraFinDelDia) {
+                const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
+                  { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+                  { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia, horaFin: ultimaHoraFinDelDia },
+                  180
+                );
+                if (!validacionDescansoDia.valido) {
+                  continue;
+                }
+              }
+
               // 5. ASIGNAR SLOT CON CANCHA
               slotsUsados.add(i);
               horaAsignada = slot.horaInicio;
@@ -961,6 +991,9 @@ export class CanchasSorteoService {
                 ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
               }
 
+              // NUEVO: Registrar última hora de fin del día para descanso entre partidos
+              ultimaHoraFinDelDia = slot.horaFin;
+
               partidosAsignados.add(partido.id);
               distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
               huboAsignacionesEnEstaFase = true;
@@ -968,9 +1001,27 @@ export class CanchasSorteoService {
               break;
             }
 
-            // Si no hay slot disponible en este día, el partido queda pendiente
-            // Se intentará en el siguiente día (flujo normal del for de días)
-            // o al final se asignará fecha estimada para Auditoría
+            // NUEVO: Si no hay slot disponible, asignar fecha/hora estimada sin cancha para Auditoría
+            if (!slotAsignado) {
+              const horaEstimada = ultimaHoraFinDelDia 
+                ? minutosAHora(horaAMinutos(ultimaHoraFinDelDia) + 180)
+                : (slotsDelDia[0]?.horaInicio || '18:00');
+              
+              await this.prisma.match.update({
+                where: { id: partido.id },
+                data: {
+                  fechaProgramada: dia.fecha,
+                  horaProgramada: horaEstimada,
+                  torneoCanchaId: null,
+                },
+              });
+              
+              // Actualizar última hora del día para el siguiente partido
+              ultimaHoraFinDelDia = minutosAHora(horaAMinutos(horaEstimada) + 90);
+              
+              huboAsignacionesEnEstaFase = true;
+              // No agregamos a partidosAsignados porque no tiene cancha
+            }
           }
         }
       }
