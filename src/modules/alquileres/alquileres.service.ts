@@ -108,7 +108,7 @@ export class AlquileresService {
 
       while (horaActual < horaFin) {
         const horaInicioStr = this.formatTime(horaActual);
-        const horaFinSlot = new Date(horaActual.getTime() + 90 * 60000); // 90 min default
+        const horaFinSlot = new Date(horaActual.getTime() + 70 * 60000); // 90 min default
         const horaFinStr = this.formatTime(horaFinSlot);
 
         const ocupado = reservas.some(r => {
@@ -211,7 +211,7 @@ export class AlquileresService {
         ...createDto,
         userId,
         estado,
-        duracionMinutos: createDto.duracionMinutos || 90,
+        duracionMinutos: createDto.duracionMinutos || 70,
       },
       include: {
         sedeCancha: { include: { sede: true } },

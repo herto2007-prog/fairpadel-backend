@@ -528,7 +528,7 @@ export class AdminTorneosController {
           // FIX: fechaFinales ya es String YYYY-MM-DD
           const fechaStr = fechaFinales as string;
           // @ts-ignore
-          const minutosSlot: number = torneoActualizado.minutosPorPartido || torneo.minutosPorPartido || 120;
+          const minutosSlot: number = torneoActualizado.minutosPorPartido || torneo.minutosPorPartido || 70;
           
           console.log('[UpdateTorneo] Creando día de finales automáticamente:', {
             torneoId,

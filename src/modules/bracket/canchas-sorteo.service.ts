@@ -99,14 +99,14 @@ export class CanchasSorteoService {
       },
       update: {
         horaFin: dto.horaFinFinales,
-        minutosSlot: 90,
+        minutosSlot: 70,
       },
       create: {
         tournamentId: dto.tournamentId,
         fecha: torneo.fechaFinales,
         horaInicio: dto.horaInicioSemifinales,
         horaFin: dto.horaFinFinales,
-        minutosSlot: 90,
+        minutosSlot: 70,
       },
     });
 
@@ -399,7 +399,7 @@ export class CanchasSorteoService {
       slotsFaltantes,
       horasNecesarias: Math.ceil(totalSlotsNecesarios * 1.5),
       horasDisponibles: Math.ceil(totalSlotsLibres * 1.5),
-      duracionPromedioMinutos: 90,
+      duracionPromedioMinutos: 70,
       detallePorCategoria: detallePorCategoria.map(c => ({
         ...c,
         partidosPorFase: c.partidosPorFase || [],
@@ -738,6 +738,17 @@ export class CanchasSorteoService {
    * 3. Descanso de 3h solo si es mismo dia (dia diferente = siempre valido)
    * 4. BYE ignorados (no reciben slots)
    */
+  /**
+   * NUEVO ALGORITMO: Asigna slots a partidos con lógica optimizada
+   * 
+   * FLUJO:
+   * Día 1 (Jueves): ZONA - Prioridad a categorías CON ajuste
+   * Día 2 (Viernes): ZONA pendiente → AJUSTES → 8VOS (solo si no hay conflicto con ajustes)
+   * Día 3 (Sábado): Resto 8VOS → 4TOS
+   * Día 4 (Domingo): SEMIS → FINAL
+   * 
+   * Los partidos sin cancha van a Auditoría con fecha/hora ideal
+   */
   private async asignarSlots(
     tournamentId: string,
     categoriasData: Array<{ categoria: any; nombre: string; inscripciones: any[] }>,
@@ -746,30 +757,27 @@ export class CanchasSorteoService {
     const distribucionPorDia: Record<string, number> = {};
     const ultimoPartidoPorPareja = new Map<string, { fecha: string; horaFin: string }>();
     const partidosAsignados = new Set<string>();
+    
+    // Track parejas en ajustes por categoría (para controlar 8vos en Viernes)
+    const parejasEnAjustesPorCategoria = new Map<string, Set<string>>();
+    
+    // Pre-calcular qué categorías tienen ajuste
+    const categoriasConAjuste = new Set<string>();
+    const categoriasSinAjuste = new Set<string>();
+    
+    for (const catData of categoriasData) {
+      const catId = catData.categoria.id;
+      const tieneAjuste = ((catData as any).bracketConfig?.partidosRepechaje || 0) > 0;
+      if (tieneAjuste) {
+        categoriasConAjuste.add(catId);
+      } else {
+        categoriasSinAjuste.add(catId);
+      }
+    }
 
-    // 1. ORDENAR CATEGORIAS: 
-    // - Primero las que tienen repechaje (mas inscriptos primero)
-    // - Luego las que no tienen repechaje (mas inscriptos primero)
-    const categoriasOrdenadas = [...categoriasData].sort((a, b) => {
-      const aTieneRepechaje = ((a as any).bracketConfig?.partidosRepechaje || 0) > 0;
-      const bTieneRepechaje = ((b as any).bracketConfig?.partidosRepechaje || 0) > 0;
-      
-      // Si A tiene repechaje y B no, A va primero
-      if (aTieneRepechaje && !bTieneRepechaje) return -1;
-      // Si B tiene repechaje y A no, B va primero
-      if (!aTieneRepechaje && bTieneRepechaje) return 1;
-      
-      // Si ambas tienen o no tienen repechaje, ordenar por cantidad (mayor primero)
-      return b.inscripciones.length - a.inscripciones.length;
-    });
-
-    // 2. PROCESAR CADA DIA
+    // 1. PROCESAR CADA DÍA CON LÓGICA ESPECÍFICA
     for (let diaIndex = 0; diaIndex < diasConfig.length; diaIndex++) {
       const dia = diasConfig[diaIndex];
-      const fasesPermitidas = (dia.fasesPermitidas as string)?.split(',') as FaseBracket[] || 
-        this.obtenerFasesParaDia(dia.fecha);
-
-      if (fasesPermitidas.length === 0) continue;
 
       const slotsDelDia = await this.prisma.torneoSlot.findMany({
         where: { disponibilidadId: dia.id, estado: 'LIBRE' },
@@ -779,256 +787,145 @@ export class CanchasSorteoService {
       if (slotsDelDia.length === 0) continue;
 
       const slotsUsados = new Set<number>();
-      
-      // NUEVO: Registrar última hora de fin de partido en este día para descanso entre partidos
       let ultimaHoraFinDelDia: string | null = null;
-
-      // NUEVO: Buscar partidos de días anteriores con fecha pero SIN cancha (pendientes)
-      // Estos partidos "flotan" y se intentan asignar en el día actual si hay slots libres
-      const partidosPendientesDiasAnteriores = await this.prisma.match.findMany({
-        where: {
-          fixtureVersionId: { in: categoriasData.map(c => c.categoria.fixtureVersionId).filter(Boolean) },
-          ronda: { in: fasesPermitidas },
-          fechaProgramada: { not: null }, // Ya tiene fecha
-          torneoCanchaId: null, // Pero no tiene cancha
-          esBye: false,
-        },
-        select: {
-          id: true,
-          ronda: true,
-          inscripcion1Id: true,
-          inscripcion2Id: true,
-          fechaProgramada: true,
-          horaProgramada: true,
-        },
-      });
-
-      // Intentar mover partidos pendientes al día actual primero
-      for (const partidoPendiente of partidosPendientesDiasAnteriores) {
-        // Buscar slot disponible para este partido
-        let slotEncontrado = false;
-        
-        for (let i = 0; i < slotsDelDia.length; i++) {
-          if (slotsUsados.has(i)) continue;
+      
+      // Identificar día de semana para lógica específica
+      const [year, month, dayNum] = dia.fecha.split('-').map(Number);
+      const date = new Date(Date.UTC(year, month - 1, dayNum, 12, 0, 0));
+      const diaSemana = date.getUTCDay();
+      
+      // ==========================================
+      // DÍA 1 (JUEVES): ZONA - Prioridad a categorías con ajuste
+      // ==========================================
+      if (diaSemana === 4) { // Jueves
+        // Primero: ZONA de categorías CON ajuste (para maximizar descanso antes de ajustes del Viernes)
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          if (!categoriasConAjuste.has(catId)) continue; // Solo con ajuste
           
-          const slot = slotsDelDia[i];
-          const insc1 = partidoPendiente.inscripcion1Id;
-          const insc2 = partidoPendiente.inscripcion2Id;
-
-          // Verificar descanso desde el último partido de cada pareja
-          let puedeJugar = true;
-          
-          if (insc1 && ultimoPartidoPorPareja.has(insc1)) {
-            const ult = ultimoPartidoPorPareja.get(insc1)!;
-            if (ult.fecha === dia.fecha) {
-              puedeJugar = this.descansoCalculator.validarSlotConDescanso(
-                { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-                { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
-                180
-              ).valido;
-              if (!puedeJugar) continue;
-            }
-          }
-
-          if (insc2 && ultimoPartidoPorPareja.has(insc2)) {
-            const ult = ultimoPartidoPorPareja.get(insc2)!;
-            if (ult.fecha === dia.fecha) {
-              puedeJugar = this.descansoCalculator.validarSlotConDescanso(
-                { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-                { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
-                180
-              ).valido;
-              if (!puedeJugar) continue;
-            }
-          }
-
-          // NUEVO: Verificar descanso 3h desde el último partido del día (cualquiera)
-          if (ultimaHoraFinDelDia) {
-            const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
-              { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-              { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia, horaFin: ultimaHoraFinDelDia },
-              180
-            );
-            if (!validacionDescansoDia.valido) {
-              continue;
-            }
-          }
-
-          // Mover partido al día actual
-          slotsUsados.add(i);
-          slotEncontrado = true;
-          
-          await this.prisma.torneoSlot.update({
-            where: { id: slot.id },
-            data: { estado: 'OCUPADO', matchId: partidoPendiente.id },
-          });
-
-          await this.prisma.match.update({
-            where: { id: partidoPendiente.id },
-            data: {
-              fechaProgramada: dia.fecha,
-              horaProgramada: slot.horaInicio,
-              torneoCanchaId: slot.torneoCanchaId,
-            },
-          });
-
-          // Actualizar último partido por pareja
-          if (insc1) {
-            ultimoPartidoPorPareja.set(insc1, { fecha: dia.fecha, horaFin: slot.horaFin });
-          }
-          if (insc2) {
-            ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
-          }
-
-          // NUEVO: Registrar última hora de fin del día para descanso entre partidos
-          ultimaHoraFinDelDia = slot.horaFin;
-
-          partidosAsignados.add(partidoPendiente.id);
-          distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
-          break; // Slot asignado, pasar al siguiente partido pendiente
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
         }
         
-        // NUEVO: Si no se encontró slot, quitar fecha para que fluya al siguiente día
-        if (!slotEncontrado) {
-          await this.prisma.match.update({
-            where: { id: partidoPendiente.id },
-            data: {
-              fechaProgramada: null,
-              horaProgramada: null,
-            },
-          });
+        // Luego: ZONA de categorías SIN ajuste
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          if (!categoriasSinAjuste.has(catId)) continue; // Solo sin ajuste
+          
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
         }
       }
-
-      // 3. ASIGNAR POR FASE (estricto): Toda la fase N antes que cualquier fase N+1
-      for (const fase of fasesPermitidas) {
-        // Repetir hasta que no haya mas partidos de esta fase para asignar
-        let huboAsignacionesEnEstaFase = true;
+      
+      // ==========================================
+      // DÍA 2 (VIERNES): ZONA pendiente → AJUSTES → 8VOS (condicional)
+      // ==========================================
+      else if (diaSemana === 5) { // Viernes
+        // 1. Primero: ZONA pendiente de cualquier categoría
+        for (const catData of categoriasData) {
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
         
-        while (huboAsignacionesEnEstaFase) {
-          huboAsignacionesEnEstaFase = false;
-
-          for (const catData of categoriasOrdenadas) {
-            // Buscar primer partido de esta fase/categoria sin asignar (y no BYE)
-            const partido = await this.prisma.match.findFirst({
-              where: {
-                fixtureVersionId: catData.categoria.fixtureVersionId,
-                ronda: fase,
-                esBye: false,
-                fechaProgramada: null,
-              },
-              select: {
-                id: true,
-                ronda: true,
-                inscripcion1Id: true,
-                inscripcion2Id: true,
-                partidoSiguienteId: true,
-                partidoPerdedorSiguienteId: true,
-              },
-            });
-
-            if (!partido) continue;
-
-            // 4. BUSCAR PRIMER SLOT QUE CUMPLA DESCANSO
-            let slotAsignado = false;
-            let horaAsignada: string | null = null;
-            
-            for (let i = 0; i < slotsDelDia.length; i++) {
-              if (slotsUsados.has(i)) continue;
-              
-              const slot = slotsDelDia[i];
-              const insc1 = partido.inscripcion1Id;
-              const insc2 = partido.inscripcion2Id;
-
-              // Verificar descanso 3h (solo si mismo dia)
-              let puedeJugar = true;
-              
-              if (insc1 && ultimoPartidoPorPareja.has(insc1)) {
-                const ult = ultimoPartidoPorPareja.get(insc1)!;
-                if (ult.fecha === dia.fecha) {
-                  puedeJugar = this.descansoCalculator.validarSlotConDescanso(
-                    { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-                    { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
-                    180
-                  ).valido;
-                  if (!puedeJugar) continue;
-                }
-              }
-
-              if (insc2 && ultimoPartidoPorPareja.has(insc2)) {
-                const ult = ultimoPartidoPorPareja.get(insc2)!;
-                if (ult.fecha === dia.fecha) {
-                  puedeJugar = this.descansoCalculator.validarSlotConDescanso(
-                    { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-                    { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
-                    180
-                  ).valido;
-                  if (!puedeJugar) continue;
-                }
-              }
-
-              // NUEVO: Verificar descanso 3h desde el último partido del día (cualquiera)
-              if (ultimaHoraFinDelDia) {
-                const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
-                  { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-                  { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia, horaFin: ultimaHoraFinDelDia },
-                  180
-                );
-                if (!validacionDescansoDia.valido) {
-                  continue;
-                }
-              }
-
-              // 5. ASIGNAR SLOT CON CANCHA
-              slotsUsados.add(i);
-              horaAsignada = slot.horaInicio;
-              
-              await this.prisma.torneoSlot.update({
-                where: { id: slot.id },
-                data: { estado: 'OCUPADO', matchId: partido.id },
-              });
-
-              await this.prisma.match.update({
-                where: { id: partido.id },
-                data: {
-                  fechaProgramada: dia.fecha,
-                  horaProgramada: slot.horaInicio,
-                  torneoCanchaId: slot.torneoCanchaId,
-                },
-              });
-
-              // Registrar ultimo partido por pareja
-              if (insc1) {
-                ultimoPartidoPorPareja.set(insc1, { fecha: dia.fecha, horaFin: slot.horaFin });
-              }
-              if (insc2) {
-                ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
-              }
-
-              // NUEVO: Registrar última hora de fin del día para descanso entre partidos
-              ultimaHoraFinDelDia = slot.horaFin;
-
-              partidosAsignados.add(partido.id);
-              distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
-              huboAsignacionesEnEstaFase = true;
-              slotAsignado = true;
-              break;
-            }
-
-            // Si no hay slot disponible en este día, el partido queda pendiente
-            // Se intentará en el siguiente día (flujo normal del for de días)
-            // El partido mantiene fechaProgramada = null para ser tomado por el siguiente día
+        // 2. Segundo: AJUSTES - y registrar parejas que juegan ajustes
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          if (!categoriasConAjuste.has(catId)) continue;
+          
+          const parejasAjuste = await this.asignarPartidosDeFaseYRegistrarParejas(
+            catData, FaseBracket.REPECHAJE, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+          
+          if (parejasAjuste.size > 0) {
+            parejasEnAjustesPorCategoria.set(catId, parejasAjuste);
+          }
+        }
+        
+        // 3. Tercero: 8VOS - Solo si no hay conflicto con ajustes
+        // Solo categorías sin ajuste, o categorías con ajuste donde las parejas no estén en ajustes
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          const parejasEnAjustes = parejasEnAjustesPorCategoria.get(catId) || new Set<string>();
+          
+          await this.asignarPartidosDeFaseConFiltro(
+            catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
+            parejasEnAjustes
+          );
+        }
+      }
+      
+      // ==========================================
+      // DÍA 3 (SÁBADO): 8VOS pendientes → 4TOS
+      // ==========================================
+      else if (diaSemana === 6) { // Sábado
+        // 1. Primero: Resto de 8VOS (los que no cupieron el Viernes)
+        for (const catData of categoriasData) {
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
+        
+        // 2. Luego: 4TOS (con descanso desde 8vos)
+        for (const catData of categoriasData) {
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
+      }
+      
+      // ==========================================
+      // DÍA 4 (DOMINGO): SEMIS → FINAL
+      // ==========================================
+      else if (diaSemana === 0) { // Domingo
+        // SEMIS
+        for (const catData of categoriasData) {
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.SEMIS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
+        
+        // FINAL
+        for (const catData of categoriasData) {
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.FINAL, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
+      }
+      
+      // ==========================================
+      // OTROS DÍAS: Lógica por defecto (por fases permitidas)
+      // ==========================================
+      else {
+        const fasesPermitidas = (dia.fasesPermitidas as string)?.split(',') as FaseBracket[] || 
+          this.obtenerFasesParaDia(dia.fecha);
+        for (const fase of fasesPermitidas) {
+          for (const catData of categoriasData) {
+            await this.asignarPartidosDeFase(
+              catData, fase, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
           }
         }
       }
     }
 
-    // NUEVO: Al final de todos los días, buscar partidos que quedaron SIN CANCHA
-    // y asignarles fecha estimada del último día para que vayan a Auditoría
+    // AUDITORÍA: Partidos sin cancha (fechaProgramada null) van a Auditoría
     const partidosSinCancha = await this.prisma.match.findMany({
       where: {
         fixtureVersionId: { in: categoriasData.map(c => c.categoria.fixtureVersionId).filter(Boolean) },
-        fechaProgramada: null, // Nunca se les asignó fecha (no cupieron en ningún día)
+        fechaProgramada: null,
         esBye: false,
       },
       select: {
@@ -1039,7 +936,6 @@ export class CanchasSorteoService {
 
     if (partidosSinCancha.length > 0 && diasConfig.length > 0) {
       const ultimoDia = diasConfig[diasConfig.length - 1];
-      // Asignar fecha del último día + hora 23:00 (final del día)
       for (const partido of partidosSinCancha) {
         await this.prisma.match.update({
           where: { id: partido.id },
@@ -1524,5 +1420,243 @@ export class CanchasSorteoService {
     }
 
     return resultado;
+  }
+
+  /**
+   * Helper: Asigna partidos de una fase específica
+   */
+  private async asignarPartidosDeFase(
+    catData: any,
+    fase: FaseBracket,
+    dia: any,
+    slotsDelDia: any[],
+    slotsUsados: Set<number>,
+    ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
+    ultimaHoraFinDelDia: string | null,
+    partidosAsignados: Set<string>,
+    distribucionPorDia: Record<string, number>,
+  ): Promise<void> {
+    while (true) {
+      const partido = await this.prisma.match.findFirst({
+        where: {
+          fixtureVersionId: catData.categoria.fixtureVersionId,
+          ronda: fase,
+          esBye: false,
+          fechaProgramada: null,
+        },
+        select: {
+          id: true,
+          ronda: true,
+          inscripcion1Id: true,
+          inscripcion2Id: true,
+        },
+      });
+
+      if (!partido) break;
+
+      const asignado = await this.intentarAsignarSlot(
+        partido, dia, slotsDelDia, slotsUsados,
+        ultimoPartidoPorPareja, ultimaHoraFinDelDia,
+        partidosAsignados, distribucionPorDia
+      );
+
+      if (!asignado) break; // No hay más slots disponibles
+    }
+  }
+
+  /**
+   * Helper: Asigna partidos de fase y registra las parejas que jugaron
+   */
+  private async asignarPartidosDeFaseYRegistrarParejas(
+    catData: any,
+    fase: FaseBracket,
+    dia: any,
+    slotsDelDia: any[],
+    slotsUsados: Set<number>,
+    ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
+    ultimaHoraFinDelDia: string | null,
+    partidosAsignados: Set<string>,
+    distribucionPorDia: Record<string, number>,
+  ): Promise<Set<string>> {
+    const parejasEnPartidos = new Set<string>();
+    
+    while (true) {
+      const partido = await this.prisma.match.findFirst({
+        where: {
+          fixtureVersionId: catData.categoria.fixtureVersionId,
+          ronda: fase,
+          esBye: false,
+          fechaProgramada: null,
+        },
+        select: {
+          id: true,
+          ronda: true,
+          inscripcion1Id: true,
+          inscripcion2Id: true,
+        },
+      });
+
+      if (!partido) break;
+
+      const asignado = await this.intentarAsignarSlot(
+        partido, dia, slotsDelDia, slotsUsados,
+        ultimoPartidoPorPareja, ultimaHoraFinDelDia,
+        partidosAsignados, distribucionPorDia
+      );
+
+      if (!asignado) break;
+      
+      // Registrar parejas que jugaron
+      if (partido.inscripcion1Id) parejasEnPartidos.add(partido.inscripcion1Id);
+      if (partido.inscripcion2Id) parejasEnPartidos.add(partido.inscripcion2Id);
+    }
+    
+    return parejasEnPartidos;
+  }
+
+  /**
+   * Helper: Asigna partidos de fase filtrando parejas (para 8vos con ajustes)
+   */
+  private async asignarPartidosDeFaseConFiltro(
+    catData: any,
+    fase: FaseBracket,
+    dia: any,
+    slotsDelDia: any[],
+    slotsUsados: Set<number>,
+    ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
+    ultimaHoraFinDelDia: string | null,
+    partidosAsignados: Set<string>,
+    distribucionPorDia: Record<string, number>,
+    parejasExcluidas: Set<string>,
+  ): Promise<void> {
+    while (true) {
+      // Buscar partido donde NINGUNA de las parejas esté en parejasExcluidas
+      const partidosCandidatos = await this.prisma.match.findMany({
+        where: {
+          fixtureVersionId: catData.categoria.fixtureVersionId,
+          ronda: fase,
+          esBye: false,
+          fechaProgramada: null,
+        },
+        select: {
+          id: true,
+          ronda: true,
+          inscripcion1Id: true,
+          inscripcion2Id: true,
+        },
+        take: 50, // Batch para verificar
+      });
+      
+      // Filtrar manualmente
+      const partidoValido = partidosCandidatos.find(p => {
+        const p1Excluida = p.inscripcion1Id && parejasExcluidas.has(p.inscripcion1Id);
+        const p2Excluida = p.inscripcion2Id && parejasExcluidas.has(p.inscripcion2Id);
+        return !p1Excluida && !p2Excluida;
+      });
+      
+      if (!partidoValido) break; // No hay más partidos válidos
+
+      const asignado = await this.intentarAsignarSlot(
+        partidoValido, dia, slotsDelDia, slotsUsados,
+        ultimoPartidoPorPareja, ultimaHoraFinDelDia,
+        partidosAsignados, distribucionPorDia
+      );
+
+      if (!asignado) break; // No hay más slots disponibles
+    }
+  }
+
+  /**
+   * Helper: Intenta asignar un slot específico a un partido
+   */
+  private async intentarAsignarSlot(
+    partido: any,
+    dia: any,
+    slotsDelDia: any[],
+    slotsUsados: Set<number>,
+    ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
+    ultimaHoraFinDelDia: string | null,
+    partidosAsignados: Set<string>,
+    distribucionPorDia: Record<string, number>,
+  ): Promise<boolean> {
+    const insc1 = partido.inscripcion1Id;
+    const insc2 = partido.inscripcion2Id;
+
+    for (let i = 0; i < slotsDelDia.length; i++) {
+      if (slotsUsados.has(i)) continue;
+      
+      const slot = slotsDelDia[i];
+
+      // Verificar descanso 3h por pareja
+      if (insc1 && ultimoPartidoPorPareja.has(insc1)) {
+        const ult = ultimoPartidoPorPareja.get(insc1)!;
+        if (ult.fecha === dia.fecha) {
+          const valido = this.descansoCalculator.validarSlotConDescanso(
+            { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+            { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
+            180
+          ).valido;
+          if (!valido) continue;
+        }
+      }
+
+      if (insc2 && ultimoPartidoPorPareja.has(insc2)) {
+        const ult = ultimoPartidoPorPareja.get(insc2)!;
+        if (ult.fecha === dia.fecha) {
+          const valido = this.descansoCalculator.validarSlotConDescanso(
+            { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+            { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
+            180
+          ).valido;
+          if (!valido) continue;
+        }
+      }
+
+      // Verificar descanso 3h global del día
+      if (ultimaHoraFinDelDia) {
+        const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
+          { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+          { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia, horaFin: ultimaHoraFinDelDia },
+          180
+        );
+        if (!validacionDescansoDia.valido) {
+          continue;
+        }
+      }
+
+      // ASIGNAR
+      slotsUsados.add(i);
+      
+      await this.prisma.torneoSlot.update({
+        where: { id: slot.id },
+        data: { estado: 'OCUPADO', matchId: partido.id },
+      });
+
+      await this.prisma.match.update({
+        where: { id: partido.id },
+        data: {
+          fechaProgramada: dia.fecha,
+          horaProgramada: slot.horaInicio,
+          torneoCanchaId: slot.torneoCanchaId,
+        },
+      });
+
+      // Actualizar trackers
+      if (insc1) {
+        ultimoPartidoPorPareja.set(insc1, { fecha: dia.fecha, horaFin: slot.horaFin });
+      }
+      if (insc2) {
+        ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
+      }
+      
+      (ultimaHoraFinDelDia as any) = slot.horaFin;
+
+      partidosAsignados.add(partido.id);
+      distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
+      
+      return true;
+    }
+    
+    return false;
   }
 }

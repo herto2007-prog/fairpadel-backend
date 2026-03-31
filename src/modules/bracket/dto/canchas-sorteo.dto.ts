@@ -66,7 +66,7 @@ export class ConfigurarDiaJuegoDto {
   @IsNumber()
   @Min(30)
   @Max(180)
-  minutosSlot: number = 90;
+  minutosSlot: number = 70;
 
   @IsArray()
   @IsString({ each: true })

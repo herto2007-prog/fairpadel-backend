@@ -1504,7 +1504,7 @@ export class ProgramacionService {
 
   private calcularHoraFin(horaInicio: string): string {
     const [h, m] = horaInicio.split(':').map(Number);
-    const totalMinutos = h * 60 + m + 90; // 90 min = 1.5h
+    const totalMinutos = h * 60 + m + 70; // 90 min = 1.5h
     const horaFin = Math.floor(totalMinutos / 60);
     const minutosFin = totalMinutos % 60;
     return `${horaFin.toString().padStart(2, '0')}:${minutosFin.toString().padStart(2, '0')}`;
