@@ -722,7 +722,8 @@ export class CanchasSorteoService {
    * PARTE 3: Asigna slots a partidos
    * 
    * Algoritmo:
-   * 1. Ordenar categorias por cantidad de inscriptos (mas primero)
+   * 1. Ordenar categorias: primero las que tienen repechaje (mas inscriptos primero),
+   *    luego las que no tienen repechaje (mas inscriptos primero)
    * 2. Para cada dia, asignar TODAS las fases N antes que cualquier fase N+1
    *    (ZONA completa → REPECHAJE completo → OCTAVOS completos...)
    * 3. Descanso de 3h solo si es mismo dia (dia diferente = siempre valido)
@@ -737,10 +738,21 @@ export class CanchasSorteoService {
     const ultimoPartidoPorPareja = new Map<string, { fecha: string; horaFin: string }>();
     const partidosAsignados = new Set<string>();
 
-    // 1. ORDENAR CATEGORIAS: mas inscriptos primero
-    const categoriasOrdenadas = [...categoriasData].sort((a, b) => 
-      b.inscripciones.length - a.inscripciones.length
-    );
+    // 1. ORDENAR CATEGORIAS: 
+    // - Primero las que tienen repechaje (mas inscriptos primero)
+    // - Luego las que no tienen repechaje (mas inscriptos primero)
+    const categoriasOrdenadas = [...categoriasData].sort((a, b) => {
+      const aTieneRepechaje = ((a as any).bracketConfig?.partidosRepechaje || 0) > 0;
+      const bTieneRepechaje = ((b as any).bracketConfig?.partidosRepechaje || 0) > 0;
+      
+      // Si A tiene repechaje y B no, A va primero
+      if (aTieneRepechaje && !bTieneRepechaje) return -1;
+      // Si B tiene repechaje y A no, B va primero
+      if (!aTieneRepechaje && bTieneRepechaje) return 1;
+      
+      // Si ambas tienen o no tienen repechaje, ordenar por cantidad (mayor primero)
+      return b.inscripciones.length - a.inscripciones.length;
+    });
 
     // 2. PROCESAR CADA DIA
     for (let diaIndex = 0; diaIndex < diasConfig.length; diaIndex++) {
