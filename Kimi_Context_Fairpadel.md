@@ -2,14 +2,107 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-29 - SISTEMA DE SORTEO V3 - PERFECTO ✅
+> **Última actualización:** 2026-03-30 - SISTEMA DE SORTEO V4 - DESBORDE ENTRE DÍAS ✅
 > - **ALGORITMO:** Asignación estricta por fase (ZONA → REPECHAJE → OCTAVOS...)
 > - **PRIORIDAD:** Categorías con más inscriptos primero
 > - **DESCANSO:** 3h solo si es mismo día (día diferente = siempre válido)
+> - **DESBORDE:** Fases intermedias pueden pasar al día siguiente si no caben
+> - **PROTECCIÓN:** SEMIS/FINAL no pueden ser invadidas por desborde
 > - **BYE:** No reciben slots (avanzan automático)
 > - **ROLLBACK:** Atómico - si falla, TODO se revierte
 > - **BUILD:** ✅ Backend compila
 > - **DEPLOY:** ✅ Commit pushado a producción
+> - **ESTADO:** En pruebas - debug en progreso para verificar descanso entre fases
+
+---
+
+## 🆕 COMPLETADO (2026-03-30) - Sistema de Sorteo V4 - Desborde entre Días
+
+### ✅ Nuevas Features Implementadas
+
+#### 1. Sorteo por Lotes con `fechaDesde`
+**Problema:** Sortear categorías en múltiples lotes cronológicos sin que el Lote 2 use slots del Lote 1.
+
+**Solución:**
+- Nuevo parámetro opcional `fechaDesde` en DTO
+- Filtra días disponibles desde esa fecha en adelante
+- Ejemplo: Lote 1 (viernes), Lote 2 (sábado con fechaDesde='2026-03-29')
+
+**Commits:**
+- Backend: `8fa863c` - feat: agregar parametro fechaDesde
+- Frontend: `5d05824` - feat: agregar opcion de sorteo por lotes
+
+#### 2. Simplificación de Mensajes de Error
+**Problema:** Modal de slots faltantes muy complejo con detalle por categoría.
+
+**Solución:**
+- Agrupar por FASE (no por categoría)
+- Mensaje simple: "12 partidos sin cancha: 8 CUARTOS, 4 SEMIS"
+- Modal limpio sin detalles innecesarios
+
+**Commits:**
+- Backend: `b717e0f` - refactor: simplificar mensaje de error
+- Frontend: `03f0e68` - refactor: simplificar modal de error
+
+#### 3. Visualización de Slots Ocupados
+**Mejoras UI:**
+- Mostrar "32 libres / 24 ocupados" en lugar de solo "32 slots"
+- En header: "5 día(s) • 144 libres / 20 ocupados"
+- Mostrar nombre de categoría en lista de sorteo
+
+**Commits:**
+- Backend: `b717e0f` - Agregar slotsOcupados a configuración
+- Frontend: `2c56090` - feat: mostrar slots ocupados y nombre de categoria
+
+#### 4. Sistema de Desborde entre Días (V4)
+**Problema:** Si REPECHAJE no cabe en el día de ZONA por descanso de 3h, el sorteo falla.
+
+**Solución:**
+```
+ZONA (19/06 18:00-21:00) → REPECHAJE no cabe (necesita 00:00+)
+↓ Desborde automático
+REPECHAJE (20/06 14:00) ← Asignado al día siguiente disponible
+```
+
+**Implementación:**
+- Nuevo método `intentarDesborde()` para buscar slots en días posteriores
+- Fases intermedias pueden compartir días entre sí
+- Protección: SEMIS/FINAL no pueden ser invadidos
+- Consulta a BD para verificar descanso desde fase anterior
+
+**Fases Intermedias (pueden desbordarse):**
+- ZONA, REPECHAJE, 32avos, 16avos, OCTAVOS, CUARTOS
+
+**Fases Protegidas (no desborde):**
+- SEMIS, FINAL
+
+**Commits:**
+- `7689344` - feat: implementar desborde de fases entre dias
+- `dc8ec0a` - feat: extender descanso a todas las fases intermedias  
+- `a405a96` - fix: consultar BD directamente para verificar descanso
+- `ee2596e` - debug: agregar logs para diagnosticar
+
+### 🐛 Problema Actual en Investigación
+
+**Síntoma:** CUARTOS no respeta descanso de 3h desde REPECHAJE
+- REPECHAJE: 20/06 14:00
+- CUARTOS Partido 1: 20/06 14:00 (debería ser 17:00+)
+
+**Hipótesis:** La consulta a BD para encontrar partido origen no está funcionando correctamente.
+
+**Acciones:**
+- Agregados logs de debug `[DEBUG]` en código
+- Pendiente: Revisar logs de Railway para diagnóstico
+
+### 🔄 Estado del Sistema
+
+| Feature | Estado |
+|---------|--------|
+| Sorteo por lotes | ✅ Funcionando |
+| Desborde entre días | ✅ Implementado |
+| Descanso 3h entre fases | 🔍 En debugging |
+| Protección SEMIS/FINAL | ✅ Implementado |
+| Visualización slots | ✅ Funcionando |
 
 ---
 
