@@ -2,7 +2,83 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-30 - SISTEMA DE SORTEO V4 - DESBORDE ENTRE DÍAS ✅
+> **Última actualización:** 2026-03-31 - SISTEMA DE AUDITORÍA DE DATOS (ADMIN ONLY) ✅
+> - **NUEVO TAB:** "Auditoría" en panel de gestión de torneos
+> - **ACCESO:** Solo administradores (verificación de rol)
+> - **VISTAS:** Resumen, Inscripciones, Partidos, Slots
+> - **FILTROS:** Por estado, categoría, búsqueda por nombre, sin pareja, sin slot, etc.
+> - **EXPORT:** CSV de inscripciones y partidos
+> - **DATOS:** Información enriquecida (nombres, no IDs)
+
+---
+
+## 🆕 COMPLETADO (2026-03-31) - Sistema de Auditoría de Datos
+
+### ✅ Nuevo Tab "Auditoría" - Solo Admin
+
+**Problema:** Necesidad de visualizar datos completos del torneo para debugging y gestión sin acceder directamente a la BD.
+
+**Solución:** Tab "Auditoría" en `/mis-torneos/:id/gestionar` con 4 vistas:
+
+#### 1. Vista Resumen
+- Stats cards: Inscripciones, Partidos, Finalizados, Slots Ocupados
+- Info del torneo: nombre, estado, fechas
+- Inscripciones por estado (gráfico de distribución)
+- Listado de categorías con estado e inscripciones abiertas/cerradas
+
+#### 2. Vista Inscripciones
+- Tabla completa con:
+  - Pareja (Jugador 1 / Jugador 2)
+  - Categoría y género
+  - Estado de inscripción y clasificación
+  - Pagos (estado, monto, método)
+  - Programación (slots asignados)
+  - Notas
+- Filtros: por estado, sin pareja, sin slot, búsqueda por nombre
+- Exportar a CSV
+
+#### 3. Vista Partidos
+- Tabla completa con:
+  - Fase y categoría
+  - Pareja 1 vs Pareja 2
+  - Programación (fecha, hora, cancha, sede)
+  - Estado del partido
+  - Resultado (sets)
+- Filtros: sin programar, finalizados, búsqueda por nombre
+- Exportar a CSV
+
+#### 4. Vista Slots
+- Stats: Total, Ocupados, Libres, % Ocupación
+- Agrupado por día:
+  - Fecha con horario
+  - Tabla de slots con hora, cancha, estado
+  - Quién ocupa cada slot (partido, categoría, parejas)
+- Filtro por fecha
+
+**Endpoints Backend:**
+```
+GET /admin/auditoria/torneos/:id/inscripciones
+GET /admin/auditoria/torneos/:id/partidos
+GET /admin/auditoria/torneos/:id/slots
+GET /admin/auditoria/torneos/:id/resumen
+```
+
+**Seguridad:**
+- Solo accesible para usuarios con rol 'admin'
+- Verificación en backend (@Roles('admin'))
+- Verificación en frontend (user.roles.includes('admin'))
+
+**Archivos creados/modificados:**
+- Backend: `src/modules/admin/admin-auditoria.controller.ts` (nuevo)
+- Backend: `src/modules/admin/admin.module.ts` (actualizado)
+- Frontend: `src/features/organizador/components/auditoria/AuditoriaManager.tsx` (nuevo)
+- Frontend: `src/features/organizador/pages/GestionarTorneoPage.tsx` (actualizado)
+
+**Build:** ✅ Backend y Frontend compilan sin errores
+
+---
+
+> **Última actualización previa:** 2026-03-30 - SISTEMA DE SORTEO V4 - DESBORDE ENTRE DÍAS ✅
 > - **ALGORITMO:** Asignación estricta por fase (ZONA → REPECHAJE → OCTAVOS...)
 > - **PRIORIDAD:** Categorías con más inscriptos primero
 > - **DESCANSO:** 3h solo si es mismo día (día diferente = siempre válido)
