@@ -806,6 +806,8 @@ export class CanchasSorteoService {
       // Intentar mover partidos pendientes al día actual primero
       for (const partidoPendiente of partidosPendientesDiasAnteriores) {
         // Buscar slot disponible para este partido
+        let slotEncontrado = false;
+        
         for (let i = 0; i < slotsDelDia.length; i++) {
           if (slotsUsados.has(i)) continue;
           
@@ -854,6 +856,7 @@ export class CanchasSorteoService {
 
           // Mover partido al día actual
           slotsUsados.add(i);
+          slotEncontrado = true;
           
           await this.prisma.torneoSlot.update({
             where: { id: slot.id },
@@ -883,6 +886,17 @@ export class CanchasSorteoService {
           partidosAsignados.add(partidoPendiente.id);
           distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
           break; // Slot asignado, pasar al siguiente partido pendiente
+        }
+        
+        // NUEVO: Si no se encontró slot, quitar fecha para que fluya al siguiente día
+        if (!slotEncontrado) {
+          await this.prisma.match.update({
+            where: { id: partidoPendiente.id },
+            data: {
+              fechaProgramada: null,
+              horaProgramada: null,
+            },
+          });
         }
       }
 
