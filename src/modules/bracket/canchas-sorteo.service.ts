@@ -780,6 +780,94 @@ export class CanchasSorteoService {
 
       const slotsUsados = new Set<number>();
 
+      // NUEVO: Buscar partidos de días anteriores con fecha pero SIN cancha (pendientes)
+      // Estos partidos "flotan" y se intentan asignar en el día actual si hay slots libres
+      const partidosPendientesDiasAnteriores = await this.prisma.match.findMany({
+        where: {
+          fixtureVersionId: { in: categoriasData.map(c => c.categoria.fixtureVersionId).filter(Boolean) },
+          ronda: { in: fasesPermitidas },
+          fechaProgramada: { not: null }, // Ya tiene fecha
+          torneoCanchaId: null, // Pero no tiene cancha
+          esBye: false,
+        },
+        select: {
+          id: true,
+          ronda: true,
+          inscripcion1Id: true,
+          inscripcion2Id: true,
+          fechaProgramada: true,
+          horaProgramada: true,
+        },
+      });
+
+      // Intentar mover partidos pendientes al día actual primero
+      for (const partidoPendiente of partidosPendientesDiasAnteriores) {
+        // Buscar slot disponible para este partido
+        for (let i = 0; i < slotsDelDia.length; i++) {
+          if (slotsUsados.has(i)) continue;
+          
+          const slot = slotsDelDia[i];
+          const insc1 = partidoPendiente.inscripcion1Id;
+          const insc2 = partidoPendiente.inscripcion2Id;
+
+          // Verificar descanso desde el último partido de cada pareja
+          let puedeJugar = true;
+          
+          if (insc1 && ultimoPartidoPorPareja.has(insc1)) {
+            const ult = ultimoPartidoPorPareja.get(insc1)!;
+            if (ult.fecha === dia.fecha) {
+              puedeJugar = this.descansoCalculator.validarSlotConDescanso(
+                { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+                { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
+                180
+              ).valido;
+              if (!puedeJugar) continue;
+            }
+          }
+
+          if (insc2 && ultimoPartidoPorPareja.has(insc2)) {
+            const ult = ultimoPartidoPorPareja.get(insc2)!;
+            if (ult.fecha === dia.fecha) {
+              puedeJugar = this.descansoCalculator.validarSlotConDescanso(
+                { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
+                { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
+                180
+              ).valido;
+              if (!puedeJugar) continue;
+            }
+          }
+
+          // Mover partido al día actual
+          slotsUsados.add(i);
+          
+          await this.prisma.torneoSlot.update({
+            where: { id: slot.id },
+            data: { estado: 'OCUPADO', matchId: partidoPendiente.id },
+          });
+
+          await this.prisma.match.update({
+            where: { id: partidoPendiente.id },
+            data: {
+              fechaProgramada: dia.fecha,
+              horaProgramada: slot.horaInicio,
+              torneoCanchaId: slot.torneoCanchaId,
+            },
+          });
+
+          // Actualizar último partido por pareja
+          if (insc1) {
+            ultimoPartidoPorPareja.set(insc1, { fecha: dia.fecha, horaFin: slot.horaFin });
+          }
+          if (insc2) {
+            ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
+          }
+
+          partidosAsignados.add(partidoPendiente.id);
+          distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
+          break; // Slot asignado, pasar al siguiente partido pendiente
+        }
+      }
+
       // 3. ASIGNAR POR FASE (estricto): Toda la fase N antes que cualquier fase N+1
       for (const fase of fasesPermitidas) {
         // Repetir hasta que no haya mas partidos de esta fase para asignar
@@ -880,39 +968,42 @@ export class CanchasSorteoService {
               break;
             }
 
-            // NUEVO: Si no hay slot disponible, asignar fecha/hora estimada sin cancha
-            if (!slotAsignado) {
-              // Calcular hora estimada basada en último slot usado + 90min, o primera hora disponible
-              const ultimoSlotIndex = Math.max(...Array.from(slotsUsados), -1);
-              let horaEstimada: string;
-              
-              if (ultimoSlotIndex >= 0 && ultimoSlotIndex < slotsDelDia.length) {
-                // Basado en el último slot usado + 90min
-                const ultimoSlot = slotsDelDia[ultimoSlotIndex];
-                const minutosUltimo = horaAMinutos(ultimoSlot.horaInicio) + 90;
-                horaEstimada = minutosAHora(minutosUltimo);
-              } else {
-                // Basado en el primer slot del día
-                horaEstimada = slotsDelDia[0]?.horaInicio || '18:00';
-              }
-              
-              await this.prisma.match.update({
-                where: { id: partido.id },
-                data: {
-                  fechaProgramada: dia.fecha,
-                  horaProgramada: horaEstimada,
-                  torneoCanchaId: null, // Sin cancha asignada
-                },
-              });
-              
-              horaAsignada = horaEstimada;
-              huboAsignacionesEnEstaFase = true;
-              // NOTA: No agregamos a partidosAsignados porque no tiene cancha
-              // El partido queda "pendiente de cancha"
-            }
+            // Si no hay slot disponible en este día, el partido queda pendiente
+            // Se intentará en el siguiente día (flujo normal del for de días)
+            // o al final se asignará fecha estimada para Auditoría
           }
         }
       }
+    }
+
+    // NUEVO: Al final de todos los días, buscar partidos que quedaron SIN CANCHA
+    // y asignarles fecha estimada del último día para que vayan a Auditoría
+    const partidosSinCancha = await this.prisma.match.findMany({
+      where: {
+        fixtureVersionId: { in: categoriasData.map(c => c.categoria.fixtureVersionId).filter(Boolean) },
+        fechaProgramada: null, // Nunca se les asignó fecha (no cupieron en ningún día)
+        esBye: false,
+      },
+      select: {
+        id: true,
+        ronda: true,
+      },
+    });
+
+    if (partidosSinCancha.length > 0 && diasConfig.length > 0) {
+      const ultimoDia = diasConfig[diasConfig.length - 1];
+      // Asignar fecha del último día + hora 23:00 (final del día)
+      for (const partido of partidosSinCancha) {
+        await this.prisma.match.update({
+          where: { id: partido.id },
+          data: {
+            fechaProgramada: ultimoDia.fecha,
+            horaProgramada: '23:00',
+            torneoCanchaId: null,
+          },
+        });
+      }
+      console.log(`[AsignarSlots] ${partidosSinCancha.length} partidos sin cancha asignados al último día para Auditoría`);
     }
 
     return {
