@@ -1,10 +1,13 @@
 import {
   Controller,
   Get,
+  Put,
   Param,
+  Body,
   Query,
   UseGuards,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { IsString, IsOptional, IsEnum } from 'class-validator';
 import { Transform } from 'class-transformer';
@@ -87,6 +90,20 @@ class FiltrosSlotsDto {
   @IsOptional()
   @IsString()
   canchaId?: string;
+}
+
+// DTO para asignar cancha a partido
+class AsignarCanchaDto {
+  @IsString()
+  torneoCanchaId: string;
+
+  @IsOptional()
+  @IsString()
+  fecha?: string; // Opcional: si se quiere cambiar la fecha
+
+  @IsOptional()
+  @IsString()
+  hora?: string; // Opcional: si se quiere cambiar la hora
 }
 
 @Controller('admin/auditoria')
@@ -786,6 +803,96 @@ export class AdminAuditoriaController {
           estado: cat.estado,
           inscripcionesAbiertas: cat.inscripcionAbierta,
         })),
+      },
+    };
+  }
+
+  /**
+   * PUT /admin/auditoria/partidos/:id/asignar-cancha
+   * Asigna una cancha a un partido que quedó sin cancha después del sorteo
+   */
+  @Put('partidos/:id/asignar-cancha')
+  async asignarCanchaAPartido(
+    @Param('id') partidoId: string,
+    @Body() dto: AsignarCanchaDto,
+  ) {
+    // Verificar que el partido existe
+    const partido = await this.prisma.match.findUnique({
+      where: { id: partidoId },
+      include: {
+        category: {
+          select: { nombre: true },
+        },
+        inscripcion1: {
+          include: {
+            jugador1: { select: { nombre: true, apellido: true } },
+            jugador2: { select: { nombre: true, apellido: true } },
+          },
+        },
+        inscripcion2: {
+          include: {
+            jugador1: { select: { nombre: true, apellido: true } },
+            jugador2: { select: { nombre: true, apellido: true } },
+          },
+        },
+      },
+    });
+
+    if (!partido) {
+      throw new NotFoundException('Partido no encontrado');
+    }
+
+    // Verificar que la cancha existe
+    const cancha = await this.prisma.torneoCancha.findUnique({
+      where: { id: dto.torneoCanchaId },
+      include: {
+        sedeCancha: {
+          include: {
+            sede: { select: { nombre: true } },
+          },
+        },
+      },
+    });
+
+    if (!cancha) {
+      throw new NotFoundException('Cancha no encontrada');
+    }
+
+    // Determinar fecha y hora a usar
+    const fecha = dto.fecha || partido.fechaProgramada;
+    const hora = dto.hora || partido.horaProgramada;
+
+    if (!fecha || !hora) {
+      throw new BadRequestException('El partido no tiene fecha/hora programada. Debe especificar fecha y hora.');
+    }
+
+    // Actualizar el partido con la cancha asignada
+    await this.prisma.match.update({
+      where: { id: partidoId },
+      data: {
+        torneoCanchaId: dto.torneoCanchaId,
+        fechaProgramada: fecha,
+        horaProgramada: hora,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Cancha asignada correctamente',
+      data: {
+        partidoId,
+        pareja1: partido.inscripcion1 
+          ? `${partido.inscripcion1.jugador1?.nombre} ${partido.inscripcion1.jugador1?.apellido} / ${partido.inscripcion1.jugador2?.nombre} ${partido.inscripcion1.jugador2?.apellido}`
+          : 'Por definir',
+        pareja2: partido.inscripcion2
+          ? `${partido.inscripcion2.jugador1?.nombre} ${partido.inscripcion2.jugador1?.apellido} / ${partido.inscripcion2.jugador2?.nombre} ${partido.inscripcion2.jugador2?.apellido}`
+          : 'Por definir',
+        programacion: {
+          fecha,
+          hora,
+          cancha: cancha.sedeCancha?.nombre || 'Cancha',
+          sede: cancha.sedeCancha?.sede?.nombre || '',
+        },
       },
     };
   }
