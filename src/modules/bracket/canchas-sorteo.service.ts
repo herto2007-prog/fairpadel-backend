@@ -1001,27 +1001,9 @@ export class CanchasSorteoService {
               break;
             }
 
-            // NUEVO: Si no hay slot disponible, asignar fecha/hora estimada sin cancha para Auditoría
-            if (!slotAsignado) {
-              const horaEstimada = ultimaHoraFinDelDia 
-                ? minutosAHora(horaAMinutos(ultimaHoraFinDelDia) + 180)
-                : (slotsDelDia[0]?.horaInicio || '18:00');
-              
-              await this.prisma.match.update({
-                where: { id: partido.id },
-                data: {
-                  fechaProgramada: dia.fecha,
-                  horaProgramada: horaEstimada,
-                  torneoCanchaId: null,
-                },
-              });
-              
-              // Actualizar última hora del día para el siguiente partido
-              ultimaHoraFinDelDia = minutosAHora(horaAMinutos(horaEstimada) + 90);
-              
-              huboAsignacionesEnEstaFase = true;
-              // No agregamos a partidosAsignados porque no tiene cancha
-            }
+            // Si no hay slot disponible en este día, el partido queda pendiente
+            // Se intentará en el siguiente día (flujo normal del for de días)
+            // El partido mantiene fechaProgramada = null para ser tomado por el siguiente día
           }
         }
       }
