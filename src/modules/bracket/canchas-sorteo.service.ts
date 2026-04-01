@@ -746,7 +746,7 @@ export class CanchasSorteoService {
    *    luego las que no tienen repechaje (mas inscriptos primero)
    * 2. Para cada dia, asignar TODAS las fases N antes que cualquier fase N+1
    *    (ZONA completa → REPECHAJE completo → OCTAVOS completos...)
-   * 3. Descanso de 3h solo si es mismo dia (dia diferente = siempre valido)
+   * 3. Descanso de 2h solo si es mismo dia (dia diferente = siempre valido)
    * 4. BYE ignorados (no reciben slots)
    */
   /**
@@ -861,7 +861,7 @@ export class CanchasSorteoService {
         }
         
         // 3. Tercero: 8VOS - Solo si no hay conflicto con ajustes
-        // Calcular hora mínima para OCTAVOS (3h después del último partido de ZONA/REPECHAJE)
+        // Calcular hora mínima para OCTAVOS (2h después del último partido de ZONA/REPECHAJE)
         let horaMinimaOctavos: string | undefined;
         
         // Buscar la última hora de fin entre todos los partidos asignados hoy
@@ -891,7 +891,7 @@ export class CanchasSorteoService {
             catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
             ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
             parejasEnAjustes,
-            horaMinimaOctavos // Respetar 3h de descanso desde ZONA/REPECHAJE
+            horaMinimaOctavos // Respetar 2h de descanso desde ZONA/REPECHAJE
           );
         }
       }
@@ -909,7 +909,7 @@ export class CanchasSorteoService {
         }
         
         // 2. Luego: 4TOS (con descanso desde 8vos)
-        // Calcular hora mínima para CUARTOS (3h después del último OCTAVOS)
+        // Calcular hora mínima para CUARTOS (2h después del último OCTAVOS)
         let horaMinimaCuartos: string | undefined;
         let ultimaHoraFinMinutos = 0;
         for (const [inscId, ultPartido] of ultimoPartidoPorPareja.entries()) {
@@ -921,7 +921,7 @@ export class CanchasSorteoService {
           }
         }
         if (ultimaHoraFinMinutos > 0) {
-          horaMinimaCuartos = minutosAHora(ultimaHoraFinMinutos + 180);
+          horaMinimaCuartos = minutosAHora(ultimaHoraFinMinutos + 120);
         }
         
         for (const catData of categoriasData) {
@@ -957,7 +957,7 @@ export class CanchasSorteoService {
           }
         }
         if (ultimaHoraFinMinutos > 0) {
-          horaMinimaFinal = minutosAHora(ultimaHoraFinMinutos + 180);
+          horaMinimaFinal = minutosAHora(ultimaHoraFinMinutos + 120);
         }
         
         for (const catData of categoriasData) {
@@ -1546,14 +1546,14 @@ export class CanchasSorteoService {
         continue;
       }
 
-      // Verificar descanso 3h por pareja
+      // Verificar descanso 2h por pareja
       if (insc1 && ultimoPartidoPorPareja.has(insc1)) {
         const ult = ultimoPartidoPorPareja.get(insc1)!;
         if (ult.fecha === dia.fecha) {
           const valido = this.descansoCalculator.validarSlotConDescanso(
             { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
             { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
-            180
+            120
           ).valido;
           if (!valido) continue;
         }
@@ -1565,7 +1565,7 @@ export class CanchasSorteoService {
           const valido = this.descansoCalculator.validarSlotConDescanso(
             { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
             { fecha: ult.fecha, horaInicio: ult.horaFin, horaFin: ult.horaFin },
-            180
+            120
           ).valido;
           if (!valido) continue;
         }

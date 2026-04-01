@@ -574,7 +574,7 @@ export class ProgramacionService {
    * 1. Ordenar partidos por fase (ZONA primero, FINAL último)
    * 2. Para cada partido, encontrar el primer slot disponible que:
    *    - Sea en una fecha permitida para esa fase
-   *    - No tenga conflicto de pareja (misma pareja en mismo día o <3h)
+   *    - No tenga conflicto de pareja (misma pareja en mismo día o <2h)
    * 3. Para SEMIS/FINAL: solo usar fechaFinales
    * 4. Para otras fases: usar cualquier fecha excepto fechaFinales (si tiene finales)
    */
@@ -1093,9 +1093,9 @@ export class ProgramacionService {
    * Verifica si hay conflicto de pareja
    * Conflictos:
    * - Misma pareja ya juega ese día (máx 2 partidos por día)
-   * - Misma pareja juega con <3h de descanso (regla FIP)
+   * - Misma pareja juega con <2h de descanso (regla FIP)
    * 
-   * Usa DescansoCalculatorService para validación consistente de 3h.
+   * Usa DescansoCalculatorService para validación consistente de 2h.
    * Retorna: { conflicto: boolean, razon?: string }
    */
   private verificarConflictoPareja(
@@ -1123,7 +1123,7 @@ export class ProgramacionService {
         };
       }
 
-      // Verificar 3h de descanso usando el servicio centralizado (todos los partidos de la pareja)
+      // Verificar 2h de descanso usando el servicio centralizado (todos los partidos de la pareja)
       const todosLosPartidos = asignacionesExistentes.filter(a => 
         a.pareja1?.includes(parejaId) || a.pareja2?.includes(parejaId)
       );
@@ -1138,18 +1138,18 @@ export class ProgramacionService {
         const validacion = this.descansoCalculator.validarSlotConDescanso(
           slotPropuesto,
           slotAnterior,
-          180 // 3 horas de descanso
+          120 // 2 horas de descanso
         );
         
         if (!validacion.valido) {
           const horaMinima = this.descansoCalculator.calcularHoraMinimaDescanso(
             p.fecha,
             p.horaFin,
-            180
+            120
           );
           return {
             conflicto: true,
-            razon: `Descanso reglamentario: jugó a las ${p.horaInicio}, puede jugar desde las ${horaMinima.hora} (3h de descanso)`,
+            razon: `Descanso reglamentario: jugó a las ${p.horaInicio}, puede jugar desde las ${horaMinima.hora} (2h de descanso)`,
           };
         }
       }
@@ -1477,7 +1477,7 @@ export class ProgramacionService {
       
       if (slotOcupado) continue;
 
-      // Verificar conflicto de pareja (3h de descanso)
+      // Verificar conflicto de pareja (2h de descanso)
       const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
       const hayConflicto = this.tieneConflictoPareja(
         parejaIds,

@@ -13,9 +13,9 @@ const TZ_PARAGUAY = 'America/Asuncion';
 export interface DescansoConfig {
   /** Descanso entre fases ZONA (minutos) */
   descansoEntreZonas: number;
-  /** Descanso de ZONA a SEMIS (minutos) - default: 180 (3 horas) */
+  /** Descanso de ZONA a SEMIS (minutos) - default: 120 (2 horas) */
   descansoZonaASemis: number;
-  /** Descanso de SEMIS a FINAL (minutos) - default: 180 (3 horas) */
+  /** Descanso de SEMIS a FINAL (minutos) - default: 120 (2 horas) */
   descansoSemisAFinal: number;
 }
 
@@ -40,7 +40,7 @@ export interface ValidacionDescansoResultado {
 /**
  * TABLA COMPLETA DE DESCANSOS ENTRE FASES
  * Todas las transiciones de fase deben estar aquí.
- * Default: 180 minutos (3 horas)
+ * Default: 120 minutos (2 horas)
  */
 const DESCANSOS_ENTRE_FASES: Record<string, number> = {
   // Misma fase: sin descanso
@@ -51,23 +51,23 @@ const DESCANSOS_ENTRE_FASES: Record<string, number> = {
   'SEMIS-SEMIS': 0,
   'FINAL-FINAL': 0,
   
-  // Transiciones entre fases: 3 horas (recomendado, no obligatorio)
-  // El descanso real es por pareja (3h entre partidos de la misma pareja)
-  'ZONA-REPECHAJE': 180,
-  'ZONA-OCTAVOS': 180,
-  'ZONA-CUARTOS': 180,
-  'ZONA-SEMIS': 180,
-  'ZONA-FINAL': 180,
-  'REPECHAJE-OCTAVOS': 180,
-  'REPECHAJE-CUARTOS': 180,
-  'REPECHAJE-SEMIS': 180,
-  'REPECHAJE-FINAL': 180,
-  'OCTAVOS-CUARTOS': 180,
-  'OCTAVOS-SEMIS': 180,
-  'OCTAVOS-FINAL': 180,
-  'CUARTOS-SEMIS': 180,
-  'CUARTOS-FINAL': 180,
-  'SEMIS-FINAL': 180,
+  // Transiciones entre fases: 2 horas (recomendado, no obligatorio)
+  // El descanso real es por pareja (2h entre partidos de la misma pareja)
+  'ZONA-REPECHAJE': 120,
+  'ZONA-OCTAVOS': 120,
+  'ZONA-CUARTOS': 120,
+  'ZONA-SEMIS': 120,
+  'ZONA-FINAL': 120,
+  'REPECHAJE-OCTAVOS': 120,
+  'REPECHAJE-CUARTOS': 120,
+  'REPECHAJE-SEMIS': 120,
+  'REPECHAJE-FINAL': 120,
+  'OCTAVOS-CUARTOS': 120,
+  'OCTAVOS-SEMIS': 120,
+  'OCTAVOS-FINAL': 120,
+  'CUARTOS-SEMIS': 120,
+  'CUARTOS-FINAL': 120,
+  'SEMIS-FINAL': 120,
 };
 
 /**
@@ -76,7 +76,7 @@ const DESCANSOS_ENTRE_FASES: Record<string, number> = {
  * ALGORITMO PRINCIPAL:
  * Hora último partido + descanso = Hora mínima para siguiente
  * 
- * Ejemplo: 22:30 + 3h = 01:30 (día siguiente)
+ * Ejemplo: 22:30 + 2h = 00:30 (día siguiente)
  *          Buscar primer slot disponible >= 02:30
  */
 @Injectable()
@@ -84,8 +84,8 @@ export class DescansoCalculatorService {
   
   private readonly defaultConfig: DescansoConfig = {
     descansoEntreZonas: 0,
-    descansoZonaASemis: 180, // 3 horas
-    descansoSemisAFinal: 180, // 3 horas
+    descansoZonaASemis: 120, // 2 horas
+    descansoSemisAFinal: 120, // 2 horas
   };
 
   /**
@@ -97,20 +97,20 @@ export class DescansoCalculatorService {
    * 
    * @param ultimoPartidoFecha - Fecha del último partido ("2024-03-17")
    * @param ultimoPartidoHoraFin - Hora fin del último partido ("22:30")
-   * @param descansoMinutos - Minutos de descanso requeridos (default: 180 = 3h)
+   * @param descansoMinutos - Minutos de descanso requeridos (default: 120 = 2h)
    * @returns Objeto con fecha y hora mínima permitida
    * 
    * Ejemplos:
-   * - calcularHoraMinimaDescanso("2024-03-17", "22:30", 180) 
-   *   → { fecha: "2024-03-18", hora: "01:30" }
+   * - calcularHoraMinimaDescanso("2024-03-17", "22:30", 120) 
+   *   → { fecha: "2024-03-18", hora: "00:30" }
    * 
-   * - calcularHoraMinimaDescanso("2024-03-17", "14:00", 180)
-   *   → { fecha: "2024-03-17", hora: "17:00" }
+   * - calcularHoraMinimaDescanso("2024-03-17", "14:00", 120)
+   *   → { fecha: "2024-03-17", hora: "16:00" }
    */
   calcularHoraMinimaDescanso(
     ultimoPartidoFecha: string,
     ultimoPartidoHoraFin: string,
-    descansoMinutos: number = 180
+    descansoMinutos: number = 120
   ): HoraMinimaResultado {
     // Usar dayjs con zona horaria explícita de Paraguay
     const fechaHora = dayjs.tz(
@@ -166,7 +166,7 @@ export class DescansoCalculatorService {
       return 0;
     }
     
-    return 180; // Default 3 horas
+    return 120; // Default 2 horas
   }
 
   /**
@@ -181,7 +181,7 @@ export class DescansoCalculatorService {
   validarSlotConDescanso(
     slot: SlotInfo,
     ultimoPartido: SlotInfo,
-    descansoMinutos: number = 180
+    descansoMinutos: number = 120
   ): ValidacionDescansoResultado {
     // Calcular hora mínima permitida usando dayjs
     const horaMinima = this.calcularHoraMinimaDescanso(
