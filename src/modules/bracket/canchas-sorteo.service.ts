@@ -861,28 +861,7 @@ export class CanchasSorteoService {
         }
         
         // 3. Tercero: 8VOS - Solo si no hay conflicto con ajustes
-        // Calcular hora mínima para OCTAVOS (2h después del último partido de ZONA/REPECHAJE)
-        let horaMinimaOctavos: string | undefined;
-        
-        // Buscar la última hora de fin entre todos los partidos asignados hoy
-        let ultimaHoraFinMinutos = 0;
-        for (const [inscId, ultPartido] of ultimoPartidoPorPareja.entries()) {
-          if (ultPartido.fecha === dia.fecha) {
-            const finMinutos = horaAMinutos(ultPartido.horaFin);
-            if (finMinutos > ultimaHoraFinMinutos) {
-              ultimaHoraFinMinutos = finMinutos;
-            }
-          }
-        }
-        
-        // Si hay partidos asignados hoy, calcular hora mínima (+3h = 180 min)
-        if (ultimaHoraFinMinutos > 0) {
-          const horaMinimaMinutos = ultimaHoraFinMinutos + 180;
-          horaMinimaOctavos = minutosAHora(horaMinimaMinutos);
-          console.log(`[AsignarSlots] Viernes ${dia.fecha}: Hora mínima para OCTAVOS = ${horaMinimaOctavos} (último partido ZONA/REPECHAJE terminó a ${minutosAHora(ultimaHoraFinMinutos)})`);
-        }
-        
-        // Solo categorías sin ajuste, o categorías con ajuste donde las parejas no estén en ajustes
+        // El descanso se calcula automáticamente por origen (partido padre ZONA/REPECHAJE)
         for (const catData of categoriasData) {
           const catId = catData.categoria.id;
           const parejasEnAjustes = parejasEnAjustesPorCategoria.get(catId) || new Set<string>();
@@ -890,8 +869,7 @@ export class CanchasSorteoService {
           await this.asignarPartidosDeFaseConFiltro(
             catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
             ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
-            parejasEnAjustes,
-            horaMinimaOctavos // Respetar 2h de descanso desde ZONA/REPECHAJE
+            parejasEnAjustes
           );
         }
       }
@@ -909,26 +887,11 @@ export class CanchasSorteoService {
         }
         
         // 2. Luego: 4TOS (con descanso desde 8vos)
-        // Calcular hora mínima para CUARTOS (2h después del último OCTAVOS)
-        let horaMinimaCuartos: string | undefined;
-        let ultimaHoraFinMinutos = 0;
-        for (const [inscId, ultPartido] of ultimoPartidoPorPareja.entries()) {
-          if (ultPartido.fecha === dia.fecha) {
-            const finMinutos = horaAMinutos(ultPartido.horaFin);
-            if (finMinutos > ultimaHoraFinMinutos) {
-              ultimaHoraFinMinutos = finMinutos;
-            }
-          }
-        }
-        if (ultimaHoraFinMinutos > 0) {
-          horaMinimaCuartos = minutosAHora(ultimaHoraFinMinutos + 120);
-        }
-        
+        // El descanso se calcula automáticamente por origen (partido padre OCTAVOS)
         for (const catData of categoriasData) {
           await this.asignarPartidosDeFase(
             catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
-            horaMinimaCuartos
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
           );
         }
       }
@@ -946,25 +909,11 @@ export class CanchasSorteoService {
         }
         
         // FINAL (con descanso desde SEMIS)
-        let horaMinimaFinal: string | undefined;
-        let ultimaHoraFinMinutos = 0;
-        for (const [inscId, ultPartido] of ultimoPartidoPorPareja.entries()) {
-          if (ultPartido.fecha === dia.fecha) {
-            const finMinutos = horaAMinutos(ultPartido.horaFin);
-            if (finMinutos > ultimaHoraFinMinutos) {
-              ultimaHoraFinMinutos = finMinutos;
-            }
-          }
-        }
-        if (ultimaHoraFinMinutos > 0) {
-          horaMinimaFinal = minutosAHora(ultimaHoraFinMinutos + 120);
-        }
-        
+        // El descanso se calcula automáticamente por origen (partido padre SEMIS)
         for (const catData of categoriasData) {
           await this.asignarPartidosDeFase(
             catData, FaseBracket.FINAL, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
-            horaMinimaFinal
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
           );
         }
       }
@@ -1370,7 +1319,7 @@ export class CanchasSorteoService {
 
   /**
    * Helper: Asigna partidos de una fase específica
-   * @param horaMinima - Hora mínima permitida (opcional, para fases de eliminación)
+   * El descanso se calcula automáticamente por pareja o por origen
    */
   private async asignarPartidosDeFase(
     catData: any,
@@ -1382,7 +1331,6 @@ export class CanchasSorteoService {
     ultimaHoraFinDelDia: { value: string | null },
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
-    horaMinima?: string,
   ): Promise<void> {
     while (true) {
       const partido = await this.prisma.match.findFirst({
@@ -1405,8 +1353,7 @@ export class CanchasSorteoService {
       const asignado = await this.intentarAsignarSlot(
         partido, dia, slotsDelDia, slotsUsados,
         ultimoPartidoPorPareja, ultimaHoraFinDelDia,
-        partidosAsignados, distribucionPorDia,
-        horaMinima
+        partidosAsignados, distribucionPorDia
       );
 
       if (!asignado) break; // No hay más slots disponibles
@@ -1465,7 +1412,7 @@ export class CanchasSorteoService {
 
   /**
    * Helper: Asigna partidos de fase filtrando parejas (para 8vos con ajustes)
-   * @param horaMinima - Hora mínima permitida (opcional, para fases de eliminación)
+   * El descanso se calcula automáticamente por pareja o por origen
    */
   private async asignarPartidosDeFaseConFiltro(
     catData: any,
@@ -1478,7 +1425,6 @@ export class CanchasSorteoService {
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
     parejasExcluidas: Set<string>,
-    horaMinima?: string,
   ): Promise<void> {
     while (true) {
       // Buscar partido donde NINGUNA de las parejas esté en parejasExcluidas
@@ -1510,8 +1456,7 @@ export class CanchasSorteoService {
       const asignado = await this.intentarAsignarSlot(
         partidoValido, dia, slotsDelDia, slotsUsados,
         ultimoPartidoPorPareja, ultimaHoraFinDelDia,
-        partidosAsignados, distribucionPorDia,
-        horaMinima
+        partidosAsignados, distribucionPorDia
       );
 
       if (!asignado) break; // No hay más slots disponibles
@@ -1519,8 +1464,123 @@ export class CanchasSorteoService {
   }
 
   /**
+   * Calcula la hora mínima de descanso basándose en los partidos origen (padre).
+   * Usado para fases de eliminación donde las parejas aún no están definidas.
+   */
+  private async calcularHoraMinimaPorOrigen(
+    matchId: string,
+  ): Promise<{ horaMinima: string | null; fechaMinima: string | null }> {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        partidoOrigen1Id: true,
+        partidoOrigen2Id: true,
+      },
+    });
+
+    if (!match) return { horaMinima: null, fechaMinima: null };
+
+    let ultimaHoraFinMinutos = 0;
+    let ultimaFecha: string | null = null;
+
+    // Verificar origen 1
+    if (match.partidoOrigen1Id) {
+      const origen1 = await this.prisma.match.findUnique({
+        where: { id: match.partidoOrigen1Id },
+        select: { fechaProgramada: true, horaProgramada: true },
+      });
+
+      if (origen1?.fechaProgramada && origen1?.horaProgramada) {
+        // Calcular hora fin (asumiendo slot de 70 min)
+        const horaFinMinutos = horaAMinutos(origen1.horaProgramada) + 70;
+        if (horaFinMinutos > ultimaHoraFinMinutos) {
+          ultimaHoraFinMinutos = horaFinMinutos;
+          ultimaFecha = origen1.fechaProgramada;
+        }
+      }
+    }
+
+    // Verificar origen 2
+    if (match.partidoOrigen2Id) {
+      const origen2 = await this.prisma.match.findUnique({
+        where: { id: match.partidoOrigen2Id },
+        select: { fechaProgramada: true, horaProgramada: true },
+      });
+
+      if (origen2?.fechaProgramada && origen2?.horaProgramada) {
+        const horaFinMinutos = horaAMinutos(origen2.horaProgramada) + 70;
+        if (horaFinMinutos > ultimaHoraFinMinutos) {
+          ultimaHoraFinMinutos = horaFinMinutos;
+          ultimaFecha = origen2.fechaProgramada;
+        }
+      }
+    }
+
+    if (ultimaHoraFinMinutos > 0 && ultimaFecha) {
+      // Agregar 2h (120 min) de descanso
+      const horaMinimaMinutos = ultimaHoraFinMinutos + 120;
+      return {
+        horaMinima: minutosAHora(horaMinimaMinutos),
+        fechaMinima: ultimaFecha,
+      };
+    }
+
+    return { horaMinima: null, fechaMinima: null };
+  }
+
+  /**
+   * Obtiene las restricciones de descanso para un partido.
+   * Combina: 
+   * - Descanso por pareja individual (si tiene inscripciones)
+   * - Descanso por origen (si no tiene inscripciones definidas)
+   */
+  private async obtenerRestriccionesDescanso(
+    partido: any,
+    dia: any,
+    ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
+  ): Promise<{
+    horaMinima?: string;
+    fechaMinima?: string;
+  }> {
+    const insc1 = partido.inscripcion1Id;
+    const insc2 = partido.inscripcion2Id;
+
+    // CASO A: Partido con ambas inscripciones definidas
+    // → Validar descanso por tracker individual de cada pareja
+    if (insc1 && insc2) {
+      let horaMinimaGlobal: number | null = null;
+
+      const ult1 = ultimoPartidoPorPareja.get(insc1);
+      if (ult1?.fecha === dia.fecha) {
+        horaMinimaGlobal = horaAMinutos(ult1.horaFin) + 120;
+      }
+
+      const ult2 = ultimoPartidoPorPareja.get(insc2);
+      if (ult2?.fecha === dia.fecha) {
+        const horaMinima2 = horaAMinutos(ult2.horaFin) + 120;
+        if (!horaMinimaGlobal || horaMinima2 > horaMinimaGlobal) {
+          horaMinimaGlobal = horaMinima2;
+        }
+      }
+
+      if (horaMinimaGlobal) {
+        return {
+          horaMinima: minutosAHora(horaMinimaGlobal),
+          fechaMinima: dia.fecha,
+        };
+      }
+
+      return {};
+    }
+
+    // CASO B: Partido SIN inscripciones definidas (OCTAVOS, CUARTOS, etc.)
+    // → Validar por origen (partidos padre ya asignados)
+    return await this.calcularHoraMinimaPorOrigen(partido.id);
+  }
+
+  /**
    * Helper: Intenta asignar un slot específico a un partido
-   * @param horaMinima - Hora mínima permitida (opcional, para fases de eliminación)
+   * Usa restricciones de descanso por pareja y por origen
    */
   private async intentarAsignarSlot(
     partido: any,
@@ -1531,22 +1591,31 @@ export class CanchasSorteoService {
     ultimaHoraFinDelDia: { value: string | null },
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
-    horaMinima?: string,
   ): Promise<boolean> {
     const insc1 = partido.inscripcion1Id;
     const insc2 = partido.inscripcion2Id;
+
+    // Obtener restricciones de descanso (por pareja o por origen)
+    const restricciones = await this.obtenerRestriccionesDescanso(
+      partido, dia, ultimoPartidoPorPareja
+    );
 
     for (let i = 0; i < slotsDelDia.length; i++) {
       if (slotsUsados.has(i)) continue;
       
       const slot = slotsDelDia[i];
 
-      // Validar hora mínima para fases de eliminación (ej: OCTAVOS después de ZONA)
-      if (horaMinima && horaAMinutos(slot.horaInicio) < horaAMinutos(horaMinima)) {
+      // Validar fecha mínima (por origen - partido padre en día anterior)
+      if (restricciones.fechaMinima && slot.fecha < restricciones.fechaMinima) {
         continue;
       }
 
-      // Verificar descanso 2h por pareja
+      // Validar hora mínima (por pareja o por origen)
+      if (restricciones.horaMinima && horaAMinutos(slot.horaInicio) < horaAMinutos(restricciones.horaMinima)) {
+        continue;
+      }
+
+      // Verificar descanso 2h por pareja (backup adicional para parejas con inscripciones)
       if (insc1 && ultimoPartidoPorPareja.has(insc1)) {
         const ult = ultimoPartidoPorPareja.get(insc1)!;
         if (ult.fecha === dia.fecha) {
