@@ -1505,18 +1505,6 @@ export class CanchasSorteoService {
         }
       }
 
-      // Verificar descanso 3h global del día
-      if (ultimaHoraFinDelDia.value) {
-        const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
-          { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-          { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia.value, horaFin: ultimaHoraFinDelDia.value },
-          180
-        );
-        if (!validacionDescansoDia.valido) {
-          continue;
-        }
-      }
-
       // ASIGNAR
       slotsUsados.add(i);
       
@@ -1534,15 +1522,13 @@ export class CanchasSorteoService {
         },
       });
 
-      // Actualizar trackers
+      // Actualizar trackers (solo por pareja, no global)
       if (insc1) {
         ultimoPartidoPorPareja.set(insc1, { fecha: dia.fecha, horaFin: slot.horaFin });
       }
       if (insc2) {
         ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
       }
-      
-      ultimaHoraFinDelDia.value = slot.horaFin;
 
       partidosAsignados.add(partido.id);
       distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
