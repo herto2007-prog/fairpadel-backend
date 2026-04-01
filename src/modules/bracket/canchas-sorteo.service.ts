@@ -837,7 +837,10 @@ export class CanchasSorteoService {
       // DÍA 2 (VIERNES): ZONA pendiente → AJUSTES → 8VOS (condicional)
       // ==========================================
       else if (diaSemana === 5) { // Viernes
+        console.log(`[asignarSlots] ===== VIERNES ${dia.fecha} =====`);
+        
         // 1. Primero: ZONA pendiente de cualquier categoría
+        console.log(`[asignarSlots] --- Fase ZONA ---`);
         for (const catData of categoriasData) {
           await this.asignarPartidosDeFase(
             catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
@@ -846,6 +849,7 @@ export class CanchasSorteoService {
         }
         
         // 2. Segundo: AJUSTES - y registrar parejas que juegan ajustes
+        console.log(`[asignarSlots] --- Fase REPECHAJE ---`);
         for (const catData of categoriasData) {
           const catId = catData.categoria.id;
           if (!categoriasConAjuste.has(catId)) continue;
@@ -862,6 +866,7 @@ export class CanchasSorteoService {
         
         // 3. Tercero: 8VOS - Solo si no hay conflicto con ajustes
         // El descanso se calcula automáticamente por origen (partido padre ZONA/REPECHAJE)
+        console.log(`[asignarSlots] --- Fase OCTAVOS ---`);
         for (const catData of categoriasData) {
           const catId = catData.categoria.id;
           const parejasEnAjustes = parejasEnAjustesPorCategoria.get(catId) || new Set<string>();
@@ -1335,6 +1340,8 @@ export class CanchasSorteoService {
     // Track partidos que no se pudieron asignar en esta iteración para no reintentarlos infinitamente
     const partidosNoAsignados = new Set<string>();
     
+    console.log(`[asignarPartidosDeFase] Iniciando fase ${fase} para dia ${dia.fecha}. Slots disponibles: ${slotsDelDia.length - slotsUsados.size}`);
+    
     while (true) {
       const partido = await this.prisma.match.findFirst({
         where: {
@@ -1352,7 +1359,12 @@ export class CanchasSorteoService {
         },
       });
 
-      if (!partido) break;
+      if (!partido) {
+        console.log(`[asignarPartidosDeFase] No hay más partidos pendientes en fase ${fase}`);
+        break;
+      }
+
+      console.log(`[asignarPartidosDeFase] Encontrado partido ${partido.id} en fase ${fase}`);
 
       const asignado = await this.intentarAsignarSlot(
         partido, dia, slotsDelDia, slotsUsados,
@@ -1361,11 +1373,14 @@ export class CanchasSorteoService {
       );
 
       if (!asignado) {
+        console.log(`[asignarPartidosDeFase] Partido ${partido.id} NO pudo asignarse, marcando para no reintentar`);
         // Marcar como no asignado para no reintentar en esta fase
         partidosNoAsignados.add(partido.id);
         // Continuar con el siguiente partido, NO hacer break
         continue;
       }
+      
+      console.log(`[asignarPartidosDeFase] Partido ${partido.id} ASIGNADO correctamente`);
     }
   }
 
@@ -1442,6 +1457,8 @@ export class CanchasSorteoService {
   ): Promise<void> {
     const partidosNoAsignados = new Set<string>();
     
+    console.log(`[asignarPartidosDeFaseConFiltro] Iniciando fase ${fase} para dia ${dia.fecha}. Slots disponibles: ${slotsDelDia.length - slotsUsados.size}`);
+    
     while (true) {
       // Buscar partido donde NINGUNA de las parejas esté en parejasExcluidas
       // Y que no haya sido marcado como no asignado previamente
@@ -1461,16 +1478,25 @@ export class CanchasSorteoService {
         take: 50, // Batch para verificar
       });
       
+      console.log(`[asignarPartidosDeFaseConFiltro] Candidatos encontrados: ${partidosCandidatos.length}`);
+      
       // Filtrar manualmente (excluir parejas en ajustes y partidos ya intentados)
       const partidoValido = partidosCandidatos.find(p => {
         if (partidosNoAsignados.has(p.id)) return false;
         const p1Excluida = p.inscripcion1Id && parejasExcluidas.has(p.inscripcion1Id);
         const p2Excluida = p.inscripcion2Id && parejasExcluidas.has(p.inscripcion2Id);
-        return !p1Excluida && !p2Excluida;
+        const valido = !p1Excluida && !p2Excluida;
+        console.log(`[asignarPartidosDeFaseConFiltro] Partido ${p.id}: insc1=${p.inscripcion1Id}, insc2=${p.inscripcion2Id}, valido=${valido}`);
+        return valido;
       });
       
-      if (!partidoValido) break; // No hay más partidos válidos
+      if (!partidoValido) {
+        console.log(`[asignarPartidosDeFaseConFiltro] No hay más partidos válidos para fase ${fase}`);
+        break; // No hay más partidos válidos
+      }
 
+      console.log(`[asignarPartidosDeFaseConFiltro] Intentando asignar partido ${partidoValido.id}`);
+      
       const asignado = await this.intentarAsignarSlot(
         partidoValido, dia, slotsDelDia, slotsUsados,
         ultimoPartidoPorPareja, ultimaHoraFinDelDia,
@@ -1478,9 +1504,12 @@ export class CanchasSorteoService {
       );
 
       if (!asignado) {
+        console.log(`[asignarPartidosDeFaseConFiltro] Partido ${partidoValido.id} NO pudo asignarse`);
         partidosNoAsignados.add(partidoValido.id);
         continue; // Intentar con el siguiente partido
       }
+      
+      console.log(`[asignarPartidosDeFaseConFiltro] Partido ${partidoValido.id} ASIGNADO correctamente`);
     }
   }
 
@@ -1501,7 +1530,12 @@ export class CanchasSorteoService {
       },
     });
 
-    if (!match) return { puedeAsignar: true };
+    if (!match) {
+      console.log(`[verificarOrigenAsignado] Match ${matchId} no encontrado`);
+      return { puedeAsignar: true };
+    }
+
+    console.log(`[verificarOrigenAsignado] Match ${matchId}: origen1=${match.partidoOrigen1Id}, origen2=${match.partidoOrigen2Id}, diaFecha=${diaFecha}`);
 
     let horaMaximaFinMinutos = 0;
     let todosLosOrigenesAsignados = true;
@@ -1514,15 +1548,21 @@ export class CanchasSorteoService {
         select: { fechaProgramada: true, horaProgramada: true },
       });
 
+      console.log(`[verificarOrigenAsignado] Origen1 ${match.partidoOrigen1Id}: fecha=${origen1?.fechaProgramada}, hora=${origen1?.horaProgramada}`);
+
       if (!origen1?.fechaProgramada) {
+        console.log(`[verificarOrigenAsignado] Origen1 NO tiene fecha asignada`);
         todosLosOrigenesAsignados = false;
       } else if (origen1.fechaProgramada === diaFecha && origen1.horaProgramada) {
         // Origen es mismo día - calcular hora fin + 2h descanso
         algunoMismoDia = true;
         const horaFinMinutos = horaAMinutos(origen1.horaProgramada) + 70 + 120; // slot + 2h
+        console.log(`[verificarOrigenAsignado] Origen1 MISMO DIA. Hora fin calculada: ${minutosAHora(horaFinMinutos)} (${horaFinMinutos} min)`);
         if (horaFinMinutos > horaMaximaFinMinutos) {
           horaMaximaFinMinutos = horaFinMinutos;
         }
+      } else {
+        console.log(`[verificarOrigenAsignado] Origen1 dia diferente: ${origen1.fechaProgramada} vs ${diaFecha}`);
       }
     }
 
@@ -1533,24 +1573,32 @@ export class CanchasSorteoService {
         select: { fechaProgramada: true, horaProgramada: true },
       });
 
+      console.log(`[verificarOrigenAsignado] Origen2 ${match.partidoOrigen2Id}: fecha=${origen2?.fechaProgramada}, hora=${origen2?.horaProgramada}`);
+
       if (!origen2?.fechaProgramada) {
+        console.log(`[verificarOrigenAsignado] Origen2 NO tiene fecha asignada`);
         todosLosOrigenesAsignados = false;
       } else if (origen2.fechaProgramada === diaFecha && origen2.horaProgramada) {
         // Origen es mismo día - calcular hora fin + 2h descanso
         algunoMismoDia = true;
         const horaFinMinutos = horaAMinutos(origen2.horaProgramada) + 70 + 120; // slot + 2h
+        console.log(`[verificarOrigenAsignado] Origen2 MISMO DIA. Hora fin calculada: ${minutosAHora(horaFinMinutos)} (${horaFinMinutos} min)`);
         if (horaFinMinutos > horaMaximaFinMinutos) {
           horaMaximaFinMinutos = horaFinMinutos;
         }
+      } else {
+        console.log(`[verificarOrigenAsignado] Origen2 dia diferente: ${origen2.fechaProgramada} vs ${diaFecha}`);
       }
     }
 
     if (!todosLosOrigenesAsignados) {
+      console.log(`[verificarOrigenAsignado] Resultado: NO puede asignar (faltan origenes)`);
       return { puedeAsignar: false };
     }
 
     // Si algún origen es mismo día, retornar hora mínima calculada
     if (algunoMismoDia && horaMaximaFinMinutos > 0) {
+      console.log(`[verificarOrigenAsignado] Resultado: horaMinima=${minutosAHora(horaMaximaFinMinutos)}`);
       return {
         puedeAsignar: true,
         horaMinima: minutosAHora(horaMaximaFinMinutos),
@@ -1558,6 +1606,7 @@ export class CanchasSorteoService {
     }
 
     // Si todos los orígenes son días anteriores, sin restricción de hora
+    console.log(`[verificarOrigenAsignado] Resultado: puedeAsignar sin restriccion (origenes en dias anteriores)`);
     return { puedeAsignar: true };
   }
 
@@ -1636,10 +1685,14 @@ export class CanchasSorteoService {
     const insc1 = partido.inscripcion1Id;
     const insc2 = partido.inscripcion2Id;
 
+    console.log(`[intentarAsignarSlot] Partido ${partido.id} (${partido.ronda}): insc1=${insc1}, insc2=${insc2}, dia=${dia.fecha}`);
+
     // Obtener restricciones de descanso (por pareja o por origen)
     const restricciones = await this.obtenerRestriccionesDescanso(
       partido, dia, ultimoPartidoPorPareja
     );
+
+    console.log(`[intentarAsignarSlot] Restricciones: puedeAsignar=${restricciones.puedeAsignar}, horaMinima=${restricciones.horaMinima}, fechaMinima=${restricciones.fechaMinima}`);
 
     // Si el partido origen no está asignado todavía, no podemos asignar este partido
     if (!restricciones.puedeAsignar) {
@@ -1651,16 +1704,22 @@ export class CanchasSorteoService {
       if (slotsUsados.has(i)) continue;
       
       const slot = slotsDelDia[i];
+      
+      console.log(`[intentarAsignarSlot] Evaluando slot ${i}: ${slot.horaInicio}-${slot.horaFin}`);
 
       // Validar fecha mínima (por origen - partido padre en día anterior)
       if (restricciones.fechaMinima && slot.fecha < restricciones.fechaMinima) {
+        console.log(`[intentarAsignarSlot] Slot ${i} RECHAZADO: fecha ${slot.fecha} < fechaMinima ${restricciones.fechaMinima}`);
         continue;
       }
 
       // Validar hora mínima (por pareja o por origen)
       if (restricciones.horaMinima && horaAMinutos(slot.horaInicio) < horaAMinutos(restricciones.horaMinima)) {
+        console.log(`[intentarAsignarSlot] Slot ${i} RECHAZADO: hora ${slot.horaInicio} (${horaAMinutos(slot.horaInicio)}) < horaMinima ${restricciones.horaMinima} (${horaAMinutos(restricciones.horaMinima)})`);
         continue;
       }
+      
+      console.log(`[intentarAsignarSlot] Slot ${i} ACEPTADO: ${slot.horaInicio}-${slot.horaFin}`);
 
       // Verificar descanso 2h por pareja (backup adicional para parejas con inscripciones)
       if (insc1 && ultimoPartidoPorPareja.has(insc1)) {
