@@ -1485,16 +1485,11 @@ export class CanchasSorteoService {
   }
 
   /**
-   * Calcula la hora mínima de descanso basándose en los partidos origen (padre).
-   * Usado para fases de eliminación donde las parejas aún no están definidas.
-   * 
-   * @returns { horaMinima, fechaMinima, origenAsignado }
-   *   - Si origenAsignado = false: el partido origen aún no tiene fecha, 
-   *     por lo que este partido no puede asignarse todavía
+   * Verifica que los partidos origen (padre) ya tengan fecha asignada.
+   * Usado para garantizar orden cronológico entre fases.
+   * NO calcula descanso desde el origen - eso solo aplica por pareja mismo día.
    */
-  private async calcularHoraMinimaPorOrigen(
-    matchId: string,
-  ): Promise<{ horaMinima: string | null; fechaMinima: string | null; origenAsignado: boolean }> {
+  private async verificarOrigenAsignado(matchId: string): Promise<boolean> {
     const match = await this.prisma.match.findUnique({
       where: { id: matchId },
       select: {
@@ -1503,29 +1498,17 @@ export class CanchasSorteoService {
       },
     });
 
-    if (!match) return { horaMinima: null, fechaMinima: null, origenAsignado: true };
-
-    let ultimaHoraFinMinutos = 0;
-    let ultimaFecha: string | null = null;
-    let todosLosOrigenesAsignados = true;
+    if (!match) return true;
 
     // Verificar origen 1
     if (match.partidoOrigen1Id) {
       const origen1 = await this.prisma.match.findUnique({
         where: { id: match.partidoOrigen1Id },
-        select: { fechaProgramada: true, horaProgramada: true },
+        select: { fechaProgramada: true },
       });
 
-      if (origen1?.fechaProgramada && origen1?.horaProgramada) {
-        // Calcular hora fin (asumiendo slot de 70 min)
-        const horaFinMinutos = horaAMinutos(origen1.horaProgramada) + 70;
-        if (horaFinMinutos > ultimaHoraFinMinutos) {
-          ultimaHoraFinMinutos = horaFinMinutos;
-          ultimaFecha = origen1.fechaProgramada;
-        }
-      } else {
-        // El partido origen aún no tiene fecha asignada
-        todosLosOrigenesAsignados = false;
+      if (!origen1?.fechaProgramada) {
+        return false; // Origen no asignado todavía
       }
     }
 
@@ -1533,48 +1516,15 @@ export class CanchasSorteoService {
     if (match.partidoOrigen2Id) {
       const origen2 = await this.prisma.match.findUnique({
         where: { id: match.partidoOrigen2Id },
-        select: { fechaProgramada: true, horaProgramada: true },
+        select: { fechaProgramada: true },
       });
 
-      if (origen2?.fechaProgramada && origen2?.horaProgramada) {
-        const horaFinMinutos = horaAMinutos(origen2.horaProgramada) + 70;
-        if (horaFinMinutos > ultimaHoraFinMinutos) {
-          ultimaHoraFinMinutos = horaFinMinutos;
-          ultimaFecha = origen2.fechaProgramada;
-        }
-      } else {
-        // El partido origen aún no tiene fecha asignada
-        todosLosOrigenesAsignados = false;
+      if (!origen2?.fechaProgramada) {
+        return false; // Origen no asignado todavía
       }
     }
 
-    if (ultimaHoraFinMinutos > 0 && ultimaFecha && todosLosOrigenesAsignados) {
-      // Agregar 2h (120 min) de descanso
-      let horaMinimaMinutos = ultimaHoraFinMinutos + 120;
-      let fechaMinima = ultimaFecha;
-      
-      // Si la hora mínima cruza medianoche (>= 24h), ajustar al día siguiente
-      if (horaMinimaMinutos >= 24 * 60) {
-        horaMinimaMinutos = horaMinimaMinutos - (24 * 60);
-        // Calcular día siguiente
-        const fechaDate = new Date(ultimaFecha + 'T12:00:00');
-        fechaDate.setDate(fechaDate.getDate() + 1);
-        fechaMinima = fechaDate.toISOString().split('T')[0];
-      }
-      
-      return {
-        horaMinima: minutosAHora(horaMinimaMinutos),
-        fechaMinima: fechaMinima,
-        origenAsignado: true,
-      };
-    }
-
-    // Si no todos los orígenes están asignados, marcar como no disponible
-    return { 
-      horaMinima: null, 
-      fechaMinima: null, 
-      origenAsignado: !match.partidoOrigen1Id && !match.partidoOrigen2Id // Si no tiene orígenes, está ok
-    };
+    return true; // Todos los orígenes tienen fecha asignada
   }
 
   /**
@@ -1625,13 +1575,12 @@ export class CanchasSorteoService {
     }
 
     // CASO B: Partido SIN inscripciones definidas (OCTAVOS, CUARTOS, etc.)
-    // → Validar por origen (partidos padre ya asignados)
-    const resultadoOrigen = await this.calcularHoraMinimaPorOrigen(partido.id);
+    // → Solo verificar que el origen tenga fecha asignada (para orden cronológico)
+    // NO calcular descanso desde origen - las fases ocurren cronológicamente
+    const origenAsignado = await this.verificarOrigenAsignado(partido.id);
     
     return {
-      horaMinima: resultadoOrigen.horaMinima,
-      fechaMinima: resultadoOrigen.fechaMinima,
-      puedeAsignar: resultadoOrigen.origenAsignado,
+      puedeAsignar: origenAsignado,
     };
   }
 
