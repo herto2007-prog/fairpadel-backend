@@ -602,6 +602,17 @@ export class CanchasSorteoService {
       console.log(`[Sorteo] Filtrando desde ${fechaDesde}: ${diasFiltrados.length} d├¡as disponibles (de ${diasConfig.length} total)`);
     }
 
+    // FIX: Liberar slots de sorteos anteriores para permitir nueva asignacion
+    console.log('[Sorteo] Liberando slots de sorteos anteriores...');
+    await this.prisma.torneoSlot.updateMany({
+      where: {
+        disponibilidad: { tournamentId },
+        estado: { in: ['RESERVADO', 'OCUPADO'] },
+        matchId: { not: null },
+      },
+      data: { estado: 'LIBRE', matchId: null },
+    });
+
     // Cerrar inscripciones y generar brackets
     await this.cerrarInscripcionesYGenerarBrackets(categoriasData);
 
