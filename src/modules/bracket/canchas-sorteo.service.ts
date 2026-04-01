@@ -787,7 +787,8 @@ export class CanchasSorteoService {
       if (slotsDelDia.length === 0) continue;
 
       const slotsUsados = new Set<number>();
-      let ultimaHoraFinDelDia: string | null = null;
+      // FIX: Usar objeto contenedor para que persista entre métodos
+      const ultimaHoraFinDelDia = { value: null as string | null };
       
       // Identificar día de semana para lógica específica
       const [year, month, dayNum] = dia.fecha.split('-').map(Number);
@@ -1313,7 +1314,7 @@ export class CanchasSorteoService {
     slotsDelDia: any[],
     slotsUsados: Set<number>,
     ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
-    ultimaHoraFinDelDia: string | null,
+    ultimaHoraFinDelDia: { value: string | null },
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
   ): Promise<void> {
@@ -1355,7 +1356,7 @@ export class CanchasSorteoService {
     slotsDelDia: any[],
     slotsUsados: Set<number>,
     ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
-    ultimaHoraFinDelDia: string | null,
+    ultimaHoraFinDelDia: { value: string | null },
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
   ): Promise<Set<string>> {
@@ -1405,7 +1406,7 @@ export class CanchasSorteoService {
     slotsDelDia: any[],
     slotsUsados: Set<number>,
     ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
-    ultimaHoraFinDelDia: string | null,
+    ultimaHoraFinDelDia: { value: string | null },
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
     parejasExcluidas: Set<string>,
@@ -1456,7 +1457,7 @@ export class CanchasSorteoService {
     slotsDelDia: any[],
     slotsUsados: Set<number>,
     ultimoPartidoPorPareja: Map<string, { fecha: string; horaFin: string }>,
-    ultimaHoraFinDelDia: string | null,
+    ultimaHoraFinDelDia: { value: string | null },
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
   ): Promise<boolean> {
@@ -1494,10 +1495,10 @@ export class CanchasSorteoService {
       }
 
       // Verificar descanso 3h global del día
-      if (ultimaHoraFinDelDia) {
+      if (ultimaHoraFinDelDia.value) {
         const validacionDescansoDia = this.descansoCalculator.validarSlotConDescanso(
           { fecha: dia.fecha, horaInicio: slot.horaInicio, horaFin: slot.horaFin },
-          { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia, horaFin: ultimaHoraFinDelDia },
+          { fecha: dia.fecha, horaInicio: ultimaHoraFinDelDia.value, horaFin: ultimaHoraFinDelDia.value },
           180
         );
         if (!validacionDescansoDia.valido) {
@@ -1530,7 +1531,7 @@ export class CanchasSorteoService {
         ultimoPartidoPorPareja.set(insc2, { fecha: dia.fecha, horaFin: slot.horaFin });
       }
       
-      (ultimaHoraFinDelDia as any) = slot.horaFin;
+      ultimaHoraFinDelDia.value = slot.horaFin;
 
       partidosAsignados.add(partido.id);
       distribucionPorDia[dia.fecha] = (distribucionPorDia[dia.fecha] || 0) + 1;
