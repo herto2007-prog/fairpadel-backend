@@ -772,18 +772,23 @@ export class CanchasSorteoService {
     // Track parejas en ajustes por categoría (para controlar 8vos en Viernes)
     const parejasEnAjustesPorCategoria = new Map<string, Set<string>>();
     
-    // Pre-calcular qué categorías tienen ajuste
+    // Pre-calcular qué categorías tienen ajuste y tamaño de bracket
     const categoriasConAjuste = new Set<string>();
     const categoriasSinAjuste = new Set<string>();
+    // NUEVO: Mapa de tamaño de bracket por categoría (8, 16, 32, 64)
+    const tamanoBracketPorCategoria = new Map<string, number>();
     
     for (const catData of categoriasData) {
       const catId = catData.categoria.id;
-      const tieneAjuste = ((catData as any).bracketConfig?.partidosRepechaje || 0) > 0;
+      const config = (catData as any).bracketConfig;
+      const tieneAjuste = (config?.partidosRepechaje || 0) > 0;
       if (tieneAjuste) {
         categoriasConAjuste.add(catId);
       } else {
         categoriasSinAjuste.add(catId);
       }
+      // Guardar tamaño del bracket (default 16 si no está definido)
+      tamanoBracketPorCategoria.set(catId, config?.tamanoBracket || 16);
     }
 
     // 1. PROCESAR CADA DÍA CON LÓGICA ESPECÍFICA
@@ -834,7 +839,7 @@ export class CanchasSorteoService {
       }
       
       // ==========================================
-      // DÍA 2 (VIERNES): ZONA pendiente → AJUSTES → 8VOS (condicional)
+      // DÍA 2 (VIERNES): ZONA pendiente → AJUSTES → Bracket (en orden cronológico)
       // ==========================================
       else if (diaSemana === 5) { // Viernes
         console.log(`[asignarSlots] ===== VIERNES ${dia.fecha} =====`);
@@ -864,11 +869,42 @@ export class CanchasSorteoService {
           }
         }
         
-        // 3. Tercero: 8VOS - Solo si no hay conflicto con ajustes
-        // El descanso se calcula automáticamente por origen (partido padre ZONA/REPECHAJE)
+        // 3. Tercero: Bracket en ORDEN CRONOLÓGICO según tamaño del bracket
+        // Esto asegura que los orígenes se asignen antes que los destinos
+        
+        // 3a. 32avos (solo bracket de 64)
+        console.log(`[asignarSlots] --- Fase TREINTAYDOSAVOS ---`);
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+          if (tamano < 64) continue; // Solo bracket 64 tiene 32avos
+          
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.TREINTAYDOSAVOS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
+        
+        // 3b. 16avos (bracket de 64 y 32)
+        console.log(`[asignarSlots] --- Fase DIECISEISAVOS ---`);
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+          if (tamano < 32) continue; // Solo bracket 64 y 32 tienen 16avos
+          
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.DIECISEISAVOS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
+        
+        // 3c. 8vos (bracket de 64, 32 y 16) - con filtro de parejas en ajustes
         console.log(`[asignarSlots] --- Fase OCTAVOS ---`);
         for (const catData of categoriasData) {
           const catId = catData.categoria.id;
+          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+          if (tamano < 16) continue; // Solo bracket 64, 32 y 16 tienen 8vos
+          
           const parejasEnAjustes = parejasEnAjustesPorCategoria.get(catId) || new Set<string>();
           
           await this.asignarPartidosDeFaseConFiltro(
@@ -877,23 +913,76 @@ export class CanchasSorteoService {
             parejasEnAjustes
           );
         }
+        
+        // 3d. 4tos (todos los brackets: 64, 32, 16, 8)
+        console.log(`[asignarSlots] --- Fase CUARTOS ---`);
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+          if (tamano < 8) continue; // Todos los brackets tienen 4tos (mínimo bracket de 8)
+          
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
       }
       
       // ==========================================
-      // DÍA 3 (SÁBADO): 8VOS pendientes → 4TOS
+      // DÍA 3 (SÁBADO): Bracket pendiente en orden cronológico
       // ==========================================
       else if (diaSemana === 6) { // Sábado
-        // 1. Primero: Resto de 8VOS (los que no cupieron el Viernes)
+        console.log(`[asignarSlots] ===== SABADO ${dia.fecha} =====`);
+        
+        // Procesar en ORDEN CRONOLÓGICO según tamaño del bracket
+        // Esto asegura que orígenes de días anteriores se asignen antes que destinos
+        
+        // 1. 32avos pendientes (solo bracket de 64)
+        console.log(`[asignarSlots] --- Fase TREINTAYDOSAVOS ---`);
         for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+          if (tamano < 64) continue;
+          
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.TREINTAYDOSAVOS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
+        
+        // 2. 16avos pendientes (bracket de 64 y 32)
+        console.log(`[asignarSlots] --- Fase DIECISEISAVOS ---`);
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+          if (tamano < 32) continue;
+          
+          await this.asignarPartidosDeFase(
+            catData, FaseBracket.DIECISEISAVOS, dia, slotsDelDia, slotsUsados,
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+          );
+        }
+        
+        // 3. 8vos pendientes (bracket de 64, 32 y 16)
+        console.log(`[asignarSlots] --- Fase OCTAVOS ---`);
+        for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+          if (tamano < 16) continue;
+          
           await this.asignarPartidosDeFase(
             catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
             ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
           );
         }
         
-        // 2. Luego: 4TOS (con descanso desde 8vos)
-        // El descanso se calcula automáticamente por origen (partido padre OCTAVOS)
+        // 4. 4tos (todos los brackets)
+        console.log(`[asignarSlots] --- Fase CUARTOS ---`);
         for (const catData of categoriasData) {
+          const catId = catData.categoria.id;
+          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+          if (tamano < 8) continue;
+          
           await this.asignarPartidosDeFase(
             catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
             ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
