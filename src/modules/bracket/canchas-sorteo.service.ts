@@ -900,7 +900,7 @@ export class CanchasSorteoService {
       // DÍA 4 (DOMINGO): SEMIS → FINAL
       // ==========================================
       else if (diaSemana === 0) { // Domingo
-        // SEMIS
+        // SEMIS (con descanso desde CUARTOS - calculado automáticamente por origen)
         for (const catData of categoriasData) {
           await this.asignarPartidosDeFase(
             catData, FaseBracket.SEMIS, dia, slotsDelDia, slotsUsados,
@@ -908,7 +908,7 @@ export class CanchasSorteoService {
           );
         }
         
-        // FINAL (con descanso desde SEMIS)
+        // FINAL (con descanso desde SEMIS - calculado automáticamente por origen)
         // El descanso se calcula automáticamente por origen (partido padre SEMIS)
         for (const catData of categoriasData) {
           await this.asignarPartidosDeFase(
