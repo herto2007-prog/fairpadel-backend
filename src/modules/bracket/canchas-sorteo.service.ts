@@ -1529,10 +1529,21 @@ export class CanchasSorteoService {
 
     if (ultimaHoraFinMinutos > 0 && ultimaFecha && todosLosOrigenesAsignados) {
       // Agregar 2h (120 min) de descanso
-      const horaMinimaMinutos = ultimaHoraFinMinutos + 120;
+      let horaMinimaMinutos = ultimaHoraFinMinutos + 120;
+      let fechaMinima = ultimaFecha;
+      
+      // Si la hora mínima cruza medianoche (>= 24h), ajustar al día siguiente
+      if (horaMinimaMinutos >= 24 * 60) {
+        horaMinimaMinutos = horaMinimaMinutos - (24 * 60);
+        // Calcular día siguiente
+        const fechaDate = new Date(ultimaFecha + 'T12:00:00');
+        fechaDate.setDate(fechaDate.getDate() + 1);
+        fechaMinima = fechaDate.toISOString().split('T')[0];
+      }
+      
       return {
         horaMinima: minutosAHora(horaMinimaMinutos),
-        fechaMinima: ultimaFecha,
+        fechaMinima: fechaMinima,
         origenAsignado: true,
       };
     }
