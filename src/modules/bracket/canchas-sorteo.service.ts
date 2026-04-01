@@ -535,8 +535,8 @@ export class CanchasSorteoService {
    * PASO 2: Cerrar inscripciones y sortear (con asignaci├│n de slots)
    * 
    * ALGORITMO DE DESCANSO:
-   * - 4 horas de descanso entre fases del mismo d├¡a
-   * - 4 horas de descanso entre partidos de la misma pareja
+   * - 3 horas de descanso entre fases del mismo d├¡a
+   * - 3 horas de descanso entre partidos de la misma pareja
    * - Si no cabe en el d├¡a, pasa al siguiente d├¡a disponible
    */
   async cerrarInscripcionesYsortear(
@@ -1539,3 +1539,4 @@ export class CanchasSorteoService {
     return false;
   }
 }
+

@@ -13,9 +13,9 @@ const TZ_PARAGUAY = 'America/Asuncion';
 export interface DescansoConfig {
   /** Descanso entre fases ZONA (minutos) */
   descansoEntreZonas: number;
-  /** Descanso de ZONA a SEMIS (minutos) - default: 240 (4 horas) */
+  /** Descanso de ZONA a SEMIS (minutos) - default: 180 (3 horas) */
   descansoZonaASemis: number;
-  /** Descanso de SEMIS a FINAL (minutos) - default: 240 (4 horas) */
+  /** Descanso de SEMIS a FINAL (minutos) - default: 180 (3 horas) */
   descansoSemisAFinal: number;
 }
 
@@ -40,7 +40,7 @@ export interface ValidacionDescansoResultado {
 /**
  * TABLA COMPLETA DE DESCANSOS ENTRE FASES
  * Todas las transiciones de fase deben estar aquí.
- * Default: 240 minutos (4 horas)
+ * Default: 180 minutos (3 horas)
  */
 const DESCANSOS_ENTRE_FASES: Record<string, number> = {
   // Misma fase: sin descanso
@@ -76,7 +76,7 @@ const DESCANSOS_ENTRE_FASES: Record<string, number> = {
  * ALGORITMO PRINCIPAL:
  * Hora último partido + descanso = Hora mínima para siguiente
  * 
- * Ejemplo: 22:30 + 4h = 02:30 (día siguiente)
+ * Ejemplo: 22:30 + 3h = 01:30 (día siguiente)
  *          Buscar primer slot disponible >= 02:30
  */
 @Injectable()

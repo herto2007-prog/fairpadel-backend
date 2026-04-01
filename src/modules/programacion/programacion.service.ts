@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
+import { DescansoCalculatorService, SlotInfo } from './descanso-calculator.service';
 
 export interface SlotDisponible {
   id: string;
@@ -108,6 +109,7 @@ export class ProgramacionService {
   constructor(
     private prisma: PrismaService,
     private dateService: DateService,
+    private descansoCalculator: DescansoCalculatorService,
   ) {}
 
   /**
@@ -572,7 +574,7 @@ export class ProgramacionService {
    * 1. Ordenar partidos por fase (ZONA primero, FINAL último)
    * 2. Para cada partido, encontrar el primer slot disponible que:
    *    - Sea en una fecha permitida para esa fase
-   *    - No tenga conflicto de pareja (misma pareja en mismo día o <4h)
+   *    - No tenga conflicto de pareja (misma pareja en mismo día o <3h)
    * 3. Para SEMIS/FINAL: solo usar fechaFinales
    * 4. Para otras fases: usar cualquier fecha excepto fechaFinales (si tiene finales)
    */
@@ -1091,8 +1093,9 @@ export class ProgramacionService {
    * Verifica si hay conflicto de pareja
    * Conflictos:
    * - Misma pareja ya juega ese día (máx 2 partidos por día)
-   * - Misma pareja juega con <4h de descanso (regla FIP)
+   * - Misma pareja juega con <3h de descanso (regla FIP)
    * 
+   * Usa DescansoCalculatorService para validación consistente de 3h.
    * Retorna: { conflicto: boolean, razon?: string }
    */
   private verificarConflictoPareja(
@@ -1102,13 +1105,12 @@ export class ProgramacionService {
     asignacionesExistentes: PartidoAsignado[],
   ): { conflicto: boolean; razon?: string } {
     const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
-    const horaSlot = this.parseHora(horaInicio);
-    const horaSlotStr = horaInicio;
+    const slotPropuesto: SlotInfo = { fecha, horaInicio, horaFin: horaInicio };
 
     for (const parejaId of parejaIds) {
       if (!parejaId) continue;
 
-      // Partidos de esta pareja en la misma fecha
+      // Partidos de esta pareja en la misma fecha (para validar máximo 2)
       const partidosMismaFecha = asignacionesExistentes.filter(a => 
         a.fecha === fecha && (a.pareja1?.includes(parejaId) || a.pareja2?.includes(parejaId))
       );
@@ -1121,16 +1123,33 @@ export class ProgramacionService {
         };
       }
 
-      // Verificar 4h de descanso (regla FIP)
-      for (const p of partidosMismaFecha) {
-        const horaPartido = this.parseHora(p.horaInicio);
-        const diferenciaHoras = Math.abs(horaSlot - horaPartido);
+      // Verificar 3h de descanso usando el servicio centralizado (todos los partidos de la pareja)
+      const todosLosPartidos = asignacionesExistentes.filter(a => 
+        a.pareja1?.includes(parejaId) || a.pareja2?.includes(parejaId)
+      );
+
+      for (const p of todosLosPartidos) {
+        const slotAnterior: SlotInfo = { 
+          fecha: p.fecha, 
+          horaInicio: p.horaInicio, 
+          horaFin: p.horaFin 
+        };
         
-        if (diferenciaHoras < 4) {
-          const horaPermitida = this.formatHora(horaPartido + 4);
+        const validacion = this.descansoCalculator.validarSlotConDescanso(
+          slotPropuesto,
+          slotAnterior,
+          180 // 3 horas de descanso
+        );
+        
+        if (!validacion.valido) {
+          const horaMinima = this.descansoCalculator.calcularHoraMinimaDescanso(
+            p.fecha,
+            p.horaFin,
+            180
+          );
           return {
             conflicto: true,
-            razon: `Descanso reglamentario: jugó a las ${p.horaInicio}, puede jugar desde las ${horaPermitida} (4h de descanso)`,
+            razon: `Descanso reglamentario: jugó a las ${p.horaInicio}, puede jugar desde las ${horaMinima.hora} (3h de descanso)`,
           };
         }
       }
@@ -1458,7 +1477,7 @@ export class ProgramacionService {
       
       if (slotOcupado) continue;
 
-      // Verificar conflicto de pareja (4h de descanso)
+      // Verificar conflicto de pareja (3h de descanso)
       const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
       const hayConflicto = this.tieneConflictoPareja(
         parejaIds,
