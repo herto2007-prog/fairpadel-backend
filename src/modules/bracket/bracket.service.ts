@@ -571,7 +571,7 @@ export class BracketService {
           partidoZona.partidoPerdedorSiguienteId = slot.partido.id;
           partidoZona.posicionEnPerdedor = slot.posicion;
           
-          // Setear origen en el partido destino (OCTAVOS)
+          // Setear origen en el partido destino (primera ronda del bracket: 32avos/16avos/8vos)
           if (slot.posicion === 1) {
             slot.partido.tipoEntrada1 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
             slot.partido.partidoOrigen1Id = partidoZona.id;
@@ -605,7 +605,7 @@ export class BracketService {
         partidoZona.partidoPerdedorSiguienteId = slot.partido.id;
         partidoZona.posicionEnPerdedor = slot.posicion;
         
-        // Setear origen en el partido destino (OCTAVOS)
+        // Setear origen en el partido destino (primera ronda del bracket: 32avos/16avos/8vos)
         if (slot.posicion === 1) {
           slot.partido.tipoEntrada1 = TipoEntrada.PERDEDOR_ZONA_SUERTE;
           slot.partido.partidoOrigen1Id = partidoZona.id;
@@ -629,7 +629,7 @@ export class BracketService {
           partidoZona.partidoSiguienteId = slot.partido.id;
           partidoZona.posicionEnSiguiente = slot.posicion;
           
-          // Setear origen en el partido destino (OCTAVOS)
+          // Setear origen en el partido destino (primera ronda del bracket: 32avos/16avos/8vos)
           if (slot.posicion === 1) {
             slot.partido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
             slot.partido.partidoOrigen1Id = partidoZona.id;
@@ -663,7 +663,7 @@ export class BracketService {
         partidoZona.partidoSiguienteId = slot.partido.id;
         partidoZona.posicionEnSiguiente = slot.posicion;
         
-        // Setear origen en el partido destino (OCTAVOS)
+        // Setear origen en el partido destino (primera ronda del bracket: 32avos/16avos/8vos)
         if (slot.posicion === 1) {
           slot.partido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
           slot.partido.partidoOrigen1Id = partidoZona.id;
@@ -680,7 +680,7 @@ export class BracketService {
       partidoBye.partidoSiguienteId = slot.partido.id;
       partidoBye.posicionEnSiguiente = slot.posicion;
       
-      // Setear origen en el partido destino (OCTAVOS)
+      // Setear origen en el partido destino (primera ronda del bracket: 32avos/16avos/8vos)
       if (slot.posicion === 1) {
         slot.partido.tipoEntrada1 = TipoEntrada.GANADOR_ZONA;
         slot.partido.partidoOrigen1Id = partidoBye.id;
@@ -701,7 +701,7 @@ export class BracketService {
         partidoRepechaje.partidoSiguienteId = slot.partido.id;
         partidoRepechaje.posicionEnSiguiente = slot.posicion;
         
-        // Setear origen en el partido destino (OCTAVOS)
+        // Setear origen en el partido destino (primera ronda del bracket: 32avos/16avos/8vos)
         if (slot.posicion === 1) {
           slot.partido.tipoEntrada1 = TipoEntrada.GANADOR_REPECHAJE;
           slot.partido.partidoOrigen1Id = partidoRepechaje.id;
