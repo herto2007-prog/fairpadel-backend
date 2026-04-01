@@ -1332,6 +1332,9 @@ export class CanchasSorteoService {
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
   ): Promise<void> {
+    // Track partidos que no se pudieron asignar en esta iteración para no reintentarlos infinitamente
+    const partidosNoAsignados = new Set<string>();
+    
     while (true) {
       const partido = await this.prisma.match.findFirst({
         where: {
@@ -1339,6 +1342,7 @@ export class CanchasSorteoService {
           ronda: fase,
           esBye: false,
           fechaProgramada: null,
+          id: { notIn: Array.from(partidosNoAsignados) },
         },
         select: {
           id: true,
@@ -1356,7 +1360,12 @@ export class CanchasSorteoService {
         partidosAsignados, distribucionPorDia
       );
 
-      if (!asignado) break; // No hay más slots disponibles
+      if (!asignado) {
+        // Marcar como no asignado para no reintentar en esta fase
+        partidosNoAsignados.add(partido.id);
+        // Continuar con el siguiente partido, NO hacer break
+        continue;
+      }
     }
   }
 
@@ -1375,6 +1384,7 @@ export class CanchasSorteoService {
     distribucionPorDia: Record<string, number>,
   ): Promise<Set<string>> {
     const parejasEnPartidos = new Set<string>();
+    const partidosNoAsignados = new Set<string>();
     
     while (true) {
       const partido = await this.prisma.match.findFirst({
@@ -1383,6 +1393,7 @@ export class CanchasSorteoService {
           ronda: fase,
           esBye: false,
           fechaProgramada: null,
+          id: { notIn: Array.from(partidosNoAsignados) },
         },
         select: {
           id: true,
@@ -1400,7 +1411,10 @@ export class CanchasSorteoService {
         partidosAsignados, distribucionPorDia
       );
 
-      if (!asignado) break;
+      if (!asignado) {
+        partidosNoAsignados.add(partido.id);
+        continue;
+      }
       
       // Registrar parejas que jugaron
       if (partido.inscripcion1Id) parejasEnPartidos.add(partido.inscripcion1Id);
@@ -1426,8 +1440,11 @@ export class CanchasSorteoService {
     distribucionPorDia: Record<string, number>,
     parejasExcluidas: Set<string>,
   ): Promise<void> {
+    const partidosNoAsignados = new Set<string>();
+    
     while (true) {
       // Buscar partido donde NINGUNA de las parejas esté en parejasExcluidas
+      // Y que no haya sido marcado como no asignado previamente
       const partidosCandidatos = await this.prisma.match.findMany({
         where: {
           fixtureVersionId: catData.categoria.fixtureVersionId,
@@ -1444,8 +1461,9 @@ export class CanchasSorteoService {
         take: 50, // Batch para verificar
       });
       
-      // Filtrar manualmente
+      // Filtrar manualmente (excluir parejas en ajustes y partidos ya intentados)
       const partidoValido = partidosCandidatos.find(p => {
+        if (partidosNoAsignados.has(p.id)) return false;
         const p1Excluida = p.inscripcion1Id && parejasExcluidas.has(p.inscripcion1Id);
         const p2Excluida = p.inscripcion2Id && parejasExcluidas.has(p.inscripcion2Id);
         return !p1Excluida && !p2Excluida;
@@ -1459,7 +1477,10 @@ export class CanchasSorteoService {
         partidosAsignados, distribucionPorDia
       );
 
-      if (!asignado) break; // No hay más slots disponibles
+      if (!asignado) {
+        partidosNoAsignados.add(partidoValido.id);
+        continue; // Intentar con el siguiente partido
+      }
     }
   }
 
