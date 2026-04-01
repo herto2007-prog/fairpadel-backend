@@ -1634,14 +1634,19 @@ export class CanchasSorteoService {
     if (match.partidoOrigen1Id) {
       const origen1 = await this.prisma.match.findUnique({
         where: { id: match.partidoOrigen1Id },
-        select: { fechaProgramada: true, horaProgramada: true },
+        select: { fechaProgramada: true, horaProgramada: true, esBye: true },
       });
 
-      console.log(`[verificarOrigenAsignado] Origen1 ${match.partidoOrigen1Id}: fecha=${origen1?.fechaProgramada}, hora=${origen1?.horaProgramada}`);
+      console.log(`[verificarOrigenAsignado] Origen1 ${match.partidoOrigen1Id}: fecha=${origen1?.fechaProgramada}, hora=${origen1?.horaProgramada}, esBye=${origen1?.esBye}`);
 
       if (!origen1?.fechaProgramada) {
-        console.log(`[verificarOrigenAsignado] Origen1 NO tiene fecha asignada`);
-        todosLosOrigenesAsignados = false;
+        // Si es BYE sin fecha, no bloquea la asignación (no aplica descanso)
+        if (origen1?.esBye) {
+          console.log(`[verificarOrigenAsignado] Origen1 es BYE sin fecha - no bloquea`);
+        } else {
+          console.log(`[verificarOrigenAsignado] Origen1 NO tiene fecha asignada`);
+          todosLosOrigenesAsignados = false;
+        }
       } else if (origen1.fechaProgramada === diaFecha && origen1.horaProgramada) {
         // Origen es mismo día - calcular hora fin + 2h descanso
         algunoMismoDia = true;
@@ -1659,14 +1664,19 @@ export class CanchasSorteoService {
     if (match.partidoOrigen2Id) {
       const origen2 = await this.prisma.match.findUnique({
         where: { id: match.partidoOrigen2Id },
-        select: { fechaProgramada: true, horaProgramada: true },
+        select: { fechaProgramada: true, horaProgramada: true, esBye: true },
       });
 
-      console.log(`[verificarOrigenAsignado] Origen2 ${match.partidoOrigen2Id}: fecha=${origen2?.fechaProgramada}, hora=${origen2?.horaProgramada}`);
+      console.log(`[verificarOrigenAsignado] Origen2 ${match.partidoOrigen2Id}: fecha=${origen2?.fechaProgramada}, hora=${origen2?.horaProgramada}, esBye=${origen2?.esBye}`);
 
       if (!origen2?.fechaProgramada) {
-        console.log(`[verificarOrigenAsignado] Origen2 NO tiene fecha asignada`);
-        todosLosOrigenesAsignados = false;
+        // Si es BYE sin fecha, no bloquea la asignación (no aplica descanso)
+        if (origen2?.esBye) {
+          console.log(`[verificarOrigenAsignado] Origen2 es BYE sin fecha - no bloquea`);
+        } else {
+          console.log(`[verificarOrigenAsignado] Origen2 NO tiene fecha asignada`);
+          todosLosOrigenesAsignados = false;
+        }
       } else if (origen2.fechaProgramada === diaFecha && origen2.horaProgramada) {
         // Origen es mismo día - calcular hora fin + 2h descanso
         algunoMismoDia = true;
