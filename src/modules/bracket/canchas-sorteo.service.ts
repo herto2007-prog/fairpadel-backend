@@ -811,30 +811,41 @@ export class CanchasSorteoService {
       const date = new Date(Date.UTC(year, month - 1, dayNum, 12, 0, 0));
       const diaSemana = date.getUTCDay();
       
+      // Obtener fases permitidas desde configuración del día
+      const fasesPermitidas = (dia.fasesPermitidas as string)?.split(',') as FaseBracket[] || 
+        this.obtenerFasesParaDia(dia.fecha);
+      
+      // Helper para verificar si una fase está permitida
+      const fasePermitida = (fase: FaseBracket): boolean => {
+        return fasesPermitidas.includes(fase);
+      };
+      
       // ==========================================
       // DÍA 1 (JUEVES): ZONA - Prioridad a categorías con ajuste
       // ==========================================
       if (diaSemana === 4) { // Jueves
-        // Primero: ZONA de categorías CON ajuste (para maximizar descanso antes de ajustes del Viernes)
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          if (!categoriasConAjuste.has(catId)) continue; // Solo con ajuste
+        if (fasePermitida(FaseBracket.ZONA)) {
+          // Primero: ZONA de categorías CON ajuste (para maximizar descanso antes de ajustes del Viernes)
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            if (!categoriasConAjuste.has(catId)) continue; // Solo con ajuste
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
           
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
-        }
-        
-        // Luego: ZONA de categorías SIN ajuste
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          if (!categoriasSinAjuste.has(catId)) continue; // Solo sin ajuste
-          
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+          // Luego: ZONA de categorías SIN ajuste
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            if (!categoriasSinAjuste.has(catId)) continue; // Solo sin ajuste
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
       }
       
@@ -843,88 +854,101 @@ export class CanchasSorteoService {
       // ==========================================
       else if (diaSemana === 5) { // Viernes
         console.log(`[asignarSlots] ===== VIERNES ${dia.fecha} =====`);
+        console.log(`[asignarSlots] Fases permitidas: ${fasesPermitidas.join(', ')}`);
         
-        // 1. Primero: ZONA pendiente de cualquier categoría
-        console.log(`[asignarSlots] --- Fase ZONA ---`);
-        for (const catData of categoriasData) {
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        // 1. Primero: ZONA pendiente de cualquier categoría (si está permitida)
+        if (fasePermitida(FaseBracket.ZONA)) {
+          console.log(`[asignarSlots] --- Fase ZONA ---`);
+          for (const catData of categoriasData) {
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.ZONA, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
         
-        // 2. Segundo: AJUSTES - y registrar parejas que juegan ajustes
-        console.log(`[asignarSlots] --- Fase REPECHAJE ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          if (!categoriasConAjuste.has(catId)) continue;
-          
-          const parejasAjuste = await this.asignarPartidosDeFaseYRegistrarParejas(
-            catData, FaseBracket.REPECHAJE, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
-          
-          if (parejasAjuste.size > 0) {
-            parejasEnAjustesPorCategoria.set(catId, parejasAjuste);
+        // 2. Segundo: AJUSTES - y registrar parejas que juegan ajustes (si está permitida)
+        if (fasePermitida(FaseBracket.REPECHAJE)) {
+          console.log(`[asignarSlots] --- Fase REPECHAJE ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            if (!categoriasConAjuste.has(catId)) continue;
+            
+            const parejasAjuste = await this.asignarPartidosDeFaseYRegistrarParejas(
+              catData, FaseBracket.REPECHAJE, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+            
+            if (parejasAjuste.size > 0) {
+              parejasEnAjustesPorCategoria.set(catId, parejasAjuste);
+            }
           }
         }
         
         // 3. Tercero: Bracket en ORDEN CRONOLÓGICO según tamaño del bracket
-        // Esto asegura que los orígenes se asignen antes que los destinos
+        // Solo procesar fases que estén explícitamente permitidas
         
         // 3a. 32avos (solo bracket de 64)
-        console.log(`[asignarSlots] --- Fase TREINTAYDOSAVOS ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
-          if (tamano < 64) continue; // Solo bracket 64 tiene 32avos
-          
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.TREINTAYDOSAVOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.TREINTAYDOSAVOS)) {
+          console.log(`[asignarSlots] --- Fase TREINTAYDOSAVOS ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+            if (tamano < 64) continue;
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.TREINTAYDOSAVOS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
         
         // 3b. 16avos (bracket de 64 y 32)
-        console.log(`[asignarSlots] --- Fase DIECISEISAVOS ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
-          if (tamano < 32) continue; // Solo bracket 64 y 32 tienen 16avos
-          
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.DIECISEISAVOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.DIECISEISAVOS)) {
+          console.log(`[asignarSlots] --- Fase DIECISEISAVOS ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+            if (tamano < 32) continue;
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.DIECISEISAVOS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
         
         // 3c. 8vos (bracket de 64, 32 y 16) - con filtro de parejas en ajustes
-        console.log(`[asignarSlots] --- Fase OCTAVOS ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
-          if (tamano < 16) continue; // Solo bracket 64, 32 y 16 tienen 8vos
-          
-          const parejasEnAjustes = parejasEnAjustesPorCategoria.get(catId) || new Set<string>();
-          
-          await this.asignarPartidosDeFaseConFiltro(
-            catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
-            parejasEnAjustes
-          );
+        if (fasePermitida(FaseBracket.OCTAVOS)) {
+          console.log(`[asignarSlots] --- Fase OCTAVOS ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+            if (tamano < 16) continue;
+            
+            const parejasEnAjustes = parejasEnAjustesPorCategoria.get(catId) || new Set<string>();
+            
+            await this.asignarPartidosDeFaseConFiltro(
+              catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
+              parejasEnAjustes
+            );
+          }
         }
         
         // 3d. 4tos (todos los brackets: 64, 32, 16, 8)
-        console.log(`[asignarSlots] --- Fase CUARTOS ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
-          if (tamano < 8) continue; // Todos los brackets tienen 4tos (mínimo bracket de 8)
-          
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.CUARTOS)) {
+          console.log(`[asignarSlots] --- Fase CUARTOS ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+            if (tamano < 8) continue;
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
       }
       
@@ -933,60 +957,69 @@ export class CanchasSorteoService {
       // ==========================================
       else if (diaSemana === 6) { // Sábado
         console.log(`[asignarSlots] ===== SABADO ${dia.fecha} =====`);
+        console.log(`[asignarSlots] Fases permitidas: ${fasesPermitidas.join(', ')}`);
         
         // Procesar en ORDEN CRONOLÓGICO según tamaño del bracket
-        // Esto asegura que orígenes de días anteriores se asignen antes que destinos
+        // Solo procesar fases que estén explícitamente permitidas
         
         // 1. 32avos pendientes (solo bracket de 64)
-        console.log(`[asignarSlots] --- Fase TREINTAYDOSAVOS ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
-          if (tamano < 64) continue;
-          
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.TREINTAYDOSAVOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.TREINTAYDOSAVOS)) {
+          console.log(`[asignarSlots] --- Fase TREINTAYDOSAVOS ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+            if (tamano < 64) continue;
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.TREINTAYDOSAVOS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
         
         // 2. 16avos pendientes (bracket de 64 y 32)
-        console.log(`[asignarSlots] --- Fase DIECISEISAVOS ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
-          if (tamano < 32) continue;
-          
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.DIECISEISAVOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.DIECISEISAVOS)) {
+          console.log(`[asignarSlots] --- Fase DIECISEISAVOS ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+            if (tamano < 32) continue;
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.DIECISEISAVOS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
         
         // 3. 8vos pendientes (bracket de 64, 32 y 16)
-        console.log(`[asignarSlots] --- Fase OCTAVOS ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
-          if (tamano < 16) continue;
-          
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.OCTAVOS)) {
+          console.log(`[asignarSlots] --- Fase OCTAVOS ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+            if (tamano < 16) continue;
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
         
         // 4. 4tos (todos los brackets)
-        console.log(`[asignarSlots] --- Fase CUARTOS ---`);
-        for (const catData of categoriasData) {
-          const catId = catData.categoria.id;
-          const tamano = tamanoBracketPorCategoria.get(catId) || 16;
-          if (tamano < 8) continue;
-          
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.CUARTOS)) {
+          console.log(`[asignarSlots] --- Fase CUARTOS ---`);
+          for (const catData of categoriasData) {
+            const catId = catData.categoria.id;
+            const tamano = tamanoBracketPorCategoria.get(catId) || 16;
+            if (tamano < 8) continue;
+            
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
       }
       
@@ -994,21 +1027,29 @@ export class CanchasSorteoService {
       // DÍA 4 (DOMINGO): SEMIS → FINAL
       // ==========================================
       else if (diaSemana === 0) { // Domingo
+        console.log(`[asignarSlots] ===== DOMINGO ${dia.fecha} =====`);
+        console.log(`[asignarSlots] Fases permitidas: ${fasesPermitidas.join(', ')}`);
+        
         // SEMIS (con descanso desde CUARTOS - calculado automáticamente por origen)
-        for (const catData of categoriasData) {
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.SEMIS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.SEMIS)) {
+          console.log(`[asignarSlots] --- Fase SEMIS ---`);
+          for (const catData of categoriasData) {
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.SEMIS, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
         
         // FINAL (con descanso desde SEMIS - calculado automáticamente por origen)
-        // El descanso se calcula automáticamente por origen (partido padre SEMIS)
-        for (const catData of categoriasData) {
-          await this.asignarPartidosDeFase(
-            catData, FaseBracket.FINAL, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
-          );
+        if (fasePermitida(FaseBracket.FINAL)) {
+          console.log(`[asignarSlots] --- Fase FINAL ---`);
+          for (const catData of categoriasData) {
+            await this.asignarPartidosDeFase(
+              catData, FaseBracket.FINAL, dia, slotsDelDia, slotsUsados,
+              ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            );
+          }
         }
       }
       
