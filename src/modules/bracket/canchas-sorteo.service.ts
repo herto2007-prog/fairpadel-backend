@@ -861,6 +861,27 @@ export class CanchasSorteoService {
         }
         
         // 3. Tercero: 8VOS - Solo si no hay conflicto con ajustes
+        // Calcular hora mínima para OCTAVOS (3h después del último partido de ZONA/REPECHAJE)
+        let horaMinimaOctavos: string | undefined;
+        
+        // Buscar la última hora de fin entre todos los partidos asignados hoy
+        let ultimaHoraFinMinutos = 0;
+        for (const [inscId, ultPartido] of ultimoPartidoPorPareja.entries()) {
+          if (ultPartido.fecha === dia.fecha) {
+            const finMinutos = horaAMinutos(ultPartido.horaFin);
+            if (finMinutos > ultimaHoraFinMinutos) {
+              ultimaHoraFinMinutos = finMinutos;
+            }
+          }
+        }
+        
+        // Si hay partidos asignados hoy, calcular hora mínima (+3h = 180 min)
+        if (ultimaHoraFinMinutos > 0) {
+          const horaMinimaMinutos = ultimaHoraFinMinutos + 180;
+          horaMinimaOctavos = minutosAHora(horaMinimaMinutos);
+          console.log(`[AsignarSlots] Viernes ${dia.fecha}: Hora mínima para OCTAVOS = ${horaMinimaOctavos} (último partido ZONA/REPECHAJE terminó a ${minutosAHora(ultimaHoraFinMinutos)})`);
+        }
+        
         // Solo categorías sin ajuste, o categorías con ajuste donde las parejas no estén en ajustes
         for (const catData of categoriasData) {
           const catId = catData.categoria.id;
@@ -869,7 +890,8 @@ export class CanchasSorteoService {
           await this.asignarPartidosDeFaseConFiltro(
             catData, FaseBracket.OCTAVOS, dia, slotsDelDia, slotsUsados,
             ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
-            parejasEnAjustes
+            parejasEnAjustes,
+            horaMinimaOctavos // Respetar 3h de descanso desde ZONA/REPECHAJE
           );
         }
       }
@@ -887,10 +909,26 @@ export class CanchasSorteoService {
         }
         
         // 2. Luego: 4TOS (con descanso desde 8vos)
+        // Calcular hora mínima para CUARTOS (3h después del último OCTAVOS)
+        let horaMinimaCuartos: string | undefined;
+        let ultimaHoraFinMinutos = 0;
+        for (const [inscId, ultPartido] of ultimoPartidoPorPareja.entries()) {
+          if (ultPartido.fecha === dia.fecha) {
+            const finMinutos = horaAMinutos(ultPartido.horaFin);
+            if (finMinutos > ultimaHoraFinMinutos) {
+              ultimaHoraFinMinutos = finMinutos;
+            }
+          }
+        }
+        if (ultimaHoraFinMinutos > 0) {
+          horaMinimaCuartos = minutosAHora(ultimaHoraFinMinutos + 180);
+        }
+        
         for (const catData of categoriasData) {
           await this.asignarPartidosDeFase(
             catData, FaseBracket.CUARTOS, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
+            horaMinimaCuartos
           );
         }
       }
@@ -907,11 +945,26 @@ export class CanchasSorteoService {
           );
         }
         
-        // FINAL
+        // FINAL (con descanso desde SEMIS)
+        let horaMinimaFinal: string | undefined;
+        let ultimaHoraFinMinutos = 0;
+        for (const [inscId, ultPartido] of ultimoPartidoPorPareja.entries()) {
+          if (ultPartido.fecha === dia.fecha) {
+            const finMinutos = horaAMinutos(ultPartido.horaFin);
+            if (finMinutos > ultimaHoraFinMinutos) {
+              ultimaHoraFinMinutos = finMinutos;
+            }
+          }
+        }
+        if (ultimaHoraFinMinutos > 0) {
+          horaMinimaFinal = minutosAHora(ultimaHoraFinMinutos + 180);
+        }
+        
         for (const catData of categoriasData) {
           await this.asignarPartidosDeFase(
             catData, FaseBracket.FINAL, dia, slotsDelDia, slotsUsados,
-            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia
+            ultimoPartidoPorPareja, ultimaHoraFinDelDia, partidosAsignados, distribucionPorDia,
+            horaMinimaFinal
           );
         }
       }
@@ -1317,6 +1370,7 @@ export class CanchasSorteoService {
 
   /**
    * Helper: Asigna partidos de una fase específica
+   * @param horaMinima - Hora mínima permitida (opcional, para fases de eliminación)
    */
   private async asignarPartidosDeFase(
     catData: any,
@@ -1328,6 +1382,7 @@ export class CanchasSorteoService {
     ultimaHoraFinDelDia: { value: string | null },
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
+    horaMinima?: string,
   ): Promise<void> {
     while (true) {
       const partido = await this.prisma.match.findFirst({
@@ -1350,7 +1405,8 @@ export class CanchasSorteoService {
       const asignado = await this.intentarAsignarSlot(
         partido, dia, slotsDelDia, slotsUsados,
         ultimoPartidoPorPareja, ultimaHoraFinDelDia,
-        partidosAsignados, distribucionPorDia
+        partidosAsignados, distribucionPorDia,
+        horaMinima
       );
 
       if (!asignado) break; // No hay más slots disponibles
@@ -1409,6 +1465,7 @@ export class CanchasSorteoService {
 
   /**
    * Helper: Asigna partidos de fase filtrando parejas (para 8vos con ajustes)
+   * @param horaMinima - Hora mínima permitida (opcional, para fases de eliminación)
    */
   private async asignarPartidosDeFaseConFiltro(
     catData: any,
@@ -1421,6 +1478,7 @@ export class CanchasSorteoService {
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
     parejasExcluidas: Set<string>,
+    horaMinima?: string,
   ): Promise<void> {
     while (true) {
       // Buscar partido donde NINGUNA de las parejas esté en parejasExcluidas
@@ -1452,7 +1510,8 @@ export class CanchasSorteoService {
       const asignado = await this.intentarAsignarSlot(
         partidoValido, dia, slotsDelDia, slotsUsados,
         ultimoPartidoPorPareja, ultimaHoraFinDelDia,
-        partidosAsignados, distribucionPorDia
+        partidosAsignados, distribucionPorDia,
+        horaMinima
       );
 
       if (!asignado) break; // No hay más slots disponibles
@@ -1461,6 +1520,7 @@ export class CanchasSorteoService {
 
   /**
    * Helper: Intenta asignar un slot específico a un partido
+   * @param horaMinima - Hora mínima permitida (opcional, para fases de eliminación)
    */
   private async intentarAsignarSlot(
     partido: any,
@@ -1471,6 +1531,7 @@ export class CanchasSorteoService {
     ultimaHoraFinDelDia: { value: string | null },
     partidosAsignados: Set<string>,
     distribucionPorDia: Record<string, number>,
+    horaMinima?: string,
   ): Promise<boolean> {
     const insc1 = partido.inscripcion1Id;
     const insc2 = partido.inscripcion2Id;
@@ -1479,6 +1540,11 @@ export class CanchasSorteoService {
       if (slotsUsados.has(i)) continue;
       
       const slot = slotsDelDia[i];
+
+      // Validar hora mínima para fases de eliminación (ej: OCTAVOS después de ZONA)
+      if (horaMinima && horaAMinutos(slot.horaInicio) < horaAMinutos(horaMinima)) {
+        continue;
+      }
 
       // Verificar descanso 3h por pareja
       if (insc1 && ultimoPartidoPorPareja.has(insc1)) {
