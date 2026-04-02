@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Delete, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Delete, Put, Param, UseGuards, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -91,5 +91,43 @@ export class CanchasSorteoController {
   @Get(':tournamentId/auditar')
   async auditarFixture(@Param('tournamentId') tournamentId: string) {
     return this.canchasSorteoService.auditarFixture(tournamentId);
+  }
+
+  /**
+   * Obtiene slots disponibles para un partido (considerando restricciones de descanso)
+   * GET /admin/canchas-sorteo/:tournamentId/partidos/:matchId/slots-disponibles
+   */
+  @Get(':tournamentId/partidos/:matchId/slots-disponibles')
+  async obtenerSlotsDisponibles(
+    @Param('tournamentId') tournamentId: string,
+    @Param('matchId') matchId: string,
+  ) {
+    return this.canchasSorteoService.obtenerSlotsDisponibles(tournamentId, matchId);
+  }
+
+  /**
+   * Cambia el slot de un partido
+   * PUT /admin/canchas-sorteo/:tournamentId/partidos/:matchId/cambiar-slot
+   */
+  @Put(':tournamentId/partidos/:matchId/cambiar-slot')
+  async cambiarSlot(
+    @Param('tournamentId') tournamentId: string,
+    @Param('matchId') matchId: string,
+    @Body('nuevoSlotId') nuevoSlotId: string,
+  ) {
+    return this.canchasSorteoService.cambiarSlot(tournamentId, matchId, nuevoSlotId);
+  }
+
+  /**
+   * Intercambia slots entre dos partidos
+   * PUT /admin/canchas-sorteo/:tournamentId/intercambiar-slots
+   */
+  @Put(':tournamentId/intercambiar-slots')
+  async intercambiarSlots(
+    @Param('tournamentId') tournamentId: string,
+    @Body('matchId1') matchId1: string,
+    @Body('matchId2') matchId2: string,
+  ) {
+    return this.canchasSorteoService.intercambiarSlots(tournamentId, matchId1, matchId2);
   }
 }
