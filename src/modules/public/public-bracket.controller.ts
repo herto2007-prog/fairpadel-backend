@@ -120,17 +120,12 @@ export class PublicBracketController {
             nombre: true,
           }
         },
-        slot: {
+        torneoCancha: {
           include: {
-            disponibilidad: true,
-            torneoCancha: {
+            sedeCancha: {
               include: {
-                sedeCancha: {
-                  include: {
-                    sede: { select: { nombre: true } }
-                  }
-                },
-              },
+                sede: { select: { nombre: true } }
+              }
             },
           },
         },
@@ -154,8 +149,8 @@ export class PublicBracketController {
       } : undefined,
       fecha: p.fechaProgramada,
       hora: p.horaProgramada,
-      cancha: p.slot?.torneoCancha?.sedeCancha?.nombre,
-      sede: p.slot?.torneoCancha?.sedeCancha?.sede?.nombre,
+      cancha: p.torneoCancha?.sedeCancha?.nombre,
+      sede: p.torneoCancha?.sedeCancha?.sede?.nombre,
       categoriaNombre: p.category?.nombre || 'Sin categoría',
     }));
 
