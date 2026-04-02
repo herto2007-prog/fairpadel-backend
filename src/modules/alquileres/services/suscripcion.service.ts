@@ -15,7 +15,7 @@ interface CrearPagoDto {
 @Injectable()
 export class SuscripcionService {
   private readonly logger = new Logger(SuscripcionService.name);
-  private readonly PRECIO_MENSUAL_CENTAVOS = 999; // 9.99 USD en centavos
+  private readonly PRECIO_MENSUAL_CENTAVOS = 1000; // 10.00 USD en centavos (TEST)
 
   constructor(
     private prisma: PrismaService,
