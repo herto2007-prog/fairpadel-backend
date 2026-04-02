@@ -83,4 +83,13 @@ export class CanchasSorteoController {
   async eliminarDia(@Param('diaId') diaId: string) {
     return this.canchasSorteoService.eliminarDia(diaId);
   }
+
+  /**
+   * AUDITORÍA: Validar integridad del fixture
+   * GET /admin/canchas-sorteo/:tournamentId/auditar
+   */
+  @Get(':tournamentId/auditar')
+  async auditarFixture(@Param('tournamentId') tournamentId: string) {
+    return this.canchasSorteoService.auditarFixture(tournamentId);
+  }
 }
