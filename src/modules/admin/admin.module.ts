@@ -7,6 +7,7 @@ import { FairpadelAdminController } from './fairpadel-admin.controller';
 import { AdminBracketController } from './admin-bracket.controller';
 import { AdminAuditoriaController } from './admin-auditoria.controller';
 import { AdminSedesController } from './admin-sedes.controller';
+import { AdminSuscripcionesController } from './admin-suscripciones.controller';
 import { SedesAdminService } from '../sedes/sedes-admin.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { BracketModule } from '../bracket';
@@ -17,6 +18,7 @@ import { DemoModule } from '../demo/demo.module';
   imports: [PrismaModule, BracketModule, DemoModule, ProgramacionModule],
   controllers: [
     // Orden importante: rutas más específicas primero
+    AdminSuscripcionesController,
     AdminSedesController,
     AdminCategoriasController,
     AdminModalidadesController,
