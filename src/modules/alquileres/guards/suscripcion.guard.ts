@@ -47,8 +47,11 @@ export class SuscripcionGuard implements CanActivate {
 
     // Verificar si no venció
     if (config.suscripcionVenceEn) {
-      const hoy = new Date().toISOString().split('T')[0];
-      if (config.suscripcionVenceEn < hoy) {
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche
+      const vence = new Date(config.suscripcionVenceEn);
+      vence.setHours(0, 0, 0, 0);
+      if (vence < hoy) {
         // Desactivar automáticamente
         await this.prisma.alquilerConfig.update({
           where: { sedeId },

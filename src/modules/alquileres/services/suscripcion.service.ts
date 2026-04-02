@@ -58,11 +58,10 @@ export class SuscripcionService {
     const montoFormateado = (montoCentavos / 100).toFixed(2);
 
     // Calcular período
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = new Date();
     const meses = tipo === 'ANUAL' ? 12 : 1;
     const fechaHasta = new Date();
     fechaHasta.setMonth(fechaHasta.getMonth() + meses);
-    const periodoHasta = fechaHasta.toISOString().split('T')[0];
 
     // Crear registro de pago pendiente
     const pago = await this.prisma.alquilerPago.create({
@@ -73,8 +72,8 @@ export class SuscripcionService {
         moneda: 'USD',
         estado: 'PENDIENTE',
         metodo: 'BANCARD',
-        periodoDesde: hoy,
-        periodoHasta,
+        periodoDesde: hoy,        // Date object
+        periodoHasta: fechaHasta, // Date object
       },
     });
 
@@ -103,8 +102,8 @@ export class SuscripcionService {
         monto: montoCentavos,
         montoFormateado: `$${montoFormateado} USD`,
         tipo,
-        periodoDesde: hoy,
-        periodoHasta,
+        periodoDesde: hoy.toISOString().split('T')[0],
+        periodoHasta: fechaHasta.toISOString().split('T')[0],
       };
     } catch (error) {
       // Si falla Bancard, marcar pago como fallido
@@ -172,7 +171,7 @@ export class SuscripcionService {
         where: { id: pago.id },
         data: {
           estado: 'COMPLETADO',
-          fechaPago: new Date().toISOString().split('T')[0],
+          fechaPago: new Date(),
         },
       });
 
@@ -201,7 +200,7 @@ export class SuscripcionService {
   /**
    * Activa la suscripción de una sede
    */
-  private async activarSuscripcion(sedeId: string, venceEn: string) {
+  private async activarSuscripcion(sedeId: string, venceEn: Date) {
     return this.prisma.alquilerConfig.update({
       where: { sedeId },
       data: {
@@ -233,10 +232,10 @@ export class SuscripcionService {
     }
 
     // Calcular días restantes
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = new Date();
     const vence = config.suscripcionVenceEn;
     const diasRestantes = Math.ceil(
-      (new Date(vence).getTime() - new Date(hoy).getTime()) / (1000 * 60 * 60 * 24)
+      (vence.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24)
     );
 
     // Si ya venció, desactivar automáticamente
@@ -250,7 +249,7 @@ export class SuscripcionService {
 
     return {
       activa: true,
-      venceEn: vence,
+      venceEn: vence.toISOString().split('T')[0],
       diasRestantes,
     };
   }
