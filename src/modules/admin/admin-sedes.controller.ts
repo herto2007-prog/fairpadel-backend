@@ -64,9 +64,10 @@ export class AdminSedesController {
 
   /**
    * Obtener sedes donde el usuario autenticado es dueño
+   * NOTA: Esta ruta es pública para cualquier usuario autenticado (no solo admin)
    */
   @Get('mis-sedes/dueno')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)  // Sobrescribe los guards de la clase - solo requiere login
   async obtenerMisSedesComoDueno(@Request() req) {
     return this.sedesAdminService.obtenerSedesDeDueno(req.user.id);
   }

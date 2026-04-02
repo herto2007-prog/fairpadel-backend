@@ -9,10 +9,11 @@ import { SuscripcionController } from './controllers/suscripcion.controller';
 import { SuscripcionGuard } from './guards/suscripcion.guard';
 import { BancardService } from './services/bancard.service';
 import { SedesAdminService } from '../sedes/sedes-admin.service';
+import { DuenoController } from './controllers/dueno.controller';
 
 @Module({
   imports: [PrismaModule, AuthModule, ConfigModule],
-  controllers: [AlquileresController, SuscripcionController],
+  controllers: [AlquileresController, SuscripcionController, DuenoController],
   providers: [
     AlquileresService,
     SuscripcionService,
