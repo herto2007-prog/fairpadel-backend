@@ -21,8 +21,14 @@ export class DuenoController {
    */
   @Get('mis-sedes')
   async obtenerMisSedes(@Request() req) {
-    const userId = req.user.id;
+    // El JWT Strategy devuelve 'userId', no 'id'
+    const userId = req.user.userId;
     this.logger.log(`Buscando sedes para duenoId: ${userId}`);
+    
+    if (!userId) {
+      this.logger.error('userId no encontrado en req.user', req.user);
+      return [];
+    }
     
     const sedes = await this.sedesAdminService.obtenerSedesDeDueno(userId);
     

@@ -58,7 +58,8 @@ export class SuscripcionController {
     @Body('tipo') tipo: 'MENSUAL' | 'ANUAL' = 'MENSUAL',
     @Request() req,
   ) {
-    const userId = req.user?.id;
+    // El JWT Strategy devuelve 'userId', no 'id'
+    const userId = req.user?.userId;
     
     // Verificar que el usuario es dueño de esta sede
     const esDueno = await this.sedesAdminService.esDuenoDeSede(userId, sedeId);
@@ -130,7 +131,8 @@ export class SuscripcionController {
     @Param('sedeId') sedeId: string,
     @Request() req,
   ) {
-    const userId = req.user?.id;
+    // El JWT Strategy devuelve 'userId', no 'id'
+    const userId = req.user?.userId;
     
     // Verificar que el usuario es dueño de esta sede
     const esDueno = await this.sedesAdminService.esDuenoDeSede(userId, sedeId);
