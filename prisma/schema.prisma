@@ -419,6 +419,10 @@ model User {
   encargadoAlquileres      AlquilerConfig[]
   responsableMensualeros   GrupoMensualero[]
   
+  // Sedes como dueño o encargado
+  sedesComoDueno           Sede[] @relation("SedeDueno")
+  sedesComoEncargado       Sede[] @relation("SedeEncargado")
+  
   // Demo / Test
   jugadorDemo              JugadorDemo?
 
@@ -524,7 +528,10 @@ model Sede {
   direccion         String?
   mapsUrl           String?     @map("maps_url")
   telefono          String?
+  logoUrl           String?     @map("logo_url")
   activa            Boolean     @default(true)
+  duenoId           String?     @map("dueno_id")  // Dueño de la sede (paga suscripción)
+  encargadoId       String?     @map("encargado_id")  // Encargado (gestiona día a día)
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
 
@@ -535,7 +542,10 @@ model Sede {
   alquilerConfig          AlquilerConfig?
   alquilerPrecios         AlquilerPrecio[]
   alquilerBloqueos        AlquilerBloqueo[]
+  alquilerPagos           AlquilerPago[]
   gruposMensualeros       GrupoMensualero[]
+  dueno                   User?       @relation("SedeDueno", fields: [duenoId], references: [id], onDelete: SetNull)
+  encargado               User?       @relation("SedeEncargado", fields: [encargadoId], references: [id], onDelete: SetNull)
 
   @@map("sedes")
 }
@@ -1988,13 +1998,48 @@ model AlquilerConfig {
   mensajeBienvenida     String?  @map("mensaje_bienvenida") @db.Text
   telefonoNotificaciones String? @map("telefono_notificaciones")
   emailNotificaciones   String?  @map("email_notificaciones")
+  
+  // Campos de suscripción (para reservas)
+  suscripcionActiva     Boolean  @default(false) @map("suscripcion_activa")
+  suscripcionVenceEn    String?  @map("suscripcion_vence_en") // YYYY-MM-DD
+  suscripcionStripeId   String?  @map("suscripcion_stripe_id") // ID de Bancard
+  tipoSuscripcion       String?  @default("MENSUAL") @map("tipo_suscripcion") // MENSUAL, ANUAL
+  
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
-  sede      Sede  @relation(fields: [sedeId], references: [id], onDelete: Cascade)
-  encargado User? @relation(fields: [encargadoId], references: [id], onDelete: SetNull)
+  sede      Sede            @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+  encargado User?           @relation(fields: [encargadoId], references: [id], onDelete: SetNull)
+  pagos     AlquilerPago[]
 
   @@map("alquiler_configs")
+}
+
+// Pagos de suscripción para el módulo de reservas
+model AlquilerPago {
+  id            String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  sedeId        String    @map("sede_id")
+  sedeConfigId  String    @map("sede_config_id")
+  
+  monto         Int       // en centavos (999 = 9.99 USD)
+  moneda        String    @default("USD")
+  estado        String    @default("PENDIENTE") // PENDIENTE, COMPLETADO, FALLIDO, REEMBOLSADO
+  metodo        String?   // BANCARD, STRIPE, TRANSFERENCIA
+  referencia    String?   // ID de transacción externo
+  
+  fechaPago     String?   @map("fecha_pago") // YYYY-MM-DD
+  periodoDesde  String    @map("periodo_desde") // YYYY-MM-DD
+  periodoHasta  String    @map("periodo_hasta") // YYYY-MM-DD
+  
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  sede       Sede          @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+  sedeConfig AlquilerConfig @relation(fields: [sedeConfigId], references: [id], onDelete: Cascade)
+
+  @@index([sedeId])
+  @@index([estado])
+  @@index([createdAt])
+  @@map("alquiler_pagos")
 }
 
 model AlquilerPrecio {

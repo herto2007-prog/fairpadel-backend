@@ -35,9 +35,10 @@ export class AlquileresService {
 
   // ============ DISPONIBILIDAD ============
 
-  async consultarDisponibilidad(sedeId: string, fecha: string, sedeCanchaId?: string) {
+  async consultarDisponibilidad(sedeId: string, fecha: string, sedeCanchaId?: string, duracionMinutos?: number) {
     // FIX: fecha es String YYYY-MM-DD, calcular día de semana local
     const diaSemana = this.getDiaSemanaFromString(fecha);
+    const duracion = duracionMinutos || 90; // Default 90 minutos
 
     // Obtener canchas de la sede
     const canchas = await this.prisma.sedeCancha.findMany({
@@ -75,7 +76,7 @@ export class AlquileresService {
       const disponibilidadCancha = disponibilidades.filter(d => d.sedeCanchaId === cancha.id);
       const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
 
-      const slots = this.generarSlots(disponibilidadCancha, reservasCancha, cancha.id);
+      const slots = this.generarSlots(disponibilidadCancha, reservasCancha, cancha.id, duracion);
 
       return {
         cancha: {
@@ -91,6 +92,7 @@ export class AlquileresService {
     return {
       fecha,
       sedeId,
+      duracionMinutos: duracion,
       disponibilidad: disponibilidadPorCancha,
     };
   }
@@ -99,6 +101,7 @@ export class AlquileresService {
     disponibilidades: any[],
     reservas: any[],
     canchaId: string,
+    duracionMinutos: number = 90,
   ): any[] {
     const slots: any[] = [];
 
@@ -108,8 +111,11 @@ export class AlquileresService {
 
       while (horaActual < horaFin) {
         const horaInicioStr = this.formatTime(horaActual);
-        const horaFinSlot = new Date(horaActual.getTime() + 70 * 60000); // 90 min default
+        const horaFinSlot = new Date(horaActual.getTime() + duracionMinutos * 60000);
         const horaFinStr = this.formatTime(horaFinSlot);
+
+        // Si el slot excede el horario de cierre, no agregar
+        if (horaFinSlot > horaFin) break;
 
         const ocupado = reservas.some(r => {
           const reservaInicio = this.parseTime(r.horaInicio);
@@ -130,6 +136,141 @@ export class AlquileresService {
     }
 
     return slots;
+  }
+
+  /**
+   * Consulta disponibilidad de TODAS las sedes con alquileres habilitados
+   * Similar a deportes42 - vista unificada
+   */
+  async consultarDisponibilidadGlobal(params: {
+    fecha: string;
+    duracionMinutos: number;
+    horaDesde?: string;
+    horaHasta?: string;
+  }) {
+    const { fecha, duracionMinutos, horaDesde, horaHasta } = params;
+    const diaSemana = this.getDiaSemanaFromString(fecha);
+
+    // Obtener todas las sedes con alquileres habilitados
+    const sedes = await this.prisma.sede.findMany({
+      where: {
+        activa: true,
+        alquilerConfig: {
+          habilitado: true,
+        },
+      },
+      include: {
+        canchas: {
+          where: { activa: true },
+        },
+        alquilerConfig: true,
+      },
+    });
+
+    // Obtener todas las reservas para la fecha
+    const todasCanchasIds = sedes.flatMap(s => s.canchas.map(c => c.id));
+    
+    const reservasExistentes = await this.prisma.reservaCancha.findMany({
+      where: {
+        sedeCanchaId: { in: todasCanchasIds },
+        fecha: fecha,
+        estado: { in: [ReservaCanchaEstado.PENDIENTE, ReservaCanchaEstado.CONFIRMADA] },
+      },
+    });
+
+    // Obtener disponibilidades para el día
+    const disponibilidades = await this.prisma.alquilerDisponibilidad.findMany({
+      where: {
+        sedeCanchaId: { in: todasCanchasIds },
+        diaSemana,
+        activo: true,
+      },
+    });
+
+    // Obtener TODOS los precios de una sola vez (evitar N+1)
+    const sedesIds = sedes.map(s => s.id);
+    const todosPrecios = await this.prisma.alquilerPrecio.findMany({
+      where: { sedeId: { in: sedesIds } },
+      select: {
+        sedeId: true,
+        tipoCancha: true,
+        tipoDia: true,
+        franja: true,
+        precio: true,
+      },
+    });
+
+    // Construir respuesta por sede
+    const sedesConDisponibilidad = await Promise.all(
+      sedes.map(async (sede) => {
+        const canchasSede = sede.canchas;
+        const canchasConHorarios = canchasSede.map(cancha => {
+          const disponibilidadCancha = disponibilidades.filter(d => d.sedeCanchaId === cancha.id);
+          const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
+
+          let slots = this.generarSlots(disponibilidadCancha, reservasCancha, cancha.id, duracionMinutos);
+
+          // Filtrar por rango horario si se especificó
+          if (horaDesde) {
+            slots = slots.filter(s => s.horaInicio >= horaDesde);
+          }
+          if (horaHasta) {
+            slots = slots.filter(s => s.horaInicio <= horaHasta);
+          }
+
+          return {
+            cancha: {
+              id: cancha.id,
+              nombre: cancha.nombre,
+              tipo: cancha.tipo,
+              tieneLuz: cancha.tieneLuz,
+            },
+            slots,
+          };
+        });
+
+        // Filtrar precios de esta sede (ya cargados en memoria)
+        const precios = todosPrecios.filter(p => p.sedeId === sede.id);
+
+        // Extraer horarios únicos de todas las canchas
+        const todosHorarios = canchasConHorarios.flatMap(c => c.slots.map(s => s.horaInicio));
+        const horariosUnicos = [...new Set(todosHorarios)].sort();
+
+        // Contar canchas disponibles
+        const canchasConSlots = canchasConHorarios.filter(c => c.slots.length > 0).length;
+
+        return {
+          sede: {
+            id: sede.id,
+            nombre: sede.nombre,
+            ciudad: sede.ciudad,
+            logoUrl: sede.logoUrl,
+            direccion: sede.direccion,
+          },
+          canchasDisponibles: canchasConSlots,
+          totalCanchas: canchasSede.length,
+          horarios: horariosUnicos.slice(0, 8), // Primeros 8 horarios para mostrar
+          totalHorarios: horariosUnicos.length,
+          canchas: canchasConHorarios,
+          precios: precios.map(p => ({
+            tipoCancha: p.tipoCancha,
+            tipoDia: p.tipoDia,
+            franja: p.franja,
+            precio: p.precio,
+          })),
+        };
+      })
+    );
+
+    // Filtrar solo sedes con disponibilidad
+    const sedesFiltradas = sedesConDisponibilidad.filter(s => s.canchasDisponibles > 0);
+
+    return {
+      fecha,
+      duracionMinutos,
+      totalSedes: sedesFiltradas.length,
+      sedes: sedesFiltradas,
+    };
   }
 
   private parseTime(timeStr: string): Date {
@@ -326,6 +467,207 @@ export class AlquileresService {
         estado: ReservaCanchaEstado.RECHAZADA,
         motivoRechazo: motivo,
       },
+    });
+  }
+
+  // ============ GESTIÓN DE DISPONIBILIDADES (ENCARGADO) ============
+
+  async obtenerDisponibilidadesSede(sedeId: string) {
+    // Obtener canchas de la sede con sus disponibilidades
+    const canchas = await this.prisma.sedeCancha.findMany({
+      where: { sedeId, activa: true },
+      include: {
+        alquilerDisponibilidades: {
+          orderBy: [{ diaSemana: 'asc' }, { horaInicio: 'asc' }],
+        },
+      },
+      orderBy: { nombre: 'asc' },
+    });
+
+    return canchas.map(c => ({
+      cancha: {
+        id: c.id,
+        nombre: c.nombre,
+        tipo: c.tipo,
+      },
+      disponibilidades: c.alquilerDisponibilidades,
+    }));
+  }
+
+  async crearDisponibilidad(createDto: {
+    sedeCanchaId: string;
+    diaSemana: number;
+    horaInicio: string;
+    horaFin: string;
+    activo?: boolean;
+  }) {
+    // Verificar que la cancha existe
+    const cancha = await this.prisma.sedeCancha.findUnique({
+      where: { id: createDto.sedeCanchaId },
+    });
+
+    if (!cancha) {
+      throw new NotFoundException('Cancha no encontrada');
+    }
+
+    // Verificar que no exista una disponibilidad para el mismo día y cancha
+    const existente = await this.prisma.alquilerDisponibilidad.findFirst({
+      where: {
+        sedeCanchaId: createDto.sedeCanchaId,
+        diaSemana: createDto.diaSemana,
+      },
+    });
+
+    if (existente) {
+      throw new BadRequestException('Ya existe una disponibilidad para este día y cancha. Actualice la existente.');
+    }
+
+    return this.prisma.alquilerDisponibilidad.create({
+      data: createDto,
+    });
+  }
+
+  async actualizarDisponibilidad(
+    id: string,
+    updateDto: {
+      horaInicio?: string;
+      horaFin?: string;
+      activo?: boolean;
+    },
+  ) {
+    const disponibilidad = await this.prisma.alquilerDisponibilidad.findUnique({
+      where: { id },
+    });
+
+    if (!disponibilidad) {
+      throw new NotFoundException('Disponibilidad no encontrada');
+    }
+
+    return this.prisma.alquilerDisponibilidad.update({
+      where: { id },
+      data: updateDto,
+    });
+  }
+
+  async eliminarDisponibilidad(id: string) {
+    const disponibilidad = await this.prisma.alquilerDisponibilidad.findUnique({
+      where: { id },
+    });
+
+    if (!disponibilidad) {
+      throw new NotFoundException('Disponibilidad no encontrada');
+    }
+
+    return this.prisma.alquilerDisponibilidad.delete({
+      where: { id },
+    });
+  }
+
+  // ============ GESTIÓN DE BLOQUEOS (ENCARGADO) ============
+
+  async obtenerBloqueosSede(
+    sedeId: string,
+    fechaDesde?: string,
+    fechaHasta?: string,
+  ) {
+    const where: any = { sedeId };
+
+    if (fechaDesde || fechaHasta) {
+      where.OR = [
+        {
+          fechaInicio: {
+            gte: fechaDesde,
+            lte: fechaHasta,
+          },
+        },
+        {
+          fechaFin: {
+            gte: fechaDesde,
+            lte: fechaHasta,
+          },
+        },
+      ];
+    }
+
+    return this.prisma.alquilerBloqueo.findMany({
+      where,
+      include: {
+        sedeCancha: {
+          select: { id: true, nombre: true },
+        },
+      },
+      orderBy: { fechaInicio: 'desc' },
+    });
+  }
+
+  async crearBloqueo(createDto: {
+    sedeId: string;
+    sedeCanchaId?: string;
+    fechaInicio: string;
+    fechaFin?: string;
+    motivo?: string;
+  }) {
+    // Verificar que la sede existe
+    const sede = await this.prisma.sede.findUnique({
+      where: { id: createDto.sedeId },
+    });
+
+    if (!sede) {
+      throw new NotFoundException('Sede no encontrada');
+    }
+
+    // Si se especifica cancha, verificar que pertenece a la sede
+    if (createDto.sedeCanchaId) {
+      const cancha = await this.prisma.sedeCancha.findFirst({
+        where: { id: createDto.sedeCanchaId, sedeId: createDto.sedeId },
+      });
+
+      if (!cancha) {
+        throw new NotFoundException('Cancha no encontrada en esta sede');
+      }
+    }
+
+    return this.prisma.alquilerBloqueo.create({
+      data: {
+        ...createDto,
+        fechaFin: createDto.fechaFin || createDto.fechaInicio,
+      },
+    });
+  }
+
+  async actualizarBloqueo(
+    id: string,
+    updateDto: {
+      fechaInicio?: string;
+      fechaFin?: string;
+      motivo?: string;
+    },
+  ) {
+    const bloqueo = await this.prisma.alquilerBloqueo.findUnique({
+      where: { id },
+    });
+
+    if (!bloqueo) {
+      throw new NotFoundException('Bloqueo no encontrado');
+    }
+
+    return this.prisma.alquilerBloqueo.update({
+      where: { id },
+      data: updateDto,
+    });
+  }
+
+  async eliminarBloqueo(id: string) {
+    const bloqueo = await this.prisma.alquilerBloqueo.findUnique({
+      where: { id },
+    });
+
+    if (!bloqueo) {
+      throw new NotFoundException('Bloqueo no encontrado');
+    }
+
+    return this.prisma.alquilerBloqueo.delete({
+      where: { id },
     });
   }
 
