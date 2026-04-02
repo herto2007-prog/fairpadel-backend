@@ -13,6 +13,7 @@ export class BancardService {
   private readonly privateKey: string;
   private readonly baseUrl: string;
   private readonly returnUrl: string;
+  private readonly cancelUrl: string;
 
   constructor(private configService: ConfigService) {
     // Las claves se configuran en Railway Dashboard (Variables)
@@ -25,9 +26,10 @@ export class BancardService {
       ? 'https://vpos.infonet.com.py'
       : 'https://vpos.infonet.com.py:8888';
     
-    // URL de retorno después del pago
+    // URLs de retorno después del pago
     const appUrl = this.configService.get('APP_URL') || 'http://localhost:3000';
     this.returnUrl = `${appUrl}/suscripcion/confirmacion`;
+    this.cancelUrl = `${appUrl}/suscripcion/cancelacion`;
     
     // Log de estado (sin revelar las claves)
     if (!this.publicKey || !this.privateKey) {
@@ -110,6 +112,7 @@ export class BancardService {
         amount,
         description: description.substring(0, 20),
         return_url: this.returnUrl,
+        cancel_url: this.cancelUrl,
       },
     };
 
