@@ -19,6 +19,7 @@ import { InvitacionesModule } from './modules/invitaciones/invitaciones.module';
 import { NotificacionesModule } from './modules/notificaciones/notificaciones.module';
 import { AppController } from './app.controller';
 import { DemoPublicModule } from './modules/demo/demo-public.module';
+import { PublicModule } from './modules/public/public.module';
 import { ResultadosModule } from './modules/resultados/resultados.module';
 import { RankingsModule } from './modules/rankings/rankings.module';
 import { CircuitosModule } from './modules/circuitos/circuitos.module';
@@ -46,6 +47,7 @@ import { PerfilModule } from './modules/perfil/perfil.module';
     EmailModule,
     SeedModule, // Seed automático al iniciar
     DemoPublicModule, // Endpoint público para verificar estado de demo
+    PublicModule,     // Endpoints públicos para brackets
     ResultadosModule, // Registro de resultados y marcador en vivo
     RankingsModule,   // Sistema de rankings y ascensos
     CircuitosModule,  // Circuitos y ligas de torneos

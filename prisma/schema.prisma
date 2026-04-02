@@ -813,6 +813,7 @@ model Tournament {
   comisionPorcentaje  Decimal?          @map("comision_porcentaje") @db.Decimal(5, 2)
   slug                String?           @unique
   organizadorId       String            @map("organizador_id")
+  bracketPublicado    Boolean           @default(false) @map("bracket_publicado")
   createdAt           DateTime          @default(now()) @map("created_at")
   updatedAt           DateTime          @updatedAt @map("updated_at")
 
