@@ -67,8 +67,8 @@ export class SuscripcionService {
     // Crear registro de pago pendiente
     const pago = await this.prisma.alquilerPago.create({
       data: {
-        sedeId,
-        sedeConfigId: config.id,
+        sedeId: String(sedeId),
+        sedeConfigId: String(config.id),
         monto: montoCentavos,
         moneda: 'USD',
         estado: 'PENDIENTE',
