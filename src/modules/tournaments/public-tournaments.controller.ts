@@ -42,15 +42,15 @@ export class PublicTournamentsController {
       estado: TournamentStatus.PUBLICADO,
     };
 
-    // Filtro de estado temporal
-    const now = new Date();
+    // Filtro de estado - fechas son String YYYY-MM-DD
+    const hoy = new Date().toISOString().split('T')[0];
     if (estado === 'proximos') {
-      where.fechaInicio = { gte: now };
+      where.fechaInicio = { gte: hoy };
     } else if (estado === 'en-curso') {
-      where.fechaInicio = { lte: now };
-      where.fechaFin = { gte: now };
+      where.fechaInicio = { lte: hoy };
+      where.fechaFin = { gte: hoy };
     } else if (estado === 'finalizados') {
-      where.fechaFin = { lt: now };
+      where.fechaFin = { lt: hoy };
     }
 
     // Filtro de ciudad

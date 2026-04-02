@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('public/torneos')
@@ -28,8 +28,42 @@ export class PublicBracketController {
     };
   }
 
+  @Get(':id/categorias')
+  async getCategoriasPublico(@Param('id') tournamentId: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { bracketPublicado: true },
+    });
+
+    if (!torneo) {
+      return { success: false, message: 'Torneo no encontrado' };
+    }
+
+    const categorias = await this.prisma.tournamentCategory.findMany({
+      where: { tournamentId },
+      include: {
+        category: {
+          select: { id: true, nombre: true, tipo: true },
+        },
+      },
+      orderBy: { category: { orden: 'asc' } },
+    });
+
+    return {
+      success: true,
+      categorias: categorias.map(c => ({
+        id: c.category.id,
+        nombre: c.category.nombre,
+        tipo: c.category.tipo,
+      })),
+    };
+  }
+
   @Get(':id/bracket')
-  async getBracketPublico(@Param('id') tournamentId: string) {
+  async getBracketPublico(
+    @Param('id') tournamentId: string,
+    @Query('categoriaId') categoriaId?: string,
+  ) {
     // Verificar que el bracket esté publicado
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
@@ -50,12 +84,18 @@ export class PublicBracketController {
       return { success: false, message: 'El bracket no está publicado' };
     }
 
-    // Obtener partidos del torneo
+    // Obtener partidos del torneo (filtrar por categoría si se especifica)
+    const whereClause: any = { 
+      tournamentId,
+      fixtureVersionId: { not: null }
+    };
+    
+    if (categoriaId) {
+      whereClause.categoryId = categoriaId;
+    }
+    
     const partidosRaw = await this.prisma.match.findMany({
-      where: { 
-        tournamentId,
-        fixtureVersionId: { not: null }
-      },
+      where: whereClause,
       include: {
         inscripcion1: {
           include: {
