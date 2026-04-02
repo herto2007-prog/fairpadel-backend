@@ -3,6 +3,7 @@ import {
   Get,
   UseGuards,
   Request,
+  Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { SedesAdminService } from '../../sedes/sedes-admin.service';
@@ -10,6 +11,8 @@ import { SedesAdminService } from '../../sedes/sedes-admin.service';
 @Controller('dueno')
 @UseGuards(JwtAuthGuard)
 export class DuenoController {
+  private readonly logger = new Logger(DuenoController.name);
+
   constructor(private readonly sedesAdminService: SedesAdminService) {}
 
   /**
@@ -18,6 +21,14 @@ export class DuenoController {
    */
   @Get('mis-sedes')
   async obtenerMisSedes(@Request() req) {
-    return this.sedesAdminService.obtenerSedesDeDueno(req.user.id);
+    const userId = req.user.id;
+    this.logger.log(`Buscando sedes para duenoId: ${userId}`);
+    
+    const sedes = await this.sedesAdminService.obtenerSedesDeDueno(userId);
+    
+    this.logger.log(`Encontradas ${sedes.length} sedes para duenoId: ${userId}`);
+    sedes.forEach(s => this.logger.log(`  - ${s.nombre} (duenoId: ${s.duenoId})`));
+    
+    return sedes;
   }
 }

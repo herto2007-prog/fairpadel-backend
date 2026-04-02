@@ -182,7 +182,9 @@ export class SedesAdminService {
    * Obtiene las sedes donde el usuario es dueño
    */
   async obtenerSedesDeDueno(userId: string) {
-    return this.prisma.sede.findMany({
+    console.log(`[SedesAdminService] Buscando sedes con duenoId: ${userId}`);
+    
+    const sedes = await this.prisma.sede.findMany({
       where: { duenoId: userId },
       include: {
         alquilerConfig: {
@@ -196,6 +198,9 @@ export class SedesAdminService {
         },
       },
     });
+    
+    console.log(`[SedesAdminService] Encontradas ${sedes.length} sedes para duenoId ${userId}`);
+    return sedes;
   }
 
   /**
