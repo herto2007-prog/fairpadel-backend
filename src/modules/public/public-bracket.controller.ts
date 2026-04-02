@@ -160,4 +160,92 @@ export class PublicBracketController {
       partidos,
     };
   }
+
+  /**
+   * GET /public/torneos/:id/inscritos
+   * Lista todos los inscritos confirmados de un torneo (público)
+   * Agrupados por categoría
+   */
+  @Get(':id/inscritos')
+  async getInscritosPublico(@Param('id') tournamentId: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, nombre: true },
+    });
+
+    if (!torneo) {
+      return { success: false, message: 'Torneo no encontrado' };
+    }
+
+    // Obtener inscripciones confirmadas con datos de jugadores
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: {
+        tournamentId,
+        estado: 'CONFIRMADA',
+      },
+      include: {
+        jugador1: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            fotoUrl: true,
+          },
+        },
+        jugador2: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            fotoUrl: true,
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            nombre: true,
+            tipo: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    // Agrupar por categoría
+    const porCategoria = inscripciones.reduce((acc, insc) => {
+      const catNombre = insc.category?.nombre || 'Sin categoría';
+      const catId = insc.category?.id || 'sin-categoria';
+      const catTipo = insc.category?.tipo || 'MIXTO';
+      
+      if (!acc[catId]) {
+        acc[catId] = {
+          categoriaId: catId,
+          categoriaNombre: catNombre,
+          categoriaTipo: catTipo,
+          parejas: [],
+        };
+      }
+      
+      acc[catId].parejas.push({
+        id: insc.id,
+        jugador1: insc.jugador1,
+        jugador2: insc.jugador2,
+        fechaInscripcion: insc.createdAt,
+      });
+      
+      return acc;
+    }, {});
+
+    return {
+      success: true,
+      torneo: {
+        id: torneo.id,
+        nombre: torneo.nombre,
+      },
+      totalInscritos: inscripciones.length,
+      categorias: Object.values(porCategoria),
+    };
+  }
 }
