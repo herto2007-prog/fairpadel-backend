@@ -126,7 +126,9 @@ export class PublicBracketController {
             torneoCancha: {
               include: {
                 sedeCancha: {
-                  select: { nombre: true }
+                  include: {
+                    sede: { select: { nombre: true } }
+                  }
                 },
               },
             },
@@ -153,6 +155,7 @@ export class PublicBracketController {
       fecha: p.fechaProgramada,
       hora: p.horaProgramada,
       cancha: p.slot?.torneoCancha?.sedeCancha?.nombre,
+      sede: p.slot?.torneoCancha?.sedeCancha?.sede?.nombre,
       categoriaNombre: p.category?.nombre || 'Sin categoría',
     }));
 
