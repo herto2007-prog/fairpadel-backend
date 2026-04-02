@@ -56,6 +56,7 @@ export class SuscripcionService {
       : this.PRECIO_MENSUAL_CENTAVOS;
 
     const montoFormateado = (montoCentavos / 100).toFixed(2);
+    this.logger.log(`Monto calculado: ${montoCentavos} centavos -> ${montoFormateado} USD (tipo: ${tipo})`);
 
     // Calcular período
     const hoy = new Date();

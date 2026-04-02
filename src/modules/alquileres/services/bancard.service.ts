@@ -117,7 +117,8 @@ export class BancardService {
     };
 
     try {
-      this.logger.log(`Iniciando pago Bancard: shop_process_id=${shopProcessId}`);
+      this.logger.log(`Iniciando pago Bancard: shop_process_id=${shopProcessId}, amount=${amount}, currency=${currency}`);
+      this.logger.debug(`Payload Bancard: ${JSON.stringify(payload)}`);
       
       const response = await fetch(`${this.baseUrl}/vpos/api/0.3/single_buy`, {
         method: 'POST',
