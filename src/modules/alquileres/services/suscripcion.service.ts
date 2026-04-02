@@ -30,12 +30,24 @@ export class SuscripcionService {
     sedeId: string,
     tipo: 'MENSUAL' | 'ANUAL' = 'MENSUAL',
   ) {
-    const config = await this.prisma.alquilerConfig.findUnique({
+    // Buscar o crear configuración automáticamente
+    let config = await this.prisma.alquilerConfig.findUnique({
       where: { sedeId },
     });
 
+    // Si no existe config, crear una por defecto
     if (!config) {
-      throw new NotFoundException('Configuración de alquiler no encontrada');
+      this.logger.log(`Creando configuración de alquiler automática para sede ${sedeId}`);
+      config = await this.prisma.alquilerConfig.create({
+        data: {
+          sedeId,
+          habilitado: false, // Se habilitará al pagar
+          requiereAprobacion: true,
+          duracionSlotMinutos: 90,
+          anticipacionMaxDias: 14,
+          cancelacionMinHoras: 4,
+        },
+      });
     }
 
     // Calcular monto según tipo
