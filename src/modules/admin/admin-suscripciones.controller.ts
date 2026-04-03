@@ -1,8 +1,12 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Query,
+  Request,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -13,6 +17,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminSuscripcionesController {
+  private readonly logger = new Logger(AdminSuscripcionesController.name);
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -355,6 +360,120 @@ export class AdminSuscripcionesController {
       message: 'Próximamente',
       data: [],
       meta: { total: 0 },
+    };
+  }
+
+  // ============================================
+  // ACTIVACIÓN MANUAL (REGALAR SUSCRIPCIONES)
+  // ============================================
+
+  /**
+   * POST /admin/suscripciones/activar-manual
+   * Activar suscripción manualmente (para testing o regalar)
+   * Solo admin puede usar esto
+   */
+  @Post('activar-manual')
+  async activarSuscripcionManual(
+    @Body() body: {
+      sedeId: string;
+      tipo?: 'MENSUAL' | 'ANUAL';
+      nota?: string;
+    },
+    @Request() req,
+  ) {
+    const { sedeId, tipo = 'MENSUAL', nota = 'Activación manual por admin' } = body;
+    
+    this.logger.log(`Admin ${req.user?.userId} activando suscripción manual para sede ${sedeId}`);
+
+    const hoy = new Date();
+    const meses = tipo === 'ANUAL' ? 12 : 1;
+    const fechaVencimiento = new Date(hoy);
+    fechaVencimiento.setMonth(fechaVencimiento.getMonth() + meses);
+
+    // Buscar o crear config
+    let config = await this.prisma.alquilerConfig.findUnique({
+      where: { sedeId },
+    });
+
+    if (!config) {
+      config = await this.prisma.alquilerConfig.create({
+        data: {
+          sedeId,
+          habilitado: true,
+          requiereAprobacion: true,
+          duracionSlotMinutos: 90,
+          anticipacionMaxDias: 14,
+          cancelacionMinHoras: 4,
+        },
+      });
+    }
+
+    // Calcular monto
+    const montoCentavos = tipo === 'ANUAL' ? 10800 : 1000; // $108.00 o $10.00
+
+    // Crear pago COMPLETADO manualmente
+    const pago = await this.prisma.alquilerPago.create({
+      data: {
+        sedeId,
+        sedeConfigId: config.id,
+        monto: montoCentavos,
+        moneda: 'USD',
+        estado: 'COMPLETADO',
+        metodo: 'MANUAL',
+        referencia: `MANUAL-${Date.now()}`,
+        fechaPago: hoy,
+        periodoDesde: hoy,
+        periodoHasta: fechaVencimiento,
+      },
+    });
+
+    // Activar suscripción
+    await this.prisma.alquilerConfig.update({
+      where: { id: config.id },
+      data: {
+        suscripcionActiva: true,
+        suscripcionVenceEn: fechaVencimiento,
+        tipoSuscripcion: tipo,
+        habilitado: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Suscripción ${tipo} activada exitosamente`,
+      data: {
+        sedeId,
+        tipo,
+        monto: `$${(montoCentavos / 100).toFixed(2)} USD`,
+        venceEn: fechaVencimiento.toISOString().split('T')[0],
+        pagoId: pago.id,
+        nota,
+      },
+    };
+  }
+
+  /**
+   * POST /admin/suscripciones/desactivar
+   * Desactivar suscripción (para testing)
+   */
+  @Post('desactivar')
+  async desactivarSuscripcion(
+    @Body() body: { sedeId: string; nota?: string },
+    @Request() req,
+  ) {
+    this.logger.log(`Admin ${req.user?.userId} desactivando suscripción para sede ${body.sedeId}`);
+
+    await this.prisma.alquilerConfig.updateMany({
+      where: { sedeId: body.sedeId },
+      data: {
+        suscripcionActiva: false,
+        suscripcionVenceEn: null,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Suscripción desactivada',
     };
   }
 }

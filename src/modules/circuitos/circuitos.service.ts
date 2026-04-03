@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { CreateCircuitoDto, UpdateCircuitoDto } from './dto/create-circuito.dto';
-import { SolicitarInclusionDto, ProcesarSolicitudDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
+import { AsignarTorneoDirectoDto, SolicitarInclusionDto, ProcesarSolicitudDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -324,6 +324,148 @@ export class CircuitosService {
     });
 
     return { success: true, data: torneos };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ADMIN - ASIGNACIÓN DIRECTA DE TORNEOS
+  // ═══════════════════════════════════════════════════════════
+
+  async getTorneosDisponibles(circuitoId: string) {
+    // Obtener IDs de torneos ya asignados a este circuito
+    const asignados = await this.prisma.torneoCircuito.findMany({
+      where: { circuitoId },
+      select: { torneoId: true },
+    });
+    const asignadosIds = asignados.map(a => a.torneoId);
+
+    // Obtener torneos disponibles (no asignados a este circuito, estado PUBLICADO o EN_CURSO)
+    const torneos = await this.prisma.tournament.findMany({
+      where: {
+        id: { notIn: asignadosIds },
+        estado: { in: ['PUBLICADO', 'EN_CURSO', 'FINALIZADO'] },
+      },
+      select: {
+        id: true,
+        nombre: true,
+        fechaInicio: true,
+        fechaFin: true,
+        ciudad: true,
+        flyerUrl: true,
+        estado: true,
+        organizador: {
+          select: { id: true, nombre: true, apellido: true },
+        },
+      },
+      orderBy: { fechaInicio: 'desc' },
+    });
+
+    return { success: true, data: torneos };
+  }
+
+  async asignarTorneoDirecto(adminId: string, dto: AsignarTorneoDirectoDto) {
+    // Verificar que el circuito existe
+    const circuito = await this.prisma.circuito.findUnique({
+      where: { id: dto.circuitoId },
+    });
+
+    if (!circuito) {
+      throw new NotFoundException('Circuito no encontrado');
+    }
+
+    // Verificar que el torneo existe
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: dto.torneoId },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    // Verificar que no esté ya asignado
+    const existente = await this.prisma.torneoCircuito.findUnique({
+      where: {
+        circuitoId_torneoId: {
+          circuitoId: dto.circuitoId,
+          torneoId: dto.torneoId,
+        },
+      },
+    });
+
+    if (existente) {
+      throw new BadRequestException('Este torneo ya está asignado al circuito');
+    }
+
+    // Calcular el siguiente orden si no se especifica
+    let orden = dto.orden;
+    if (!orden) {
+      const ultimo = await this.prisma.torneoCircuito.findFirst({
+        where: { circuitoId: dto.circuitoId },
+        orderBy: { orden: 'desc' },
+      });
+      orden = (ultimo?.orden || 0) + 1;
+    }
+
+    const asignacion = await this.prisma.torneoCircuito.create({
+      data: {
+        circuitoId: dto.circuitoId,
+        torneoId: dto.torneoId,
+        orden,
+        puntosValidos: dto.puntosValidos ?? true,
+        estado: 'APROBADO', // Directo, sin pendiente
+        solicitadoPorId: adminId,
+        aprobadoPorId: adminId,
+        fechaAprobacion: new Date().toISOString().split('T')[0],
+        notas: dto.notas,
+      },
+      include: {
+        circuito: { select: { id: true, nombre: true } },
+        torneo: {
+          select: {
+            id: true,
+            nombre: true,
+            fechaInicio: true,
+            ciudad: true,
+            flyerUrl: true,
+          },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Torneo asignado al circuito correctamente',
+      data: asignacion,
+    };
+  }
+
+  async eliminarTorneoDeCircuito(circuitoId: string, torneoId: string) {
+    // Verificar que existe la relación
+    const relacion = await this.prisma.torneoCircuito.findUnique({
+      where: {
+        circuitoId_torneoId: {
+          circuitoId,
+          torneoId,
+        },
+      },
+    });
+
+    if (!relacion) {
+      throw new NotFoundException('El torneo no está asignado a este circuito');
+    }
+
+    await this.prisma.torneoCircuito.delete({
+      where: {
+        circuitoId_torneoId: {
+          circuitoId,
+          torneoId,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Torneo eliminado del circuito',
+    };
   }
 
   // ═══════════════════════════════════════════════════════════

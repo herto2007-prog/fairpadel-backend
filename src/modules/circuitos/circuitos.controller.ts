@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { CircuitosService } from './circuitos.service';
 import { CreateCircuitoDto, UpdateCircuitoDto } from './dto/create-circuito.dto';
-import { SolicitarInclusionDto, ProcesarSolicitudDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
+import { AsignarTorneoDirectoDto, SolicitarInclusionDto, ProcesarSolicitudDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -82,7 +82,38 @@ export class CircuitosController {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // ADMIN - GESTIÓN DE SOLICITUDES
+  // ADMIN - GESTIÓN DE TORNEOS (ASIGNACIÓN DIRECTA)
+  // ═══════════════════════════════════════════════════════════
+
+  @Get('admin/torneos-disponibles')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getTorneosDisponibles(@Query('circuitoId') circuitoId: string) {
+    return this.circuitosService.getTorneosDisponibles(circuitoId);
+  }
+
+  @Post('admin/asignar-torneo')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async asignarTorneoDirecto(
+    @Request() req: any,
+    @Body() dto: AsignarTorneoDirectoDto,
+  ) {
+    return this.circuitosService.asignarTorneoDirecto(req.user.userId, dto);
+  }
+
+  @Delete('admin/:circuitoId/torneo/:torneoId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async eliminarTorneoDeCircuito(
+    @Param('circuitoId') circuitoId: string,
+    @Param('torneoId') torneoId: string,
+  ) {
+    return this.circuitosService.eliminarTorneoDeCircuito(circuitoId, torneoId);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ADMIN - GESTIÓN DE SOLICITUDES (DEPRECATED - mantener por compatibilidad)
   // ═══════════════════════════════════════════════════════════
 
   @Get('admin/solicitudes-pendientes')
