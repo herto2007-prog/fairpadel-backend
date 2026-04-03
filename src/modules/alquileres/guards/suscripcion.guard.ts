@@ -45,13 +45,12 @@ export class SuscripcionGuard implements CanActivate {
       );
     }
 
-    // Verificar si no venció
+    // Verificar si no venció (comparación de strings YYYY-MM-DD)
     if (config.suscripcionVenceEn) {
-      const hoy = new Date();
-      hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche
-      const vence = new Date(config.suscripcionVenceEn);
-      vence.setHours(0, 0, 0, 0);
-      if (vence < hoy) {
+      const hoyStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const venceStr = String(config.suscripcionVenceEn); // String YYYY-MM-DD
+      
+      if (venceStr < hoyStr) {
         // Desactivar automáticamente
         await this.prisma.alquilerConfig.update({
           where: { sedeId },

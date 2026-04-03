@@ -34,18 +34,20 @@ export class AdminSuscripcionesController {
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
 
-    const hoy = new Date();
+    // Fechas como strings YYYY-MM-DD (evita problemas de zona horaria)
+    const hoy = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     const sieteDias = new Date();
     sieteDias.setDate(sieteDias.getDate() + 7);
+    const sieteDiasStr = sieteDias.toISOString().split('T')[0]; // YYYY-MM-DD
 
-    // Construir where según filtro
+    // Construir where según filtro (comparación de strings funciona para fechas YYYY-MM-DD)
     let where: any = {};
     
     if (filtro === 'activas') {
       where = {
         suscripcionActiva: true,
         suscripcionVenceEn: {
-          gte: hoy,
+          gte: hoy, // String comparison: "2026-04-10" >= "2026-04-03"
         },
       };
     } else if (filtro === 'por-vencer') {
@@ -53,7 +55,7 @@ export class AdminSuscripcionesController {
         suscripcionActiva: true,
         suscripcionVenceEn: {
           gte: hoy,
-          lte: sieteDias,
+          lte: sieteDiasStr,
         },
       };
     } else if (filtro === 'vencidas') {
@@ -126,7 +128,7 @@ export class AdminSuscripcionesController {
       const ultimoPago = config.pagos[0];
       const diasRestantes = config.suscripcionVenceEn
         ? Math.ceil(
-            (new Date(config.suscripcionVenceEn).getTime() - hoy.getTime()) /
+            (new Date(config.suscripcionVenceEn + 'T00:00:00').getTime() - new Date(hoy + 'T00:00:00').getTime()) /
               (1000 * 60 * 60 * 24)
           )
         : 0;
@@ -168,9 +170,11 @@ export class AdminSuscripcionesController {
    */
   @Get('estadisticas')
   async obtenerEstadisticas() {
-    const hoy = new Date();
+    // Fechas como strings YYYY-MM-DD
+    const hoy = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     const sieteDias = new Date();
     sieteDias.setDate(sieteDias.getDate() + 7);
+    const sieteDiasStr = sieteDias.toISOString().split('T')[0]; // YYYY-MM-DD
 
     const [
       totalSedes,
@@ -199,7 +203,7 @@ export class AdminSuscripcionesController {
           suscripcionActiva: true,
           suscripcionVenceEn: {
             gte: hoy,
-            lte: sieteDias,
+            lte: sieteDiasStr,
           },
         },
       }),
@@ -221,12 +225,13 @@ export class AdminSuscripcionesController {
         },
       }),
 
-      // Total recaudado este mes
+      // Total recaudado este mes (comparación de strings YYYY-MM-DD)
+      // Las fechas de pago son strings, así que usamos el primer día del mes actual
       this.prisma.alquilerPago.aggregate({
         where: {
           estado: 'COMPLETADO',
           fechaPago: {
-            gte: new Date(hoy.getFullYear(), hoy.getMonth(), 1),
+            gte: hoy.substring(0, 8) + '01', // Primer día del mes actual: "2026-04-01"
           },
         },
         _sum: {
@@ -385,10 +390,13 @@ export class AdminSuscripcionesController {
     
     this.logger.log(`Admin ${req.user?.userId} activando suscripción manual para sede ${sedeId}`);
 
+    // Fechas como strings YYYY-MM-DD
     const hoy = new Date();
+    const hoyStr = hoy.toISOString().split('T')[0]; // YYYY-MM-DD
     const meses = tipo === 'ANUAL' ? 12 : 1;
     const fechaVencimiento = new Date(hoy);
     fechaVencimiento.setMonth(fechaVencimiento.getMonth() + meses);
+    const fechaVencimientoStr = fechaVencimiento.toISOString().split('T')[0]; // YYYY-MM-DD
 
     // Buscar o crear config
     let config = await this.prisma.alquilerConfig.findUnique({
@@ -421,9 +429,9 @@ export class AdminSuscripcionesController {
         estado: 'COMPLETADO',
         metodo: 'MANUAL',
         referencia: `MANUAL-${Date.now()}`,
-        fechaPago: hoy,
-        periodoDesde: hoy,
-        periodoHasta: fechaVencimiento,
+        fechaPago: hoyStr,
+        periodoDesde: hoyStr,
+        periodoHasta: fechaVencimientoStr,
       },
     });
 
@@ -432,7 +440,7 @@ export class AdminSuscripcionesController {
       where: { id: config.id },
       data: {
         suscripcionActiva: true,
-        suscripcionVenceEn: fechaVencimiento,
+        suscripcionVenceEn: fechaVencimientoStr,
         tipoSuscripcion: tipo,
         habilitado: true,
       },
@@ -445,7 +453,7 @@ export class AdminSuscripcionesController {
         sedeId,
         tipo,
         monto: `$${(montoCentavos / 100).toFixed(2)} USD`,
-        venceEn: fechaVencimiento.toISOString().split('T')[0],
+        venceEn: fechaVencimientoStr,
         pagoId: pago.id,
         nota,
       },

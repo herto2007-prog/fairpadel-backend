@@ -2001,7 +2001,7 @@ model AlquilerConfig {
   
   // Campos de suscripción (para reservas)
   suscripcionActiva     Boolean  @default(false) @map("suscripcion_activa")
-  suscripcionVenceEn    DateTime?  @map("suscripcion_vence_en") @db.Date
+  suscripcionVenceEn    String?    @map("suscripcion_vence_en") // YYYY-MM-DD
   suscripcionStripeId   String?  @map("suscripcion_stripe_id") // ID de Bancard
   tipoSuscripcion       String?  @default("MENSUAL") @map("tipo_suscripcion") // MENSUAL, ANUAL
   
@@ -2027,9 +2027,9 @@ model AlquilerPago {
   metodo        String?   // BANCARD, STRIPE, TRANSFERENCIA
   referencia    String?   // ID de transacción externo
   
-  fechaPago     DateTime? @map("fecha_pago") @db.Date
-  periodoDesde  DateTime  @map("periodo_desde") @db.Date
-  periodoHasta  DateTime  @map("periodo_hasta") @db.Date
+  fechaPago     String?   @map("fecha_pago") // YYYY-MM-DD
+  periodoDesde  String    @map("periodo_desde") // YYYY-MM-DD
+  periodoHasta  String    @map("periodo_hasta") // YYYY-MM-DD
   
   createdAt     DateTime  @default(now()) @map("created_at")
 

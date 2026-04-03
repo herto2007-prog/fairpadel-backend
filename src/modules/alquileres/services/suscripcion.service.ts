@@ -58,11 +58,14 @@ export class SuscripcionService {
     const montoFormateado = (montoCentavos / 100).toFixed(2);
     this.logger.log(`Monto calculado: ${montoCentavos} centavos -> ${montoFormateado} USD (tipo: ${tipo})`);
 
-    // Calcular período
+    // Calcular período usando strings YYYY-MM-DD (evita problemas de zona horaria)
     const hoy = new Date();
+    const hoyStr = hoy.toISOString().split('T')[0]; // YYYY-MM-DD
+    
     const meses = tipo === 'ANUAL' ? 12 : 1;
     const fechaHasta = new Date();
     fechaHasta.setMonth(fechaHasta.getMonth() + meses);
+    const fechaHastaStr = fechaHasta.toISOString().split('T')[0]; // YYYY-MM-DD
 
     // Crear registro de pago pendiente
     const pago = await this.prisma.alquilerPago.create({
@@ -73,8 +76,8 @@ export class SuscripcionService {
         moneda: 'USD',
         estado: 'PENDIENTE',
         metodo: 'BANCARD',
-        periodoDesde: hoy,        // Date object
-        periodoHasta: fechaHasta, // Date object
+        periodoDesde: hoyStr,        // String YYYY-MM-DD
+        periodoHasta: fechaHastaStr, // String YYYY-MM-DD
       },
     });
 
@@ -103,8 +106,8 @@ export class SuscripcionService {
         monto: montoCentavos,
         montoFormateado: `$${montoFormateado} USD`,
         tipo,
-        periodoDesde: hoy.toISOString().split('T')[0],
-        periodoHasta: fechaHasta.toISOString().split('T')[0],
+        periodoDesde: hoyStr,
+        periodoHasta: fechaHastaStr,
       };
     } catch (error) {
       // Si falla Bancard, marcar pago como fallido
@@ -168,16 +171,17 @@ export class SuscripcionService {
 
     if (aprobado) {
       // Actualizar pago como completado
+      const hoyPago = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
       await this.prisma.alquilerPago.update({
         where: { id: pago.id },
         data: {
           estado: 'COMPLETADO',
-          fechaPago: new Date(),
+          fechaPago: hoyPago,
         },
       });
 
-      // Activar suscripción
-      await this.activarSuscripcion(pago.sedeId, pago.periodoHasta);
+      // Activar suscripción (periodoHasta es string YYYY-MM-DD)
+      await this.activarSuscripcion(pago.sedeId, String(pago.periodoHasta));
 
       this.logger.log(`Suscripción activada para sede ${pago.sedeId}`);
     } else {
@@ -201,12 +205,12 @@ export class SuscripcionService {
   /**
    * Activa la suscripción de una sede
    */
-  private async activarSuscripcion(sedeId: string, venceEn: Date) {
+  private async activarSuscripcion(sedeId: string, venceEn: string) {
     return this.prisma.alquilerConfig.update({
       where: { sedeId },
       data: {
         suscripcionActiva: true,
-        suscripcionVenceEn: venceEn,
+        suscripcionVenceEn: venceEn, // String YYYY-MM-DD
         habilitado: true,
       },
     });
@@ -232,11 +236,15 @@ export class SuscripcionService {
       return { activa: false, diasRestantes: 0 };
     }
 
-    // Calcular días restantes
+    // Calcular días restantes usando strings YYYY-MM-DD
     const hoy = new Date();
-    const vence = config.suscripcionVenceEn;
+    const hoyStr = hoy.toISOString().split('T')[0]; // YYYY-MM-DD
+    const venceStr = String(config.suscripcionVenceEn); // String YYYY-MM-DD
+    
+    const hoyDate = new Date(hoyStr + 'T00:00:00');
+    const venceDate = new Date(venceStr + 'T00:00:00');
     const diasRestantes = Math.ceil(
-      (vence.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24)
+      (venceDate.getTime() - hoyDate.getTime()) / (1000 * 60 * 60 * 24)
     );
 
     // Si ya venció, desactivar automáticamente
@@ -250,7 +258,7 @@ export class SuscripcionService {
 
     return {
       activa: true,
-      venceEn: vence.toISOString().split('T')[0],
+      venceEn: venceStr,
       diasRestantes,
     };
   }
