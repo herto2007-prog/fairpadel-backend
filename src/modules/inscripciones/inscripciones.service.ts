@@ -31,12 +31,8 @@ export class InscripcionesService {
       throw new BadRequestException('El torneo no está abierto para inscripciones');
     }
 
-    // Validar fechas de inscripción (usando fechaLimiteInscr)
-    // FIX: fechas son String YYYY-MM-DD, comparar directamente
-    const hoy = new Date().toISOString().split('T')[0];
-    if (tournament.fechaLimiteInscr && hoy > ((tournament.fechaLimiteInscr as unknown) as string)) {
-      throw new BadRequestException('Las inscripciones han cerrado');
-    }
+    // Nota: Ya no validamos fecha límite. Las inscripciones se cierran manualmente
+    // cuando el organizador cierra las categorías o realiza el sorteo.
 
     // Validar categoría existe y pertenece al torneo
     const tournamentCategory = await this.prisma.tournamentCategory.findFirst({

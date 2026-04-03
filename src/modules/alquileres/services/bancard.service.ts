@@ -26,10 +26,12 @@ export class BancardService {
       ? 'https://vpos.infonet.com.py'
       : 'https://vpos.infonet.com.py:8888';
     
-    // URLs de retorno después del pago
-    const appUrl = this.configService.get('APP_URL') || 'http://localhost:3000';
-    this.returnUrl = `${appUrl}/suscripcion/confirmacion`;
-    this.cancelUrl = `${appUrl}/suscripcion/cancelacion`;
+    // URLs de retorno después del pago (deben apuntar al FRONTEND)
+    const frontendUrl = this.configService.get('FRONTEND_URL') || 
+                        this.configService.get('APP_URL') || 
+                        'http://localhost:5173';
+    this.returnUrl = `${frontendUrl}/suscripcion/confirmacion`;
+    this.cancelUrl = `${frontendUrl}/suscripcion/cancelacion`;
     
     // Log de estado (sin revelar las claves)
     if (!this.publicKey || !this.privateKey) {

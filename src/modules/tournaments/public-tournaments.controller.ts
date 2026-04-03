@@ -200,11 +200,8 @@ export class PublicTournamentsController {
     }
 
     // Verificar si las inscripciones están abiertas
-    // FIX: fechas son String YYYY-MM-DD, comparar directamente
-    const hoy = new Date().toISOString().split('T')[0];
-    const inscripcionesAbiertas =
-      torneo.fechaLimiteInscr && hoy <= ((torneo.fechaLimiteInscr as unknown) as string) &&
-      torneo.categorias.some((c) => c.inscripcionAbierta);
+    // Las inscripciones están abiertas si al menos una categoría tiene inscripcionAbierta = true
+    const inscripcionesAbiertas = torneo.categorias.some((c) => c.inscripcionAbierta);
 
     return {
       success: true,
