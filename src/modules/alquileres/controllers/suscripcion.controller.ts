@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   Headers,
@@ -77,23 +78,34 @@ export class SuscripcionController {
    * 
    * Según la documentación de Bancard, este endpoint recibe:
    * POST con JSON en el body con la operación confirmada
+   * 
+   * Nota: Bancard agrega ?output=json a la URL, pero NestJS maneja
+   * los query params automáticamente si usamos @Query
    */
   @Post('webhook/confirmacion')
   @HttpCode(HttpStatus.OK)
   async recibirConfirmacion(
     @Body() payload: any,
     @Headers() headers: Record<string, string>,
+    @Query() query: any,
   ) {
-    this.logger.log('Webhook recibido de Bancard');
-    this.logger.debug('Payload:', payload);
+    this.logger.log('========================================');
+    this.logger.log('WEBHOOK BANCARD RECIBIDO');
+    this.logger.log('========================================');
+    this.logger.log('Headers:', JSON.stringify(headers));
+    this.logger.log('Query:', JSON.stringify(query));
+    this.logger.log('Payload:', JSON.stringify(payload));
 
     try {
       // Validar estructura mínima del payload
       if (!payload || !payload.operation) {
+        this.logger.error('Payload inválido - no tiene operation');
         throw new BadRequestException('Payload inválido');
       }
 
       const resultado = await this.suscripcionService.procesarConfirmacionPago(payload);
+      
+      this.logger.log('Webhook procesado exitosamente:', JSON.stringify(resultado));
       
       // Bancard espera una respuesta 200 con { status: 'success' }
       return { status: 'success', ...resultado };
