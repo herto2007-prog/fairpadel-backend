@@ -548,6 +548,7 @@ export class CircuitosService {
   // CLASIFICADOS A LA FINAL
   // ═══════════════════════════════════════════════════════════
 
+  // Calcular clasificados por categoría - lista simple
   async calcularClasificados(circuitoId: string, categoryId: string) {
     const circuito = await this.prisma.circuito.findUnique({
       where: { id: circuitoId },
@@ -565,7 +566,7 @@ export class CircuitosService {
     const ranking = await this.getRankingCircuito(circuitoId, categoryId);
     const mejores = ranking.data.slice(0, circuito.torneosParaClasificar);
 
-    // Crear/actualizar clasificados por categoría
+    // Crear/actualizar lista de clasificados
     const clasificados = [];
     for (const item of mejores) {
       const clasificado = await this.prisma.clasificadoCircuito.upsert({
@@ -588,7 +589,6 @@ export class CircuitosService {
           puntosAcumulados: item.puntosAcumulados,
           torneosJugados: item.torneosJugados,
           posicionClasificacion: item.posicion,
-          estado: 'CLASIFICADO',
         },
       });
       clasificados.push(clasificado);
@@ -601,18 +601,17 @@ export class CircuitosService {
     };
   }
 
-  async confirmarClasificacion(id: string) {
+  // Marcar asistencia (true = confirma, false = no viene)
+  async marcarAsistencia(id: string, asistencia: boolean) {
     const clasificado = await this.prisma.clasificadoCircuito.update({
       where: { id },
-      data: {
-        estado: 'CONFIRMADO',
-        confirmadoEn: this.dateService.now(),
-      },
+      data: { asistenciaConfirmada: asistencia },
     });
 
     return { success: true, data: clasificado };
   }
 
+  // Obtener lista de clasificados con info de contacto
   async getClasificados(circuitoId: string, categoryId?: string) {
     const where: any = { circuitoId };
     if (categoryId) {
@@ -628,6 +627,8 @@ export class CircuitosService {
             nombre: true,
             apellido: true,
             fotoUrl: true,
+            telefono: true,
+            email: true,
             categoriaActual: { select: { nombre: true } },
           },
         },

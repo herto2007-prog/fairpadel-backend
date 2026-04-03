@@ -158,11 +158,14 @@ export class CircuitosController {
     return this.circuitosService.calcularClasificados(id, categoryId);
   }
 
-  @Post('admin/clasificado/:id/confirmar')
+  @Post('admin/clasificado/:id/asistencia')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  async confirmarClasificacion(@Param('id') id: string) {
-    return this.circuitosService.confirmarClasificacion(id);
+  async marcarAsistencia(
+    @Param('id') id: string,
+    @Body('asistencia') asistencia: boolean,
+  ) {
+    return this.circuitosService.marcarAsistencia(id, asistencia);
   }
 
   @Get(':id/clasificados')

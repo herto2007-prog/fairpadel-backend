@@ -771,21 +771,20 @@ model TorneoCircuito {
   @@map("torneo_circuitos")
 }
 
-// NUEVO: Clasificados a la final del circuito
+// NUEVO: Clasificados a la final del circuito (lista simple por categoría)
 model ClasificadoCircuito {
   id                  String    @id @default(uuid())
   circuitoId          String    @map("circuito_id")
   jugadorId           String    @map("jugador_id")
-  categoryId          String    @map("category_id") // Categoría específica para el Master Final
+  categoryId          String    @map("category_id")
   
-  // Datos de clasificación
+  // Datos de clasificación (snapshot al momento de calcular)
   puntosAcumulados    Int       @map("puntos_acumulados")
   torneosJugados      Int       @default(0) @map("torneos_jugados")
   posicionClasificacion Int     @map("posicion_clasificacion")
   
-  // Estado
-  estado              String    @default("CLASIFICADO") // CLASIFICADO, CONFIRMADO, RECHAZADO
-  confirmadoEn        DateTime? @map("confirmado_en")
+  // Simple check de participación (null = sin confirmar, true/false = confirmó/no participa)
+  asistenciaConfirmada Boolean? @map("asistencia_confirmada")
   
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
