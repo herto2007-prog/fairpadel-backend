@@ -166,6 +166,13 @@ export class AlquileresService {
         alquilerConfig: true,
       },
     });
+    
+    // DEBUG: Log para verificar qué se está encontrando
+    console.log(`[DEBUG disponibilidad-global] Fecha: ${fecha}, DiaSemana: ${diaSemana}`);
+    console.log(`[DEBUG] Sedes encontradas con suscripcionActiva=true: ${sedes.length}`);
+    sedes.forEach(s => {
+      console.log(`[DEBUG] Sede: ${s.nombre}, canchas: ${s.canchas.length}, suscripcionActiva: ${s.alquilerConfig?.suscripcionActiva}`);
+    });
 
     // Obtener todas las reservas para la fecha
     const todasCanchasIds = sedes.flatMap(s => s.canchas.map(c => c.id));
@@ -186,6 +193,9 @@ export class AlquileresService {
         activo: true,
       },
     });
+    
+    console.log(`[DEBUG] IDs de canchas buscadas: ${todasCanchasIds.join(', ')}`);
+    console.log(`[DEBUG] Disponibilidades encontradas para dia ${diaSemana}: ${disponibilidades.length}`);
 
     // NOTA: Los precios no se gestionan en la plataforma
     // El dueño cobra directamente al jugador
@@ -245,6 +255,9 @@ export class AlquileresService {
 
     // Filtrar solo sedes con disponibilidad
     const sedesFiltradas = sedesConDisponibilidad.filter(s => s.canchasDisponibles > 0);
+    
+    console.log(`[DEBUG] Sedes con slots disponibles: ${sedesFiltradas.length}`);
+    sedesFiltradas.forEach(s => console.log(`[DEBUG] -> ${s.sede.nombre}: ${s.canchasDisponibles} canchas`));
 
     return {
       fecha,
