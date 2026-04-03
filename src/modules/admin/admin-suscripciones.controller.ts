@@ -107,25 +107,13 @@ export class AdminSuscripcionesController {
             },
           },
         },
-        pagos: {
-          where: {
-            estado: 'COMPLETADO',
-          },
-          orderBy: {
-            fechaPago: 'desc',
-          },
-          take: 1,
-          select: {
-            fechaPago: true,
-            monto: true,
-          },
-        },
+        // pagos: temporalemente deshabilitado - tabla recreada vacia
       },
     });
 
     // Formatear respuesta
     const data = suscripciones.map((config) => {
-      const ultimoPago = config.pagos[0];
+      const ultimoPago = null; // config.pagos[0] - temporalmente deshabilitado
       const diasRestantes = config.suscripcionVenceEn
         ? Math.ceil(
             (new Date(config.suscripcionVenceEn + 'T00:00:00').getTime() - new Date(hoy + 'T00:00:00').getTime()) /
@@ -239,18 +227,8 @@ export class AdminSuscripcionesController {
         },
       }),
 
-      // Historial últimos 6 meses
-      this.prisma.$queryRaw`
-        SELECT 
-          DATE_TRUNC('month', fecha_pago) as mes,
-          COUNT(*) as cantidad,
-          SUM(monto) as total
-        FROM alquiler_pagos
-        WHERE estado = 'COMPLETADO'
-          AND fecha_pago >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '6 months')
-        GROUP BY DATE_TRUNC('month', fecha_pago)
-        ORDER BY mes DESC
-      `,
+      // Historial últimos 6 meses - temporalmente deshabilitado
+      Promise.resolve([]),
     ]);
 
     return {
@@ -275,65 +253,20 @@ export class AdminSuscripcionesController {
    */
   @Get('pagos')
   async listarPagos(
-    @Query('estado') estado: string = 'COMPLETADO',
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '20',
   ) {
+    // Temporalmente deshabilitado - tabla alquiler_pagos recreada vacia
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
-    const skip = (pageNum - 1) * limitNum;
-
-    const where: any = {};
-    if (estado !== 'todos') {
-      where.estado = estado;
-    }
-
-    const [total, pagos] = await Promise.all([
-      this.prisma.alquilerPago.count({ where }),
-      this.prisma.alquilerPago.findMany({
-        where,
-        skip,
-        take: limitNum,
-        orderBy: {
-          createdAt: 'desc',
-        },
-        include: {
-          sede: {
-            select: {
-              nombre: true,
-              ciudad: true,
-              dueno: {
-                select: {
-                  nombre: true,
-                  apellido: true,
-                  email: true,
-                },
-              },
-            },
-          },
-        },
-      }),
-    ]);
-
+    
     return {
-      data: pagos.map((pago) => ({
-        id: pago.id,
-        sede: pago.sede,
-        monto: pago.monto,
-        montoUSD: (pago.monto / 100).toFixed(2),
-        estado: pago.estado,
-        metodo: pago.metodo,
-        referencia: pago.referencia,
-        fechaPago: pago.fechaPago,
-        periodoDesde: pago.periodoDesde,
-        periodoHasta: pago.periodoHasta,
-        createdAt: pago.createdAt,
-      })),
+      data: [],
       meta: {
-        total,
+        total: 0,
         page: pageNum,
         limit: limitNum,
-        totalPages: Math.ceil(total / limitNum),
+        totalPages: 0,
       },
     };
   }
