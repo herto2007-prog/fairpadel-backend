@@ -20,20 +20,28 @@ export class CreateCircuitoDto {
   temporada?: string;
 
   @IsOptional()
-  @IsDateString({}, { message: 'Fecha de inicio inválida' })
+  @IsString({ message: 'Fecha de inicio debe ser texto' })
   fechaInicio?: string;
 
   @IsOptional()
-  @IsDateString({}, { message: 'Fecha de fin inválida' })
+  @IsString({ message: 'Fecha de fin debe ser texto' })
   fechaFin?: string;
 
   @IsOptional()
-  @IsDateString({}, { message: 'Fecha límite de inscripción inválida' })
+  @IsString({ message: 'Fecha límite debe ser texto' })
   fechaLimiteInscripcion?: string;
 
   @IsOptional()
   @IsString({ message: 'El color primario debe ser texto' })
   colorPrimario?: string;
+
+  @IsOptional()
+  @IsString({ message: 'El logo debe ser una URL válida' })
+  logoUrl?: string;
+
+  @IsOptional()
+  @IsString({ message: 'El banner debe ser una URL válida' })
+  bannerUrl?: string;
 
   @IsOptional()
   @IsInt({ message: 'El número de torneos para clasificar debe ser un número' })
@@ -68,7 +76,7 @@ export class UpdateCircuitoDto {
   estado?: string;
 
   @IsOptional()
-  @IsDateString({}, { message: 'Fecha de fin inválida' })
+  @IsString({ message: 'Fecha de fin debe ser texto' })
   fechaFin?: string;
 
   @IsOptional()
