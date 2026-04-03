@@ -156,4 +156,57 @@ export class SuscripcionController {
       scriptUrl: `${this.bancardService.getBaseUrl()}/checkout/javascript/dist/bancard-checkout-4.0.0.js`,
     };
   }
+
+  // ============================================================
+  // ENDPOINTS PARA TESTS DE BANCARD (Checklist de integración)
+  // ============================================================
+
+  /**
+   * POST /alquileres/suscripcion/rollback
+   * Rollback de una transacción (para tests de Bancard)
+   * Permite cancelar una transacción pendiente
+   */
+  @Post('rollback')
+  @UseGuards(JwtAuthGuard)
+  async rollbackTransaccion(
+    @Body('shopProcessId') shopProcessId: string,
+  ) {
+    this.logger.log(`Rollback solicitado para shop_process_id: ${shopProcessId}`);
+    
+    try {
+      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId, '0.00', 'USD');
+      return {
+        status: 'success',
+        message: 'Rollback procesado',
+        data: resultado,
+      };
+    } catch (error) {
+      this.logger.error('Error en rollback:', error);
+      throw new BadRequestException('No se pudo realizar el rollback');
+    }
+  }
+
+  /**
+   * POST /alquileres/suscripcion/consultar
+   * Consultar estado de una transacción (para tests de Bancard)
+   * Permite al comercio consultar si un pago fue confirmado
+   */
+  @Post('consultar')
+  @UseGuards(JwtAuthGuard)
+  async consultarTransaccion(
+    @Body('shopProcessId') shopProcessId: string,
+  ) {
+    this.logger.log(`Consulta de transacción: shop_process_id=${shopProcessId}`);
+    
+    try {
+      const resultado = await this.bancardService.consultarTransaccion(shopProcessId);
+      return {
+        status: 'success',
+        data: resultado,
+      };
+    } catch (error) {
+      this.logger.error('Error consultando transacción:', error);
+      throw new BadRequestException('No se pudo consultar la transacción');
+    }
+  }
 }
