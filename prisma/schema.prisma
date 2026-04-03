@@ -516,7 +516,7 @@ model Category {
   reglasDestino     ReglaAscenso[]      @relation("CategoriaDestino")
   ascensosPendientesActual AscensoPendiente[] @relation("CategoriaActualAscensos")
   ascensosPendientesNueva  AscensoPendiente[] @relation("AscensoPendienteNueva")
-  clasificadosCircuito  ClasificadoCircuito[]
+  clasificados  ClasificadoCircuito[]
 
   @@map("categories")
 }
