@@ -187,18 +187,8 @@ export class AlquileresService {
       },
     });
 
-    // Obtener TODOS los precios de una sola vez (evitar N+1)
-    const sedesIds = sedes.map(s => s.id);
-    const todosPrecios = await this.prisma.alquilerPrecio.findMany({
-      where: { sedeId: { in: sedesIds } },
-      select: {
-        sedeId: true,
-        tipoCancha: true,
-        tipoDia: true,
-        franja: true,
-        precio: true,
-      },
-    });
+    // NOTA: Los precios no se gestionan en la plataforma
+    // El dueño cobra directamente al jugador
 
     // Construir respuesta por sede
     const sedesConDisponibilidad = await Promise.all(
@@ -229,9 +219,6 @@ export class AlquileresService {
           };
         });
 
-        // Filtrar precios de esta sede (ya cargados en memoria)
-        const precios = todosPrecios.filter(p => p.sedeId === sede.id);
-
         // Extraer horarios únicos de todas las canchas
         const todosHorarios = canchasConHorarios.flatMap(c => c.slots.map(s => s.horaInicio));
         const horariosUnicos = [...new Set(todosHorarios)].sort();
@@ -252,12 +239,6 @@ export class AlquileresService {
           horarios: horariosUnicos.slice(0, 8), // Primeros 8 horarios para mostrar
           totalHorarios: horariosUnicos.length,
           canchas: canchasConHorarios,
-          precios: precios.map(p => ({
-            tipoCancha: p.tipoCancha,
-            tipoDia: p.tipoDia,
-            franja: p.franja,
-            precio: p.precio,
-          })),
         };
       })
     );

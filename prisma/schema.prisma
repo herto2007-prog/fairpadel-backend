@@ -2095,7 +2095,7 @@ model ReservaCancha {
   horaInicio          String               @map("hora_inicio")
   horaFin             String               @map("hora_fin")
   duracionMinutos     Int                  @map("duracion_minutos")
-  precio              Int
+  precio              Int?                  // Opcional - los precios se manejan fuera de la plataforma
   estado              ReservaCanchaEstado  @default(PENDIENTE)
   pagado              Boolean              @default(false)
   metodoPago          MetodoPagoAlquiler?  @map("metodo_pago")

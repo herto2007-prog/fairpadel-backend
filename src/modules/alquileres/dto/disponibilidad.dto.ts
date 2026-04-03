@@ -1,4 +1,4 @@
-import { IsString, IsDateString, IsOptional, Matches } from 'class-validator';
+import { IsString, IsOptional, Matches } from 'class-validator';
 
 export class ConsultarDisponibilidadDto {
   @IsString()
@@ -10,21 +10,4 @@ export class ConsultarDisponibilidadDto {
   @IsString()
   @IsOptional()
   sedeCanchaId?: string;
-}
-
-export class CrearAlquilerPrecioDto {
-  @IsString()
-  sedeId: string;
-
-  @IsString()
-  tipoCancha: string;
-
-  @IsString()
-  tipoDia: string;
-
-  @IsString()
-  franja: string;
-
-  @IsString()
-  precio: number;
 }

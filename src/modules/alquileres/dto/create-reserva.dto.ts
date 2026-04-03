@@ -19,7 +19,8 @@ export class CreateReservaDto {
   duracionMinutos?: number;
 
   @IsInt()
-  precio: number;
+  @IsOptional()
+  precio?: number; // Campo opcional - los precios se manejan fuera de la plataforma
 
   @IsString()
   @IsOptional()
