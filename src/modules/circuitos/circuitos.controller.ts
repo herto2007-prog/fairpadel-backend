@@ -185,4 +185,11 @@ export class CircuitosController {
   ) {
     return this.circuitosService.asignarTorneoFinal(id, torneoId);
   }
+
+  @Delete('admin/:id/quitar-final')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async quitarTorneoFinal(@Param('id') id: string) {
+    return this.circuitosService.quitarTorneoFinal(id);
+  }
 }

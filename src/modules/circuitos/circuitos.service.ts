@@ -676,6 +676,19 @@ export class CircuitosService {
     };
   }
 
+  async quitarTorneoFinal(circuitoId: string) {
+    const circuito = await this.prisma.circuito.update({
+      where: { id: circuitoId },
+      data: { torneoFinalId: null },
+    });
+
+    return {
+      success: true,
+      message: 'Torneo final desasignado correctamente',
+      data: circuito,
+    };
+  }
+
   // ═══════════════════════════════════════════════════════════
   // UTILIDADES
   // ═══════════════════════════════════════════════════════════
