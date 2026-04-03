@@ -28,6 +28,10 @@ export class CreateReservaDto {
 
   @IsString()
   @IsOptional()
+  documentoExterno?: string;
+
+  @IsString()
+  @IsOptional()
   telefonoExterno?: string;
 
   @IsString()

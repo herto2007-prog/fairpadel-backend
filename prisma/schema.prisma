@@ -2101,6 +2101,7 @@ model ReservaCancha {
   pagado              Boolean              @default(false)
   metodoPago          MetodoPagoAlquiler?  @map("metodo_pago")
   nombreExterno       String?              @map("nombre_externo")
+  documentoExterno    String?              @map("documento_externo")
   telefonoExterno     String?              @map("telefono_externo")
   creadoPorEncargado  Boolean              @default(false) @map("creado_por_encargado")
   canceladaPorEncargado Boolean            @default(false) @map("cancelada_por_encargado")
