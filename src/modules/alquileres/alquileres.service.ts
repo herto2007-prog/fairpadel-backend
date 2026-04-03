@@ -106,35 +106,36 @@ export class AlquileresService {
     const slots: any[] = [];
     
     console.log(`[DEBUG generarSlots] canchaId: ${canchaId}, disponibilidades: ${disponibilidades.length}, reservas: ${reservas.length}`);
-    console.log(`[DEBUG] disponibilidades IDs: ${disponibilidades.map(d => d.sedeCanchaId).join(', ')}`);
 
     for (const disp of disponibilidades) {
-      let horaActual = this.parseTime(disp.horaInicio);
-      const horaFin = this.parseTime(disp.horaFin);
+      // Usar minutos desde medianoche (evita Date objects)
+      let minutosActual = this.parseTimeToMinutes(disp.horaInicio);
+      const minutosFin = this.parseTimeToMinutes(disp.horaFin);
 
-      while (horaActual < horaFin) {
-        const horaInicioStr = this.formatTime(horaActual);
-        const horaFinSlot = new Date(horaActual.getTime() + duracionMinutos * 60000);
-        const horaFinStr = this.formatTime(horaFinSlot);
+      while (minutosActual < minutosFin) {
+        const slotInicioStr = this.formatTimeFromMinutes(minutosActual);
+        const minutosSlotFin = minutosActual + duracionMinutos;
+        const slotFinStr = this.formatTimeFromMinutes(minutosSlotFin);
 
         // Si el slot excede el horario de cierre, no agregar
-        if (horaFinSlot > horaFin) break;
+        if (minutosSlotFin > minutosFin) break;
 
+        // Verificar si hay conflicto con reservas existentes
         const ocupado = reservas.some(r => {
-          const reservaInicio = this.parseTime(r.horaInicio);
-          const reservaFin = this.parseTime(r.horaFin);
-          return horaActual < reservaFin && horaFinSlot > reservaInicio;
+          const reservaInicio = this.parseTimeToMinutes(r.horaInicio);
+          const reservaFin = this.parseTimeToMinutes(r.horaFin);
+          return minutosActual < reservaFin && minutosSlotFin > reservaInicio;
         });
 
         if (!ocupado) {
           slots.push({
-            horaInicio: horaInicioStr,
-            horaFin: horaFinStr,
+            horaInicio: slotInicioStr,
+            horaFin: slotFinStr,
             disponible: true,
           });
         }
 
-        horaActual = horaFinSlot;
+        minutosActual = minutosSlotFin;
       }
     }
     
@@ -274,11 +275,27 @@ export class AlquileresService {
     };
   }
 
-  private parseTime(timeStr: string): Date {
+  /**
+   * Convierte string HH:MM a minutos desde medianoche
+   * Sin usar Date (evita bugs de timezone en servidor)
+   */
+  private parseTimeToMinutes(timeStr: string): number {
     const [hours, minutes] = timeStr.split(':').map(Number);
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    return date;
+    return hours * 60 + minutes;
+  }
+
+  /**
+   * Convierte minutos desde medianoche a string HH:MM
+   */
+  private formatTimeFromMinutes(minutes: number): string {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+  }
+
+  // Métodos legacy mantenidos para compatibilidad (deprecados)
+  private parseTime(timeStr: string): Date {
+    return new Date(`1970-01-01T${timeStr}:00`);
   }
 
   private formatTime(date: Date): string {
