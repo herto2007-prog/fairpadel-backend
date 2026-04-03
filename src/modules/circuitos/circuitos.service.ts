@@ -382,41 +382,42 @@ export class CircuitosService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    // Verificar que no esté ya asignado
-    const existente = await this.prisma.torneoCircuito.findUnique({
+    // Calcular el siguiente orden si no se especifica
+    let orden = dto.orden ?? 0;
+    if (orden === 0) {
+      const ultimo = await this.prisma.torneoCircuito.findFirst({
+        where: { circuitoId: dto.circuitoId },
+        orderBy: { orden: 'desc' },
+      });
+      orden = (ultimo?.orden ?? 0) + 1;
+    }
+
+    // Usar UPSERT para evitar errores de duplicados y ser más robusto
+    const asignacion = await this.prisma.torneoCircuito.upsert({
       where: {
         circuitoId_torneoId: {
           circuitoId: dto.circuitoId,
           torneoId: dto.torneoId,
         },
       },
-    });
-
-    if (existente) {
-      throw new BadRequestException('Este torneo ya está asignado al circuito');
-    }
-
-    // Calcular el siguiente orden si no se especifica
-    let orden = dto.orden;
-    if (!orden) {
-      const ultimo = await this.prisma.torneoCircuito.findFirst({
-        where: { circuitoId: dto.circuitoId },
-        orderBy: { orden: 'desc' },
-      });
-      orden = (ultimo?.orden || 0) + 1;
-    }
-
-    const asignacion = await this.prisma.torneoCircuito.create({
-      data: {
+      update: {
+        // Si ya existe, actualizar a APROBADO
+        estado: 'APROBADO',
+        orden: orden,
+        puntosValidos: dto.puntosValidos ?? true,
+        aprobadoPorId: adminId,
+        fechaAprobacion: new Date().toISOString().split('T')[0],
+      },
+      create: {
         circuitoId: dto.circuitoId,
         torneoId: dto.torneoId,
-        orden,
-        puntosValidos: dto.puntosValidos ?? true,
-        estado: 'APROBADO', // Directo, sin pendiente
+        orden: Number(orden),
+        puntosValidos: Boolean(dto.puntosValidos ?? true),
+        estado: 'APROBADO',
         solicitadoPorId: adminId,
         aprobadoPorId: adminId,
         fechaAprobacion: new Date().toISOString().split('T')[0],
-        notas: dto.notas,
+        notas: dto.notas || undefined,
       },
       include: {
         circuito: { select: { id: true, nombre: true } },
@@ -432,9 +433,13 @@ export class CircuitosService {
       },
     });
 
+    const esNuevo = asignacion.createdAt.getTime() === asignacion.updatedAt.getTime();
+
     return {
       success: true,
-      message: 'Torneo asignado al circuito correctamente',
+      message: esNuevo 
+        ? 'Torneo asignado al circuito correctamente'
+        : 'Torneo actualizado en el circuito',
       data: asignacion,
     };
   }
