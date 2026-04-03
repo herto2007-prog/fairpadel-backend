@@ -108,17 +108,29 @@ export class AlquileresService {
     console.log(`[DEBUG generarSlots] canchaId: ${canchaId}, disponibilidades: ${disponibilidades.length}, reservas: ${reservas.length}`);
 
     for (const disp of disponibilidades) {
+      // DEBUG: Ver valores crudos
+      console.log(`[DEBUG generarSlots] disp.horaInicio: "${disp.horaInicio}", disp.horaFin: "${disp.horaFin}"`);
+      
       // Usar minutos desde medianoche (evita Date objects)
       let minutosActual = this.parseTimeToMinutes(disp.horaInicio);
       const minutosFin = this.parseTimeToMinutes(disp.horaFin);
+      
+      console.log(`[DEBUG generarSlots] minutosActual: ${minutosActual}, minutosFin: ${minutosFin}, duracion: ${duracionMinutos}`);
 
+      console.log(`[DEBUG generarSlots] Iniciando while: ${minutosActual} < ${minutosFin}`);
+      
       while (minutosActual < minutosFin) {
         const slotInicioStr = this.formatTimeFromMinutes(minutosActual);
         const minutosSlotFin = minutosActual + duracionMinutos;
         const slotFinStr = this.formatTimeFromMinutes(minutosSlotFin);
 
+        console.log(`[DEBUG generarSlots] Evaluando slot: ${slotInicioStr}-${slotFinStr} (fin: ${minutosSlotFin} vs limite: ${minutosFin})`);
+
         // Si el slot excede el horario de cierre, no agregar
-        if (minutosSlotFin > minutosFin) break;
+        if (minutosSlotFin > minutosFin) {
+          console.log(`[DEBUG generarSlots] Slot excede horario, break`);
+          break;
+        }
 
         // Verificar si hay conflicto con reservas existentes
         const ocupado = reservas.some(r => {
@@ -127,12 +139,15 @@ export class AlquileresService {
           return minutosActual < reservaFin && minutosSlotFin > reservaInicio;
         });
 
+        console.log(`[DEBUG generarSlots] Ocupado: ${ocupado}`);
+
         if (!ocupado) {
           slots.push({
             horaInicio: slotInicioStr,
             horaFin: slotFinStr,
             disponible: true,
           });
+          console.log(`[DEBUG generarSlots] Slot agregado: ${slotInicioStr}-${slotFinStr}`);
         }
 
         minutosActual = minutosSlotFin;
