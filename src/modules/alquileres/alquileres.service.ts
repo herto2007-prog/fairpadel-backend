@@ -329,14 +329,22 @@ export class AlquileresService {
     const diaSemana = this.getDiaSemanaFromString(createDto.fecha);
     console.log(`[DEBUG crearReserva] DiaSemana calculado: ${diaSemana}`);
 
-    const disponibilidad = await this.prisma.alquilerDisponibilidad.findFirst({
+    // Buscar disponibilidad que cubra el horario solicitado
+    // Considerar que horaFin = '00:00' significa medianoche (24:00)
+    const disponibilidades = await this.prisma.alquilerDisponibilidad.findMany({
       where: {
         sedeCanchaId: createDto.sedeCanchaId,
         diaSemana,
         horaInicio: { lte: createDto.horaInicio },
-        horaFin: { gte: createDto.horaFin },
         activo: true,
       },
+    });
+
+    // Filtrar manualmente considerando que 00:00 = 24:00
+    const disponibilidad = disponibilidades.find(d => {
+      const finEsMedianoche = d.horaFin === '00:00';
+      if (finEsMedianoche) return true; // 00:00 cubre cualquier horaFin
+      return d.horaFin >= createDto.horaFin;
     });
 
     console.log(`[DEBUG crearReserva] Disponibilidad encontrada:`, disponibilidad ? {
@@ -345,6 +353,7 @@ export class AlquileresService {
       horaFin: disponibilidad.horaFin,
       activo: disponibilidad.activo,
     } : 'NO ENCONTRADA');
+    console.log(`[DEBUG crearReserva] Total disponibilidades revisadas: ${disponibilidades.length}`);
 
     if (!disponibilidad) {
       console.log(`[DEBUG crearReserva] ERROR: No hay disponibilidad para el horario solicitado`);
@@ -352,22 +361,29 @@ export class AlquileresService {
     }
 
     // Verificar que no haya conflicto con otra reserva
-    const conflicto = await this.prisma.reservaCancha.findFirst({
+    // Usar comparacion de minutos para evitar problemas con 00:00
+    const reservasExistentes = await this.prisma.reservaCancha.findMany({
       where: {
         sedeCanchaId: createDto.sedeCanchaId,
         fecha: createDto.fecha,
         estado: { in: [ReservaCanchaEstado.PENDIENTE, ReservaCanchaEstado.CONFIRMADA] },
-        OR: [
-          {
-            horaInicio: { lte: createDto.horaInicio },
-            horaFin: { gt: createDto.horaInicio },
-          },
-          {
-            horaInicio: { lt: createDto.horaFin },
-            horaFin: { gte: createDto.horaFin },
-          },
-        ],
       },
+    });
+
+    const inicioMin = this.parseTimeToMinutes(createDto.horaInicio);
+    const finMin = this.parseTimeToMinutes(createDto.horaFin);
+    // Si horaFin es 00:00, tratar como 24:00 (1440 minutos)
+    const finMinAjustado = finMin === 0 && createDto.horaFin === '00:00' ? 24 * 60 : finMin;
+
+    const conflicto = reservasExistentes.find(r => {
+      const rInicio = this.parseTimeToMinutes(r.horaInicio);
+      let rFin = this.parseTimeToMinutes(r.horaFin);
+      // Si la reserva existente termina a medianoche
+      if (rFin === 0 && r.horaFin === '00:00') rFin = 24 * 60;
+      
+      // Hay solapamiento si:
+      // (inicioReserva < finExistente) AND (finReserva > inicioExistente)
+      return inicioMin < rFin && finMinAjustado > rInicio;
     });
 
     console.log(`[DEBUG crearReserva] Conflicto encontrado:`, conflicto ? {
@@ -376,6 +392,7 @@ export class AlquileresService {
       horaFin: conflicto.horaFin,
       estado: conflicto.estado,
     } : 'NINGUNO');
+    console.log(`[DEBUG crearReserva] Reservas existentes revisadas: ${reservasExistentes.length}`);
 
     if (conflicto) {
       console.log(`[DEBUG crearReserva] ERROR: Horario ya reservado`);
