@@ -616,6 +616,61 @@ export class CircuitosService {
     return { success: true, data: clasificado };
   }
 
+  async getClasificados(circuitoId: string) {
+    const clasificados = await this.prisma.clasificadoCircuito.findMany({
+      where: { circuitoId },
+      include: {
+        jugador: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            fotoUrl: true,
+            categoriaActual: { select: { nombre: true } },
+          },
+        },
+      },
+      orderBy: { posicionClasificacion: 'asc' },
+    });
+
+    return { success: true, data: clasificados };
+  }
+
+  async asignarTorneoFinal(circuitoId: string, torneoId: string) {
+    // Verificar que el torneo existe y pertenece al circuito
+    const torneoCircuito = await this.prisma.torneoCircuito.findFirst({
+      where: {
+        circuitoId,
+        torneoId,
+      },
+    });
+
+    if (!torneoCircuito) {
+      throw new BadRequestException('El torneo no está asignado a este circuito');
+    }
+
+    const circuito = await this.prisma.circuito.update({
+      where: { id: circuitoId },
+      data: { torneoFinalId: torneoId },
+      include: {
+        torneoFinal: {
+          select: {
+            id: true,
+            nombre: true,
+            fechaInicio: true,
+            ciudad: true,
+          },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Torneo final asignado correctamente',
+      data: circuito,
+    };
+  }
+
   // ═══════════════════════════════════════════════════════════
   // UTILIDADES
   // ═══════════════════════════════════════════════════════════

@@ -164,4 +164,19 @@ export class CircuitosController {
   ) {
     return this.circuitosService.confirmarClasificacion(circuitoId, jugadorId);
   }
+
+  @Get(':id/clasificados')
+  async getClasificados(@Param('id') id: string) {
+    return this.circuitosService.getClasificados(id);
+  }
+
+  @Post('admin/:id/asignar-final')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async asignarTorneoFinal(
+    @Param('id') id: string,
+    @Body('torneoId') torneoId: string,
+  ) {
+    return this.circuitosService.asignarTorneoFinal(id, torneoId);
+  }
 }
