@@ -151,23 +151,26 @@ export class CircuitosController {
   @Post('admin/:id/calcular-clasificados')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  async calcularClasificados(@Param('id') id: string) {
-    return this.circuitosService.calcularClasificados(id);
+  async calcularClasificados(
+    @Param('id') id: string,
+    @Body('categoryId') categoryId: string,
+  ) {
+    return this.circuitosService.calcularClasificados(id, categoryId);
   }
 
-  @Post('admin/:circuitoId/confirmar-clasificacion/:jugadorId')
+  @Post('admin/clasificado/:id/confirmar')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  async confirmarClasificacion(
-    @Param('circuitoId') circuitoId: string,
-    @Param('jugadorId') jugadorId: string,
-  ) {
-    return this.circuitosService.confirmarClasificacion(circuitoId, jugadorId);
+  async confirmarClasificacion(@Param('id') id: string) {
+    return this.circuitosService.confirmarClasificacion(id);
   }
 
   @Get(':id/clasificados')
-  async getClasificados(@Param('id') id: string) {
-    return this.circuitosService.getClasificados(id);
+  async getClasificados(
+    @Param('id') id: string,
+    @Query('categoryId') categoryId?: string,
+  ) {
+    return this.circuitosService.getClasificados(id, categoryId);
   }
 
   @Post('admin/:id/asignar-final')

@@ -548,7 +548,7 @@ export class CircuitosService {
   // CLASIFICADOS A LA FINAL
   // ═══════════════════════════════════════════════════════════
 
-  async calcularClasificados(circuitoId: string) {
+  async calcularClasificados(circuitoId: string, categoryId: string) {
     const circuito = await this.prisma.circuito.findUnique({
       where: { id: circuitoId },
     });
@@ -561,18 +561,19 @@ export class CircuitosService {
       throw new BadRequestException('Este circuito no tiene final');
     }
 
-    // Obtener ranking actual
-    const ranking = await this.getRankingCircuito(circuitoId);
+    // Obtener ranking de la categoría específica
+    const ranking = await this.getRankingCircuito(circuitoId, categoryId);
     const mejores = ranking.data.slice(0, circuito.torneosParaClasificar);
 
-    // Crear/actualizar clasificados
+    // Crear/actualizar clasificados por categoría
     const clasificados = [];
     for (const item of mejores) {
       const clasificado = await this.prisma.clasificadoCircuito.upsert({
         where: {
-          circuitoId_jugadorId: {
+          circuitoId_jugadorId_categoryId: {
             circuitoId,
             jugadorId: item.jugadorId,
+            categoryId,
           },
         },
         update: {
@@ -583,6 +584,7 @@ export class CircuitosService {
         create: {
           circuitoId,
           jugadorId: item.jugadorId,
+          categoryId,
           puntosAcumulados: item.puntosAcumulados,
           torneosJugados: item.torneosJugados,
           posicionClasificacion: item.posicion,
@@ -599,14 +601,9 @@ export class CircuitosService {
     };
   }
 
-  async confirmarClasificacion(circuitoId: string, jugadorId: string) {
+  async confirmarClasificacion(id: string) {
     const clasificado = await this.prisma.clasificadoCircuito.update({
-      where: {
-        circuitoId_jugadorId: {
-          circuitoId,
-          jugadorId,
-        },
-      },
+      where: { id },
       data: {
         estado: 'CONFIRMADO',
         confirmadoEn: this.dateService.now(),
@@ -616,9 +613,14 @@ export class CircuitosService {
     return { success: true, data: clasificado };
   }
 
-  async getClasificados(circuitoId: string) {
+  async getClasificados(circuitoId: string, categoryId?: string) {
+    const where: any = { circuitoId };
+    if (categoryId) {
+      where.categoryId = categoryId;
+    }
+
     const clasificados = await this.prisma.clasificadoCircuito.findMany({
-      where: { circuitoId },
+      where,
       include: {
         jugador: {
           select: {
@@ -629,8 +631,11 @@ export class CircuitosService {
             categoriaActual: { select: { nombre: true } },
           },
         },
+        category: {
+          select: { id: true, nombre: true, tipo: true },
+        },
       },
-      orderBy: { posicionClasificacion: 'asc' },
+      orderBy: [{ categoryId: 'asc' }, { posicionClasificacion: 'asc' }],
     });
 
     return { success: true, data: clasificados };
