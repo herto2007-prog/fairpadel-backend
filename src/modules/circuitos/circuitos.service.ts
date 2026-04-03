@@ -104,7 +104,6 @@ export class CircuitosService {
         },
         torneoFinal: true,
         clasificados: {
-          where: { estado: { in: ['CLASIFICADO', 'CONFIRMADO'] } },
           include: {
             jugador: {
               select: {
