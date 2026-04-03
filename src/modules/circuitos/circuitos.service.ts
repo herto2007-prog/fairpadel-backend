@@ -146,6 +146,7 @@ export class CircuitosService {
         ...dto,
         slug,
         temporada: dto.temporada || new Date().getFullYear().toString(),
+        // fechaInicio es opcional - los circuitos se manejan por temporada manualmente
       },
     });
 

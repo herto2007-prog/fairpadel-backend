@@ -19,8 +19,9 @@ export class CreateCircuitoDto {
   @IsString({ message: 'La temporada debe ser texto' })
   temporada?: string;
 
+  @IsOptional()
   @IsDateString({}, { message: 'Fecha de inicio inválida' })
-  fechaInicio: string;
+  fechaInicio?: string;
 
   @IsOptional()
   @IsDateString({}, { message: 'Fecha de fin inválida' })

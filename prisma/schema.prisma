@@ -703,8 +703,8 @@ model Circuito {
   temporada               String          @default("2026")
   estado                  CircuitoEstado  @default(ACTIVO)
   
-  // Fechas del circuito
-  fechaInicio             String          @map("fecha_inicio") // YYYY-MM-DD
+  // Fechas del circuito (opcionales - se manejan manualmente por temporada)
+  fechaInicio             String?         @map("fecha_inicio") // YYYY-MM-DD
   fechaFin                String?         @map("fecha_fin") // YYYY-MM-DD
   fechaLimiteInscripcion  String?         @map("fecha_limite_inscripcion") // YYYY-MM-DD
   
