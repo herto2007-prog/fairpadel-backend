@@ -2,13 +2,171 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-03-31 - SISTEMA DE AUDITORÍA DE DATOS (ADMIN ONLY) ✅
+> **Última actualización:** 2026-04-03 - SISTEMA DE SUSCRIPCIONES Y RESERVAS V2 ✅
+> - **BACKEND:** Endpoints para suscripciones de sedes (pago con Bancard, webhook, activación manual)
+> - **FRONTEND:** Panel de suscripción, gestión de disponibilidad multi-cancha y multi-día
+> - **PANEL ADMIN:** Suscripciones con tabs (Sedes, Instructores, Jugadores Premium) + regalo de suscripciones
+> - **FECHAS:** Migración de DateTime a String (YYYY-MM-DD) para evitar problemas de zona horaria UTC
+> - **PAGOS:** Integración Bancard VPOS 2.0 (staging) con iframe embebido
+> - **ESTADO:** Suscripción activa funcional, pendiente arreglo de Bancard staging
+
+---
+
+> **Última actualización previa:** 2026-04-03 - SISTEMA DE SUSCRIPCIONES Y RESERVAS V2 ✅
+> - **SUSCRIPCIONES:** Integración Bancard VPOS 2.0 para pago de suscripción sedes
+> - **PANEL ADMIN:** Tab "Suscripciones" para gestionar sedes (activar/desactivar)
+> - **DISPONIBILIDAD:** Configuración multi-cancha y multi-día simultánea
+> - **FECHAS:** Fix zona horaria (DateTime → String YYYY-MM-DD)
+> - **UI:** Botón dinámico según estado de suscripción (verde/rojo)
+> - **PRECIO:** $10 USD mensual / $108 USD anual
+
+> **Actualización anterior:** 2026-03-31 - SISTEMA DE AUDITORÍA DE DATOS (ADMIN ONLY) ✅
 > - **NUEVO TAB:** "Auditoría" en panel de gestión de torneos
 > - **ACCESO:** Solo administradores (verificación de rol)
 > - **VISTAS:** Resumen, Inscripciones, Partidos, Slots
 > - **FILTROS:** Por estado, categoría, búsqueda por nombre, sin pareja, sin slot, etc.
 > - **EXPORT:** CSV de inscripciones y partidos
 > - **DATOS:** Información enriquecida (nombres, no IDs)
+
+---
+
+## 🆕 COMPLETADO (2026-04-03) - Sistema de Suscripciones y Reservas V2
+
+### ✅ Sistema de Suscripciones para Sedes
+
+**Problema:** Las sedes necesitan suscripción activa para recibir reservas online de clientes.
+
+**Solución:** Sistema completo de suscripción con pago integrado.
+
+#### Backend - Suscripciones
+**Endpoints creados:**
+```
+POST /alquileres/suscripcion/:sedeId/iniciar-pago    # Inicia pago con Bancard
+GET  /alquileres/suscripcion/:sedeId/estado          # Verifica estado de suscripción
+POST /alquileres/suscripcion/webhook/confirmacion    # Webhook de Bancard
+GET  /alquileres/suscripcion/config/bancard          # Config para frontend
+POST /alquileres/suscripcion/:sedeId/activar-manual  # Admin: activar manualmente
+
+POST /admin/suscripciones/activar-manual             # Admin: regalar suscripción
+POST /admin/suscripciones/desactivar                 # Admin: desactivar
+GET  /admin/suscripciones/sedes                      # Listar con filtros
+GET  /admin/suscripciones/estadisticas               # Stats de suscripciones
+GET  /admin/suscripciones/pagos                      # Historial de pagos
+```
+
+**Modelos Prisma:**
+```prisma
+AlquilerConfig {
+  suscripcionActiva     Boolean   @default(false)
+  suscripcionVenceEn    String?   // YYYY-MM-DD (antes DateTime)
+  tipoSuscripcion       String?   // MENSUAL, ANUAL
+}
+
+AlquilerPago {
+  monto         Int       // en centavos (1000 = $10.00)
+  moneda        String    @default("USD")
+  estado        String    // PENDIENTE, COMPLETADO, FALLIDO
+  metodo        String?   // BANCARD, MANUAL
+  fechaPago     String?   // YYYY-MM-DD
+  periodoDesde  String    // YYYY-MM-DD
+  periodoHasta  String    // YYYY-MM-DD
+}
+```
+
+**Integración Bancard VPOS 2.0:**
+- Single Buy (pago ocasional) con iframe embebido
+- Webhook para confirmación de pagos
+- Rollback y consulta de transacciones
+- **Problema conocido:** Bancard staging tiene bugs (se queda en "Pagando...")
+- **Workaround:** Modo incógnito sin adblockers
+
+#### Frontend - Suscripciones
+
+**Páginas creadas:**
+- `/sede/:sedeId/suscripcion` - Página de suscripción con planes
+- `/suscripcion/confirmacion` - Página de éxito después del pago
+- `/suscripcion/cancelacion` - Página cuando cancela el pago
+
+**Planes:**
+- Mensual: $10.00 USD
+- Anual: $108.00 USD (10% descuento)
+
+**Componentes:**
+- `SuscripcionPage.tsx` - Selector de planes y pago
+- `BancardCheckout.tsx` - Integración iframe de Bancard
+- `SuscripcionStatusCard.tsx` - Card de estado en Mis Sedes
+
+#### Panel Admin - Suscripciones
+
+**Nuevo tab "Suscripciones"** con 3 sub-tabs:
+1. **Sedes y Alquileres** (funcional)
+2. **Instructores** (próximamente)
+3. **Jugadores Premium** (próximamente)
+
+**Features del panel:**
+- Estadísticas: Total sedes, activas, por vencer, recaudado
+- Filtros: Todas, Activas, Por vencer, Vencidas
+- Tabla con: Sede, Dueño, Estado, Vencimiento, Último Pago
+- Botones de acción: "Activar Mensual", "Activar Anual", "Desactivar"
+- Regalo de suscripciones (sin pasar por Bancard)
+
+### ✅ Gestión de Disponibilidad Multi-Cancha y Multi-Día
+
+**Problema:** Configurar horarios cancha por cancha y día por día era tedioso.
+
+**Solución:** Selección múltiple en el formulario.
+
+**Nuevo formulario en `/sede/:sedeId/disponibilidad`:**
+
+**1. Selección de Canchas:**
+- Checkbox "Aplicar a todas las canchas"
+- O seleccionar individualmente con checkboxes
+
+**2. Selección de Días:**
+- Checkbox "Todos los días"
+- O seleccionar individualmente: Lun Mar Mié Jue Vie Sáb Dom
+
+**3. Horario:**
+- Hora Inicio / Hora Fin
+
+**Ejemplo:** Configurar Lunes a Viernes, 14:00-22:00, en 8 canchas = 40 configuraciones en un click.
+
+**Botón dinámico:** Muestra "8 cancha(s) × 5 día(s)"
+
+### ✅ Fix de Fechas - Zona Horaria
+
+**Problema:** Las fechas DateTime causaban días incorrectos por diferencia UTC (servidor) vs Paraguay (UTC-3).
+
+**Solución:** Migrar de `DateTime @db.Date` a `String` con formato `YYYY-MM-DD`.
+
+**Cambios en DB:**
+```sql
+ALTER TABLE alquiler_pagos ALTER COLUMN fecha_pago TYPE TEXT;
+ALTER TABLE alquiler_pagos ALTER COLUMN periodo_desde TYPE TEXT;
+ALTER TABLE alquiler_pagos ALTER COLUMN periodo_hasta TYPE TEXT;
+ALTER TABLE alquiler_configs ALTER COLUMN suscripcion_vence_en TYPE TEXT;
+```
+
+**Cambios en código:**
+- `new Date().toISOString().split('T')[0]` para obtener fecha local
+- Comparación de strings funciona para fechas YYYY-MM-DD
+- Ej: `"2026-04-10" > "2026-04-03"` ✅
+
+### ✅ UI/UX Mejoras
+
+**Botón "Gestionar Suscripción":**
+- Sin suscripción: Rojo "Suscribirse"
+- Con suscripción: Verde "Gestionar Suscripción"
+
+**Sección publicitaria en Mis Sedes:**
+- Stats: 24/7, +40% ocupación, 0 llamadas perdidas
+- Beneficios: Reservas desde celular, notificaciones automáticas, gestión inteligente
+- CTA: Activar Ahora
+
+**Archivos creados/modificados:**
+- Backend: `admin-suscripciones.controller.ts`, `suscripcion.controller.ts`, `suscripcion.service.ts`, `bancard.service.ts`
+- Frontend: `SuscripcionPage.tsx`, `BancardCheckout.tsx`, `SuscripcionStatusCard.tsx`, `GestionDisponibilidadPage.tsx`, `MisSedesPage.tsx`
+- Admin: `SuscripcionesManager.tsx`
 
 ---
 
