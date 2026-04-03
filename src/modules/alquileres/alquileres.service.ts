@@ -399,12 +399,10 @@ export class AlquileresService {
       throw new BadRequestException('El horario ya está reservado');
     }
 
-    // Crear reserva
-    const estado = config.requiereAprobacion 
-      ? ReservaCanchaEstado.PENDIENTE 
-      : ReservaCanchaEstado.CONFIRMADA;
+    // Crear reserva - SIEMPRE CONFIRMADA (no requiere aprobacion del dueño)
+    const estado = ReservaCanchaEstado.CONFIRMADA;
 
-    console.log(`[DEBUG crearReserva] Creando reserva con estado: ${estado}`);
+    console.log(`[DEBUG crearReserva] Creando reserva CONFIRMADA automaticamente`);
 
     const reserva = await this.prisma.reservaCancha.create({
       data: {
