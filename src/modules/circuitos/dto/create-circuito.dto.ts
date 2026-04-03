@@ -67,12 +67,28 @@ export class UpdateCircuitoDto {
   descripcion?: string;
 
   @IsOptional()
+  @IsString({ message: 'La ciudad debe ser texto' })
+  ciudad?: string;
+
+  @IsOptional()
   @IsString({ message: 'El estado debe ser texto' })
   estado?: string;
 
   @IsOptional()
+  @IsString({ message: 'Fecha de inicio debe ser texto' })
+  fechaInicio?: string;
+
+  @IsOptional()
   @IsString({ message: 'Fecha de fin debe ser texto' })
   fechaFin?: string;
+
+  @IsOptional()
+  @IsString({ message: 'La temporada debe ser texto' })
+  temporada?: string;
+
+  @IsOptional()
+  @IsString({ message: 'El color debe ser texto' })
+  colorPrimario?: string;
 
   @IsOptional()
   @IsInt({ message: 'El orden debe ser un número' })
