@@ -717,7 +717,6 @@ model Circuito {
   tipoAcumulacion         String          @default("ACUMULATIVO") @map("tipo_acumulacion") // ACUMULATIVO, MEJORES_N
   torneosMinimosContar    Int?            @map("torneos_minimos_contar") // Si es MEJORES_N
   torneosParaClasificar   Int             @default(1) @map("torneos_para_clasificar")
-  puntosMinimosClasificar Int?            @map("puntos_minimos_clasificar")
   multiplicadorGlobal     Float           @default(1.0) @map("multiplicador_global")
   
   // Configuración de final
