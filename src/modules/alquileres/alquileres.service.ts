@@ -104,6 +104,9 @@ export class AlquileresService {
     duracionMinutos: number = 90,
   ): any[] {
     const slots: any[] = [];
+    
+    console.log(`[DEBUG generarSlots] canchaId: ${canchaId}, disponibilidades: ${disponibilidades.length}, reservas: ${reservas.length}`);
+    console.log(`[DEBUG] disponibilidades IDs: ${disponibilidades.map(d => d.sedeCanchaId).join(', ')}`);
 
     for (const disp of disponibilidades) {
       let horaActual = this.parseTime(disp.horaInicio);
@@ -134,6 +137,8 @@ export class AlquileresService {
         horaActual = horaFinSlot;
       }
     }
+    
+    console.log(`[DEBUG generarSlots] Slots generados: ${slots.length}`);
 
     return slots;
   }
@@ -207,6 +212,8 @@ export class AlquileresService {
         const canchasConHorarios = canchasSede.map(cancha => {
           const disponibilidadCancha = disponibilidades.filter(d => d.sedeCanchaId === cancha.id);
           const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
+          
+          console.log(`[DEBUG] Cancha ${cancha.nombre} (${cancha.id}): ${disponibilidadCancha.length} disponibilidades, ${reservasCancha.length} reservas`);
 
           let slots = this.generarSlots(disponibilidadCancha, reservasCancha, cancha.id, duracionMinutos);
 
