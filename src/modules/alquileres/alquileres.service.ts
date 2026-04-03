@@ -151,12 +151,12 @@ export class AlquileresService {
     const { fecha, duracionMinutos, horaDesde, horaHasta } = params;
     const diaSemana = this.getDiaSemanaFromString(fecha);
 
-    // Obtener todas las sedes con alquileres habilitados
+    // Obtener todas las sedes con suscripción activa (pagada)
     const sedes = await this.prisma.sede.findMany({
       where: {
         activa: true,
         alquilerConfig: {
-          habilitado: true,
+          suscripcionActiva: true,
         },
       },
       include: {
