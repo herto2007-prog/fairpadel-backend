@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsBoolean, IsDateString, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, Min, Max } from 'class-validator';
 
 export class CreateCircuitoDto {
   @IsString({ message: 'El nombre es requerido' })
@@ -96,6 +96,7 @@ export class UpdateCircuitoDto {
   torneosParaClasificar?: number;
 
   @IsOptional()
+  @IsNumber({}, { message: 'El multiplicador debe ser un número' })
   multiplicadorGlobal?: number;
 
   @IsOptional()
