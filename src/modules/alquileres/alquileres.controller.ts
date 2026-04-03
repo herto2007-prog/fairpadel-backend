@@ -143,6 +143,7 @@ export class AlquileresController {
   @Post('reservas')
   crearReserva(@Body() createDto: CreateReservaDto, @Request() req) {
     const userId = req.user?.id || null;
+    console.log(`[DEBUG Controller] crearReserva - userId: ${userId}, body:`, createDto);
     return this.alquileresService.crearReserva(userId, createDto);
   }
 

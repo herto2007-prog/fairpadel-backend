@@ -292,23 +292,42 @@ export class AlquileresService {
   // ============ RESERVAS ============
 
   async crearReserva(userId: string | null, createDto: CreateReservaDto) {
+    console.log(`[DEBUG crearReserva] Iniciando reserva:`, {
+      userId,
+      sedeCanchaId: createDto.sedeCanchaId,
+      fecha: createDto.fecha,
+      horaInicio: createDto.horaInicio,
+      horaFin: createDto.horaFin,
+      duracionMinutos: createDto.duracionMinutos,
+    });
+
     // Verificar que la cancha existe
     const cancha = await this.prisma.sedeCancha.findUnique({
       where: { id: createDto.sedeCanchaId },
       include: { sede: { include: { alquilerConfig: true } } },
     });
 
+    console.log(`[DEBUG crearReserva] Cancha encontrada:`, {
+      canchaId: cancha?.id,
+      activa: cancha?.activa,
+      alquilerConfig: cancha?.sede?.alquilerConfig ? 'existe' : 'no existe',
+      habilitado: cancha?.sede?.alquilerConfig?.habilitado,
+    });
+
     if (!cancha || !cancha.activa) {
+      console.log(`[DEBUG crearReserva] ERROR: Cancha no encontrada o inactiva`);
       throw new NotFoundException('Cancha no encontrada');
     }
 
     const config = cancha.sede.alquilerConfig;
     if (!config || !config.habilitado) {
+      console.log(`[DEBUG crearReserva] ERROR: Alquileres no habilitados`);
       throw new BadRequestException('Los alquileres no están habilitados para esta sede');
     }
 
     // FIX: fecha es String YYYY-MM-DD
     const diaSemana = this.getDiaSemanaFromString(createDto.fecha);
+    console.log(`[DEBUG crearReserva] DiaSemana calculado: ${diaSemana}`);
 
     const disponibilidad = await this.prisma.alquilerDisponibilidad.findFirst({
       where: {
@@ -320,7 +339,15 @@ export class AlquileresService {
       },
     });
 
+    console.log(`[DEBUG crearReserva] Disponibilidad encontrada:`, disponibilidad ? {
+      id: disponibilidad.id,
+      horaInicio: disponibilidad.horaInicio,
+      horaFin: disponibilidad.horaFin,
+      activo: disponibilidad.activo,
+    } : 'NO ENCONTRADA');
+
     if (!disponibilidad) {
+      console.log(`[DEBUG crearReserva] ERROR: No hay disponibilidad para el horario solicitado`);
       throw new BadRequestException('Horario no disponible');
     }
 
@@ -343,7 +370,15 @@ export class AlquileresService {
       },
     });
 
+    console.log(`[DEBUG crearReserva] Conflicto encontrado:`, conflicto ? {
+      reservaId: conflicto.id,
+      horaInicio: conflicto.horaInicio,
+      horaFin: conflicto.horaFin,
+      estado: conflicto.estado,
+    } : 'NINGUNO');
+
     if (conflicto) {
+      console.log(`[DEBUG crearReserva] ERROR: Horario ya reservado`);
       throw new BadRequestException('El horario ya está reservado');
     }
 
@@ -352,7 +387,9 @@ export class AlquileresService {
       ? ReservaCanchaEstado.PENDIENTE 
       : ReservaCanchaEstado.CONFIRMADA;
 
-    return this.prisma.reservaCancha.create({
+    console.log(`[DEBUG crearReserva] Creando reserva con estado: ${estado}`);
+
+    const reserva = await this.prisma.reservaCancha.create({
       data: {
         ...createDto,
         userId,
@@ -364,6 +401,9 @@ export class AlquileresService {
         user: { select: { id: true, nombre: true, apellido: true, telefono: true } },
       },
     });
+
+    console.log(`[DEBUG crearReserva] Reserva creada exitosamente: ${reserva.id}`);
+    return reserva;
   }
 
   async obtenerMisReservas(userId: string) {
