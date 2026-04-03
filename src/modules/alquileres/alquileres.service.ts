@@ -104,33 +104,25 @@ export class AlquileresService {
     duracionMinutos: number = 90,
   ): any[] {
     const slots: any[] = [];
-    
-    console.log(`[DEBUG generarSlots] canchaId: ${canchaId}, disponibilidades: ${disponibilidades.length}, reservas: ${reservas.length}`);
 
     for (const disp of disponibilidades) {
-      // DEBUG: Ver valores crudos
-      console.log(`[DEBUG generarSlots] disp.horaInicio: "${disp.horaInicio}", disp.horaFin: "${disp.horaFin}"`);
-      
       // Usar minutos desde medianoche (evita Date objects)
       let minutosActual = this.parseTimeToMinutes(disp.horaInicio);
-      const minutosFin = this.parseTimeToMinutes(disp.horaFin);
+      let minutosFin = this.parseTimeToMinutes(disp.horaFin);
       
-      console.log(`[DEBUG generarSlots] minutosActual: ${minutosActual}, minutosFin: ${minutosFin}, duracion: ${duracionMinutos}`);
+      // Si horaFin es 00:00, interpretar como 24:00 (medianoche del día siguiente)
+      // Esto permite franjas como 22:00-00:00
+      if (minutosFin === 0 && disp.horaFin === '00:00') {
+        minutosFin = 24 * 60; // 1440 minutos
+      }
 
-      console.log(`[DEBUG generarSlots] Iniciando while: ${minutosActual} < ${minutosFin}`);
-      
       while (minutosActual < minutosFin) {
         const slotInicioStr = this.formatTimeFromMinutes(minutosActual);
         const minutosSlotFin = minutosActual + duracionMinutos;
         const slotFinStr = this.formatTimeFromMinutes(minutosSlotFin);
 
-        console.log(`[DEBUG generarSlots] Evaluando slot: ${slotInicioStr}-${slotFinStr} (fin: ${minutosSlotFin} vs limite: ${minutosFin})`);
-
         // Si el slot excede el horario de cierre, no agregar
-        if (minutosSlotFin > minutosFin) {
-          console.log(`[DEBUG generarSlots] Slot excede horario, break`);
-          break;
-        }
+        if (minutosSlotFin > minutosFin) break;
 
         // Verificar si hay conflicto con reservas existentes
         const ocupado = reservas.some(r => {
@@ -139,22 +131,17 @@ export class AlquileresService {
           return minutosActual < reservaFin && minutosSlotFin > reservaInicio;
         });
 
-        console.log(`[DEBUG generarSlots] Ocupado: ${ocupado}`);
-
         if (!ocupado) {
           slots.push({
             horaInicio: slotInicioStr,
             horaFin: slotFinStr,
             disponible: true,
           });
-          console.log(`[DEBUG generarSlots] Slot agregado: ${slotInicioStr}-${slotFinStr}`);
         }
 
         minutosActual = minutosSlotFin;
       }
     }
-    
-    console.log(`[DEBUG generarSlots] Slots generados: ${slots.length}`);
 
     return slots;
   }
@@ -187,13 +174,6 @@ export class AlquileresService {
         alquilerConfig: true,
       },
     });
-    
-    // DEBUG: Log para verificar qué se está encontrando
-    console.log(`[DEBUG disponibilidad-global] Fecha: ${fecha}, DiaSemana: ${diaSemana}`);
-    console.log(`[DEBUG] Sedes encontradas con suscripcionActiva=true: ${sedes.length}`);
-    sedes.forEach(s => {
-      console.log(`[DEBUG] Sede: ${s.nombre}, canchas: ${s.canchas.length}, suscripcionActiva: ${s.alquilerConfig?.suscripcionActiva}`);
-    });
 
     // Obtener todas las reservas para la fecha
     const todasCanchasIds = sedes.flatMap(s => s.canchas.map(c => c.id));
@@ -214,9 +194,6 @@ export class AlquileresService {
         activo: true,
       },
     });
-    
-    console.log(`[DEBUG] IDs de canchas buscadas: ${todasCanchasIds.join(', ')}`);
-    console.log(`[DEBUG] Disponibilidades encontradas para dia ${diaSemana}: ${disponibilidades.length}`);
 
     // NOTA: Los precios no se gestionan en la plataforma
     // El dueño cobra directamente al jugador
@@ -228,8 +205,6 @@ export class AlquileresService {
         const canchasConHorarios = canchasSede.map(cancha => {
           const disponibilidadCancha = disponibilidades.filter(d => d.sedeCanchaId === cancha.id);
           const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
-          
-          console.log(`[DEBUG] Cancha ${cancha.nombre} (${cancha.id}): ${disponibilidadCancha.length} disponibilidades, ${reservasCancha.length} reservas`);
 
           let slots = this.generarSlots(disponibilidadCancha, reservasCancha, cancha.id, duracionMinutos);
 
@@ -278,9 +253,6 @@ export class AlquileresService {
 
     // Filtrar solo sedes con disponibilidad
     const sedesFiltradas = sedesConDisponibilidad.filter(s => s.canchasDisponibles > 0);
-    
-    console.log(`[DEBUG] Sedes con slots disponibles: ${sedesFiltradas.length}`);
-    sedesFiltradas.forEach(s => console.log(`[DEBUG] -> ${s.sede.nombre}: ${s.canchasDisponibles} canchas`));
 
     return {
       fecha,
