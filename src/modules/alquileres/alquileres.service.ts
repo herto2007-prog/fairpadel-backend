@@ -62,6 +62,9 @@ export class AlquileresService {
       },
     });
 
+    // Obtener horarios ocupados por torneos para esa fecha
+    const horariosTorneo = await this.obtenerHorariosOcupadosPorTorneo(sedeId, fecha);
+
     // Obtener disponibilidades configuradas
     const disponibilidades = await this.prisma.alquilerDisponibilidad.findMany({
       where: {
@@ -76,7 +79,8 @@ export class AlquileresService {
       const disponibilidadCancha = disponibilidades.filter(d => d.sedeCanchaId === cancha.id);
       const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
 
-      const slots = this.generarSlots(disponibilidadCancha, reservasCancha, cancha.id, duracion);
+      const horariosTorneoCancha = horariosTorneo.filter(h => h.sedeCanchaId === cancha.id);
+      const slots = this.generarSlots(disponibilidadCancha, reservasCancha, horariosTorneoCancha, cancha.id, duracion);
 
       return {
         cancha: {
@@ -97,9 +101,105 @@ export class AlquileresService {
     };
   }
 
+  /**
+   * Obtiene los horarios ocupados por torneos para una sede y fecha específica
+   * Usando consultas separadas para evitar problemas de tipado con Prisma
+   */
+  private async obtenerHorariosOcupadosPorTorneo(sedeId: string, fecha: string): Promise<{ sedeCanchaId: string; horaInicio: string; horaFin: string }[]> {
+    // 1. Obtener IDs de torneos que tienen esta sede
+    const torneoSedes = await this.prisma.torneoSede.findMany({
+      where: { sedeId },
+      select: { tournamentId: true },
+    });
+    const torneoIds = torneoSedes.map(ts => ts.tournamentId);
+    if (torneoIds.length === 0) return [];
+
+    // 2. Obtener disponibilidades con slots para la fecha
+    const disponibilidades = await this.prisma.torneoDisponibilidadDia.findMany({
+      where: { 
+        tournamentId: { in: torneoIds },
+        fecha,
+        activo: true,
+      },
+      include: { slots: true },
+    });
+
+    // 3. Obtener las canchas de torneo para mapear torneoCanchaId -> sedeCanchaId
+    const torneoCanchas = await this.prisma.torneoCancha.findMany({
+      where: { tournamentId: { in: torneoIds } },
+      select: { id: true, sedeCanchaId: true },
+    });
+    const canchaMap = new Map(torneoCanchas.map(tc => [tc.id, tc.sedeCanchaId]));
+
+    // 4. Construir la lista de horarios ocupados
+    const horariosOcupados: { sedeCanchaId: string; horaInicio: string; horaFin: string }[] = [];
+    for (const disp of disponibilidades) {
+      for (const slot of disp.slots) {
+        const sedeCanchaId = canchaMap.get(slot.torneoCanchaId);
+        if (sedeCanchaId) {
+          horariosOcupados.push({
+            sedeCanchaId,
+            horaInicio: slot.horaInicio,
+            horaFin: slot.horaFin,
+          });
+        }
+      }
+    }
+
+    return horariosOcupados;
+  }
+
+  /**
+   * Obtiene los horarios ocupados por torneos para múltiples sedes y fecha específica
+   */
+  private async obtenerHorariosOcupadosPorTorneoGlobal(sedesIds: string[], fecha: string): Promise<{ sedeCanchaId: string; horaInicio: string; horaFin: string }[]> {
+    // 1. Obtener IDs de torneos que tienen estas sedes
+    const torneoSedes = await this.prisma.torneoSede.findMany({
+      where: { sedeId: { in: sedesIds } },
+      select: { tournamentId: true },
+    });
+    const torneoIds = torneoSedes.map(ts => ts.tournamentId);
+    if (torneoIds.length === 0) return [];
+
+    // 2. Obtener disponibilidades con slots para la fecha
+    const disponibilidades = await this.prisma.torneoDisponibilidadDia.findMany({
+      where: { 
+        tournamentId: { in: torneoIds },
+        fecha,
+        activo: true,
+      },
+      include: { slots: true },
+    });
+
+    // 3. Obtener las canchas de torneo para mapear torneoCanchaId -> sedeCanchaId
+    const torneoCanchas = await this.prisma.torneoCancha.findMany({
+      where: { tournamentId: { in: torneoIds } },
+      select: { id: true, sedeCanchaId: true },
+    });
+    const canchaMap = new Map(torneoCanchas.map(tc => [tc.id, tc.sedeCanchaId]));
+
+    // 4. Construir la lista de horarios ocupados
+    const horariosOcupados: { sedeCanchaId: string; horaInicio: string; horaFin: string }[] = [];
+    for (const disp of disponibilidades) {
+      for (const slot of disp.slots) {
+        const sedeCanchaId = canchaMap.get(slot.torneoCanchaId);
+        if (sedeCanchaId) {
+          horariosOcupados.push({
+            sedeCanchaId,
+            horaInicio: slot.horaInicio,
+            horaFin: slot.horaFin,
+          });
+        }
+      }
+    }
+
+    return horariosOcupados;
+  }
+
   private generarSlots(
     disponibilidades: any[],
     reservas: any[],
+    horariosTorneo: { sedeCanchaId: string; horaInicio: string; horaFin: string }[],
     canchaId: string,
     duracionMinutos: number = 90,
   ): any[] {
@@ -125,11 +225,20 @@ export class AlquileresService {
         if (minutosSlotFin > minutosFin) break;
 
         // Verificar si hay conflicto con reservas existentes
-        const ocupado = reservas.some(r => {
+        const ocupadoPorReserva = reservas.some(r => {
           const reservaInicio = this.parseTimeToMinutes(r.horaInicio);
           const reservaFin = this.parseTimeToMinutes(r.horaFin);
           return minutosActual < reservaFin && minutosSlotFin > reservaInicio;
         });
+
+        // Verificar si hay conflicto con torneo
+        const ocupadoPorTorneo = horariosTorneo.some(h => {
+          const torneoInicio = this.parseTimeToMinutes(h.horaInicio);
+          const torneoFin = this.parseTimeToMinutes(h.horaFin);
+          return minutosActual < torneoFin && minutosSlotFin > torneoInicio;
+        });
+
+        const ocupado = ocupadoPorReserva || ocupadoPorTorneo;
 
         if (!ocupado) {
           slots.push({
@@ -186,6 +295,10 @@ export class AlquileresService {
       },
     });
 
+    // Obtener horarios ocupados por torneos para todas las sedes
+    const todasSedesIds = sedes.map(s => s.id);
+    const horariosTorneo = await this.obtenerHorariosOcupadosPorTorneoGlobal(todasSedesIds, fecha);
+
     // Obtener disponibilidades para el día
     const disponibilidades = await this.prisma.alquilerDisponibilidad.findMany({
       where: {
@@ -206,7 +319,8 @@ export class AlquileresService {
           const disponibilidadCancha = disponibilidades.filter(d => d.sedeCanchaId === cancha.id);
           const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
 
-          let slots = this.generarSlots(disponibilidadCancha, reservasCancha, cancha.id, duracionMinutos);
+          const horariosTorneoCancha = horariosTorneo.filter(h => h.sedeCanchaId === cancha.id);
+          let slots = this.generarSlots(disponibilidadCancha, reservasCancha, horariosTorneoCancha, cancha.id, duracionMinutos);
 
           // Filtrar por rango horario si se especificó
           if (horaDesde) {
