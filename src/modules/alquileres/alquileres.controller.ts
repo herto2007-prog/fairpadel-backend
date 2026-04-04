@@ -143,10 +143,9 @@ export class AlquileresController {
   @Post('reservas')
   @UseGuards(JwtAuthGuard)
   crearReserva(@Body() createDto: CreateReservaDto, @Request() req) {
-    console.log(`[DEBUG Controller] crearReserva - req.user:`, req.user);
-    console.log(`[DEBUG Controller] crearReserva - headers:`, req.headers);
-    const userId = req.user?.id || null;
-    console.log(`[DEBUG Controller] crearReserva - userId extraido: ${userId}`);
+    // El JWT guarda el userId como 'sub' o 'userId', no como 'id'
+    const userId = req.user?.userId || req.user?.sub || null;
+    console.log(`[DEBUG Controller] crearReserva - userId: ${userId}`);
     return this.alquileresService.crearReserva(userId, createDto);
   }
 
