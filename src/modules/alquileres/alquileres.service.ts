@@ -404,12 +404,16 @@ export class AlquileresService {
 
     console.log(`[DEBUG crearReserva] Creando reserva CONFIRMADA automaticamente`);
 
+    // Determinar si fue creado por encargado (tiene datos externos pero no userId autenticado)
+    const creadoPorEncargado = !userId && (!!createDto.nombreExterno || !!createDto.telefonoExterno);
+
     const reserva = await this.prisma.reservaCancha.create({
       data: {
         ...createDto,
         userId,
         estado,
         duracionMinutos: createDto.duracionMinutos || 70,
+        creadoPorEncargado,
       },
       include: {
         sedeCancha: { include: { sede: true } },
