@@ -17,6 +17,7 @@ import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, Validate
 import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
+import { AlquileresService } from '../alquileres/alquileres.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -139,6 +140,7 @@ export class AdminTorneosController {
   constructor(
     private prisma: PrismaService,
     private dateService: DateService,
+    private alquileresService: AlquileresService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -598,6 +600,41 @@ export class AdminTorneosController {
             }
 
             console.log('[UpdateTorneo] Slots creados para finales:', slotsCreados.length);
+
+            // 3. Cancelar reservas conflictivas
+            try {
+              // Obtener la sede principal del torneo
+              const sedePrincipal = await this.prisma.torneoSede.findFirst({
+                where: { tournamentId: torneoId },
+                orderBy: { orden: 'asc' },
+              });
+
+              // Obtener los IDs de SedeCancha a partir de TorneoCancha
+              const torneoCanchas = await this.prisma.torneoCancha.findMany({
+                where: { 
+                  id: { in: dto.canchasFinales },
+                  tournamentId: torneoId,
+                },
+                select: { sedeCanchaId: true },
+              });
+              const sedeCanchaIds = torneoCanchas.map(tc => tc.sedeCanchaId);
+
+              if (sedePrincipal && sedeCanchaIds.length > 0) {
+                const resultado = await this.alquileresService.cancelarReservasPorTorneo({
+                  torneoId,
+                  sedeId: sedePrincipal.sedeId,
+                  fecha: fechaStr,
+                  horaInicio,
+                  horaFin,
+                  canchaIds: sedeCanchaIds,
+                });
+
+                console.log('[UpdateTorneo] Reservas canceladas por torneo:', resultado.canceladas);
+              }
+            } catch (cancelError: any) {
+              console.error('[UpdateTorneo] Error cancelando reservas:', cancelError);
+              // No lanzamos el error para no fallar la actualización del torneo
+            }
           } catch (error: any) {
             console.error('[UpdateTorneo] Error creando día/slots para finales:', error);
             // No lanzamos el error para no fallar la actualización del torneo

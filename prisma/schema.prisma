@@ -2109,6 +2109,8 @@ model ReservaCancha {
   notas               String?              @db.Text
   motivoRechazo       String?              @map("motivo_rechazo") @db.Text
   motivoCancelacion   String?              @map("motivo_cancelacion") @db.Text
+  canceladaPorTorneo  Boolean              @default(false) @map("cancelada_por_torneo")
+  torneoId            String?              @map("torneo_id")
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
 

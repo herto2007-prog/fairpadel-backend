@@ -899,6 +899,108 @@ export class AlquileresService {
     };
   }
 
+  // ============ GESTIÓN DE CONFLICTOS CON TORNEOS ============
+
+  /**
+   * Cancela reservas que entren en conflicto con un torneo
+   * Se llama automáticamente cuando se configuran fechas de torneo
+   */
+  async cancelarReservasPorTorneo(params: {
+    torneoId: string;
+    sedeId: string;
+    fecha: string;
+    horaInicio: string;
+    horaFin: string;
+    canchaIds?: string[]; // IDs de SedeCancha (opcional, si no se pasa cancela todas las canchas de la sede)
+  }): Promise<{ canceladas: number; reservas: any[] }> {
+    const { torneoId, sedeId, fecha, horaInicio, horaFin, canchaIds } = params;
+
+    console.log(`[CancelarPorTorneo] Iniciando cancelación:`, {
+      torneoId,
+      sedeId,
+      fecha,
+      horaInicio,
+      horaFin,
+      canchaIds: canchaIds?.length || 'todas',
+    });
+
+    // Obtener las canchas de la sede
+    const canchasSede = await this.prisma.sedeCancha.findMany({
+      where: { 
+        sedeId, 
+        activa: true,
+        ...(canchaIds?.length ? { id: { in: canchaIds } } : {})
+      },
+      select: { id: true, nombre: true },
+    });
+
+    const canchaIdsToCheck = canchasSede.map(c => c.id);
+
+    if (canchaIdsToCheck.length === 0) {
+      console.log(`[CancelarPorTorneo] No hay canchas para verificar`);
+      return { canceladas: 0, reservas: [] };
+    }
+
+    // Buscar reservas activas en conflicto
+    const reservasConflicto = await this.prisma.reservaCancha.findMany({
+      where: {
+        sedeCanchaId: { in: canchaIdsToCheck },
+        fecha,
+        estado: { in: [ReservaCanchaEstado.PENDIENTE, ReservaCanchaEstado.CONFIRMADA] },
+        // Conflicto: la reserva se solapa con el horario del torneo
+        horaInicio: { lt: horaFin },
+        horaFin: { gt: horaInicio },
+      },
+      include: {
+        sedeCancha: { include: { sede: true } },
+        user: { select: { id: true, nombre: true, apellido: true, email: true } },
+      },
+    });
+
+    console.log(`[CancelarPorTorneo] Reservas en conflicto encontradas: ${reservasConflicto.length}`);
+
+    if (reservasConflicto.length === 0) {
+      return { canceladas: 0, reservas: [] };
+    }
+
+    // Cancelar las reservas
+    const reservasCanceladas = [];
+    for (const reserva of reservasConflicto) {
+      const cancelada = await this.prisma.reservaCancha.update({
+        where: { id: reserva.id },
+        data: {
+          estado: ReservaCanchaEstado.CANCELADA,
+          canceladaPorTorneo: true,
+          torneoId,
+          motivoCancelacion: `Cancelado automáticamente por configuración de torneo (${horaInicio}-${horaFin})`,
+        },
+      });
+
+      reservasCanceladas.push({
+        id: cancelada.id,
+        fecha: cancelada.fecha,
+        horaInicio: cancelada.horaInicio,
+        horaFin: cancelada.horaFin,
+        cancha: reserva.sedeCancha.nombre,
+        sede: reserva.sedeCancha.sede.nombre,
+        usuario: reserva.user ? {
+          id: reserva.user.id,
+          nombre: `${reserva.user.nombre} ${reserva.user.apellido}`,
+          email: reserva.user.email,
+        } : null,
+      });
+
+      console.log(`[CancelarPorTorneo] Reserva cancelada: ${reserva.id} - ${reserva.sedeCancha.nombre} ${reserva.horaInicio}-${reserva.horaFin}`);
+    }
+
+    console.log(`[CancelarPorTorneo] Total canceladas: ${reservasCanceladas.length}`);
+
+    return {
+      canceladas: reservasCanceladas.length,
+      reservas: reservasCanceladas,
+    };
+  }
+
   /**
    * Helper: Obtiene el día de la semana (0-6) desde un string YYYY-MM-DD
    * Usa mediodía Paraguay para evitar problemas de timezone
