@@ -205,4 +205,16 @@ export class AlquileresController {
   ) {
     return this.alquileresService.rechazarReserva(reservaId, motivo);
   }
+
+  // ============ ESTADÍSTICAS ============
+
+  @Get('sede/:sedeId/estadisticas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'organizador', 'encargado')
+  obtenerEstadisticas(
+    @Param('sedeId') sedeId: string,
+    @Query('mes') mes?: string, // Formato: YYYY-MM
+  ) {
+    return this.alquileresService.obtenerEstadisticas(sedeId, mes);
+  }
 }

@@ -735,6 +735,170 @@ export class AlquileresService {
     });
   }
 
+  // ============ ESTADÍSTICAS ============
+
+  async obtenerEstadisticas(sedeId: string, mes?: string) {
+    // Determinar rango de fechas
+    const ahora = new Date();
+    const año = mes ? parseInt(mes.split('-')[0]) : ahora.getFullYear();
+    const mesNum = mes ? parseInt(mes.split('-')[1]) : ahora.getMonth() + 1;
+    
+    // Fecha inicio y fin del mes
+    const fechaInicio = `${año}-${String(mesNum).padStart(2, '0')}-01`;
+    const ultimoDia = new Date(año, mesNum, 0).getDate();
+    const fechaFin = `${año}-${String(mesNum).padStart(2, '0')}-${ultimoDia}`;
+    
+    // Mes anterior para comparativa
+    const mesAnterior = mesNum === 1 ? 12 : mesNum - 1;
+    const añoAnterior = mesNum === 1 ? año - 1 : año;
+    const fechaInicioAnt = `${añoAnterior}-${String(mesAnterior).padStart(2, '0')}-01`;
+    const ultimoDiaAnt = new Date(añoAnterior, mesAnterior, 0).getDate();
+    const fechaFinAnt = `${añoAnterior}-${String(mesAnterior).padStart(2, '0')}-${ultimoDiaAnt}`;
+
+    // Obtener canchas de la sede
+    const canchas = await this.prisma.sedeCancha.findMany({
+      where: { sedeId, activa: true },
+      select: { id: true, nombre: true },
+    });
+
+    // Obtener reservas del mes actual
+    const reservasMes = await this.prisma.reservaCancha.findMany({
+      where: {
+        sedeCancha: { sedeId },
+        fecha: { gte: fechaInicio, lte: fechaFin },
+      },
+      include: {
+        sedeCancha: { select: { id: true, nombre: true } },
+        user: { select: { id: true, nombre: true, apellido: true } },
+      },
+    });
+
+    // Obtener reservas del mes anterior para comparativa
+    const reservasMesAnt = await this.prisma.reservaCancha.findMany({
+      where: {
+        sedeCancha: { sedeId },
+        fecha: { gte: fechaInicioAnt, lte: fechaFinAnt },
+      },
+    });
+
+    // Calcular métricas
+    const totalReservas = reservasMes.length;
+    const totalReservasAnt = reservasMesAnt.length;
+    const variacionReservas = totalReservasAnt > 0 
+      ? Math.round(((totalReservas - totalReservasAnt) / totalReservasAnt) * 100)
+      : 0;
+
+    // Reservas por estado
+    const confirmadas = reservasMes.filter(r => r.estado === 'CONFIRMADA').length;
+    const pendientes = reservasMes.filter(r => r.estado === 'PENDIENTE').length;
+    const canceladas = reservasMes.filter(r => r.estado === 'CANCELADA').length;
+    const rechazadas = reservasMes.filter(r => r.estado === 'RECHAZADA').length;
+
+    // Tasa de cancelación
+    const tasaCancelacion = totalReservas > 0 
+      ? Math.round((canceladas / totalReservas) * 100)
+      : 0;
+
+    // Horas totales alquiladas (solo confirmadas y pendientes)
+    const horasAlquiladas = reservasMes
+      .filter(r => r.estado === 'CONFIRMADA' || r.estado === 'PENDIENTE')
+      .reduce((sum, r) => sum + (r.duracionMinutos || 60) / 60, 0);
+
+    // Reservas por cancha
+    const reservasPorCancha = canchas.map(c => {
+      const reservasCancha = reservasMes.filter(r => r.sedeCanchaId === c.id);
+      return {
+        canchaId: c.id,
+        canchaNombre: c.nombre,
+        total: reservasCancha.length,
+        confirmadas: reservasCancha.filter(r => r.estado === 'CONFIRMADA').length,
+        horas: reservasCancha
+          .filter(r => r.estado === 'CONFIRMADA' || r.estado === 'PENDIENTE')
+          .reduce((sum, r) => sum + (r.duracionMinutos || 60) / 60, 0),
+      };
+    });
+
+    // Horarios más ocupados (top 5)
+    const horariosCount: Record<string, number> = {};
+    reservasMes
+      .filter(r => r.estado === 'CONFIRMADA' || r.estado === 'PENDIENTE')
+      .forEach(r => {
+        const hora = r.horaInicio.substring(0, 2); // "14:00" → "14"
+        horariosCount[hora] = (horariosCount[hora] || 0) + 1;
+      });
+    
+    const horariosTop = Object.entries(horariosCount)
+      .map(([hora, count]) => ({ hora: `${hora}:00`, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    // Días de la semana con más reservas
+    const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const diasCount: Record<number, number> = {};
+    reservasMes
+      .filter(r => r.estado === 'CONFIRMADA' || r.estado === 'PENDIENTE')
+      .forEach(r => {
+        const dia = this.getDiaSemanaFromString(r.fecha);
+        diasCount[dia] = (diasCount[dia] || 0) + 1;
+      });
+    
+    const diasTop = Object.entries(diasCount)
+      .map(([dia, count]) => ({ dia: diasSemana[parseInt(dia)], count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    // Clientes más frecuentes (solo reservas confirmadas/pendientes)
+    const clientesCount: Record<string, { nombre: string; count: number }> = {};
+    reservasMes
+      .filter(r => (r.estado === 'CONFIRMADA' || r.estado === 'PENDIENTE') && r.user)
+      .forEach(r => {
+        const key = r.user!.id;
+        if (!clientesCount[key]) {
+          clientesCount[key] = {
+            nombre: `${r.user!.nombre} ${r.user!.apellido}`,
+            count: 0,
+          };
+        }
+        clientesCount[key].count++;
+      });
+    
+    // También incluir reservas manuales (creadoPorEncargado)
+    reservasMes
+      .filter(r => (r.estado === 'CONFIRMADA' || r.estado === 'PENDIENTE') && r.creadoPorEncargado && r.nombreExterno)
+      .forEach(r => {
+        const key = `manual-${r.nombreExterno}`;
+        if (!clientesCount[key]) {
+          clientesCount[key] = {
+            nombre: r.nombreExterno!,
+            count: 0,
+          };
+        }
+        clientesCount[key].count++;
+      });
+
+    const clientesTop = Object.values(clientesCount)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    return {
+      periodo: { mes: mesNum, año, fechaInicio, fechaFin },
+      resumen: {
+        totalReservas,
+        variacionReservas,
+        confirmadas,
+        pendientes,
+        canceladas,
+        rechazadas,
+        tasaCancelacion,
+        horasAlquiladas: Math.round(horasAlquiladas),
+      },
+      reservasPorCancha,
+      horariosTop,
+      diasTop,
+      clientesTop,
+    };
+  }
+
   /**
    * Helper: Obtiene el día de la semana (0-6) desde un string YYYY-MM-DD
    * Usa mediodía Paraguay para evitar problemas de timezone
