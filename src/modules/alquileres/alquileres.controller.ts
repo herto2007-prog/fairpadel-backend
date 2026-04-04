@@ -141,6 +141,7 @@ export class AlquileresController {
   // ============ RESERVAS PÚBLICAS ============
 
   @Post('reservas')
+  @UseGuards(JwtAuthGuard)
   crearReserva(@Body() createDto: CreateReservaDto, @Request() req) {
     const userId = req.user?.id || null;
     console.log(`[DEBUG Controller] crearReserva - userId: ${userId}, body:`, createDto);
