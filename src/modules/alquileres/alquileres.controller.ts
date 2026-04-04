@@ -143,8 +143,10 @@ export class AlquileresController {
   @Post('reservas')
   @UseGuards(JwtAuthGuard)
   crearReserva(@Body() createDto: CreateReservaDto, @Request() req) {
+    console.log(`[DEBUG Controller] crearReserva - req.user:`, req.user);
+    console.log(`[DEBUG Controller] crearReserva - headers:`, req.headers);
     const userId = req.user?.id || null;
-    console.log(`[DEBUG Controller] crearReserva - userId: ${userId}, body:`, createDto);
+    console.log(`[DEBUG Controller] crearReserva - userId extraido: ${userId}`);
     return this.alquileresService.crearReserva(userId, createDto);
   }
 
