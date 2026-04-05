@@ -15,7 +15,7 @@ interface CrearPagoDto {
 @Injectable()
 export class SuscripcionService {
   private readonly logger = new Logger(SuscripcionService.name);
-  private readonly PRECIO_MENSUAL_CENTAVOS = 1000; // 10.00 USD en centavos
+  private readonly PRECIO_MENSUAL = 60000; // 60.000 Gs por mes
 
   constructor(
     private prisma: PrismaService,
@@ -51,12 +51,12 @@ export class SuscripcionService {
     }
 
     // Calcular monto según tipo
-    const montoCentavos = tipo === 'ANUAL' 
-      ? this.PRECIO_MENSUAL_CENTAVOS * 12 * 0.9 // 10% descuento anual
-      : this.PRECIO_MENSUAL_CENTAVOS;
+    const monto = tipo === 'ANUAL' 
+      ? Math.round(this.PRECIO_MENSUAL * 12 * 0.9) // 10% descuento anual
+      : this.PRECIO_MENSUAL;
 
-    const montoFormateado = (montoCentavos / 100).toFixed(2);
-    this.logger.log(`Monto calculado: ${montoCentavos} centavos -> ${montoFormateado} USD (tipo: ${tipo})`);
+    const montoFormateado = monto.toFixed(2);
+    this.logger.log(`Monto calculado: ${monto} -> ${montoFormateado} PYG (tipo: ${tipo})`);
 
     // Calcular período usando strings YYYY-MM-DD (evita problemas de zona horaria)
     const hoy = new Date();
@@ -72,8 +72,8 @@ export class SuscripcionService {
       data: {
         sedeId: String(sedeId),
         sedeConfigId: String(config.id),
-        monto: montoCentavos,
-        moneda: 'USD',
+        monto: monto,
+        moneda: 'PYG',
         estado: 'PENDIENTE',
         metodo: 'BANCARD',
         periodoDesde: hoyStr,        // String YYYY-MM-DD
@@ -96,15 +96,15 @@ export class SuscripcionService {
       const bancardResponse = await this.bancardService.iniciarPago(
         shopProcessId,
         montoFormateado,
-        'USD',
+        'PYG',
         `Suscripcion ${tipo} FairPadel`,
       );
 
       return {
         pagoId: pago.id,
         processId: bancardResponse.processId,
-        monto: montoCentavos,
-        montoFormateado: `$${montoFormateado} USD`,
+        monto: monto,
+        montoFormateado: `Gs. ${montoFormateado}`,
         tipo,
         periodoDesde: hoyStr,
         periodoHasta: fechaHastaStr,
@@ -334,8 +334,8 @@ export class SuscripcionService {
       data: {
         sedeId,
         sedeConfigId: config.id,
-        monto: tipo === 'ANUAL' ? this.PRECIO_MENSUAL_CENTAVOS * 12 : this.PRECIO_MENSUAL_CENTAVOS,
-        moneda: 'USD',
+        monto: tipo === 'ANUAL' ? this.PRECIO_MENSUAL * 12 : this.PRECIO_MENSUAL,
+        moneda: 'PYG',
         estado: 'COMPLETADO',
         metodo: 'MANUAL',
         fechaPago: new Date().toISOString().split('T')[0],
