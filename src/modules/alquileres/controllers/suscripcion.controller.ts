@@ -264,4 +264,66 @@ export class SuscripcionController {
       },
     };
   }
+
+  /**
+   * POST /alquileres/suscripcion/verificar-en-bancard
+   * Consulta el estado de una transacción directamente en Bancard
+   * Útil cuando el webhook no llegó o falló
+   */
+  @Post('verificar-en-bancard')
+  @UseGuards(JwtAuthGuard)
+  async verificarEnBancard(
+    @Body('shopProcessId') shopProcessId: string,
+    @Request() req,
+  ) {
+    this.logger.log(`Verificando transacción en Bancard: shop_process_id=${shopProcessId}`);
+    
+    try {
+      // Consultar en Bancard
+      const resultadoBancard = await this.bancardService.consultarTransaccion(shopProcessId);
+      
+      this.logger.log('Respuesta de Bancard:', JSON.stringify(resultadoBancard));
+      
+      // Si la transacción fue exitosa en Bancard pero no en nuestro sistema, procesarla
+      if (resultadoBancard?.confirmation?.response === 'S' || 
+          resultadoBancard?.operation?.response === 'S') {
+        
+        // Buscar el pago por referencia
+        const pago = await this.suscripcionService.obtenerPagoPorReferencia(shopProcessId);
+        
+        if (pago && pago.estado !== 'COMPLETADO') {
+          this.logger.log(`Completando pago ${pago.id} que fue exitoso en Bancard pero no en nuestro sistema`);
+          
+          // Procesar manualmente
+          await this.suscripcionService.completarPagoManual(pago.id);
+          
+          return {
+            status: 'success',
+            mensaje: 'Pago verificado y completado',
+            pago: {
+              id: pago.id,
+              estado: 'COMPLETADO',
+            },
+            bancardData: resultadoBancard,
+          };
+        }
+        
+        return {
+          status: 'success',
+          mensaje: 'Pago ya estaba completado',
+          pago: pago ? { id: pago.id, estado: pago.estado } : null,
+          bancardData: resultadoBancard,
+        };
+      }
+      
+      return {
+        status: 'pending',
+        mensaje: 'Transacción no confirmada en Bancard',
+        bancardData: resultadoBancard,
+      };
+    } catch (error) {
+      this.logger.error('Error verificando en Bancard:', error);
+      throw new BadRequestException('No se pudo verificar el estado del pago en Bancard');
+    }
+  }
 }

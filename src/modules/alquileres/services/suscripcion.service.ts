@@ -306,6 +306,35 @@ export class SuscripcionService {
   }
 
   /**
+   * Obtiene un pago por su referencia (shop_process_id)
+   */
+  async obtenerPagoPorReferencia(referencia: string) {
+    return this.prisma.alquilerPago.findFirst({
+      where: { referencia },
+    });
+  }
+
+  /**
+   * Completa un pago manualmente (usado cuando el webhook falla)
+   */
+  async completarPagoManual(pagoId: string) {
+    const hoy = new Date().toISOString().split('T')[0];
+    
+    const pago = await this.prisma.alquilerPago.update({
+      where: { id: pagoId },
+      data: {
+        estado: 'COMPLETADO',
+        fechaPago: hoy,
+      },
+    });
+
+    // Activar la suscripción
+    await this.activarSuscripcion(pago.sedeId, String(pago.periodoHasta));
+
+    return pago;
+  }
+
+  /**
    * Genera un shop_process_id único numérico a partir del UUID del pago
    * Bancard requiere un número entero de máximo 15 dígitos
    */
