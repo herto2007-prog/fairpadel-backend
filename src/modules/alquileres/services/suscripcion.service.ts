@@ -52,7 +52,7 @@ export class SuscripcionService {
 
     // Calcular monto según tipo
     const monto = tipo === 'ANUAL' 
-      ? Math.round(this.PRECIO_MENSUAL * 12 * 0.9) // 10% descuento anual
+      ? 600000 // Precio especial anual: Gs. 600.000 (equivalente a 10 meses)
       : this.PRECIO_MENSUAL;
 
     const montoFormateado = monto.toFixed(2);
@@ -334,7 +334,7 @@ export class SuscripcionService {
       data: {
         sedeId,
         sedeConfigId: config.id,
-        monto: tipo === 'ANUAL' ? this.PRECIO_MENSUAL * 12 : this.PRECIO_MENSUAL,
+        monto: tipo === 'ANUAL' ? 600000 : this.PRECIO_MENSUAL,
         moneda: 'PYG',
         estado: 'COMPLETADO',
         metodo: 'MANUAL',
