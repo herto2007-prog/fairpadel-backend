@@ -146,6 +146,21 @@ enum TipoNotificacion {
   MENSAJE
 }
 
+// Enum para estado de consentimiento de WhatsApp
+enum WhatsappConsentStatus {
+  PENDIENTE
+  CONFIRMADO
+  RECHAZADO
+  REVOCADO
+}
+
+// Enum para preferencia de notificación del usuario
+enum NotificacionPreferencia {
+  EMAIL
+  WHATSAPP
+  AMBOS
+}
+
 enum SolicitudEstado {
   PENDIENTE
   APROBADA
@@ -336,6 +351,13 @@ model User {
   notificacionesEmail     Boolean      @default(true) @map("notificaciones_email")
   notificacionesSms       Boolean      @default(false) @map("notificaciones_sms")
   notificacionesPush      Boolean      @default(true) @map("notificaciones_push")
+  
+  // Campos de consentimiento y preferencias para WhatsApp
+  consentCheckboxWhatsapp Boolean      @default(false) @map("consent_checkbox_whatsapp")
+  consentWhatsappStatus   WhatsappConsentStatus? @map("consent_whatsapp_status")
+  consentWhatsappDate     DateTime?    @map("consent_whatsapp_date")
+  preferenciaNotificacion NotificacionPreferencia @default(EMAIL) @map("preferencia_notificacion")
+  
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
 
@@ -425,6 +447,9 @@ model User {
   
   // Demo / Test
   jugadorDemo              JugadorDemo?
+  
+  // WhatsApp Business API
+  whatsappConversations  WhatsappConversation[]
 
   @@map("users")
 }
@@ -2328,4 +2353,75 @@ model JugadorDemo {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("jugadores_demo")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO: WHATSAPP BUSINESS API
+// ═══════════════════════════════════════════════════════
+
+model WhatsappConversation {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  waId             String    @unique @map("wa_id") // ID de WhatsApp (número de teléfono)
+  estado           String    @default("ACTIVA") // ACTIVA, EXPIRADA, BLOQUEADA
+  categoria        String    @default("MARKETING") // MARKETING, UTILITY, AUTHENTICATION, SERVICE
+  fechaInicio      DateTime  @default(now()) @map("fecha_inicio")
+  fechaExpiracion  DateTime  @map("fecha_expiracion") // 24h desde último mensaje del usuario
+  ultimoMensajeAt  DateTime? @map("ultimo_mensaje_at")
+  metadata         Json?     // Datos adicionales de la conversación
+  
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mensajes  WhatsappMensaje[]
+  
+  @@index([userId])
+  @@index([waId])
+  @@index([estado, fechaExpiracion])
+  @@map("whatsapp_conversations")
+}
+
+model WhatsappMensaje {
+  id                String   @id @default(uuid())
+  conversationId    String   @map("conversation_id")
+  userId            String?  @map("user_id") // Puede ser null si es mensaje entrante sin usuario
+  waMessageId       String   @unique @map("wa_message_id") // ID del mensaje en WhatsApp
+  direccion         String   // ENTRANTE, SALIENTE
+  tipo              String   // TEXT, TEMPLATE, IMAGE, DOCUMENT, etc.
+  contenido         String   @db.Text
+  templateName      String?  @map("template_name")
+  estado            String   @default("ENVIADO") // ENVIADO, ENTREGADO, LEIDO, FALLIDO
+  errorMsg          String?  @map("error_msg") @db.Text
+  errorCode         String?  @map("error_code")
+  categorizacion    String?  // MARKETING, UTILITY, etc. (para billing)
+  enviadoAt         DateTime @default(now()) @map("enviado_at")
+  entregadoAt       DateTime? @map("entregado_at")
+  leidoAt           DateTime? @map("leido_at")
+  
+  conversation  WhatsappConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@index([conversationId])
+  @@index([userId])
+  @@index([waMessageId])
+  @@index([enviadoAt])
+  @@map("whatsapp_mensajes")
+}
+
+model WhatsappTemplate {
+  id              String    @id @default(uuid())
+  nombre          String    @unique
+  categoria       String    // SISTEMA, RESERVA, RECORDATORIO, TORNEO
+  lenguaje        String    @default("es")
+  contenido       String    @db.Text
+  variables       String[]  // Lista de variables requeridas: ["nombre", "cancha", "fecha"]
+  aprobado        Boolean   @default(false)
+  waTemplateId    String?   @map("wa_template_id") // ID asignado por Meta
+  waTemplateName  String?   @map("wa_template_name") // Nombre en WhatsApp
+  activo          Boolean   @default(true)
+  descripcion     String?
+  ejemplo         String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  @@index([categoria])
+  @@index([aprobado, activo])
+  @@map("whatsapp_templates")
 }

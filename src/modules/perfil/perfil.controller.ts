@@ -1,9 +1,9 @@
-import { Controller, Get, Put, Param, UseGuards, Request, Body, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Put, Post, Param, UseGuards, Request, Body, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PerfilService } from './perfil.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Public } from '../auth/decorators/public.decorator';
-import { UpdatePerfilDto, UpdatePasswordDto } from './dto/update-perfil.dto';
+import { UpdatePerfilDto, UpdatePasswordDto, UpdatePreferenciasDto } from './dto/update-perfil.dto';
 import { UploadsService } from '../../uploads/uploads.service';
 
 @Controller('users')
@@ -92,5 +92,25 @@ export class PerfilController {
       dto.passwordActual,
       dto.passwordNuevo,
     );
+  }
+
+  /**
+   * PUT /users/profile/preferencias-notificacion
+   * Actualiza las preferencias de notificación del usuario
+   */
+  @Put('profile/preferencias-notificacion')
+  @UseGuards(JwtAuthGuard)
+  async updatePreferenciasNotificacion(@Request() req: any, @Body() dto: UpdatePreferenciasDto) {
+    return this.perfilService.updatePreferenciasNotificacion(req.user.userId, dto);
+  }
+
+  /**
+   * POST /users/profile/whatsapp/revocar
+   * Revoca el consentimiento de WhatsApp
+   */
+  @Post('profile/whatsapp/revocar')
+  @UseGuards(JwtAuthGuard)
+  async revocarConsentimientoWhatsapp(@Request() req: any) {
+    return this.perfilService.revocarConsentimientoWhatsapp(req.user.userId);
   }
 }

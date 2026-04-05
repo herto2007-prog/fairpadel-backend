@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificacionPreferencia } from '@prisma/client';
 
 @Injectable()
 export class PerfilService {
@@ -121,6 +122,18 @@ export class PerfilService {
   async getMiPerfil(userId: string) {
     const perfil = await this.getPerfilJugador(userId);
     
+    // Obtener datos privados adicionales del usuario
+    const usuario = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        telefono: true,
+        consentCheckboxWhatsapp: true,
+        consentWhatsappStatus: true,
+        consentWhatsappDate: true,
+        preferenciaNotificacion: true,
+      },
+    });
+    
     const inscripcionesPendientes = await this.prisma.inscripcion.count({
       where: {
         OR: [{ jugador1Id: userId }, { jugador2Id: userId }],
@@ -132,6 +145,13 @@ export class PerfilService {
       ...perfil,
       data: {
         ...perfil.data,
+        telefono: usuario?.telefono,
+        whatsapp: {
+          consentCheckbox: usuario?.consentCheckboxWhatsapp || false,
+          consentStatus: usuario?.consentWhatsappStatus || null,
+          consentDate: usuario?.consentWhatsappDate || null,
+          preferenciaNotificacion: usuario?.preferenciaNotificacion || 'EMAIL',
+        },
         privado: {
           inscripcionesPendientes,
           notificacionesNoLeidas: 0,
@@ -413,6 +433,68 @@ export class PerfilService {
     return {
       success: true,
       message: 'Contraseña actualizada correctamente',
+    };
+  }
+
+  /**
+   * Actualiza las preferencias de notificación del usuario
+   */
+  async updatePreferenciasNotificacion(userId: string, dto: { preferenciaNotificacion: string }) {
+    const validPreferences = ['EMAIL', 'WHATSAPP', 'AMBOS'];
+    
+    if (!validPreferences.includes(dto.preferenciaNotificacion)) {
+      return {
+        success: false,
+        message: 'Preferencia de notificación inválida',
+      };
+    }
+
+    // Si el usuario quiere WhatsApp pero no tiene consentimiento confirmado
+    const usuario = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        consentWhatsappStatus: true,
+        telefono: true,
+      },
+    });
+
+    if ((dto.preferenciaNotificacion === 'WHATSAPP' || dto.preferenciaNotificacion === 'AMBOS') && 
+        usuario?.consentWhatsappStatus !== 'CONFIRMADO') {
+      return {
+        success: false,
+        message: 'No tienes WhatsApp confirmado. Responde "SI" al mensaje de confirmación primero.',
+      };
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        preferenciaNotificacion: dto.preferenciaNotificacion as NotificacionPreferencia,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Preferencias de notificación actualizadas',
+    };
+  }
+
+  /**
+   * Revoca el consentimiento de WhatsApp
+   */
+  async revocarConsentimientoWhatsapp(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        consentWhatsappStatus: 'REVOCADO',
+        consentWhatsappDate: new Date(),
+        preferenciaNotificacion: 'EMAIL',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Consentimiento de WhatsApp revocado',
     };
   }
 }

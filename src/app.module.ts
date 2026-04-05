@@ -24,6 +24,7 @@ import { ResultadosModule } from './modules/resultados/resultados.module';
 import { RankingsModule } from './modules/rankings/rankings.module';
 import { CircuitosModule } from './modules/circuitos/circuitos.module';
 import { PerfilModule } from './modules/perfil/perfil.module';
+import { WhatsAppModule } from './modules/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { PerfilModule } from './modules/perfil/perfil.module';
     RankingsModule,   // Sistema de rankings y ascensos
     CircuitosModule,  // Circuitos y ligas de torneos
     PerfilModule,     // Perfiles de jugadores
+    WhatsAppModule,   // WhatsApp Business API (con feature flag WHATSAPP_ENABLED)
   ],
   controllers: [AppController],
 })

@@ -12,10 +12,11 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../email/email.service';
+import { WhatsAppService } from '../whatsapp/services/whatsapp.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
-import { UserStatus } from '@prisma/client';
+import { UserStatus, WhatsappConsentStatus } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -26,6 +27,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private emailService: EmailService,
+    private whatsAppService: WhatsAppService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -59,6 +61,15 @@ export class AuthService {
       throw new ConflictException('La categoría seleccionada no existe');
     }
 
+    // Preparar datos de consentimiento de WhatsApp
+    const consentData = dto.consentCheckboxWhatsapp
+      ? {
+          consentCheckboxWhatsapp: true,
+          consentWhatsappStatus: WhatsappConsentStatus.PENDIENTE,
+          consentWhatsappDate: new Date(),
+        }
+      : {};
+
     // Create user with jugador role - estado NO_VERIFICADO
     const user = await this.prisma.user.create({
       data: {
@@ -75,6 +86,7 @@ export class AuthService {
         fotoUrl: dto.fotoUrl,
         categoriaActualId: categoria.id,
         estado: UserStatus.NO_VERIFICADO,
+        ...consentData,
         roles: {
           create: {
             role: {
@@ -91,6 +103,13 @@ export class AuthService {
         },
       },
     });
+
+    // Si el usuario aceptó recibir notificaciones por WhatsApp, enviar solicitud de confirmación
+    if (dto.consentCheckboxWhatsapp) {
+      this.whatsAppService.requestConsent(user.id).catch(err => {
+        this.logger.error('Error solicitando consentimiento de WhatsApp:', err);
+      });
+    }
 
     // Create verification token (async - no bloquea la respuesta)
     this.createVerificationToken(user.id, user.email, user.nombre).catch(err => {

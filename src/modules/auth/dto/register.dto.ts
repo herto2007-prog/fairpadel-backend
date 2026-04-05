@@ -8,6 +8,7 @@ import {
   IsEnum,
   IsOptional,
   IsDateString,
+  IsBoolean,
 } from 'class-validator';
 import { Gender } from '@prisma/client';
 
@@ -59,4 +60,8 @@ export class RegisterDto {
   @IsString({ message: 'La URL de foto debe ser texto' })
   @IsOptional()
   fotoUrl?: string;
+
+  @IsBoolean({ message: 'El consentimiento de WhatsApp debe ser booleano' })
+  @IsOptional()
+  consentCheckboxWhatsapp?: boolean;
 }

@@ -39,3 +39,9 @@ export class UpdatePasswordDto {
   @Length(6, 100)
   passwordNuevo: string;
 }
+
+export class UpdatePreferenciasDto {
+  @IsString()
+  @Matches(/^(EMAIL|WHATSAPP|AMBOS)$/, { message: 'La preferencia debe ser EMAIL, WHATSAPP o AMBOS' })
+  preferenciaNotificacion: string;
+}

@@ -32,6 +32,7 @@ export class SeedService implements OnModuleInit {
       await this.seedRoles();
       await this.seedModalidades();
       await this.seedJugadoresDemo(); // NUEVO: Crear jugadores demo automáticamente
+      await this.seedWhatsAppTemplates(); // NUEVO: Crear templates de WhatsApp
       this.logger.log('✅ Seed completado');
     } catch (error) {
       this.logger.error('❌ Error en seed:', error.message);
@@ -319,5 +320,102 @@ export class SeedService implements OnModuleInit {
     }
 
     this.logger.log(`✅ Creados ${inserted} jugadores demo (200M + 200F)`);
+  }
+
+  private async seedWhatsAppTemplates() {
+    this.logger.log('📱 Verificando templates de WhatsApp...');
+
+    const templates = [
+      {
+        nombre: 'confirmacion_consentimiento',
+        categoria: 'SISTEMA',
+        lenguaje: 'es',
+        contenido: 'Hola {{nombre}}, bienvenido a FairPadel. Para recibir notificaciones por WhatsApp, responde SI a este mensaje. Puedes cancelar en cualquier momento respondiendo NO.',
+        variables: ['nombre'],
+        waTemplateName: 'fairpadel_consent_confirmation',
+        descripcion: 'Mensaje para solicitar confirmación de consentimiento (doble opt-in)',
+        ejemplo: 'Hola Juan, bienvenido a FairPadel. Para recibir notificaciones por WhatsApp, responde SI a este mensaje. Puedes cancelar en cualquier momento respondiendo NO.',
+      },
+      {
+        nombre: 'bienvenida_consentimiento',
+        categoria: 'SISTEMA',
+        lenguaje: 'es',
+        contenido: '✅ ¡Perfecto {{nombre}}! Ahora recibirás notificaciones de FairPadel por WhatsApp. Te enviaremos recordatorios de reservas, actualizaciones de torneos y más.',
+        variables: ['nombre'],
+        waTemplateName: 'fairpadel_welcome',
+        descripcion: 'Mensaje de bienvenida después de confirmar consentimiento',
+        ejemplo: '✅ ¡Perfecto Juan! Ahora recibirás notificaciones de FairPadel por WhatsApp. Te enviaremos recordatorios de reservas, actualizaciones de torneos y más.',
+      },
+      {
+        nombre: 'confirmacion_reserva',
+        categoria: 'RESERVA',
+        lenguaje: 'es',
+        contenido: 'Hola {{nombre}}, tu reserva fue confirmada:\n\n📅 Fecha: {{fecha}}\n🎾 Cancha: {{cancha}}\n⏰ Hora: {{hora}}\n\nNos vemos en la cancha!',
+        variables: ['nombre', 'fecha', 'cancha', 'hora'],
+        waTemplateName: 'fairpadel_reserva_confirmada',
+        descripcion: 'Confirmación de reserva de cancha',
+        ejemplo: 'Hola Juan, tu reserva fue confirmada:\n\n📅 Fecha: 15/01/2026\n🎾 Cancha: Cancha 1\n⏰ Hora: 18:00\n\nNos vemos en la cancha!',
+      },
+      {
+        nombre: 'recordatorio_reserva_24h',
+        categoria: 'RECORDATORIO',
+        lenguaje: 'es',
+        contenido: '⏰ Recordatorio: Tenés una reserva mañana!\n\n📅 {{fecha}}\n🎾 {{cancha}}\n⏰ {{hora}}\n\nSi no podés asistir, cancelá con anticipación.',
+        variables: ['fecha', 'cancha', 'hora'],
+        waTemplateName: 'fairpadel_recordatorio_24h',
+        descripcion: 'Recordatorio 24 horas antes de la reserva',
+        ejemplo: '⏰ Recordatorio: Tenés una reserva mañana!\n\n📅 15/01/2026\n🎾 Cancha 1\n⏰ 18:00\n\nSi no podés asistir, cancelá con anticipación.',
+      },
+      {
+        nombre: 'recordatorio_reserva_4h',
+        categoria: 'RECORDATORIO',
+        lenguaje: 'es',
+        contenido: '🔔 ¡Te esperamos en unas horas!\n\n📅 {{fecha}}\n🎾 {{cancha}}\n⏰ {{hora}}\n\nNo olvides tu equipo. ¡Buen partido!',
+        variables: ['fecha', 'cancha', 'hora'],
+        waTemplateName: 'fairpadel_recordatorio_4h',
+        descripcion: 'Recordatorio 4 horas antes de la reserva',
+        ejemplo: '🔔 ¡Te esperamos en unas horas!\n\n📅 15/01/2026\n🎾 Cancha 1\n⏰ 18:00\n\nNo olvides tu equipo. ¡Buen partido!',
+      },
+      {
+        nombre: 'inscripcion_torneo',
+        categoria: 'TORNEO',
+        lenguaje: 'es',
+        contenido: '¡Felicidades {{nombre}}! Te inscribiste en {{torneo}}\n\n🎾 Categoría: {{categoria}}\n👤 Pareja: {{pareja}}\n\nTe avisaremos cuando se publique el fixture.',
+        variables: ['nombre', 'torneo', 'categoria', 'pareja'],
+        waTemplateName: 'fairpadel_inscripcion_torneo',
+        descripcion: 'Confirmación de inscripción a torneo',
+        ejemplo: '¡Felicidades Juan! Te inscribiste en Torneo Verano 2026\n\n🎾 Categoría: 3ra Masculina\n👤 Pareja: Pedro Gomez\n\nTe avisaremos cuando se publique el fixture.',
+      },
+      {
+        nombre: 'fixture_publicado',
+        categoria: 'TORNEO',
+        lenguaje: 'es',
+        contenido: '¡El fixture de {{torneo}} ya está disponible!\n\n🎾 Tu primer partido:\n📅 {{fecha}}\n⏰ {{hora}}\n🆚 Vs: {{rival}}\n\nVer fixture: {{link}}',
+        variables: ['torneo', 'fecha', 'hora', 'rival', 'link'],
+        waTemplateName: 'fairpadel_fixture_publicado',
+        descripcion: 'Notificación de fixture publicado',
+        ejemplo: '¡El fixture de Torneo Verano 2026 ya está disponible!\n\n🎾 Tu primer partido:\n📅 20/01/2026\n⏰ 19:00\n🆚 Vs: Martinez/Lopez\n\nVer fixture: https://fairpadel.com/fixture/123',
+      },
+    ];
+
+    let created = 0;
+    for (const template of templates) {
+      try {
+        await this.prisma.whatsappTemplate.upsert({
+          where: { nombre: template.nombre },
+          update: {}, // No actualizar si ya existe
+          create: {
+            ...template,
+            aprobado: false,
+            activo: true,
+          },
+        });
+        created++;
+      } catch (error) {
+        this.logger.warn(`⚠️ Error creando template ${template.nombre}: ${error.message}`);
+      }
+    }
+
+    this.logger.log(`✅ ${created} templates de WhatsApp verificados`);
   }
 }
