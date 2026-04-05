@@ -372,4 +372,77 @@ export class SuscripcionController {
       throw new BadRequestException('No se pudo simular el pago');
     }
   }
+
+  /**
+   * POST /alquileres/suscripcion/test/webhook
+   * Simula un webhook de Bancard para testing
+   * Permite verificar que nuestro endpoint de webhook funciona correctamente
+   */
+  @Post('test/webhook')
+  @UseGuards(JwtAuthGuard)
+  async testWebhook(
+    @Body() payload: {
+      shopProcessId: string;
+      response?: 'S' | 'N';
+      amount?: string;
+      currency?: string;
+    },
+    @Request() req,
+  ) {
+    this.logger.log('========================================');
+    this.logger.log('TEST WEBHOOK BANCARD - SIMULACIÓN');
+    this.logger.log('========================================');
+    
+    try {
+      // Buscar el pago por referencia
+      const pago = await this.suscripcionService.obtenerPagoPorReferencia(payload.shopProcessId);
+      
+      if (!pago) {
+        return {
+          status: 'error',
+          mensaje: `No se encontró pago con referencia: ${payload.shopProcessId}`,
+          sugerencia: 'Creá primero un pago iniciado desde el frontend para tener una referencia válida',
+        };
+      }
+
+      // Construir payload similar al de Bancard
+      const webhookPayload = {
+        operation: {
+          token: 'token_test_' + Date.now(),
+          shop_process_id: parseInt(payload.shopProcessId),
+          response: payload.response || 'S',
+          response_details: payload.response === 'N' ? 'Pago rechazado' : 'Operación exitosa',
+          amount: payload.amount || pago.monto.toString(),
+          currency: payload.currency || pago.moneda,
+          authorization_number: '123456',
+          ticket_number: 'TICKET' + Date.now(),
+          response_code: payload.response === 'N' ? '99' : '00',
+          response_description: payload.response === 'N' ? 'Pago rechazado' : 'Operación exitosa',
+        },
+      };
+
+      this.logger.log('Payload simulado:', JSON.stringify(webhookPayload));
+      this.logger.log('Pago encontrado:', JSON.stringify({ id: pago.id, estado: pago.estado }));
+
+      // Procesar el webhook
+      const resultado = await this.suscripcionService.procesarConfirmacionPago(webhookPayload);
+
+      return {
+        status: 'success',
+        mensaje: 'Webhook procesado correctamente',
+        resultado,
+        pagoActualizado: {
+          id: pago.id,
+          nuevoEstado: payload.response === 'N' ? 'FALLIDO' : 'COMPLETADO',
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error en test webhook:', error);
+      return {
+        status: 'error',
+        mensaje: 'Error procesando webhook simulado',
+        error: error.message,
+      };
+    }
+  }
 }
