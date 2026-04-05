@@ -326,4 +326,50 @@ export class SuscripcionController {
       throw new BadRequestException('No se pudo verificar el estado del pago en Bancard');
     }
   }
+
+  /**
+   * POST /alquileres/suscripcion/simular-pago/:pagoId
+   * Simula un pago exitoso (SOLO PARA TESTING EN STAGING)
+   * Usa los clientes de prueba de Bancard para completar el flujo
+   */
+  @Post('simular-pago/:pagoId')
+  @UseGuards(JwtAuthGuard)
+  async simularPago(
+    @Param('pagoId') pagoId: string,
+    @Request() req,
+  ) {
+    const userId = req.user?.userId;
+    
+    this.logger.log(`Simulando pago exitoso para pagoId: ${pagoId}`);
+    
+    try {
+      // Obtener el pago
+      const pago = await this.suscripcionService.obtenerPagoPorId(pagoId);
+      
+      if (!pago) {
+        throw new BadRequestException('Pago no encontrado');
+      }
+      
+      // Verificar que el usuario es dueño de la sede
+      const esDueno = await this.sedesAdminService.esDuenoDeSede(userId, pago.sedeId);
+      if (!esDueno) {
+        throw new BadRequestException('No eres el dueño de esta sede');
+      }
+      
+      // Completar el pago manualmente
+      await this.suscripcionService.completarPagoManual(pagoId);
+      
+      return {
+        status: 'success',
+        mensaje: 'Pago simulado exitosamente',
+        pago: {
+          id: pagoId,
+          estado: 'COMPLETADO',
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error simulando pago:', error);
+      throw new BadRequestException('No se pudo simular el pago');
+    }
+  }
 }
