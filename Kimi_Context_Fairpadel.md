@@ -2,7 +2,14 @@
 
 > **Documento de respaldo de acciones realizadas**  
 > **Propósito:** Mantener registro de decisiones técnicas, entregables completados y estado del proyecto para continuidad entre conversaciones.
-> **Última actualización:** 2026-04-03 - SISTEMA DE SUSCRIPCIONES Y RESERVAS V2 ✅
+> **Última actualización:** 2026-04-03 - MÓDULO WHATSAPP BUSINESS API ✅
+> - **BACKEND:** Módulo completo con feature flag WHATSAPP_ENABLED, servicios de mensajería, consentimiento y webhooks
+> - **FRONTEND:** Checkbox de consentimiento en registro, tarjeta de preferencias en perfil
+> - **DOBLE OPT-IN:** Checkbox en registro + confirmación por mensaje respondiendo "SI"
+> - **BASE DE DATOS:** Tablas whatsapp_conversations, whatsapp_mensajes, whatsapp_templates + campos en users
+> - **ESTADO:** Backend completo listo, pendiente configuración de Meta Business y aprobación de templates
+
+> **Actualización previa:** 2026-04-03 - SISTEMA DE SUSCRIPCIONES Y RESERVAS V2 ✅
 > - **BACKEND:** Endpoints para suscripciones de sedes (pago con Bancard, webhook, activación manual)
 > - **FRONTEND:** Panel de suscripción, gestión de disponibilidad multi-cancha y multi-día
 > - **PANEL ADMIN:** Suscripciones con tabs (Sedes, Instructores, Jugadores Premium) + regalo de suscripciones
@@ -167,6 +174,189 @@ ALTER TABLE alquiler_configs ALTER COLUMN suscripcion_vence_en TYPE TEXT;
 - Backend: `admin-suscripciones.controller.ts`, `suscripcion.controller.ts`, `suscripcion.service.ts`, `bancard.service.ts`
 - Frontend: `SuscripcionPage.tsx`, `BancardCheckout.tsx`, `SuscripcionStatusCard.tsx`, `GestionDisponibilidadPage.tsx`, `MisSedesPage.tsx`
 - Admin: `SuscripcionesManager.tsx`
+
+---
+
+## 🆕 COMPLETADO (2026-04-03) - Módulo WhatsApp Business API
+
+### ✅ Arquitectura del Módulo
+
+**Propósito:** Sistema de notificaciones por WhatsApp con doble opt-in de consentimiento.
+
+**Feature Flag:** `WHATSAPP_ENABLED` (default: false)
+- Si es `false`: El módulo opera en modo silencioso (logs pero no envía mensajes)
+- Si es `true`: Envía mensajes reales via Meta API
+
+### ✅ Modelo de Datos
+
+**Nuevos enums en Prisma:**
+```prisma
+enum WhatsappConsentStatus {
+  PENDIENTE
+  CONFIRMADO
+  RECHAZADO
+  REVOCADO
+}
+
+enum NotificacionPreferencia {
+  EMAIL
+  WHATSAPP
+  AMBOS
+}
+```
+
+**Nuevos campos en User:**
+```prisma
+consentCheckboxWhatsapp Boolean              @default(false)
+consentWhatsappStatus   WhatsappConsentStatus?
+consentWhatsappDate     DateTime?
+preferenciaNotificacion NotificacionPreferencia @default(EMAIL)
+```
+
+**Nuevas tablas:**
+```prisma
+WhatsappConversation  # Ventanas de conversación (24h rule)
+WhatsappMensaje       # Log de mensajes enviados/recibidos
+WhatsappTemplate      # Templates aprobados por Meta
+```
+
+### ✅ Backend - Servicios
+
+**Estructura:**
+```
+src/modules/whatsapp/
+├── whatsapp.module.ts
+├── controllers/
+│   ├── whatsapp.controller.ts       # API interna (JWT)
+│   └── whatsapp-webhook.controller.ts  # Webhook público
+├── services/
+│   ├── whatsapp.service.ts          # API pública
+│   ├── whatsapp-messaging.service.ts # Envío a Meta
+│   ├── whatsapp-consent.service.ts  # Gestión de consentimiento
+│   └── whatsapp-webhook.service.ts  # Procesamiento webhooks
+└── dto/
+    ├── send-notification.dto.ts
+    └── request-consent.dto.ts
+```
+
+**Endpoints API Interna:**
+```
+GET  /whatsapp/status                          # Estado del sistema
+GET  /whatsapp/consent-status/:userId          # Estado de consentimiento
+POST /whatsapp/request-consent                # Solicitar confirmación
+POST /whatsapp/send-notification              # Enviar notificación
+```
+
+**Endpoints Webhook (Públicos):**
+```
+GET  /webhooks/whatsapp   # Verificación por Meta
+POST /webhooks/whatsapp   # Recepción de eventos
+```
+
+### ✅ Flujo de Consentimiento (Doble Opt-in)
+
+```
+1. REGISTRO
+   - Usuario marca checkbox "Quiero recibir notificaciones por WhatsApp"
+   - Backend guarda: consentCheckboxWhatsapp=true, status=PENDIENTE
+
+2. CONFIRMACIÓN
+   - Backend envía mensaje: "Responde SI para confirmar"
+   - Usuario responde "SI"
+   - Webhook recibe respuesta
+   - Backend actualiza: status=CONFIRMADO
+
+3. PREFERENCIAS
+   - Usuario puede elegir: EMAIL, WHATSAPP, AMBOS
+   - Solo puede elegir WhatsApp si status=CONFIRMADO
+```
+
+### ✅ Integración con Auth
+
+**RegisterDto:** Agregado campo opcional `consentCheckboxWhatsapp?: boolean`
+
+**AuthService.register():**
+```typescript
+if (dto.consentCheckboxWhatsapp) {
+  // Guardar campos de consentimiento
+  // Llamar whatsAppService.requestConsent(userId)
+}
+```
+
+### ✅ Frontend
+
+**Registro (`RegisterWizard.tsx`):**
+- Checkbox en paso 2 (datos de contacto)
+- Texto: "Quiero recibir notificaciones por WhatsApp"
+- Subtexto explicativo sobre recordatorios de reservas y torneos
+
+**Servicio WhatsApp (`whatsappService.ts`):**
+```typescript
+getStatus()                    # Verifica si está habilitado
+getConsentStatus(userId)       # Estado de consentimiento
+requestConsent(userId)         # Solicitar confirmación
+sendNotification(data)         # Enviar notificación
+```
+
+**Perfil - Preferencias (`WhatsAppPreferencesCard.tsx`):**
+- Badge de estado (Confirmado, Pendiente, No disponible)
+- Selector de preferencias: Email, WhatsApp, Ambos
+- Información de número de teléfono y fecha de confirmación
+- Botón para revocar consentimiento
+- Validaciones visuales (deshabilita opciones no disponibles)
+
+**Servicio de Perfil actualizado:**
+```typescript
+updatePreferenciasNotificacion(preferencia)  # Cambiar preferencia
+revocarConsentimientoWhatsapp()              # Revocar consentimiento
+```
+
+### ✅ Templates Disponibles
+
+| Template | Categoría | Variables |
+|----------|-----------|-----------|
+| `confirmacion_consentimiento` | SISTEMA | `nombre` |
+| `bienvenida_consentimiento` | SISTEMA | `nombre` |
+| `confirmacion_reserva` | RESERVA | `nombre`, `fecha`, `cancha`, `hora` |
+| `recordatorio_reserva_24h` | RECORDATORIO | `fecha`, `cancha`, `hora` |
+| `recordatorio_reserva_4h` | RECORDATORIO | `fecha`, `cancha`, `hora` |
+| `inscripcion_torneo` | TORNEO | `nombre`, `torneo`, `categoria`, `pareja` |
+| `fixture_publicado` | TORNEO | `torneo`, `fecha`, `hora`, `rival`, `link` |
+
+**Seed automático:** Los templates se crean automáticamente al iniciar la app (si no existen).
+
+### ✅ Variables de Entorno
+
+```bash
+# Feature flag
+WHATSAPP_ENABLED=false
+
+# Credenciales Meta (requeridas si WHATSAPP_ENABLED=true)
+WHATSAPP_ACCESS_TOKEN=         # Token de acceso
+WHATSAPP_PHONE_NUMBER_ID=      # ID del número de teléfono
+WHATSAPP_BUSINESS_ACCOUNT_ID=  # ID de cuenta business
+WHATSAPP_API_VERSION=v17.0     # Versión de API (opcional)
+WHATSAPP_VERIFY_TOKEN=         # Token de verificación webhook
+WHATSAPP_WEBHOOK_SECRET=       # Secret para firmas (opcional)
+```
+
+### ✅ Documentación
+
+- `docs/WHATSAPP_BUSINESS_API.md` - Especificación completa de la API
+- `docs/PLAN_IMPLEMENTACION_WHATSAPP.md` - Plan de implementación
+- `scripts/seed-whatsapp-templates.sql` - Seed SQL de templates
+
+### ✅ Próximos Pasos (Configuración Meta)
+
+1. Crear Business Account en [Meta for Developers](https://developers.facebook.com/)
+2. Verificar número de teléfono de FairPadel
+3. Enviar templates para aprobación (puede tardar 24-48h)
+4. Configurar webhook en el dashboard de Meta
+5. Obtener access token permanente
+6. Configurar variables de entorno en producción
+7. Activar `WHATSAPP_ENABLED=true`
+
+**Nota:** Bancard sigue con problemas en staging (incidente reportado #4567294). Prioridad: WhatsApp está listo para configuración.
 
 ---
 
