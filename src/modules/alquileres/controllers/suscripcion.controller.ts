@@ -221,4 +221,47 @@ export class SuscripcionController {
       throw new BadRequestException('No se pudo consultar la transacción');
     }
   }
+
+  /**
+   * GET /alquileres/suscripcion/:sedeId/verificar-pago/:pagoId
+   * Verifica el estado de un pago específico en FairPadel
+   * Usado por el frontend después de completar el pago en Bancard
+   */
+  @Get(':sedeId/verificar-pago/:pagoId')
+  @UseGuards(JwtAuthGuard)
+  async verificarEstadoPago(
+    @Param('sedeId') sedeId: string,
+    @Param('pagoId') pagoId: string,
+    @Request() req,
+  ) {
+    const userId = req.user?.userId;
+    
+    // Verificar que el usuario es dueño de esta sede
+    const esDueno = await this.sedesAdminService.esDuenoDeSede(userId, sedeId);
+    if (!esDueno) {
+      throw new BadRequestException('No eres el dueño de esta sede');
+    }
+
+    const pago = await this.suscripcionService.obtenerPagoPorId(pagoId);
+    
+    if (!pago || pago.sedeId !== sedeId) {
+      throw new BadRequestException('Pago no encontrado');
+    }
+
+    return {
+      status: 'success',
+      pago: {
+        id: pago.id,
+        estado: pago.estado,
+        monto: pago.monto,
+        moneda: pago.moneda,
+        metodo: pago.metodo,
+        fechaPago: pago.fechaPago,
+        periodoDesde: pago.periodoDesde,
+        periodoHasta: pago.periodoHasta,
+        referencia: pago.referencia,
+        createdAt: pago.createdAt,
+      },
+    };
+  }
 }

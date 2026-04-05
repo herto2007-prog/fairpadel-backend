@@ -297,6 +297,15 @@ export class SuscripcionService {
   }
 
   /**
+   * Obtiene un pago por su ID
+   */
+  async obtenerPagoPorId(pagoId: string) {
+    return this.prisma.alquilerPago.findUnique({
+      where: { id: pagoId },
+    });
+  }
+
+  /**
    * Genera un shop_process_id único numérico a partir del UUID del pago
    * Bancard requiere un número entero de máximo 15 dígitos
    */
