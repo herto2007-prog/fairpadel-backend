@@ -148,7 +148,6 @@ enum TipoNotificacion {
 
 // Enum para estado de consentimiento de WhatsApp
 enum WhatsappConsentStatus {
-  NO_APLICA
   PENDIENTE
   CONFIRMADO
   RECHAZADO
