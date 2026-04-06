@@ -322,15 +322,14 @@ export class SuscripcionController {
 
   /**
    * POST /alquileres/suscripcion/consultar
-   * Consultar estado de una transacción (para tests de Bancard)
+   * Consultar estado de una transacción en Bancard
    * Permite al comercio consultar si un pago fue confirmado
    * 
-   * Este endpoint es importante para el check:
-   * "Recibimos pedido de confirmación del comercio"
-   * en la certificación de Bancard.
+   * NOTA: Este endpoint consulta a Bancard, no es llamado por Bancard.
+   * Requiere autenticación porque es una operación de nuestro sistema.
    */
   @Post('consultar')
-  @Public() // Permitir acceso público para que Bancard pueda testear
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async consultarTransaccion(
     @Body('shopProcessId') shopProcessId: string,
@@ -508,14 +507,16 @@ export class SuscripcionController {
 
   /**
    * GET /alquileres/suscripcion/test/consulta-bancard/:shopProcessId
-   * Endpoint específico para el test de Bancard:
-   * "Recibimos pedido de confirmación del comercio"
+   * Endpoint de test para consultar estado en Bancard
    * 
    * Este endpoint realiza una consulta activa al API de Bancard
    * para verificar el estado de una transacción.
+   * 
+   * NOTA: Este endpoint consulta a Bancard, no es llamado por Bancard.
+   * Requiere autenticación porque es una operación interna de test.
    */
   @Get('test/consulta-bancard/:shopProcessId')
-  @Public()
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async testConsultaBancard(
     @Param('shopProcessId') shopProcessId: string,
