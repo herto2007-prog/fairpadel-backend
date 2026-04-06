@@ -134,12 +134,20 @@ export class PerfilService {
       },
     });
     
-    const inscripcionesPendientes = await this.prisma.inscripcion.count({
-      where: {
-        OR: [{ jugador1Id: userId }, { jugador2Id: userId }],
-        estado: { in: ['PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION'] },
-      },
-    });
+    const [inscripcionesPendientes, notificacionesNoLeidas] = await Promise.all([
+      this.prisma.inscripcion.count({
+        where: {
+          OR: [{ jugador1Id: userId }, { jugador2Id: userId }],
+          estado: { in: ['PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION'] },
+        },
+      }),
+      this.prisma.notificacion.count({
+        where: {
+          userId,
+          leida: false,
+        },
+      }),
+    ]);
 
     return {
       ...perfil,
@@ -154,7 +162,7 @@ export class PerfilService {
         },
         privado: {
           inscripcionesPendientes,
-          notificacionesNoLeidas: 0,
+          notificacionesNoLeidas,
         },
       },
     };
