@@ -82,10 +82,9 @@ export class SuscripcionService {
     });
     this.logger.log(`[DEBUG] Pago creado en BD: id=${pago.id}, estado=PENDIENTE, monto=${monto}`);
 
-    // Usar el ID del pago como shop_process_id para Bancard
-    // Bancard requiere un número, así que convertimos el UUID a un número único
-    const shopProcessId = this.generarShopProcessId(pago.id);
-    this.logger.log(`[DEBUG] ShopProcessId generado: ${shopProcessId} (del pago ${pago.id})`);
+    // Generar shop_process_id único para Bancard
+    // Bancard requiere un número de máximo 15 dígitos
+    const shopProcessId = this.generarShopProcessId();
 
     // Actualizar el pago con la referencia
     await this.prisma.alquilerPago.update({
@@ -342,14 +341,21 @@ export class SuscripcionService {
   }
 
   /**
-   * Genera un shop_process_id único numérico a partir del UUID del pago
+   * Genera un shop_process_id único numérico
    * Bancard requiere un número entero de máximo 15 dígitos
+   * 
+   * Usamos timestamp (13 dígitos) + 2 dígitos aleatorios para garantizar unicidad
+   * Ejemplo: 1712415600000 + 42 = 1712415600042 (13 dígitos)
    */
-  private generarShopProcessId(uuid: string): number {
-    // Tomar solo los dígitos del UUID y convertir a número
-    const digits = uuid.replace(/\D/g, '').substring(0, 15);
-    // Asegurar que no exceda 15 dígitos y sea positivo
-    return parseInt(digits.substring(0, 14) || '1', 10);
+  private generarShopProcessId(): number {
+    const timestamp = Date.now(); // 13 dígitos
+    const random = Math.floor(Math.random() * 100); // 0-99
+    // Combinar: timestamp * 100 + random = máximo 15 dígitos
+    const shopProcessId = timestamp * 100 + random;
+    
+    this.logger.log(`[DEBUG] ShopProcessId generado: ${shopProcessId} (timestamp: ${timestamp}, random: ${random})`);
+    
+    return shopProcessId;
   }
 
   /**
