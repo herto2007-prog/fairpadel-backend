@@ -15,7 +15,7 @@ interface CrearPagoDto {
 @Injectable()
 export class SuscripcionService {
   private readonly logger = new Logger(SuscripcionService.name);
-  private readonly PRECIO_MENSUAL = 1000; // 1.000 Gs por mes (testing)
+  private readonly PRECIO_MENSUAL = 1000; // Gs. 1.000 por mes (precio simbólico para testing)
 
   constructor(
     private prisma: PrismaService,
@@ -52,7 +52,7 @@ export class SuscripcionService {
 
     // Calcular monto según tipo
     const monto = tipo === 'ANUAL' 
-      ? 10000 // Precio especial anual: Gs. 10.000 (equivalente a 10 meses)
+      ? 10000 // Gs. 10.000 anual (precio simbólico - 10 meses por el precio de 10)
       : this.PRECIO_MENSUAL;
 
     const montoFormateado = monto.toFixed(2);
@@ -80,16 +80,19 @@ export class SuscripcionService {
         periodoHasta: fechaHastaStr, // String YYYY-MM-DD
       },
     });
+    this.logger.log(`[DEBUG] Pago creado en BD: id=${pago.id}, estado=PENDIENTE, monto=${monto}`);
 
     // Usar el ID del pago como shop_process_id para Bancard
     // Bancard requiere un número, así que convertimos el UUID a un número único
     const shopProcessId = this.generarShopProcessId(pago.id);
+    this.logger.log(`[DEBUG] ShopProcessId generado: ${shopProcessId} (del pago ${pago.id})`);
 
     // Actualizar el pago con la referencia
     await this.prisma.alquilerPago.update({
       where: { id: pago.id },
       data: { referencia: shopProcessId.toString() },
     });
+    this.logger.log(`[DEBUG] Pago actualizado con referencia: ${shopProcessId}`);
 
     // Iniciar pago en Bancard
     try {
@@ -104,7 +107,7 @@ export class SuscripcionService {
         pagoId: pago.id,
         processId: bancardResponse.processId,
         monto: monto,
-        montoFormateado: `Gs. ${montoFormateado}`,
+        montoFormateado: `Gs. ${monto.toLocaleString('es-PY')}`,
         tipo,
         periodoDesde: hoyStr,
         periodoHasta: fechaHastaStr,
@@ -168,6 +171,7 @@ export class SuscripcionService {
 
     // Verificar si el pago fue aprobado
     const aprobado = operation.response === 'S' && operation.response_code === '00';
+    this.logger.log(`[DEBUG] Verificación pago: response=${operation.response}, code=${operation.response_code}, aprobado=${aprobado}`);
 
     if (aprobado) {
       // Actualizar pago como completado
@@ -206,7 +210,8 @@ export class SuscripcionService {
    * Activa la suscripción de una sede
    */
   private async activarSuscripcion(sedeId: string, venceEn: string) {
-    return this.prisma.alquilerConfig.update({
+    this.logger.log(`[DEBUG] Activando suscripción para sede ${sedeId}, venceEn: ${venceEn}`);
+    const result = await this.prisma.alquilerConfig.update({
       where: { sedeId },
       data: {
         suscripcionActiva: true,
@@ -214,6 +219,8 @@ export class SuscripcionService {
         habilitado: true,
       },
     });
+    this.logger.log(`[DEBUG] Suscripción activada: sedeId=${sedeId}, suscripcionActiva=${result.suscripcionActiva}`);
+    return result;
   }
 
   /**

@@ -467,4 +467,58 @@ export class SuscripcionController {
       };
     }
   }
+
+  /**
+   * GET /alquileres/suscripcion/:sedeId/debug
+   * Endpoint de debug - muestra estado completo de suscripción y pagos
+   * Útil para troubleshooting en Railway
+   */
+  @Get(':sedeId/debug')
+  @UseGuards(JwtAuthGuard)
+  async debugSuscripcion(
+    @Param('sedeId') sedeId: string,
+    @Request() req,
+  ) {
+    const userId = req.user?.userId;
+    
+    // Verificar que el usuario es dueño de esta sede
+    const esDueno = await this.sedesAdminService.esDuenoDeSede(userId, sedeId);
+    if (!esDueno) {
+      throw new BadRequestException('No eres el dueño de esta sede');
+    }
+
+    this.logger.log(`[DEBUG] Consultando estado completo de sede ${sedeId}`);
+
+    // Obtener config
+    const config = await this.suscripcionService.obtenerConfig(sedeId);
+    
+    // Obtener historial de pagos
+    const pagos = await this.suscripcionService.obtenerHistorialPagos(sedeId);
+    
+    // Verificar suscripción activa
+    const estadoSuscripcion = await this.suscripcionService.verificarSuscripcion(sedeId);
+
+    return {
+      timestamp: new Date().toISOString(),
+      sedeId,
+      configuracion: config,
+      estadoSuscripcion,
+      pagos: pagos.map(p => ({
+        id: p.id,
+        estado: p.estado,
+        monto: p.monto,
+        moneda: p.moneda,
+        metodo: p.metodo,
+        referencia: p.referencia,
+        periodoDesde: p.periodoDesde,
+        periodoHasta: p.periodoHasta,
+        fechaPago: p.fechaPago,
+        createdAt: p.createdAt,
+      })),
+      totalPagos: pagos.length,
+      pagosPendientes: pagos.filter(p => p.estado === 'PENDIENTE').length,
+      pagosCompletados: pagos.filter(p => p.estado === 'COMPLETADO').length,
+      pagosFallidos: pagos.filter(p => p.estado === 'FALLIDO').length,
+    };
+  }
 }

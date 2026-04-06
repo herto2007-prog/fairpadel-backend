@@ -349,16 +349,16 @@ export class AdminSuscripcionesController {
       });
     }
 
-    // Calcular monto
-    const montoCentavos = tipo === 'ANUAL' ? 10800 : 1000; // $108.00 o $10.00
+    // Calcular monto en Guaraníes (precio simbólico para testing)
+    const montoGs = tipo === 'ANUAL' ? 10000 : 1000; // Gs. 10.000 o Gs. 1.000
 
     // Crear pago COMPLETADO manualmente
     const pago = await this.prisma.alquilerPago.create({
       data: {
         sedeId,
         sedeConfigId: config.id,
-        monto: montoCentavos,
-        moneda: 'USD',
+        monto: montoGs,
+        moneda: 'PYG',
         estado: 'COMPLETADO',
         metodo: 'MANUAL',
         referencia: `MANUAL-${Date.now()}`,
@@ -385,7 +385,7 @@ export class AdminSuscripcionesController {
       data: {
         sedeId,
         tipo,
-        monto: `$${(montoCentavos / 100).toFixed(2)} USD`,
+        monto: `Gs. ${montoGs.toLocaleString('es-PY')}`,
         venceEn: fechaVencimientoStr,
         pagoId: pago.id,
         nota,
