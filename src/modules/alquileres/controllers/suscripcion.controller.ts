@@ -298,11 +298,9 @@ export class SuscripcionController {
         throw new BadRequestException(`No se encontró pago con referencia: ${shopProcessId}`);
       }
       
-      // Usar la moneda del pago original (PYG, no USD)
-      const moneda = pago.moneda || 'PYG';
-      this.logger.log(`Usando moneda ${moneda} para rollback del pago ${pago.id}`);
+      this.logger.log(`Procesando rollback del pago ${pago.id}`);
       
-      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId, '0.00', moneda);
+      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId);
       
       // Si el rollback fue exitoso en Bancard, actualizar el pago local
       if (resultado.status === 'success') {
