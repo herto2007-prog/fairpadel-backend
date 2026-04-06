@@ -19,6 +19,7 @@ import { SedesAdminService } from '../../sedes/sedes-admin.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { Public } from '../../auth/decorators/public.decorator';
 
 @Controller('alquileres/suscripcion')
 export class SuscripcionController {
@@ -83,6 +84,7 @@ export class SuscripcionController {
    * los query params automáticamente si usamos @Query
    */
   @Post('webhook/confirmacion')
+  @Public()
   @HttpCode(HttpStatus.OK)
   async recibirConfirmacion(
     @Body() payload: any,
