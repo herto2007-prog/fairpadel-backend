@@ -15,7 +15,7 @@ interface CrearPagoDto {
 @Injectable()
 export class SuscripcionService {
   private readonly logger = new Logger(SuscripcionService.name);
-  private readonly PRECIO_MENSUAL = 60000; // 60.000 Gs por mes
+  private readonly PRECIO_MENSUAL = 1000; // 1.000 Gs por mes (testing)
 
   constructor(
     private prisma: PrismaService,
@@ -52,7 +52,7 @@ export class SuscripcionService {
 
     // Calcular monto según tipo
     const monto = tipo === 'ANUAL' 
-      ? 600000 // Precio especial anual: Gs. 600.000 (equivalente a 10 meses)
+      ? 10000 // Precio especial anual: Gs. 10.000 (equivalente a 10 meses)
       : this.PRECIO_MENSUAL;
 
     const montoFormateado = monto.toFixed(2);
@@ -372,7 +372,7 @@ export class SuscripcionService {
       data: {
         sedeId,
         sedeConfigId: config.id,
-        monto: tipo === 'ANUAL' ? 600000 : this.PRECIO_MENSUAL,
+        monto: tipo === 'ANUAL' ? 10000 : this.PRECIO_MENSUAL,
         moneda: 'PYG',
         estado: 'COMPLETADO',
         metodo: 'MANUAL',
