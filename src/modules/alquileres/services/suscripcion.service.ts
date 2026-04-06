@@ -402,4 +402,15 @@ export class SuscripcionService {
       data: { suscripcionActiva: false },
     });
   }
+
+  /**
+   * Cancela un pago (marca como FALLIDO)
+   * Usado después de un rollback exitoso en Bancard
+   */
+  async cancelarPago(pagoId: string) {
+    return this.prisma.alquilerPago.update({
+      where: { id: pagoId },
+      data: { estado: 'FALLIDO' },
+    });
+  }
 }

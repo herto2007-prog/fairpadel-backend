@@ -179,6 +179,9 @@ export class SuscripcionController {
    * POST /alquileres/suscripcion/rollback
    * Rollback de una transacción (para tests de Bancard)
    * Permite cancelar una transacción pendiente
+   * 
+   * Importante: El token de rollback usa la misma moneda que el pago original
+   * Token: md5(private_key + shop_process_id + "rollback" + "0.00" + currency)
    */
   @Post('rollback')
   @UseGuards(JwtAuthGuard)
@@ -188,7 +191,24 @@ export class SuscripcionController {
     this.logger.log(`Rollback solicitado para shop_process_id: ${shopProcessId}`);
     
     try {
-      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId, '0.00', 'USD');
+      // Buscar el pago por referencia para obtener la moneda correcta
+      const pago = await this.suscripcionService.obtenerPagoPorReferencia(shopProcessId);
+      
+      if (!pago) {
+        throw new BadRequestException(`No se encontró pago con referencia: ${shopProcessId}`);
+      }
+      
+      // Usar la moneda del pago original (PYG, no USD)
+      const moneda = pago.moneda || 'PYG';
+      this.logger.log(`Usando moneda ${moneda} para rollback del pago ${pago.id}`);
+      
+      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId, '0.00', moneda);
+      
+      // Si el rollback fue exitoso en Bancard, actualizar el pago local
+      if (resultado.status === 'success') {
+        await this.suscripcionService.cancelarPago(pago.id);
+      }
+      
       return {
         status: 'success',
         message: 'Rollback procesado',
@@ -196,7 +216,7 @@ export class SuscripcionController {
       };
     } catch (error) {
       this.logger.error('Error en rollback:', error);
-      throw new BadRequestException('No se pudo realizar el rollback');
+      throw new BadRequestException(error.message || 'No se pudo realizar el rollback');
     }
   }
 
