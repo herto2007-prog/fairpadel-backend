@@ -167,7 +167,7 @@ export class SuscripcionController {
     return {
       publicKey: this.bancardService.getPublicKey(),
       baseUrl: this.bancardService.getBaseUrl(),
-      scriptUrl: `${this.bancardService.getBaseUrl()}/checkout/javascript/dist/bancard-checkout-4.0.0.js`,
+      scriptUrl: `${this.bancardService.getBaseUrl()}/checkout/javascript/dist/bancard-checkout-1.0.0.js`,
     };
   }
 
