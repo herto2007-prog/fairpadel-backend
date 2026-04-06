@@ -92,7 +92,7 @@ export class SuscripcionController {
     @Query() query: any,
   ) {
     this.logger.log('========================================');
-    this.logger.log('WEBHOOK BANCARD RECIBIDO');
+    this.logger.log('WEBHOOK CONFIRMACIÓN BANCARD RECIBIDO');
     this.logger.log('========================================');
     this.logger.log('Headers:', JSON.stringify(headers));
     this.logger.log('Query:', JSON.stringify(query));
@@ -115,6 +115,84 @@ export class SuscripcionController {
       this.logger.error('Error procesando webhook:', error);
       // Aún así devolvemos 200 para que Bancard no reintente
       // pero con indicación de error
+      return { 
+        status: 'error', 
+        message: error.message 
+      };
+    }
+  }
+
+  /**
+   * Webhook para recibir ROLLBACK de Bancard
+   * PÚBLICO - Bancard llama a este endpoint cuando el usuario cancela el pago
+   * 
+   * Este endpoint es necesario para completar el check:
+   * "Recibir rollback" en la certificación de Bancard
+   * 
+   * El rollback se envía cuando:
+   * - El usuario cancela explícitamente en el formulario
+   * - El usuario cierra el formulario sin completar
+   * - Hay un timeout en el proceso de pago
+   */
+  @Post('webhook/rollback')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async recibirRollback(
+    @Body() payload: any,
+    @Headers() headers: Record<string, string>,
+    @Query() query: any,
+  ) {
+    this.logger.log('========================================');
+    this.logger.log('WEBHOOK ROLLBACK BANCARD RECIBIDO');
+    this.logger.log('========================================');
+    this.logger.log('Headers:', JSON.stringify(headers));
+    this.logger.log('Query:', JSON.stringify(query));
+    this.logger.log('Payload:', JSON.stringify(payload));
+
+    try {
+      // Validar estructura mínima del payload
+      if (!payload || !payload.operation) {
+        this.logger.error('Payload inválido - no tiene operation');
+        throw new BadRequestException('Payload inválido');
+      }
+
+      const { operation } = payload;
+      const shopProcessId = operation.shop_process_id?.toString();
+
+      if (!shopProcessId) {
+        this.logger.error('shop_process_id no encontrado en payload');
+        throw new BadRequestException('shop_process_id requerido');
+      }
+
+      this.logger.log(`Procesando rollback para shop_process_id: ${shopProcessId}`);
+
+      // Buscar el pago por referencia
+      const pago = await this.suscripcionService.obtenerPagoPorReferencia(shopProcessId);
+      
+      if (!pago) {
+        this.logger.error(`Pago no encontrado para shop_process_id: ${shopProcessId}`);
+        // Aún devolvemos success para que Bancard no reintente
+        return { 
+          status: 'success', 
+          mensaje: 'Rollback recibido pero pago no encontrado (posiblemente ya procesado)' 
+        };
+      }
+
+      this.logger.log(`Pago encontrado: ${pago.id}, estado actual: ${pago.estado}`);
+
+      // Marcar el pago como cancelado/fallido
+      await this.suscripcionService.cancelarPago(pago.id);
+      
+      this.logger.log(`Pago ${pago.id} marcado como FALLIDO por rollback`);
+
+      return { 
+        status: 'success', 
+        mensaje: 'Rollback procesado correctamente',
+        pagoId: pago.id 
+      };
+    } catch (error) {
+      this.logger.error('Error procesando rollback:', error);
+      // Aún así devolvemos 200 para que Bancard no reintente
       return { 
         status: 'error', 
         message: error.message 
@@ -224,16 +302,27 @@ export class SuscripcionController {
    * POST /alquileres/suscripcion/consultar
    * Consultar estado de una transacción (para tests de Bancard)
    * Permite al comercio consultar si un pago fue confirmado
+   * 
+   * Este endpoint es importante para el check:
+   * "Recibimos pedido de confirmación del comercio"
+   * en la certificación de Bancard.
    */
   @Post('consultar')
-  @UseGuards(JwtAuthGuard)
+  @Public() // Permitir acceso público para que Bancard pueda testear
+  @HttpCode(HttpStatus.OK)
   async consultarTransaccion(
     @Body('shopProcessId') shopProcessId: string,
   ) {
-    this.logger.log(`Consulta de transacción: shop_process_id=${shopProcessId}`);
+    this.logger.log('========================================');
+    this.logger.log('CONSULTA DE CONFIRMACIÓN ENVIADA A BANCARD');
+    this.logger.log('========================================');
+    this.logger.log(`Consultando transacción: shop_process_id=${shopProcessId}`);
     
     try {
       const resultado = await this.bancardService.consultarTransaccion(shopProcessId);
+      
+      this.logger.log('Respuesta de Bancard:', JSON.stringify(resultado));
+      
       return {
         status: 'success',
         data: resultado,
@@ -392,6 +481,45 @@ export class SuscripcionController {
     } catch (error) {
       this.logger.error('Error simulando pago:', error);
       throw new BadRequestException('No se pudo simular el pago');
+    }
+  }
+
+  /**
+   * GET /alquileres/suscripcion/test/consulta-bancard/:shopProcessId
+   * Endpoint específico para el test de Bancard:
+   * "Recibimos pedido de confirmación del comercio"
+   * 
+   * Este endpoint realiza una consulta activa al API de Bancard
+   * para verificar el estado de una transacción.
+   */
+  @Get('test/consulta-bancard/:shopProcessId')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async testConsultaBancard(
+    @Param('shopProcessId') shopProcessId: string,
+  ) {
+    this.logger.log('========================================');
+    this.logger.log('TEST: CONSULTA DE CONFIRMACIÓN AL COMERCIO');
+    this.logger.log('========================================');
+    this.logger.log(`Consultando en Bancard: shop_process_id=${shopProcessId}`);
+    
+    try {
+      const resultado = await this.bancardService.consultarTransaccion(shopProcessId);
+      
+      this.logger.log('Consulta exitosa a Bancard:', JSON.stringify(resultado));
+      
+      return {
+        status: 'success',
+        mensaje: 'Consulta realizada exitosamente',
+        shopProcessId,
+        bancardResponse: resultado,
+      };
+    } catch (error) {
+      this.logger.error('Error en consulta:', error);
+      return {
+        status: 'error',
+        mensaje: error.message,
+      };
     }
   }
 
