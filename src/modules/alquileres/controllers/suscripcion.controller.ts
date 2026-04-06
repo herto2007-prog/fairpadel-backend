@@ -105,6 +105,11 @@ export class SuscripcionController {
         throw new BadRequestException('Payload inválido');
       }
 
+      const { operation } = payload;
+      const shopProcessId = operation.shop_process_id?.toString();
+      
+      this.logger.log(`Buscando pago con shop_process_id: ${shopProcessId}`);
+
       const resultado = await this.suscripcionService.procesarConfirmacionPago(payload);
       
       this.logger.log('Webhook procesado exitosamente:', JSON.stringify(resultado));
@@ -113,8 +118,25 @@ export class SuscripcionController {
       return { status: 'success', ...resultado };
     } catch (error) {
       this.logger.error('Error procesando webhook:', error);
-      // Aún así devolvemos 200 para que Bancard no reintente
-      // pero con indicación de error
+      
+      // Si es un "pago no encontrado", loguear información adicional para debug
+      if (error.message?.includes('no encontrado')) {
+        const shopProcessId = payload?.operation?.shop_process_id?.toString();
+        this.logger.warn(`⚠️  Pago no encontrado para shop_process_id: ${shopProcessId}`);
+        this.logger.warn('    Esto puede pasar si:');
+        this.logger.warn('    1. El pago fue creado en otro ambiente (local vs producción)');
+        this.logger.warn('    2. El pago fue eliminado o nunca se guardó');
+        this.logger.warn('    3. El shop_process_id fue generado diferente');
+        
+        // Aún así devolvemos success para que Bancard no reintente
+        return { 
+          status: 'success', 
+          message: 'Webhook recibido pero pago no encontrado en nuestro sistema',
+          warning: 'Pago no encontrado'
+        };
+      }
+      
+      // Para otros errores, devolvemos error pero con 200 para evitar reintentos
       return { 
         status: 'error', 
         message: error.message 
@@ -648,5 +670,51 @@ export class SuscripcionController {
       pagosCompletados: pagos.filter(p => p.estado === 'COMPLETADO').length,
       pagosFallidos: pagos.filter(p => p.estado === 'FALLIDO').length,
     };
+  }
+
+  /**
+   * GET /alquileres/suscripcion/debug/pagos-pendientes
+   * Endpoint público de debug - Lista todos los pagos pendientes
+   * Útil para diagnosticar problemas con webhooks de Bancard
+   * 
+   * Este endpoint muestra las referencias (shop_process_id) de los pagos
+   * pendientes para comparar con lo que envía Bancard en los webhooks.
+   */
+  @Get('debug/pagos-pendientes')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async debugPagosPendientes() {
+    this.logger.log('========================================');
+    this.logger.log('DEBUG: Listando pagos pendientes');
+    this.logger.log('========================================');
+    
+    try {
+      // Obtener todos los pagos pendientes de todas las sedes
+      const pagos = await this.suscripcionService.obtenerTodosPagosPendientes();
+      
+      this.logger.log(`Total pagos pendientes encontrados: ${pagos.length}`);
+      
+      return {
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        totalPagosPendientes: pagos.length,
+        pagos: pagos.map(p => ({
+          id: p.id,
+          sedeId: p.sedeId,
+          estado: p.estado,
+          monto: p.monto,
+          moneda: p.moneda,
+          referencia: p.referencia, // Este es el shop_process_id
+          metodo: p.metodo,
+          createdAt: p.createdAt,
+        })),
+      };
+    } catch (error) {
+      this.logger.error('Error listando pagos pendientes:', error);
+      return {
+        status: 'error',
+        message: error.message,
+      };
+    }
   }
 }

@@ -420,4 +420,16 @@ export class SuscripcionService {
       data: { estado: 'FALLIDO' },
     });
   }
+
+  /**
+   * Obtiene TODOS los pagos pendientes (de todas las sedes)
+   * Usado para debug de webhooks
+   */
+  async obtenerTodosPagosPendientes() {
+    return this.prisma.alquilerPago.findMany({
+      where: { estado: 'PENDIENTE' },
+      orderBy: { createdAt: 'desc' },
+      take: 50, // Limitar a los últimos 50 para no sobrecargar
+    });
+  }
 }
