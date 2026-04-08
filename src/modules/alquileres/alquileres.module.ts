@@ -10,6 +10,7 @@ import { SuscripcionGuard } from './guards/suscripcion.guard';
 import { BancardService } from './services/bancard.service';
 import { SedesAdminService } from '../sedes/sedes-admin.service';
 import { DuenoController } from './controllers/dueno.controller';
+import { EmailService } from '../../email/email.service';
 
 @Module({
   imports: [PrismaModule, AuthModule, ConfigModule],
@@ -20,6 +21,7 @@ import { DuenoController } from './controllers/dueno.controller';
     SuscripcionGuard,
     BancardService,
     SedesAdminService,
+    EmailService,
   ],
   exports: [AlquileresService, SuscripcionService, SuscripcionGuard],
 })
