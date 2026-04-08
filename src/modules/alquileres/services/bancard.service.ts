@@ -70,16 +70,17 @@ export class BancardService {
 
   /**
    * Genera token MD5 para rollback
-   * md5(private_key + shop_process_id + "rollback" + "0.00" + currency)
-   * Según documentación Bancard, se usa "0.00" como amount
+   * md5(private_key + shop_process_id + "rollback" + "0.00")
+   * Según documentación Bancard
    */
   generateRollbackToken(
     shopProcessId: string | number,
     currency: string = 'PYG',
   ): string {
-    // Según documentación: usar "0.00" para amount en rollback
-    const data = `${this.privateKey}${shopProcessId}rollback0.00${currency}`;
-    this.logger.log(`[Rollback Token] Data: private_key + ${shopProcessId} + rollback + 0.00 + ${currency}`);
+    // Asegurar que shopProcessId sea número (como lo envía Bancard)
+    const shopId = typeof shopProcessId === 'string' ? parseInt(shopProcessId, 10) : shopProcessId;
+    const data = `${this.privateKey}${shopId}rollback0.00${currency}`;
+    this.logger.log(`[Rollback Token] shopId=${shopId}, currency=${currency}`);
     return crypto.createHash('md5').update(data).digest('hex');
   }
 
