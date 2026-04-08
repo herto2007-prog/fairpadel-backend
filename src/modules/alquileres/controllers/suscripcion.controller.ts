@@ -238,22 +238,42 @@ export class SuscripcionController {
       const planNombre = mesesDiferencia >= 11 ? 'Anual' : 'Mensual';
       const monto = pago.monto / 100; // Convertir de centavos
 
+      // Si el pago estaba COMPLETADO, cancelar la suscripción
+      const estabaCompletado = pago.estado === 'COMPLETADO';
+      
       // Marcar el pago como cancelado/fallido
       await this.suscripcionService.cancelarPago(pago.id);
       
       this.logger.log(`Pago ${pago.id} marcado como FALLIDO por rollback`);
 
-      // Enviar email de cancelación (no bloqueante)
-      if (dueñoEmail) {
-        this.emailService.sendPagoCancelado(
-          dueñoEmail,
-          dueñoNombre,
-          sedeNombre,
-          planNombre,
-          monto,
-          pago.moneda,
-          'El pago fue cancelado por el usuario o expiró el tiempo',
-        ).catch(err => this.logger.error('Error enviando email de cancelación:', err));
+      if (estabaCompletado) {
+        // Cancelar la suscripción (desactivar)
+        await this.suscripcionService.desactivarSuscripcion(pago.sedeId);
+        this.logger.log(`Suscripción cancelada para sede ${pago.sedeId} por rollback de pago completado`);
+        
+        // Enviar email de suscripción cancelada por reversión
+        if (dueñoEmail) {
+          this.emailService.sendSuscripcionCancelada(
+            dueñoEmail,
+            dueñoNombre,
+            sedeNombre,
+            0, // Ya venció al cancelarse
+            'Transacción reversada - La suscripción fue cancelada automáticamente',
+          ).catch(err => this.logger.error('Error enviando email de cancelación de suscripción:', err));
+        }
+      } else {
+        // Enviar email de pago cancelado (solo si no estaba completado)
+        if (dueñoEmail) {
+          this.emailService.sendPagoCancelado(
+            dueñoEmail,
+            dueñoNombre,
+            sedeNombre,
+            planNombre,
+            monto,
+            pago.moneda,
+            'El pago fue cancelado por el usuario o expiró el tiempo',
+          ).catch(err => this.logger.error('Error enviando email de cancelación:', err));
+        }
       }
 
       // BANCARD REQUIERE EXACTAMENTE: { "status": "success" }
@@ -349,9 +369,38 @@ export class SuscripcionController {
       // Token: md5(private_key + shop_process_id + "rollback" + "0.00")
       const resultado = await this.bancardService.rollbackTransaccion(shopProcessId);
       
-      // Si el rollback fue exitoso en Bancard, actualizar el pago local
+      // Si el rollback fue exitoso en Bancard, actualizar el pago local y cancelar suscripción si estaba activa
       if (resultado.status === 'success') {
+        const estabaCompletado = pago.estado === 'COMPLETADO';
+        
         await this.suscripcionService.cancelarPago(pago.id);
+        
+        // Buscar info de la sede para enviar email
+        const sedeInfo = await this.prisma.sede.findUnique({
+          where: { id: pago.sedeId },
+          include: {
+            dueno: {
+              select: { email: true, nombre: true, apellido: true },
+            },
+          },
+        });
+        
+        if (estabaCompletado) {
+          // Cancelar la suscripción
+          await this.suscripcionService.desactivarSuscripcion(pago.sedeId);
+          
+          // Enviar email de suscripción cancelada
+          if (sedeInfo?.dueno?.email) {
+            const dueñoNombre = `${sedeInfo.dueno.nombre || ''} ${sedeInfo.dueno.apellido || ''}`.trim() || 'Usuario';
+            this.emailService.sendSuscripcionCancelada(
+              sedeInfo.dueno.email,
+              dueñoNombre,
+              sedeInfo.nombre || 'Tu Sede',
+              0,
+              'Transacción reversada manualmente - La suscripción fue cancelada automáticamente',
+            ).catch(err => this.logger.error('Error enviando email:', err));
+          }
+        }
       }
       
       return {
