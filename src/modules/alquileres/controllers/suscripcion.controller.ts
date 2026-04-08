@@ -260,8 +260,9 @@ export class SuscripcionController {
    * Rollback de una transacción (para tests de Bancard)
    * Permite cancelar una transacción pendiente
    * 
-   * Importante: El token de rollback usa la misma moneda que el pago original
-   * Token: md5(private_key + shop_process_id + "rollback" + "0.00" + currency)
+   * Importante: El token de rollback NO incluye moneda
+   * Token: md5(private_key + shop_process_id + "rollback" + "0.00")
+   * shop_process_id debe ser número (sin comillas) en el payload JSON
    */
   @Post('rollback')
   @UseGuards(JwtAuthGuard)
@@ -280,8 +281,9 @@ export class SuscripcionController {
       
       this.logger.log(`Procesando rollback del pago ${pago.id}`);
       
-      // Rollback usa "0.00" como amount según documentación Bancard
-      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId, pago.moneda);
+      // Rollback NO usa currency según plataforma Bancard
+      // Token: md5(private_key + shop_process_id + "rollback" + "0.00")
+      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId);
       
       // Si el rollback fue exitoso en Bancard, actualizar el pago local
       if (resultado.status === 'success') {

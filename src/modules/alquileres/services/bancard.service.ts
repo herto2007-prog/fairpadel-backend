@@ -71,16 +71,14 @@ export class BancardService {
   /**
    * Genera token MD5 para rollback
    * md5(private_key + shop_process_id + "rollback" + "0.00")
-   * Según documentación Bancard
+   * Según documentación Bancard - NO incluye currency
    */
-  generateRollbackToken(
-    shopProcessId: string | number,
-    currency: string = 'PYG',
-  ): string {
+  generateRollbackToken(shopProcessId: string | number): string {
     // Asegurar que shopProcessId sea número (como lo envía Bancard)
     const shopId = typeof shopProcessId === 'string' ? parseInt(shopProcessId, 10) : shopProcessId;
-    const data = `${this.privateKey}${shopId}rollback0.00${currency}`;
-    this.logger.log(`[Rollback Token] shopId=${shopId}, currency=${currency}`);
+    // Formato exacto según plataforma Bancard: private_key + shop_id + "rollback" + "0.00"
+    const data = `${this.privateKey}${shopId}rollback0.00`;
+    this.logger.log(`[Rollback Token] shopId=${shopId}, data=${this.privateKey.substring(0, 4)}...${shopId}rollback0.00`);
     return crypto.createHash('md5').update(data).digest('hex');
   }
 
@@ -189,18 +187,25 @@ export class BancardService {
    */
   async rollbackTransaccion(
     shopProcessId: string | number,
-    currency: string = 'PYG',
+    _currency?: string, // Parámetro ignorado - el rollback no usa currency
   ): Promise<any> {
-    // Generar token para rollback
-    const token = this.generateRollbackToken(shopProcessId, currency);
+    // Generar token para rollback (sin currency!)
+    const token = this.generateRollbackToken(shopProcessId);
+
+    // shop_process_id debe ser número (sin comillas) según plataforma Bancard
+    const numericShopProcessId = typeof shopProcessId === 'string' 
+      ? parseInt(shopProcessId, 10) 
+      : shopProcessId;
 
     const payload = {
       public_key: this.publicKey,
       operation: {
         token,
-        shop_process_id: shopProcessId,
+        shop_process_id: numericShopProcessId, // Número, no string
       },
     };
+    
+    this.logger.log(`[Rollback] shop_process_id: ${numericShopProcessId} (type: ${typeof numericShopProcessId})`);
 
     try {
       const response = await fetch(`${this.baseUrl}/vpos/api/0.3/single_buy/rollback`, {
