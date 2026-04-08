@@ -128,6 +128,7 @@ export class AuthService {
         apellido: user.apellido,
         documento: user.documento,
         estado: user.estado,
+        fotoUrl: user.fotoUrl,
         roles: user.roles.map((ur) => ur.role.nombre),
       },
     };
@@ -174,6 +175,7 @@ export class AuthService {
         apellido: user.apellido,
         documento: user.documento,
         estado: user.estado,
+        fotoUrl: user.fotoUrl,
         roles: user.roles.map((ur) => ur.role.nombre),
       },
     };

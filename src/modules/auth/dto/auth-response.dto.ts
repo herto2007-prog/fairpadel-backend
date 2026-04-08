@@ -9,6 +9,7 @@ export class AuthResponseDto {
     apellido: string;
     documento: string;
     estado: UserStatus;
+    fotoUrl?: string;
     roles: string[];
   };
 }
