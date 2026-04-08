@@ -114,33 +114,21 @@ export class SuscripcionController {
       
       this.logger.log('Webhook procesado exitosamente:', JSON.stringify(resultado));
       
-      // Bancard espera una respuesta 200 con { status: 'success' }
-      return { status: 'success', ...resultado };
+      // BANCARD REQUIERE EXACTAMENTE: { "status": "success" }
+      // No agregar campos adicionales - causa error en producción
+      return { status: 'success' };
     } catch (error) {
       this.logger.error('Error procesando webhook:', error);
       
-      // Si es un "pago no encontrado", loguear información adicional para debug
-      if (error.message?.includes('no encontrado')) {
-        const shopProcessId = payload?.operation?.shop_process_id?.toString();
-        this.logger.warn(`⚠️  Pago no encontrado para shop_process_id: ${shopProcessId}`);
-        this.logger.warn('    Esto puede pasar si:');
-        this.logger.warn('    1. El pago fue creado en otro ambiente (local vs producción)');
-        this.logger.warn('    2. El pago fue eliminado o nunca se guardó');
-        this.logger.warn('    3. El shop_process_id fue generado diferente');
-        
-        // Aún así devolvemos success para que Bancard no reintente
-        return { 
-          status: 'success', 
-          message: 'Webhook recibido pero pago no encontrado en nuestro sistema',
-          warning: 'Pago no encontrado'
-        };
-      }
+      // Loguear información del error para debug
+      const shopProcessId = payload?.operation?.shop_process_id?.toString();
+      this.logger.warn(`⚠️  Error en webhook para shop_process_id: ${shopProcessId}`);
+      this.logger.warn(`    Mensaje: ${error.message}`);
       
-      // Para otros errores, devolvemos error pero con 200 para evitar reintentos
-      return { 
-        status: 'error', 
-        message: error.message 
-      };
+      // BANCARD REQUIERE EXACTAMENTE: { "status": "success" }
+      // Siempre devolver success con HTTP 200 para que Bancard no reintente
+      // Los logs quedan en el servidor para debugging
+      return { status: 'success' };
     }
   }
 
@@ -193,11 +181,8 @@ export class SuscripcionController {
       
       if (!pago) {
         this.logger.error(`Pago no encontrado para shop_process_id: ${shopProcessId}`);
-        // Aún devolvemos success para que Bancard no reintente
-        return { 
-          status: 'success', 
-          mensaje: 'Rollback recibido pero pago no encontrado (posiblemente ya procesado)' 
-        };
+        // BANCARD REQUIERE EXACTAMENTE: { "status": "success" }
+        return { status: 'success' };
       }
 
       this.logger.log(`Pago encontrado: ${pago.id}, estado actual: ${pago.estado}`);
@@ -207,18 +192,13 @@ export class SuscripcionController {
       
       this.logger.log(`Pago ${pago.id} marcado como FALLIDO por rollback`);
 
-      return { 
-        status: 'success', 
-        mensaje: 'Rollback procesado correctamente',
-        pagoId: pago.id 
-      };
+      // BANCARD REQUIERE EXACTAMENTE: { "status": "success" }
+      return { status: 'success' };
     } catch (error) {
       this.logger.error('Error procesando rollback:', error);
-      // Aún así devolvemos 200 para que Bancard no reintente
-      return { 
-        status: 'error', 
-        message: error.message 
-      };
+      // BANCARD REQUIERE EXACTAMENTE: { "status": "success" }
+      // Siempre devolver success con HTTP 200 para que Bancard no reintente
+      return { status: 'success' };
     }
   }
 
