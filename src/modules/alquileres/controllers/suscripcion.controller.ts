@@ -16,6 +16,8 @@ import {
 import { SuscripcionService } from '../services/suscripcion.service';
 import { BancardService } from '../services/bancard.service';
 import { SedesAdminService } from '../../sedes/sedes-admin.service';
+import { EmailService } from '../../../email/email.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -29,6 +31,8 @@ export class SuscripcionController {
     private readonly suscripcionService: SuscripcionService,
     private readonly bancardService: BancardService,
     private readonly sedesAdminService: SedesAdminService,
+    private readonly emailService: EmailService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -187,10 +191,40 @@ export class SuscripcionController {
 
       this.logger.log(`Pago encontrado: ${pago.id}, estado actual: ${pago.estado}`);
 
+      // Buscar info del dueño de la sede para enviar email
+      const sedeInfo = await this.prisma.sede.findUnique({
+        where: { id: pago.sedeId },
+        include: {
+          dueno: {
+            select: { email: true, nombre: true, apellido: true },
+          },
+        },
+      });
+      const dueñoEmail = sedeInfo?.dueno?.email;
+      const dueñoNombre = `${sedeInfo?.dueno?.nombre || ''} ${sedeInfo?.dueno?.apellido || ''}`.trim() || 'Usuario';
+      const sedeNombre = sedeInfo?.nombre || 'Tu Sede';
+      // Calcular si es anual o mensual basado en la diferencia de fechas
+      const mesesDiferencia = this.calcularMesesDiferencia(pago.periodoDesde, pago.periodoHasta);
+      const planNombre = mesesDiferencia >= 11 ? 'Anual' : 'Mensual';
+      const monto = pago.monto / 100; // Convertir de centavos
+
       // Marcar el pago como cancelado/fallido
       await this.suscripcionService.cancelarPago(pago.id);
       
       this.logger.log(`Pago ${pago.id} marcado como FALLIDO por rollback`);
+
+      // Enviar email de cancelación (no bloqueante)
+      if (dueñoEmail) {
+        this.emailService.sendPagoCancelado(
+          dueñoEmail,
+          dueñoNombre,
+          sedeNombre,
+          planNombre,
+          monto,
+          pago.moneda,
+          'El pago fue cancelado por el usuario o expiró el tiempo',
+        ).catch(err => this.logger.error('Error enviando email de cancelación:', err));
+      }
 
       // BANCARD REQUIERE EXACTAMENTE: { "status": "success" }
       return { status: 'success' };
@@ -698,5 +732,14 @@ export class SuscripcionController {
         message: error.message,
       };
     }
+  }
+
+  /**
+   * Helper: Calcula la diferencia en meses entre dos fechas (YYYY-MM-DD)
+   */
+  private calcularMesesDiferencia(desde: string, hasta: string): number {
+    const [yearDesde, monthDesde] = desde.split('-').map(Number);
+    const [yearHasta, monthHasta] = hasta.split('-').map(Number);
+    return (yearHasta - yearDesde) * 12 + (monthHasta - monthDesde);
   }
 }

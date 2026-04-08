@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BancardService } from './bancard.service';
+import { EmailService } from '../../../email/email.service';
 
 interface CrearPagoDto {
   sedeId: string;
@@ -20,6 +21,7 @@ export class SuscripcionService {
   constructor(
     private prisma: PrismaService,
     private bancardService: BancardService,
+    private emailService: EmailService,
   ) {}
 
   /**
@@ -172,6 +174,24 @@ export class SuscripcionService {
     const aprobado = operation.response === 'S' && operation.response_code === '00';
     this.logger.log(`[DEBUG] Verificación pago: response=${operation.response}, code=${operation.response_code}, aprobado=${aprobado}`);
 
+    // Buscar info del dueño de la sede para enviar email
+    const sedeInfo = await this.prisma.sede.findUnique({
+      where: { id: pago.sedeId },
+      include: {
+        dueno: {
+          select: { email: true, nombre: true, apellido: true },
+        },
+      },
+    });
+
+    const dueñoEmail = sedeInfo?.dueno?.email;
+    const dueñoNombre = `${sedeInfo?.dueno?.nombre || ''} ${sedeInfo?.dueno?.apellido || ''}`.trim() || 'Usuario';
+    const sedeNombre = sedeInfo?.nombre || 'Tu Sede';
+    // Calcular si es anual o mensual basado en la diferencia de fechas
+    const mesesDiferencia = this.calcularMesesDiferencia(String(pago.periodoDesde), String(pago.periodoHasta));
+    const planNombre = mesesDiferencia >= 11 ? 'Anual' : 'Mensual';
+    const monto = pago.monto / 100; // Convertir de centavos
+
     if (aprobado) {
       // Actualizar pago como completado
       const hoyPago = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
@@ -187,6 +207,20 @@ export class SuscripcionService {
       await this.activarSuscripcion(pago.sedeId, String(pago.periodoHasta));
 
       this.logger.log(`Suscripción activada para sede ${pago.sedeId}`);
+
+      // Enviar email de confirmación (no bloqueante)
+      if (dueñoEmail) {
+        this.emailService.sendPagoExitoso(
+          dueñoEmail,
+          dueñoNombre,
+          sedeNombre,
+          planNombre,
+          monto,
+          pago.moneda,
+          hoyPago.split('-').reverse().join('/'), // Formato DD/MM/YYYY
+          String(pago.periodoHasta).split('-').reverse().join('/'),
+        ).catch(err => this.logger.error('Error enviando email de pago exitoso:', err));
+      }
     } else {
       // Marcar como fallido
       await this.prisma.alquilerPago.update({
@@ -195,6 +229,19 @@ export class SuscripcionService {
       });
 
       this.logger.warn(`Pago fallido: ${operation.response_description}`);
+
+      // Enviar email de error (no bloqueante)
+      if (dueñoEmail) {
+        this.emailService.sendPagoError(
+          dueñoEmail,
+          dueñoNombre,
+          sedeNombre,
+          planNombre,
+          monto,
+          pago.moneda,
+          operation.response_description,
+        ).catch(err => this.logger.error('Error enviando email de error:', err));
+      }
     }
 
     return {
@@ -437,5 +484,14 @@ export class SuscripcionService {
       orderBy: { createdAt: 'desc' },
       take: 50, // Limitar a los últimos 50 para no sobrecargar
     });
+  }
+
+  /**
+   * Helper: Calcula la diferencia en meses entre dos fechas (YYYY-MM-DD)
+   */
+  private calcularMesesDiferencia(desde: string, hasta: string): number {
+    const [yearDesde, monthDesde] = desde.split('-').map(Number);
+    const [yearHasta, monthHasta] = hasta.split('-').map(Number);
+    return (yearHasta - yearDesde) * 12 + (monthHasta - monthDesde);
   }
 }
