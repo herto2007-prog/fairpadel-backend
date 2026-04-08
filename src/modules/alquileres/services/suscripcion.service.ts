@@ -253,6 +253,87 @@ export class SuscripcionService {
   }
 
   /**
+   * Cancela la suscripción de una sede (por solicitud del usuario)
+   */
+  async cancelarSuscripcion(sedeId: string, userId: string): Promise<{
+    success: boolean;
+    mensaje: string;
+    diasRestantes: number;
+  }> {
+    this.logger.log(`[DEBUG] Cancelando suscripción para sede ${sedeId} por usuario ${userId}`);
+    
+    // Verificar que la sede existe y pertenece al usuario
+    const sede = await this.prisma.sede.findUnique({
+      where: { id: sedeId },
+      include: {
+        dueno: {
+          select: { id: true, email: true, nombre: true, apellido: true },
+        },
+      },
+    });
+
+    if (!sede) {
+      throw new NotFoundException('Sede no encontrada');
+    }
+
+    if (sede.duenoId !== userId) {
+      throw new BadRequestException('No eres el dueño de esta sede');
+    }
+
+    // Verificar estado actual de la suscripción
+    const config = await this.prisma.alquilerConfig.findUnique({
+      where: { sedeId },
+    });
+
+    if (!config?.suscripcionActiva) {
+      return {
+        success: false,
+        mensaje: 'La sede no tiene una suscripción activa',
+        diasRestantes: 0,
+      };
+    }
+
+    // Calcular días restantes
+    const hoy = new Date();
+    const hoyStr = hoy.toISOString().split('T')[0];
+    const venceStr = String(config.suscripcionVenceEn);
+    const hoyDate = new Date(hoyStr + 'T00:00:00');
+    const venceDate = new Date(venceStr + 'T00:00:00');
+    const diasRestantes = Math.ceil(
+      (venceDate.getTime() - hoyDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    // Desactivar suscripción
+    await this.prisma.alquilerConfig.update({
+      where: { sedeId },
+      data: {
+        suscripcionActiva: false,
+        habilitado: false,
+      },
+    });
+
+    this.logger.log(`[DEBUG] Suscripción cancelada: sedeId=${sedeId}, diasRestantes=${diasRestantes}`);
+
+    // Enviar email de confirmación de cancelación
+    if (sede.dueno?.email) {
+      const dueñoNombre = `${sede.dueno.nombre || ''} ${sede.dueno.apellido || ''}`.trim() || 'Usuario';
+      this.emailService.sendSuscripcionCancelada(
+        sede.dueno.email,
+        dueñoNombre,
+        sede.nombre,
+        diasRestantes,
+        config.suscripcionVenceEn?.split('-').reverse().join('/'),
+      ).catch(err => this.logger.error('Error enviando email de cancelación:', err));
+    }
+
+    return {
+      success: true,
+      mensaje: 'Suscripción cancelada exitosamente',
+      diasRestantes: diasRestantes > 0 ? diasRestantes : 0,
+    };
+  }
+
+  /**
    * Activa la suscripción de una sede
    */
   private async activarSuscripcion(sedeId: string, venceEn: string) {
@@ -454,9 +535,9 @@ export class SuscripcionService {
   }
 
   /**
-   * Cancela suscripción (no reembolsa, solo desactiva al vencer)
+   * Desactiva suscripción inmediatamente (uso interno/admin)
    */
-  async cancelarSuscripcion(sedeId: string) {
+  async desactivarSuscripcion(sedeId: string) {
     return this.prisma.alquilerConfig.update({
       where: { sedeId },
       data: { suscripcionActiva: false },

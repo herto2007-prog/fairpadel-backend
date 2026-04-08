@@ -78,6 +78,36 @@ export class SuscripcionController {
   }
 
   /**
+   * POST /alquileres/suscripcion/:sedeId/cancelar
+   * Cancelar suscripción de una sede (por el dueño)
+   * 
+   * El usuario puede cancelar su suscripción en cualquier momento.
+   * La sede seguirá activa hasta el vencimiento del período pagado.
+   * Se envía un email de confirmación al dueño.
+   */
+  @Post(':sedeId/cancelar')
+  @UseGuards(JwtAuthGuard)
+  async cancelarSuscripcion(
+    @Param('sedeId') sedeId: string,
+    @Request() req,
+  ) {
+    const userId = req.user?.userId;
+    
+    this.logger.log(`Solicitud de cancelación de suscripción: sede=${sedeId}, user=${userId}`);
+    
+    const resultado = await this.suscripcionService.cancelarSuscripcion(sedeId, userId);
+    
+    return {
+      status: 'success',
+      message: resultado.mensaje,
+      data: {
+        diasRestantes: resultado.diasRestantes,
+        nota: 'Tu sede seguirá activa hasta el vencimiento del período pagado',
+      },
+    };
+  }
+
+  /**
    * Webhook para recibir confirmación de Bancard
    * PÚBLICO - Bancard llama a este endpoint
    * 
