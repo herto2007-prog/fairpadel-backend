@@ -70,10 +70,11 @@ export class BancardService {
 
   /**
    * Genera token MD5 para rollback
-   * md5(private_key + shop_process_id + "rollback" + "0.00")
+   * md5(private_key + shop_process_id + "rollback" + amount + currency)
+   * Según documentación, para rollback se usa "0.00" como amount
    */
-  generateRollbackToken(shopProcessId: string | number): string {
-    const data = `${this.privateKey}${shopProcessId}rollback0.00`;
+  generateRollbackToken(shopProcessId: string | number, currency: string = 'PYG'): string {
+    const data = `${this.privateKey}${shopProcessId}rollback0.00${currency}`;
     return crypto.createHash('md5').update(data).digest('hex');
   }
 
@@ -180,9 +181,12 @@ export class BancardService {
   /**
    * Realiza rollback de una transacción
    */
-  async rollbackTransaccion(shopProcessId: string | number): Promise<any> {
-    // Generar token para rollback (sin amount ni currency según documentación)
-    const token = this.generateRollbackToken(shopProcessId);
+  async rollbackTransaccion(
+    shopProcessId: string | number,
+    currency: string = 'PYG',
+  ): Promise<any> {
+    // Generar token para rollback
+    const token = this.generateRollbackToken(shopProcessId, currency);
 
     const payload = {
       public_key: this.publicKey,

@@ -280,7 +280,8 @@ export class SuscripcionController {
       
       this.logger.log(`Procesando rollback del pago ${pago.id}`);
       
-      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId);
+      // Usar la moneda del pago para generar el token correcto
+      const resultado = await this.bancardService.rollbackTransaccion(shopProcessId, pago.moneda);
       
       // Si el rollback fue exitoso en Bancard, actualizar el pago local
       if (resultado.status === 'success') {
