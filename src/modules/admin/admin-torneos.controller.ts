@@ -13,13 +13,28 @@ import {
   ForbiddenException,
   Request,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, ValidateNested, Matches } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, ValidateNested, Matches, ValidatorConstraint, ValidatorConstraintInterface, Validate } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+
+// Validador custom para fechas futuras
+@ValidatorConstraint({ name: 'isFutureDate', async: false })
+class IsFutureDateConstraint implements ValidatorConstraintInterface {
+  validate(dateString: string) {
+    if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const inputDate = new Date(dateString + 'T00:00:00');
+    return inputDate >= today;
+  }
+  defaultMessage() {
+    return 'La fecha debe ser hoy o futura';
+  }
+}
 
 // DTOs
 class CreateTorneoDto {
@@ -31,9 +46,11 @@ class CreateTorneoDto {
   descripcion?: string;
 
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaInicio debe tener formato YYYY-MM-DD' })
+  @Validate(IsFutureDateConstraint)
   fechaInicio: string;
 
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaFin debe tener formato YYYY-MM-DD' })
+  @Validate(IsFutureDateConstraint)
   fechaFin: string;
 
   @IsOptional()
