@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { WhatsAppConsentService } from './whatsapp-consent.service';
+import { normalizarTelefono } from '../../../common/utils/phone.utils';
 
 /**
  * Servicio para procesar webhooks de Meta (WhatsApp)
@@ -187,9 +188,24 @@ export class WhatsAppWebhookService {
     type: string,
   ): Promise<void> {
     try {
-      // Buscar usuario por teléfono
-      const user = await this.prisma.user.findFirst({
-        where: { telefono: from },
+      // Normalizar el número que viene de Meta
+      const telefonoNormalizado = normalizarTelefono(from);
+      
+      // Buscar usuario por teléfono (comparando formato normalizado)
+      // Como Prisma no puede normalizar en la query, traemos candidatos y filtramos
+      const usuariosCandidatos = await this.prisma.user.findMany({
+        where: {
+          telefono: {
+            not: null,
+          },
+        },
+        take: 100, // Limitar para no traer todos
+      });
+      
+      // Encontrar usuario cuyo teléfono normalizado coincida
+      const user = usuariosCandidatos.find(u => {
+        const userNormalizado = normalizarTelefono(u.telefono);
+        return userNormalizado === telefonoNormalizado;
       });
 
       // Crear o actualizar conversación (para usuarios registrados o desconocidos)

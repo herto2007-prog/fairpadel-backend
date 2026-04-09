@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { WhatsAppMessagingService } from './whatsapp-messaging.service';
+import { normalizarTelefono } from '../../../common/utils/phone.utils';
 
 /**
  * Servicio para gestionar el consentimiento de WhatsApp (Doble Opt-in)
@@ -155,12 +156,21 @@ export class WhatsAppConsentService {
     }
 
     try {
-      // Buscar usuario por teléfono
-      const user = await this.prisma.user.findFirst({
+      // Normalizar el número de teléfono para la búsqueda
+      const phoneNormalizado = normalizarTelefono(phoneNumber);
+      
+      // Buscar usuario por teléfono (comparando formato normalizado)
+      const usuariosCandidatos = await this.prisma.user.findMany({
         where: {
-          telefono: phoneNumber,
+          telefono: { not: null },
           consentWhatsappStatus: 'PENDIENTE',
         },
+      });
+      
+      // Encontrar usuario cuyo teléfono normalizado coincida
+      const user = usuariosCandidatos.find(u => {
+        const userNormalizado = normalizarTelefono(u.telefono);
+        return userNormalizado === phoneNormalizado;
       });
 
       if (!user) {
