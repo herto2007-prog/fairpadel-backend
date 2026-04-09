@@ -4,12 +4,14 @@ import { CreateInscripcionDto } from './dto/create-inscripcion.dto';
 import { UpdateInscripcionDto, ConfirmarInscripcionDto } from './dto/update-inscripcion.dto';
 import { InscripcionEstado, TournamentStatus } from '@prisma/client';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { NotificacionesWhatsAppService } from '../notificaciones/notificaciones-whatsapp.service';
 
 @Injectable()
 export class InscripcionesService {
   constructor(
     private prisma: PrismaService,
     private notificacionesService: NotificacionesService,
+    private notificacionesWhatsApp: NotificacionesWhatsAppService,
   ) {}
 
   async create(dto: CreateInscripcionDto, jugador1Id: string) {
@@ -251,6 +253,11 @@ export class InscripcionesService {
     // Notificar confirmación si el estado es CONFIRMADA
     if (dto.estado === InscripcionEstado.CONFIRMADA) {
       await this.notificacionesService.notificarInscripcionConfirmada(inscripcionConfirmada.id);
+      
+      // También notificar por WhatsApp (si el usuario tiene consentimiento)
+      this.notificacionesWhatsApp.notificarInscripcionTorneo(inscripcionConfirmada.id).catch(() => {
+        // Silenciar errores de WhatsApp
+      });
     }
 
     return inscripcionConfirmada;
