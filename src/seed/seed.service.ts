@@ -324,11 +324,14 @@ export class SeedService implements OnModuleInit {
 
   private async seedWhatsAppTemplates() {
     this.logger.log('📱 Verificando templates de WhatsApp...');
+    // NOTA: confirmacion_consentimiento y consentimiento_cancelado son MARKETING porque
+    // Meta las reclasifica automaticamente al detectar palabras como 'notificaciones'.
+    // Se usan minimo (1 vez por usuario). Las demas son UTILITY.
 
     const templates = [
       {
         nombre: 'confirmacion_consentimiento',
-        categoria: 'SISTEMA',
+        categoria: 'MARKETING',
         lenguaje: 'es',
         contenido: 'Para activar notificaciones de FairPadel, responde SI. Responde NO para cancelar.',
         variables: [],
@@ -348,7 +351,7 @@ export class SeedService implements OnModuleInit {
       },
       {
         nombre: 'consentimiento_cancelado',
-        categoria: 'SISTEMA',
+        categoria: 'MARKETING',
         lenguaje: 'es',
         contenido: 'Has cancelado las notificaciones. Reactiva en fairpadel.com',
         variables: [],
