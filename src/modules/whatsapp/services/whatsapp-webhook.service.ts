@@ -262,6 +262,7 @@ export class WhatsAppWebhookService {
             categoria: userId ? 'SERVICE' : 'LEAD', // LEAD para desconocidos
             fechaExpiracion: expiration,
             ultimoMensajeAt: now,
+            iniciadaPor: 'USUARIO', // El usuario inició la conversación (mensaje entrante)
           },
         });
         return newConv.id;

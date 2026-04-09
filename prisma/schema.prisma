@@ -2370,6 +2370,7 @@ model WhatsappConversation {
   fechaExpiracion  DateTime  @map("fecha_expiracion") // 24h desde último mensaje del usuario
   ultimoMensajeAt  DateTime? @map("ultimo_mensaje_at")
   metadata         Json?     // Datos adicionales de la conversación
+  iniciadaPor      String    @map("iniciada_por") // USUARIO o SISTEMA (quién inició la conversación)
   
   user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   mensajes  WhatsappMensaje[]

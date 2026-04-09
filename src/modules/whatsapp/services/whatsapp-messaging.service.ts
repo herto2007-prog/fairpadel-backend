@@ -270,6 +270,7 @@ export class WhatsAppMessagingService {
             estado: 'ACTIVA',
             categoria,
             fechaExpiracion: new Date(now.getTime() + 24 * 60 * 60 * 1000), // +24h
+            iniciadaPor: 'SISTEMA', // Nosotros iniciamos la conversación (mensaje saliente)
           },
         });
       }
