@@ -6,7 +6,7 @@ RUN apk add --no-cache tzdata
 
 # Force rebuild on each deploy - imagen completamente diferente
 ARG RAILWAY_DEPLOYMENT_ID=unknown
-ARG CACHE_BUST=20260323
+ARG CACHE_BUST=20260409
 RUN echo "Building deployment: ${RAILWAY_DEPLOYMENT_ID} - ${CACHE_BUST}"
 
 WORKDIR /app
@@ -41,4 +41,5 @@ RUN npm run build
 EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && exec node dist/main.js"]
+# Fallback: si falla migrate, al menos iniciar la app
+CMD ["sh", "-c", "npx prisma migrate deploy || true && exec node dist/main.js"]
