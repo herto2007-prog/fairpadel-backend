@@ -11,9 +11,10 @@ import { BancardService } from './services/bancard.service';
 import { SedesAdminService } from '../sedes/sedes-admin.service';
 import { DuenoController } from './controllers/dueno.controller';
 import { EmailService } from '../../email/email.service';
+import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ConfigModule],
+  imports: [PrismaModule, AuthModule, ConfigModule, NotificacionesModule],
   controllers: [AlquileresController, SuscripcionController, DuenoController],
   providers: [
     AlquileresService,

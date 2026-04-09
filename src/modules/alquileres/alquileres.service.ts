@@ -3,10 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAlquilerConfigDto } from './dto/create-alquiler-config.dto';
 import { CreateReservaDto, ConfirmarReservaDto, CancelarReservaDto } from './dto/create-reserva.dto';
 import { ReservaCanchaEstado } from '@prisma/client';
+import { NotificacionesWhatsAppService } from '../notificaciones/notificaciones-whatsapp.service';
 
 @Injectable()
 export class AlquileresService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificacionesWhatsApp: NotificacionesWhatsAppService,
+  ) {}
 
   // ============ CONFIGURACIÓN ============
 
