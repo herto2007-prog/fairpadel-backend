@@ -392,7 +392,7 @@ export class SeedService implements OnModuleInit {
         lenguaje: 'es',
         contenido: '¡El fixture de {{torneo}} ya está disponible!\n\n🎾 Tu primer partido:\n📅 {{fecha}}\n⏰ {{hora}}\n🆚 Vs: {{rival}}\n\nVer fixture: {{link}}',
         variables: ['torneo', 'fecha', 'hora', 'rival', 'link'],
-        waTemplateName: 'fairpadel_fixture_publicado',
+        waTemplateName: 'fixture_publicado_v2',
         descripcion: 'Notificación de fixture publicado',
         ejemplo: '¡El fixture de Torneo Verano 2026 ya está disponible!\n\n🎾 Tu primer partido:\n📅 20/01/2026\n⏰ 19:00\n🆚 Vs: Martinez/Lopez\n\nVer fixture: https://fairpadel.com/fixture/123',
       },
