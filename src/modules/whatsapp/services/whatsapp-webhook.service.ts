@@ -256,7 +256,7 @@ export class WhatsAppWebhookService {
         // Crear nueva conversación
         const newConv = await this.prisma.whatsappConversation.create({
           data: {
-            userId: userId || 'desconocido', // Marcador temporal para desconocidos
+            userId: userId || null, // null para desconocidos (no hay foreign key)
             waId: phoneNumber,
             estado: 'ACTIVA',
             categoria: userId ? 'SERVICE' : 'LEAD', // LEAD para desconocidos

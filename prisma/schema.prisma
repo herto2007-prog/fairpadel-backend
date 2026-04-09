@@ -2362,7 +2362,7 @@ model JugadorDemo {
 
 model WhatsappConversation {
   id               String    @id @default(uuid())
-  userId           String    @map("user_id")
+  userId           String?   @map("user_id") // null para conversaciones de leads no registrados
   waId             String    @unique @map("wa_id") // ID de WhatsApp (número de teléfono)
   estado           String    @default("ACTIVA") // ACTIVA, EXPIRADA, BLOQUEADA
   categoria        String    @default("MARKETING") // MARKETING, UTILITY, AUTHENTICATION, SERVICE
@@ -2372,7 +2372,7 @@ model WhatsappConversation {
   metadata         Json?     // Datos adicionales de la conversación
   iniciadaPor      String    @map("iniciada_por") // USUARIO o SISTEMA (quién inició la conversación)
   
-  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
   mensajes  WhatsappMensaje[]
   
   @@index([userId])
