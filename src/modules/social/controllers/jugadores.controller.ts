@@ -26,6 +26,7 @@ export class JugadoresController {
   async buscarJugadores(
     @Query(new ValidationPipe({ transform: true })) query: BuscarJugadoresDto,
   ) {
+    console.log('🔥 ENDPOINT /users/buscar LLAMADO');
     const result = await this.jugadoresService.buscarJugadores({
       q: query.q,
       ciudad: query.ciudad,
