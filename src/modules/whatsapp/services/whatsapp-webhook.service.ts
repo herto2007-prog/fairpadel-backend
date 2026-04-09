@@ -178,7 +178,7 @@ export class WhatsAppWebhookService {
 
   /**
    * Guarda mensaje entrante en la base de datos
-   * Solo guarda mensajes de usuarios registrados
+   * Guarda mensajes de usuarios registrados y desconocidos (potenciales leads)
    */
   private async saveIncomingMessage(
     messageId: string,
@@ -192,31 +192,31 @@ export class WhatsAppWebhookService {
         where: { telefono: from },
       });
 
-      // Solo guardar mensajes de usuarios registrados
-      if (!user) {
-        this.logger.debug(`Mensaje de número no registrado: ${from}`);
-        return;
-      }
-
-      // Actualizar o crear conversación primero (para obtener el ID)
-      const conversationId = await this.updateConversation(user.id, from);
+      // Crear o actualizar conversación (para usuarios registrados o desconocidos)
+      const conversationId = await this.updateOrCreateConversation(user?.id, from);
 
       if (!conversationId) {
-        this.logger.warn(`No se pudo crear conversación para usuario ${user.id}`);
+        this.logger.warn(`No se pudo crear conversación para número: ${from}`);
         return;
       }
 
+      // Guardar mensaje (con o sin userId)
       await this.prisma.whatsappMensaje.create({
         data: {
           conversationId,
-          userId: user.id,
+          userId: user?.id || null, // null si es desconocido
           waMessageId: messageId,
           direccion: 'ENTRANTE',
           tipo: type.toUpperCase(),
           contenido: content,
           estado: 'ENTREGADO', // Ya lo recibimos
+          errorMsg: user ? null : 'Usuario no registrado - Potencial lead',
         },
       });
+
+      if (!user) {
+        this.logger.log(`💡 Mensaje guardado de número NO registrado (lead potencial): ${from}`);
+      }
     } catch (error) {
       this.logger.error('Error guardando mensaje entrante:', error);
     }
@@ -226,15 +226,18 @@ export class WhatsAppWebhookService {
    * Actualiza o crea una conversación activa
    * @returns ID de la conversación actualizada o creada
    */
-  private async updateConversation(userId: string, phoneNumber: string): Promise<string | undefined> {
+  private async updateOrCreateConversation(
+    userId: string | undefined, 
+    phoneNumber: string,
+  ): Promise<string | undefined> {
     try {
       const now = new Date();
       const expiration = new Date(now.getTime() + 24 * 60 * 60 * 1000); // +24h
 
-      // Buscar conversación activa
+      // Buscar conversación activa (por userId si existe, o por waId si es desconocido)
       const existing = await this.prisma.whatsappConversation.findFirst({
         where: {
-          userId: userId,
+          waId: phoneNumber,
           estado: 'ACTIVA',
         },
       });
@@ -250,13 +253,13 @@ export class WhatsAppWebhookService {
         });
         return existing.id;
       } else {
-        // Crear nueva
+        // Crear nueva conversación
         const newConv = await this.prisma.whatsappConversation.create({
           data: {
-            userId: userId,
+            userId: userId || 'desconocido', // Marcador temporal para desconocidos
             waId: phoneNumber,
             estado: 'ACTIVA',
-            categoria: 'SERVICE',
+            categoria: userId ? 'SERVICE' : 'LEAD', // LEAD para desconocidos
             fechaExpiracion: expiration,
             ultimoMensajeAt: now,
           },
