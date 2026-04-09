@@ -155,29 +155,47 @@ export class NotificacionesWhatsAppService {
 
       if (!inscripcion) return;
 
-      // Buscar el usuario del jugador 1
-      const user = await this.prisma.user.findUnique({
+      // Notificar a jugador 1
+      const user1 = await this.prisma.user.findUnique({
         where: { id: inscripcion.jugador1Id },
         select: { id: true, telefono: true, consentWhatsappStatus: true },
       });
 
-      if (!user || !this.puedeEnviarWhatsApp(user)) return;
+      if (user1 && this.puedeEnviarWhatsApp(user1) && user1.telefono) {
+        await this.messagingService.sendTemplateMessage(
+          user1.telefono,
+          'torneo_inscripcion',
+          {
+            '1': inscripcion.tournament.nombre,
+            '2': inscripcion.category.nombre,
+          },
+          user1.id,
+          'TORNEO'
+        );
+        this.logger.log(`✅ Notificación de inscripción enviada a jugador 1 (${user1.id})`);
+      }
 
-      const telefono = user.telefono;
-      if (!telefono) return;
+      // Notificar a jugador 2 (solo si está registrado y tiene consentimiento)
+      if (inscripcion.jugador2Id) {
+        const user2 = await this.prisma.user.findUnique({
+          where: { id: inscripcion.jugador2Id },
+          select: { id: true, telefono: true, consentWhatsappStatus: true },
+        });
 
-      await this.messagingService.sendTemplateMessage(
-        telefono,
-        'torneo_inscripcion',
-        {
-          '1': inscripcion.tournament.nombre,
-          '2': inscripcion.category.nombre,
-        },
-        user.id,
-        'TORNEO'
-      );
-
-      this.logger.log(`✅ Notificación de inscripción enviada a ${user.id}`);
+        if (user2 && this.puedeEnviarWhatsApp(user2) && user2.telefono) {
+          await this.messagingService.sendTemplateMessage(
+            user2.telefono,
+            'torneo_inscripcion',
+            {
+              '1': inscripcion.tournament.nombre,
+              '2': inscripcion.category.nombre,
+            },
+            user2.id,
+            'TORNEO'
+          );
+          this.logger.log(`✅ Notificación de inscripción enviada a jugador 2 (${user2.id})`);
+        }
+      }
     } catch (error) {
       this.logger.error(`Error notificando inscripción ${inscripcionId}:`, error);
     }
