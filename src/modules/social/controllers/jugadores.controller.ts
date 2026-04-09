@@ -1,4 +1,4 @@
-import { Controller, Get, Query, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Query, ValidationPipe, Header } from '@nestjs/common';
 import { JugadoresService } from '../services/jugadores.service';
 import { BuscarJugadoresDto } from '../dto/buscar-jugadores.dto';
 import { Public } from '../../auth/decorators/public.decorator';
@@ -20,6 +20,9 @@ export class JugadoresController {
    */
   @Get('buscar')
   @Public()
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  @Header('Pragma', 'no-cache')
+  @Header('Expires', '0')
   async buscarJugadores(
     @Query(new ValidationPipe({ transform: true })) query: BuscarJugadoresDto,
   ) {
@@ -44,6 +47,9 @@ export class JugadoresController {
    */
   @Get('filtros/datos')
   @Public()
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  @Header('Pragma', 'no-cache')
+  @Header('Expires', '0')
   async getDatosFiltros() {
     const data = await this.jugadoresService.getDatosFiltros();
     
