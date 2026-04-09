@@ -176,6 +176,29 @@ export class WhatsAppAdminController {
       throw new BadRequestException('No se pudo enviar el mensaje. Verifica que WHATSAPP_ENABLED=true.');
     }
 
+    // Guardar mensaje en la base de datos
+    await this.prisma.whatsappMensaje.create({
+      data: {
+        conversationId,
+        userId: conversacion.userId || null,
+        waMessageId: messageId,
+        direccion: 'SALIENTE',
+        tipo: 'TEXT',
+        contenido: mensaje,
+        estado: 'ENVIADO',
+        enviadoAt: new Date(),
+      },
+    });
+
+    // Actualizar la fecha del último mensaje en la conversación
+    await this.prisma.whatsappConversation.update({
+      where: { id: conversationId },
+      data: { 
+        ultimoMensajeAt: new Date(),
+        iniciadaPor: conversacion.iniciadaPor || 'SISTEMA',
+      },
+    });
+
     return {
       success: true,
       messageId,
