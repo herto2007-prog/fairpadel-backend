@@ -22,9 +22,11 @@ export class JugadoresService {
     const { q, ciudad, categoriaId, page, limit } = params;
     const skip = (page - 1) * limit;
 
-    // Construir where clause
+    // Construir where clause - mostrar usuarios activos y verificados
     const where: any = {
-      estado: UserStatus.ACTIVO,
+      estado: {
+        in: [UserStatus.ACTIVO, UserStatus.NO_VERIFICADO],
+      },
     };
 
     // Búsqueda por nombre/apellido (case insensitive)
@@ -115,7 +117,7 @@ export class JugadoresService {
     // Obtener ciudades únicas de usuarios activos
     const ciudadesResult = await this.prisma.user.findMany({
       where: {
-        estado: UserStatus.ACTIVO,
+        estado: { in: [UserStatus.ACTIVO, UserStatus.NO_VERIFICADO] },
         ciudad: { not: null },
       },
       select: {
@@ -132,7 +134,7 @@ export class JugadoresService {
       where: {
         usuariosActuales: {
           some: {
-            estado: UserStatus.ACTIVO,
+            estado: { in: [UserStatus.ACTIVO, UserStatus.NO_VERIFICADO] },
           },
         },
       },
