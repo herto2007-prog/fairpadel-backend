@@ -3,8 +3,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  console.log('🚀 Iniciando aplicación FairPadel v2026.03.22...');
-  console.log('📝 Cambio: Soporte múltiples franjas horarias por día');
+  console.log('🚀 Iniciando aplicación FairPadel v2026.04.09...');
+  console.log('📝 Cambio: Módulo Social/Comunidad activado');
   const app = await NestFactory.create(AppModule);
   console.log('✅ AppModule creado');
   
