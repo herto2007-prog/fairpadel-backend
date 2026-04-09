@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UserStatus } from '@prisma/client';
 
@@ -12,6 +12,8 @@ interface BuscarParams {
 
 @Injectable()
 export class JugadoresService {
+  private readonly logger = new Logger(JugadoresService.name);
+  
   constructor(private prisma: PrismaService) {}
 
   /**
@@ -22,12 +24,16 @@ export class JugadoresService {
     const { q, ciudad, categoriaId, page, limit } = params;
     const skip = (page - 1) * limit;
 
+    this.logger.log(`Buscando jugadores: q=${q}, ciudad=${ciudad}, categoriaId=${categoriaId}`);
+
     // Construir where clause - mostrar usuarios activos y verificados
     const where: any = {
       estado: {
         in: [UserStatus.ACTIVO, UserStatus.NO_VERIFICADO],
       },
     };
+    
+    this.logger.log(`Filtro where: ${JSON.stringify(where)}`);
 
     // Búsqueda por nombre/apellido (case insensitive)
     if (q && q.trim()) {
@@ -50,6 +56,7 @@ export class JugadoresService {
 
     // Contar total para paginación
     const total = await this.prisma.user.count({ where });
+    this.logger.log(`Total usuarios encontrados: ${total}`);
 
     // Obtener jugadores
     const users = await this.prisma.user.findMany({
