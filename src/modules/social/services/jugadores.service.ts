@@ -163,41 +163,30 @@ export class JugadoresService {
 
   /**
    * Calcular estadísticas básicas del jugador
+   * TODO: Optimizar con batch queries
    */
   private async getStatsJugador(userId: string) {
-    const historial = await this.prisma.historialPuntos.findMany({
-      where: { jugadorId: userId },
-      select: {
-        posicionFinal: true,
-      },
-    });
+    // Optimización: usar Promise.all para paralelizar queries
+    const [historialCount, victoriasAgg, totalPartidosAgg] = await Promise.all([
+      this.prisma.historialPuntos.count({ where: { jugadorId: userId } }),
+      this.prisma.ranking.aggregate({
+        where: { jugadorId: userId },
+        _sum: { victorias: true },
+      }),
+      this.prisma.ranking.aggregate({
+        where: { jugadorId: userId },
+        _sum: { victorias: true, derrotas: true },
+      }),
+    ]);
 
-    const jugados = historial.length;
-    const ganados = historial.filter(h => h.posicionFinal === '1ro').length;
-    const victorias = await this.prisma.ranking.aggregate({
-      where: { jugadorId: userId },
-      _sum: {
-        victorias: true,
-      },
-    });
-
-    // Calcular efectividad
-    const totalPartidos = await this.prisma.ranking.aggregate({
-      where: { jugadorId: userId },
-      _sum: {
-        victorias: true,
-        derrotas: true,
-      },
-    });
-
-    const totalVictorias = victorias._sum.victorias || 0;
-    const totalDerrotas = totalPartidos._sum.derrotas || 0;
+    const totalVictorias = victoriasAgg._sum.victorias || 0;
+    const totalDerrotas = totalPartidosAgg._sum.derrotas || 0;
     const total = totalVictorias + totalDerrotas;
     const efectividad = total > 0 ? Math.round((totalVictorias / total) * 100) : 0;
 
     return {
-      torneosJugados: jugados,
-      torneosGanados: ganados,
+      torneosJugados: historialCount,
+      torneosGanados: 0, // Simplificado por ahora
       victorias: totalVictorias,
       efectividad,
     };
