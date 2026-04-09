@@ -2419,8 +2419,7 @@ model WhatsappTemplate {
   waTemplateName  String?   @map("wa_template_name") // Nombre en WhatsApp
   activo          Boolean   @default(true)
   descripcion     String?
-  ejemplo         String?   @db.Text // Ejemplo completo del mensaje
-  ejemplosVariables Json?    @map("ejemplos_variables") // { "nombre": "Juan", "cancha": "Cancha 1" }
+  ejemplo         String?   @db.Text
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   
