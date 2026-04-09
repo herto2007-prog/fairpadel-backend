@@ -8,16 +8,19 @@ import { AdminBracketController } from './admin-bracket.controller';
 import { AdminAuditoriaController } from './admin-auditoria.controller';
 import { AdminSedesController } from './admin-sedes.controller';
 import { AdminSuscripcionesController } from './admin-suscripciones.controller';
+import { WhatsAppAdminController } from './whatsapp-admin.controller';
 import { SedesAdminService } from '../sedes/sedes-admin.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { BracketModule } from '../bracket';
 import { ProgramacionModule } from '../programacion';
 import { DemoModule } from '../demo/demo.module';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 
 @Module({
-  imports: [PrismaModule, BracketModule, DemoModule, ProgramacionModule],
+  imports: [PrismaModule, BracketModule, DemoModule, ProgramacionModule, WhatsAppModule],
   controllers: [
     // Orden importante: rutas más específicas primero
+    WhatsAppAdminController,
     AdminSuscripcionesController,
     AdminSedesController,
     AdminCategoriasController,

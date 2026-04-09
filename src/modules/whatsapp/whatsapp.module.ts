@@ -28,6 +28,6 @@ import { PrismaModule } from '../../prisma/prisma.module';
     WhatsAppConsentService,
     WhatsAppWebhookService,
   ],
-  exports: [WhatsAppService],
+  exports: [WhatsAppService, WhatsAppMessagingService],
 })
 export class WhatsAppModule {}
