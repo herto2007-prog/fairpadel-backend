@@ -30,9 +30,11 @@ export class JugadoresController {
    */
   @Get('buscar')
   @Public()
-  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
   @Header('Expires', '0')
+  @Header('CDN-Cache-Control', 'no-store')
+  @Header('Cloudflare-CDN-Cache-Control', 'no-store')
   async buscarJugadores(@Query() query: BuscarJugadoresDto) {
     console.log('🔥 ENDPOINT /users/buscar LLAMADO');
     console.log('Query params:', query);
@@ -58,9 +60,10 @@ export class JugadoresController {
    */
   @Get('filtros/datos')
   @Public()
-  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
   @Header('Expires', '0')
+  @Header('CDN-Cache-Control', 'no-store')
   async getDatosFiltros() {
     const data = await this.jugadoresService.getDatosFiltros();
 
@@ -76,6 +79,8 @@ export class JugadoresController {
    */
   @Get('debug')
   @Public()
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('CDN-Cache-Control', 'no-store')
   async debugUsuarios() {
     // Contar todos los usuarios por estado
     const todos = await this.prisma.user.count();

@@ -1,6 +1,7 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { APP_PIPE } from '@nestjs/core';
 import { JugadoresController } from './controllers/jugadores.controller';
+import { ComunidadController } from './controllers/comunidad.controller';
 import { JugadoresService } from './services/jugadores.service';
 import { SeguimientoController } from './controllers/seguimiento.controller';
 import { SeguimientoService } from './services/seguimiento.service';
@@ -8,7 +9,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule],
-  controllers: [JugadoresController, SeguimientoController],
+  controllers: [JugadoresController, ComunidadController, SeguimientoController],
   providers: [
     JugadoresService,
     SeguimientoService,
