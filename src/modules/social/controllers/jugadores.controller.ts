@@ -35,7 +35,7 @@ export class JugadoresController {
   @UsePipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: true,
+      forbidNonWhitelisted: false, // Permitir parametros extra como _t (cache buster)
       transform: true,
     }),
   )
