@@ -24,15 +24,16 @@ export class JugadoresController {
   @Header('Pragma', 'no-cache')
   @Header('Expires', '0')
   async buscarJugadores(
-    @Query(new ValidationPipe({ transform: true })) query: BuscarJugadoresDto,
+    @Query() query: any,
   ) {
     console.log('🔥 ENDPOINT /users/buscar LLAMADO');
+    console.log('Query params:', query);
     const result = await this.jugadoresService.buscarJugadores({
       q: query.q,
       ciudad: query.ciudad,
       categoriaId: query.categoriaId,
-      page: query.page || 1,
-      limit: query.limit || 20,
+      page: parseInt(query.page) || 1,
+      limit: parseInt(query.limit) || 20,
     });
 
     return {
