@@ -310,9 +310,15 @@ export class PerfilService {
     return logros;
   }
 
-  private calcularEdad(fechaNacimiento: string): number {
+  private calcularEdad(fechaNacimiento: string): number | null {
     // FIX: fechaNacimiento es String YYYY-MM-DD
     const [year, month, day] = fechaNacimiento.split('-').map(Number);
+    
+    // Validar que la fecha sea razonable
+    if (!year || year < 1920 || year > new Date().getFullYear()) {
+      return null; // Fecha inválida o muy antigua
+    }
+    
     const fechaNac = new Date(year, month - 1, day);
     const hoy = new Date();
     let edad = hoy.getFullYear() - fechaNac.getFullYear();
@@ -320,6 +326,12 @@ export class PerfilService {
     if (mes < 0 || (mes === 0 && hoy.getDate() < fechaNac.getDate())) {
       edad--;
     }
+    
+    // Validar que la edad sea razonable (0-100 años)
+    if (edad < 0 || edad > 100) {
+      return null;
+    }
+    
     return edad;
   }
 
