@@ -32,4 +32,9 @@ export class BuscarJugadoresDto {
   @IsInt()
   @Min(1)
   limit?: number = 20;
+
+  // Cache buster (ignorado por el servicio, pero permitido por el pipe)
+  @IsOptional()
+  @IsString()
+  _t?: string;
 }
