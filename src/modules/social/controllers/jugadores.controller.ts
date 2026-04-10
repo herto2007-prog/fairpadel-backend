@@ -7,10 +7,14 @@ import {
 import { JugadoresService } from '../services/jugadores.service';
 import { BuscarJugadoresDto } from '../dto/buscar-jugadores.dto';
 import { Public } from '../../auth/decorators/public.decorator';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 @Controller('users')
 export class JugadoresController {
-  constructor(private readonly jugadoresService: JugadoresService) {}
+  constructor(
+    private readonly jugadoresService: JugadoresService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * GET /users/buscar
@@ -63,6 +67,35 @@ export class JugadoresController {
     return {
       success: true,
       data,
+    };
+  }
+
+  /**
+   * GET /users/debug
+   * Debug: Ver todos los usuarios sin filtros
+   */
+  @Get('debug')
+  @Public()
+  async debugUsuarios() {
+    // Contar todos los usuarios por estado
+    const todos = await this.prisma.user.count();
+    const activos = await this.prisma.user.count({ where: { estado: 'ACTIVO' } });
+    const noVerificados = await this.prisma.user.count({ where: { estado: 'NO_VERIFICADO' } });
+    const inactivos = await this.prisma.user.count({ where: { estado: 'INACTIVO' } });
+    const suspendidos = await this.prisma.user.count({ where: { estado: 'SUSPENDIDO' } });
+
+    // Traer 5 usuarios de ejemplo
+    const ejemplos = await this.prisma.user.findMany({
+      take: 5,
+      select: { id: true, nombre: true, apellido: true, estado: true, email: true },
+    });
+
+    return {
+      success: true,
+      data: {
+        conteos: { todos, activos, noVerificados, inactivos, suspendidos },
+        ejemplos,
+      },
     };
   }
 }
