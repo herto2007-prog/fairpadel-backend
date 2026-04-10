@@ -74,7 +74,9 @@ export class WhatsAppMessagingService {
       }
 
       // Preparar parámetros del template
-      const parameters = this.buildTemplateParameters(template.variables, variables);
+      // parametros es Json { contenido: string, variables: string[] }
+      const templateVars = (template.parametros as any)?.variables || [];
+      const parameters = this.buildTemplateParameters(templateVars, variables);
 
       // Construir payload para Meta API
       const payload = {
@@ -85,7 +87,7 @@ export class WhatsAppMessagingService {
         template: {
           name: template.waTemplateName,
           language: {
-            code: template.lenguaje || 'es',
+            code: template.idioma || 'es',
           },
           components: [
             {

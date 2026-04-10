@@ -20,7 +20,8 @@ export class NotificacionesWhatsAppService {
 
   /**
    * Notificar confirmación de reserva
-   * Plantilla: datos_reserva_ubicacion
+   * Plantilla: fairpadel_reserva_ok (2 variables: cancha, fecha)
+   * Nota: Eliminadas sede y hora para cumplir ratio variable:texto Meta 2026
    */
   async notificarReservaConfirmada(reservaId: string): Promise<void> {
     try {
@@ -38,18 +39,15 @@ export class NotificacionesWhatsAppService {
       const telefono = reserva.user.telefono;
       if (!telefono) return;
 
-      // Formatear fecha y hora
+      // Formatear fecha
       const fechaFormateada = this.formatearFecha(reserva.fecha);
-      const horaFormateada = this.formatearHora(reserva.horaInicio);
 
       await this.messagingService.sendTemplateMessage(
         telefono,
-        'reserva_ubicacion',
+        'reserva_confirmada', // nombre interno en DB
         {
-          '1': reserva.sedeCancha.sede.nombre,
-          '2': reserva.sedeCancha.nombre,
-          '3': fechaFormateada,
-          '4': horaFormateada,
+          '1': reserva.sedeCancha.nombre, // numero_cancha
+          '2': fechaFormateada, // fecha
         },
         reserva.user.id,
         'RESERVA'
@@ -63,7 +61,7 @@ export class NotificacionesWhatsAppService {
 
   /**
    * Notificar recordatorio 24h antes
-   * Plantilla: alerta_reserva_manana
+   * Plantilla: fairpadel_recordatorio_24h
    */
   async notificarRecordatorio24h(reservaId: string): Promise<void> {
     try {
@@ -85,7 +83,7 @@ export class NotificacionesWhatsAppService {
 
       await this.messagingService.sendTemplateMessage(
         telefono,
-        'reserva_recordatorio_24h',
+        'recordatorio_24h', // nombre interno en DB
         {
           '1': reserva.sedeCancha.sede.nombre,
           '2': horaFormateada,
@@ -102,7 +100,7 @@ export class NotificacionesWhatsAppService {
 
   /**
    * Notificar recordatorio 4h antes
-   * Plantilla: alerta_reserva_hoy
+   * Plantilla: fairpadel_recordatorio_4h
    */
   async notificarRecordatorio4h(reservaId: string): Promise<void> {
     try {
@@ -124,14 +122,14 @@ export class NotificacionesWhatsAppService {
 
       await this.messagingService.sendTemplateMessage(
         telefono,
-        'reserva_recordatorio_4h',
+        'recordatorio_4h', // nombre interno en DB
         {
           '1': reserva.sedeCancha.sede.nombre,
           '2': horaFormateada,
         },
         reserva.user.id,
         'RECORDATORIO'
-      );
+      )
 
       this.logger.log(`✅ Recordatorio 4h enviado a ${reserva.user.id}`);
     } catch (error) {
@@ -141,7 +139,7 @@ export class NotificacionesWhatsAppService {
 
   /**
    * Notificar inscripción a torneo
-   * Plantilla: torneo_inscripcion_registrada
+   * Plantilla: fairpadel_torneo_insc_ok
    */
   async notificarInscripcionTorneo(inscripcionId: string): Promise<void> {
     try {
@@ -164,7 +162,7 @@ export class NotificacionesWhatsAppService {
       if (user1 && this.puedeEnviarWhatsApp(user1) && user1.telefono) {
         await this.messagingService.sendTemplateMessage(
           user1.telefono,
-          'torneo_inscripcion',
+          'torneo_inscripcion_confirmada', // nombre interno en DB
           {
             '1': inscripcion.tournament.nombre,
             '2': inscripcion.category.nombre,
@@ -185,7 +183,7 @@ export class NotificacionesWhatsAppService {
         if (user2 && this.puedeEnviarWhatsApp(user2) && user2.telefono) {
           await this.messagingService.sendTemplateMessage(
             user2.telefono,
-            'torneo_inscripcion',
+            'torneo_inscripcion_confirmada', // nombre interno en DB
             {
               '1': inscripcion.tournament.nombre,
               '2': inscripcion.category.nombre,
@@ -203,7 +201,7 @@ export class NotificacionesWhatsAppService {
 
   /**
    * Notificar datos del partido (cuando se publica fixture)
-   * Plantilla: partido_fecha_ok
+   * Plantilla: fairpadel_torneo_fecha
    */
   async notificarDatosPartido(matchId: string): Promise<void> {
     try {
@@ -248,7 +246,7 @@ export class NotificacionesWhatsAppService {
 
           await this.messagingService.sendTemplateMessage(
             telefono,
-            'torneo_partido_fecha',
+            'torneo_fecha_partido', // nombre interno en DB
             {
               '1': fechaFormateada,
               '2': horaFormateada,
@@ -262,6 +260,134 @@ export class NotificacionesWhatsAppService {
       this.logger.log(`✅ Notificación de partido enviada para match ${matchId}`);
     } catch (error) {
       this.logger.error(`Error notificando partido ${matchId}:`, error);
+    }
+  }
+
+  /**
+   * Notificar pareja asignada en torneo
+   * Plantilla: fairpadel_torneo_pareja
+   */
+  async notificarParejaAsignada(inscripcionId: string): Promise<void> {
+    try {
+      const inscripcion = await this.prisma.inscripcion.findUnique({
+        where: { id: inscripcionId },
+        include: {
+          tournament: true,
+          category: true,
+        },
+      });
+
+      if (!inscripcion) return;
+
+      // Notificar a ambos jugadores
+      const jugadoresIds = [inscripcion.jugador1Id, inscripcion.jugador2Id].filter(Boolean) as string[];
+
+      for (const jugadorId of jugadoresIds) {
+        const user = await this.prisma.user.findUnique({
+          where: { id: jugadorId },
+          select: { id: true, telefono: true, consentWhatsappStatus: true },
+        });
+
+        if (!user || !this.puedeEnviarWhatsApp(user) || !user.telefono) continue;
+
+        // Obtener nombre de la pareja (el otro jugador)
+        const parejaId = jugadorId === inscripcion.jugador1Id ? inscripcion.jugador2Id : inscripcion.jugador1Id;
+        let nombrePareja = 'Por definir';
+        
+        if (parejaId) {
+          const pareja = await this.prisma.jugadorDemo.findUnique({
+            where: { id: parejaId },
+            select: { nombre: true, apellido: true },
+          });
+          if (pareja) {
+            nombrePareja = `${pareja.nombre} ${pareja.apellido}`;
+          }
+        }
+
+        await this.messagingService.sendTemplateMessage(
+          user.telefono,
+          'torneo_pareja_asignada',
+          {
+            '1': nombrePareja,
+            '2': inscripcion.category.nombre,
+          },
+          user.id,
+          'TORNEO'
+        );
+        this.logger.log(`✅ Notificación de pareja enviada a ${user.id}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error notificando pareja ${inscripcionId}:`, error);
+    }
+  }
+
+  /**
+   * Notificar rival asignado para un partido
+   * Plantilla: fairpadel_torneo_rival
+   */
+  async notificarRivalAsignado(matchId: string): Promise<void> {
+    try {
+      const match = await this.prisma.match.findUnique({
+        where: { id: matchId },
+        include: {
+          tournament: true,
+          inscripcion1: true,
+          inscripcion2: true,
+        },
+      });
+
+      if (!match || !match.tournament) return;
+
+      // Obtener nombres de rivales
+      const getRivalName = async (inscripcionId: string | null) => {
+        if (!inscripcionId) return 'Por definir';
+        const insc = await this.prisma.inscripcion.findUnique({
+          where: { id: inscripcionId },
+          include: { jugador1: true },
+        });
+        return insc?.jugador1 ? `${insc.jugador1.nombre} ${insc.jugador1.apellido}` : 'Por definir';
+      };
+
+      const rival1Nombre = await getRivalName(match.inscripcion2Id);
+      const rival2Nombre = await getRivalName(match.inscripcion1Id);
+
+      // Notificar a ambas inscripciones
+      const inscripciones = [
+        { id: match.inscripcion1Id, rivalNombre: rival1Nombre },
+        { id: match.inscripcion2Id, rivalNombre: rival2Nombre },
+      ].filter(i => i.id) as { id: string; rivalNombre: string }[];
+
+      for (const { id: inscripcionId, rivalNombre } of inscripciones) {
+        const inscripcion = await this.prisma.inscripcion.findUnique({
+          where: { id: inscripcionId },
+        });
+        if (!inscripcion) continue;
+
+        const jugadoresIds = [inscripcion.jugador1Id, inscripcion.jugador2Id].filter(Boolean) as string[];
+
+        for (const jugadorId of jugadoresIds) {
+          const user = await this.prisma.user.findUnique({
+            where: { id: jugadorId },
+            select: { id: true, telefono: true, consentWhatsappStatus: true },
+          });
+
+          if (!user || !this.puedeEnviarWhatsApp(user) || !user.telefono) continue;
+
+          await this.messagingService.sendTemplateMessage(
+            user.telefono,
+            'torneo_rival_asignado',
+            {
+              '1': rivalNombre,
+              '2': match.tournament.nombre,
+            },
+            user.id,
+            'TORNEO'
+          );
+          this.logger.log(`✅ Notificación de rival enviada a ${user.id}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Error notificando rival ${matchId}:`, error);
     }
   }
 

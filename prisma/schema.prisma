@@ -2408,22 +2408,21 @@ model WhatsappMensaje {
 }
 
 model WhatsappTemplate {
-  id              String    @id @default(uuid())
-  nombre          String    @unique
-  categoria       String    // SISTEMA, RESERVA, RECORDATORIO, TORNEO
-  lenguaje        String    @default("es")
-  contenido       String    @db.Text
-  variables       String[]  // Lista de variables requeridas: ["nombre", "cancha", "fecha"]
-  aprobado        Boolean   @default(false)
-  waTemplateId    String?   @map("wa_template_id") // ID asignado por Meta
-  waTemplateName  String?   @map("wa_template_name") // Nombre en WhatsApp
-  activo          Boolean   @default(true)
-  descripcion     String?
-  ejemplo         String?   @db.Text
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id                String   @id @default(uuid())
+  nombre            String   @unique
+  categoria         String   // UTILITY, MARKETING, AUTHENTICATION
+  waTemplateName    String?  @map("wa_template_name") // Nombre en WhatsApp (fairpadel_*)
+  descripcion       String?
+  parametros        Json?    // { contenido: string, variables: string[] }
+  idioma            String   @default("es") @map("idioma")
+  activo            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  // Campos legacy (mantenidos para compatibilidad pero no usados)
+  lenguaje          String?  @default("es")
+  ejemplosVariables Json?    @map("ejemplos_variables")
   
   @@index([categoria])
-  @@index([aprobado, activo])
+  @@index([activo])
   @@map("whatsapp_templates")
 }

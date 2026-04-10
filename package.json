@@ -22,7 +22,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "seed": "ts-node prisma/seed.ts && ts-node prisma/seed-demo.ts"
+    "seed": "ts-node prisma/seed.ts && ts-node prisma/seed-demo.ts",
+    "whatsapp:templates": "ts-node scripts/whatsapp-template-manager.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
@@ -57,6 +58,7 @@
     "@types/passport-jwt": "^3.0.13",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",
+    "dotenv": "^17.4.1",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.2",

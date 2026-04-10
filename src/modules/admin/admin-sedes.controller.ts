@@ -31,7 +31,8 @@ export class AdminSedesController {
    */
   @Get()
   async obtenerSedes() {
-    return this.sedesAdminService.obtenerSedesConDuenos();
+    const sedes = await this.sedesAdminService.obtenerSedesConDuenos();
+    return { success: true, sedes };
   }
 
   /**
