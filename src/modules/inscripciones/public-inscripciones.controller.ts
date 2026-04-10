@@ -123,24 +123,41 @@ export class PublicInscripcionesController {
       estado: 'ACTIVO',
     };
 
+    // Si se proporciona documento explícitamente, buscar por documento
     if (documento) {
       where.documento = { contains: documento, mode: 'insensitive' };
-    } else {
-      // Búsqueda por nombre/apellido
-      const OR: any[] = [];
-      if (nombre) {
+    } else if (nombre) {
+      // Detectar si el nombre parece un documento (solo números o números con guiones/puntos)
+      const pareceDocumento = /^[\d\.\-]+$/.test(nombre.trim());
+      
+      if (pareceDocumento) {
+        // Buscar por documento O nombre/apellido
+        where.OR = [
+          { documento: { contains: nombre, mode: 'insensitive' } },
+          { nombre: { contains: nombre, mode: 'insensitive' } },
+          { apellido: { contains: nombre, mode: 'insensitive' } },
+        ];
+      } else {
+        // Búsqueda por nombre/apellido
+        const OR: any[] = [];
         OR.push(
           { nombre: { contains: nombre, mode: 'insensitive' } },
           { apellido: { contains: nombre, mode: 'insensitive' } }
         );
+        if (apellido) {
+          OR.push(
+            { nombre: { contains: apellido, mode: 'insensitive' } },
+            { apellido: { contains: apellido, mode: 'insensitive' } }
+          );
+        }
+        if (OR.length > 0) where.OR = OR;
       }
-      if (apellido) {
-        OR.push(
-          { nombre: { contains: apellido, mode: 'insensitive' } },
-          { apellido: { contains: apellido, mode: 'insensitive' } }
-        );
-      }
-      if (OR.length > 0) where.OR = OR;
+    } else if (apellido) {
+      // Solo apellido proporcionado
+      where.OR = [
+        { nombre: { contains: apellido, mode: 'insensitive' } },
+        { apellido: { contains: apellido, mode: 'insensitive' } }
+      ];
     }
 
     const jugadores = await this.prisma.user.findMany({
