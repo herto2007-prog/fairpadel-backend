@@ -2,11 +2,7 @@ import {
   Controller,
   Get,
   Query,
-  ValidationPipe,
   Header,
-  UsePipes,
-  ParseIntPipe,
-  DefaultValuePipe,
 } from '@nestjs/common';
 import { JugadoresService } from '../services/jugadores.service';
 import { BuscarJugadoresDto } from '../dto/buscar-jugadores.dto';
@@ -26,19 +22,13 @@ export class JugadoresController {
    * - categoriaId: string
    * - page: number (default: 1)
    * - limit: number (default: 20)
+   * - _t: string (cache buster, ignorado)
    */
   @Get('buscar')
   @Public()
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
   @Header('Pragma', 'no-cache')
   @Header('Expires', '0')
-  @UsePipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: false, // Permitir parametros extra como _t (cache buster)
-      transform: true,
-    }),
-  )
   async buscarJugadores(@Query() query: BuscarJugadoresDto) {
     console.log('🔥 ENDPOINT /users/buscar LLAMADO');
     console.log('Query params:', query);
