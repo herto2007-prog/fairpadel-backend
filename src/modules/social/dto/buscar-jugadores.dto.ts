@@ -1,17 +1,24 @@
 import { IsOptional, IsString, IsInt, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
+/**
+ * DTO para buscar jugadores con filtros
+ * Siguiendo regla #4: Strings vacíos se transforman a undefined
+ */
 export class BuscarJugadoresDto {
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   q?: string; // Búsqueda por nombre/apellido
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   ciudad?: string;
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => (value === '' ? undefined : value))
   categoriaId?: string;
 
   @IsOptional()

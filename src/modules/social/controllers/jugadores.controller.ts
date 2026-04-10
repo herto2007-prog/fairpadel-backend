@@ -1,4 +1,13 @@
-import { Controller, Get, Query, ValidationPipe, Header } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  ValidationPipe,
+  Header,
+  UsePipes,
+  ParseIntPipe,
+  DefaultValuePipe,
+} from '@nestjs/common';
 import { JugadoresService } from '../services/jugadores.service';
 import { BuscarJugadoresDto } from '../dto/buscar-jugadores.dto';
 import { Public } from '../../auth/decorators/public.decorator';
@@ -10,7 +19,7 @@ export class JugadoresController {
   /**
    * GET /users/buscar
    * Buscar jugadores con filtros (público)
-   * 
+   *
    * Query params:
    * - q: string (búsqueda por nombre/apellido)
    * - ciudad: string
@@ -23,17 +32,23 @@ export class JugadoresController {
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
   @Header('Pragma', 'no-cache')
   @Header('Expires', '0')
-  async buscarJugadores(
-    @Query() query: any,
-  ) {
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
+  async buscarJugadores(@Query() query: BuscarJugadoresDto) {
     console.log('🔥 ENDPOINT /users/buscar LLAMADO');
     console.log('Query params:', query);
+
     const result = await this.jugadoresService.buscarJugadores({
       q: query.q,
       ciudad: query.ciudad,
       categoriaId: query.categoriaId,
-      page: parseInt(query.page) || 1,
-      limit: parseInt(query.limit) || 20,
+      page: query.page || 1,
+      limit: query.limit || 20,
     });
 
     return {
@@ -54,7 +69,7 @@ export class JugadoresController {
   @Header('Expires', '0')
   async getDatosFiltros() {
     const data = await this.jugadoresService.getDatosFiltros();
-    
+
     return {
       success: true,
       data,

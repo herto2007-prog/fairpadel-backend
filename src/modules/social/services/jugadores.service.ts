@@ -163,11 +163,11 @@ export class JugadoresService {
 
   /**
    * Calcular estadísticas básicas del jugador
-   * TODO: Optimizar con batch queries
+   * Optimizado con batch queries
    */
   private async getStatsJugador(userId: string) {
     // Optimización: usar Promise.all para paralelizar queries
-    const [historialCount, victoriasAgg, totalPartidosAgg] = await Promise.all([
+    const [historialCount, victoriasAgg, totalPartidosAgg, torneosGanados] = await Promise.all([
       this.prisma.historialPuntos.count({ where: { jugadorId: userId } }),
       this.prisma.ranking.aggregate({
         where: { jugadorId: userId },
@@ -176,6 +176,13 @@ export class JugadoresService {
       this.prisma.ranking.aggregate({
         where: { jugadorId: userId },
         _sum: { victorias: true, derrotas: true },
+      }),
+      // Contar torneos ganados (posición = "1ro")
+      this.prisma.historialPuntos.count({
+        where: {
+          jugadorId: userId,
+          posicionFinal: '1ro',
+        },
       }),
     ]);
 
@@ -186,7 +193,7 @@ export class JugadoresService {
 
     return {
       torneosJugados: historialCount,
-      torneosGanados: 0, // Simplificado por ahora
+      torneosGanados: torneosGanados,
       victorias: totalVictorias,
       efectividad,
     };
