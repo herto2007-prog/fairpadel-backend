@@ -227,6 +227,7 @@ export class AdminController {
       email: user.email,
       documento: user.documento,
       estado: user.estado,
+      fotoUrl: user.fotoUrl,
       roles: user.roles.map(r => r.role.nombre),
       categoriaActual: user.categoriaActual ? { nombre: user.categoriaActual.nombre } : null,
     }));
