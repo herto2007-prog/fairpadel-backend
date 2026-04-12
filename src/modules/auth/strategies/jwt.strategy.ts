@@ -51,7 +51,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       apellido: user.apellido,
       fotoUrl: user.fotoUrl,
       genero: user.genero,
-      categoriaActual: user.categoriaActual,
+      categoria: user.categoriaActual,
       roles: user.roles.map((ur) => ur.role.nombre),
     };
   }
