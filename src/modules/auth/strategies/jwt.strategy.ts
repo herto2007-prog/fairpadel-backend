@@ -31,6 +31,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             role: true,
           },
         },
+        categoriaActual: true,
       },
     });
 
@@ -49,6 +50,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       nombre: user.nombre,
       apellido: user.apellido,
       fotoUrl: user.fotoUrl,
+      genero: user.genero,
+      categoriaActual: user.categoriaActual,
       roles: user.roles.map((ur) => ur.role.nombre),
     };
   }
