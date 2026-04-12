@@ -45,6 +45,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     return {
       userId: user.id,
+      id: user.id,  // Para compatibilidad con @GetUser() tipo User
       email: user.email,
       documento: user.documento,
       nombre: user.nombre,
