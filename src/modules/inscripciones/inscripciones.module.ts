@@ -5,9 +5,10 @@ import { PublicInscripcionesController } from './public-inscripciones.controller
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
+import { EmailModule } from '../../email/email.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, NotificacionesModule],
+  imports: [PrismaModule, AuthModule, NotificacionesModule, EmailModule],
   controllers: [InscripcionesController, PublicInscripcionesController],
   providers: [InscripcionesService],
   exports: [InscripcionesService],
