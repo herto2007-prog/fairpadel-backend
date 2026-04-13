@@ -80,6 +80,18 @@ class FiltrosSlotsDto {
   @IsOptional()
   @IsString()
   fecha?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  soloOcupados?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  soloLibres?: boolean;
+
+  @IsOptional()
+  @IsString()
+  canchaId?: string;
 }
 
 // DTO para cambiar estado de inscripción (emergencia)
