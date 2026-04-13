@@ -16,7 +16,8 @@ import { WhatsAppService } from '../whatsapp/services/whatsapp.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
-import { UserStatus, WhatsappConsentStatus } from '@prisma/client';
+import { UserStatus, WhatsappConsentStatus, InscripcionEstado } from '@prisma/client';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 
 @Injectable()
 export class AuthService {
@@ -28,6 +29,7 @@ export class AuthService {
     private configService: ConfigService,
     private emailService: EmailService,
     private whatsAppService: WhatsAppService,
+    private notificacionesService: NotificacionesService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -114,6 +116,11 @@ export class AuthService {
     // Create verification token (async - no bloquea la respuesta)
     this.createVerificationToken(user.id, user.email, user.nombre).catch(err => {
       this.logger.error('Error enviando email de verificación:', err);
+    });
+
+    // Vincular inscripciones pendientes donde este usuario fue invitado (flujo normal)
+    this.vincularInscripcionesPendientes(user).catch(err => {
+      this.logger.error('Error vinculando inscripciones pendientes:', err);
     });
 
     // Generate token (using documento as identifier)
@@ -246,6 +253,12 @@ export class AuthService {
       where: { id: verification.id },
     });
 
+    // También vincular inscripciones pendientes al verificar email
+    // (por si invitaron al usuario mientras tenía la cuenta no verificada)
+    this.vincularInscripcionesPendientes(verification.user).catch(err => {
+      this.logger.error('Error vinculando inscripciones pendientes en verifyEmail:', err);
+    });
+
     this.logger.log(`Email verificado para usuario ${verification.userId}`);
 
     return { message: 'Email verificado exitosamente' };
@@ -362,6 +375,97 @@ export class AuthService {
     this.logger.log(`Contraseña actualizada para usuario ${reset.userId}`);
 
     return { message: 'Contraseña actualizada exitosamente' };
+  }
+
+  /**
+   * Busca inscripciones PENDIENTE_CONFIRMACION que coincidan con el email o documento
+   * del usuario recién registrado/verificado, las confirma automáticamente y notifica.
+   */
+  private async vincularInscripcionesPendientes(user: {
+    id: string;
+    email: string;
+    documento: string;
+    nombre: string;
+    apellido: string;
+  }): Promise<void> {
+    const inscripcionesPendientes = await this.prisma.inscripcion.findMany({
+      where: {
+        estado: InscripcionEstado.PENDIENTE_CONFIRMACION,
+        jugador2Id: null,
+        OR: [
+          { jugador2Documento: user.documento },
+          { jugador2Email: user.email },
+        ],
+      },
+      include: {
+        jugador1: { select: { id: true, nombre: true, apellido: true } },
+        tournament: { select: { nombre: true } },
+      },
+    });
+
+    if (inscripcionesPendientes.length === 0) return;
+
+    for (const inscripcion of inscripcionesPendientes) {
+      try {
+        // Actualizar inscripción: vincular jugador2 y confirmar
+        await this.prisma.inscripcion.update({
+          where: { id: inscripcion.id },
+          data: {
+            jugador2Id: user.id,
+            estado: InscripcionEstado.CONFIRMADA,
+          },
+        });
+
+        // Marcar invitación como aceptada (si existe)
+        await this.prisma.invitacionJugador.updateMany({
+          where: {
+            inscripcionId: inscripcion.id,
+            estado: 'PENDIENTE',
+          },
+          data: {
+            estado: 'ACEPTADA',
+            respondedAt: new Date(),
+          },
+        });
+
+        // Notificación interna al jugador 1
+        if (inscripcion.jugador1) {
+          this.prisma.notificacion
+            .create({
+              data: {
+                userId: inscripcion.jugador1.id,
+                tipo: 'INSCRIPCION',
+                titulo: '¡Tu pareja se registró!',
+                contenido: `${user.nombre} ${user.apellido} creó su cuenta y confirmó ser tu pareja en "${inscripcion.tournament.nombre}"`,
+                enlace: `/inscripciones/${inscripcion.id}`,
+              },
+            })
+            .catch((err) => {
+              this.logger.error(
+                `Error creando notificación interna para inscripción ${inscripcion.id}:`,
+                err,
+              );
+            });
+        }
+
+        // Notificación por email a ambos jugadores
+        this.notificacionesService.notificarInscripcionConfirmada(inscripcion.id).catch((err) => {
+          this.logger.error(
+            `Error notificando confirmación de inscripción ${inscripcion.id}:`,
+            err,
+          );
+        });
+      } catch (error) {
+        this.logger.error(
+          `Error procesando inscripción pendiente ${inscripcion.id} para usuario ${user.id}:`,
+          error,
+        );
+      }
+    }
+
+    this.logger.log(
+      `Vinculadas ${inscripcionesPendientes.length} inscripciones pendientes al usuario ${user.id}`,
+    );
   }
 
   private generateToken(userId: string, documento: string): string {

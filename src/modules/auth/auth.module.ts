@@ -9,6 +9,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { EmailModule } from '../../email/email.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     EmailModule,
     WhatsAppModule,
+    NotificacionesModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
