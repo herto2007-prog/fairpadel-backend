@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Delete,
   Param,
   Body,
@@ -79,18 +80,12 @@ class FiltrosSlotsDto {
   @IsOptional()
   @IsString()
   fecha?: string;
+}
 
-  @IsOptional()
-  @Transform(({ value }) => value === 'true')
-  soloOcupados?: boolean;
-
-  @IsOptional()
-  @Transform(({ value }) => value === 'true')
-  soloLibres?: boolean;
-
-  @IsOptional()
-  @IsString()
-  canchaId?: string;
+// DTO para cambiar estado de inscripción (emergencia)
+class CambiarEstadoInscripcionDto {
+  @IsEnum(InscripcionEstado)
+  estado: InscripcionEstado;
 }
 
 // DTO para asignar cancha a partido
@@ -943,6 +938,58 @@ export class AdminAuditoriaController {
       message: 'Inscripción eliminada correctamente',
       data: {
         inscripcionId,
+        pareja: `${inscripcion.jugador1?.nombre} ${inscripcion.jugador1?.apellido} / ${inscripcion.jugador2?.nombre || 'Pendiente'} ${inscripcion.jugador2?.apellido || ''}`,
+        torneo: inscripcion.tournament.nombre,
+        categoria: inscripcion.category.nombre,
+      },
+    };
+  }
+
+  /**
+   * PATCH /admin/auditoria/inscripciones/:id/estado
+   * Cambiar el estado de una inscripción (modo emergencia)
+   */
+  @Patch('inscripciones/:id/estado')
+  async cambiarEstadoInscripcion(
+    @Param('id') inscripcionId: string,
+    @Body() dto: CambiarEstadoInscripcionDto,
+  ) {
+    // Verificar que la inscripción existe
+    const inscripcion = await this.prisma.inscripcion.findUnique({
+      where: { id: inscripcionId },
+      include: {
+        jugador1: { select: { nombre: true, apellido: true } },
+        jugador2: { select: { nombre: true, apellido: true } },
+        tournament: { select: { nombre: true } },
+        category: { select: { nombre: true } },
+      },
+    });
+
+    if (!inscripcion) {
+      throw new NotFoundException('Inscripción no encontrada');
+    }
+
+    const estadoAnterior = inscripcion.estado;
+
+    // Actualizar el estado
+    const inscripcionActualizada = await this.prisma.inscripcion.update({
+      where: { id: inscripcionId },
+      data: { estado: dto.estado },
+      include: {
+        jugador1: { select: { nombre: true, apellido: true, email: true } },
+        jugador2: { select: { nombre: true, apellido: true, email: true } },
+        tournament: { select: { nombre: true } },
+        category: { select: { nombre: true } },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Estado de inscripción actualizado correctamente',
+      data: {
+        inscripcionId,
+        estadoAnterior,
+        estadoNuevo: dto.estado,
         pareja: `${inscripcion.jugador1?.nombre} ${inscripcion.jugador1?.apellido} / ${inscripcion.jugador2?.nombre || 'Pendiente'} ${inscripcion.jugador2?.apellido || ''}`,
         torneo: inscripcion.tournament.nombre,
         categoria: inscripcion.category.nombre,
