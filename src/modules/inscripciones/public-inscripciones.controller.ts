@@ -551,8 +551,8 @@ export class PublicInscripcionesController {
       where: { id: inscripcionId },
       data: {
         jugador2Id: user.id,
-        estado: InscripcionEstado.PENDIENTE_PAGO,
-      },
+        estado: InscripcionEstado.CONFIRMADA,
+      }
       include: {
         tournament: true,
         category: true,
