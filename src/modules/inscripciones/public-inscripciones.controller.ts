@@ -122,7 +122,7 @@ export class PublicInscripcionesController {
     // Construir where dinámico
     const where: any = {
       id: { not: user.id }, // Excluir al usuario actual
-      estado: 'ACTIVO',
+      estado: { in: ['ACTIVO', 'NO_VERIFICADO'] }, // Incluir usuarios activos y no verificados
     };
 
     // Si se proporciona documento explícitamente, buscar por documento
