@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Delete,
   Param,
   Body,
   Query,
@@ -893,6 +894,58 @@ export class AdminAuditoriaController {
           cancha: cancha.sedeCancha?.nombre || 'Cancha',
           sede: cancha.sedeCancha?.sede?.nombre || '',
         },
+      },
+    };
+  }
+
+  /**
+   * DELETE /admin/auditoria/inscripciones/:id
+   * Elimina una inscripción del torneo
+   */
+  @Delete('inscripciones/:id')
+  async eliminarInscripcion(
+    @Param('id') inscripcionId: string,
+  ) {
+    // Verificar que la inscripción existe
+    const inscripcion = await this.prisma.inscripcion.findUnique({
+      where: { id: inscripcionId },
+      include: {
+        jugador1: { select: { nombre: true, apellido: true } },
+        jugador2: { select: { nombre: true, apellido: true } },
+        tournament: { select: { nombre: true } },
+        category: { select: { nombre: true } },
+        partidosComoP1: { select: { id: true } },
+        partidosComoP2: { select: { id: true } },
+      },
+    });
+
+    if (!inscripcion) {
+      throw new NotFoundException('Inscripción no encontrada');
+    }
+
+    // Verificar si tiene partidos asociados
+    const tienePartidos = inscripcion.partidosComoP1.length > 0 || inscripcion.partidosComoP2.length > 0;
+    
+    if (tienePartidos) {
+      throw new BadRequestException(
+        'No se puede eliminar la inscripción porque tiene partidos asignados. ' +
+        'Primero debe eliminar los partidos del bracket.'
+      );
+    }
+
+    // Eliminar la inscripción
+    await this.prisma.inscripcion.delete({
+      where: { id: inscripcionId },
+    });
+
+    return {
+      success: true,
+      message: 'Inscripción eliminada correctamente',
+      data: {
+        inscripcionId,
+        pareja: `${inscripcion.jugador1?.nombre} ${inscripcion.jugador1?.apellido} / ${inscripcion.jugador2?.nombre || 'Pendiente'} ${inscripcion.jugador2?.apellido || ''}`,
+        torneo: inscripcion.tournament.nombre,
+        categoria: inscripcion.category.nombre,
       },
     };
   }
