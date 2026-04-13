@@ -348,7 +348,7 @@ export class PublicInscripcionesController {
         throw new BadRequestException('Tu pareja ya está inscrita en este torneo');
       }
 
-      // Crear inscripción confirmada
+      // Crear inscripción confirmada (ambos jugadores registrados)
       inscripcion = await this.prisma.inscripcion.create({
         data: {
           tournamentId,
@@ -358,7 +358,7 @@ export class PublicInscripcionesController {
           jugador2Documento: jugador2.documento,
           jugador2Email: jugador2.email,
           modoPago: modoPago || 'COMPLETO',
-          estado: InscripcionEstado.PENDIENTE_PAGO,
+          estado: InscripcionEstado.CONFIRMADA,
         },
         include: {
           tournament: true,
@@ -451,7 +451,7 @@ export class PublicInscripcionesController {
       success: true,
       message: requiereInvitacion
         ? 'Inscripción creada. Tu pareja recibirá una invitación para registrarse.'
-        : 'Inscripción creada exitosamente',
+        : '¡Inscripción confirmada! Tu lugar está reservado.'
       inscripcion: {
         id: inscripcion.id,
         estado: inscripcion.estado,
@@ -735,26 +735,40 @@ export class PublicInscripcionesController {
   }
 
   private async notificarInscripcionJugador1(inscripcion: any, jugador1: User) {
+    const estaConfirmada = inscripcion.estado === InscripcionEstado.CONFIRMADA;
+    
     // Crear notificación en sistema
     await this.prisma.notificacion.create({
       data: {
         userId: jugador1.id,
         tipo: 'INSCRIPCION',
-        titulo: '¡Inscripción realizada!',
+        titulo: estaConfirmada ? '¡Inscripción confirmada!' : '¡Inscripción realizada!',
         contenido: `Te inscribiste exitosamente en "${inscripcion.tournament.nombre}" - ${inscripcion.category.nombre}`,
         enlace: `/inscripciones/${inscripcion.id}`,
       },
     });
 
-    // Enviar email de confirmación
+    // Enviar email según el estado
     try {
-      await this.emailService.sendInscripcionPendientePago(
-        jugador1.email,
-        jugador1.nombre,
-        inscripcion.tournament.nombre,
-        inscripcion.category.nombre,
-        inscripcion.tournament.costoInscripcion?.toString() || '0',
-      );
+      if (estaConfirmada) {
+        // Inscripción confirmada automáticamente (pareja registrada)
+        await this.emailService.sendInscripcionConfirmada(
+          jugador1.email,
+          jugador1.nombre,
+          inscripcion.tournament.nombre,
+          inscripcion.category.nombre,
+          inscripcion.tournament.fechaSorteo?.toString() || 'Por definir',
+        );
+      } else {
+        // Inscripción pendiente (pareja no registrada)
+        await this.emailService.sendInscripcionPendientePago(
+          jugador1.email,
+          jugador1.nombre,
+          inscripcion.tournament.nombre,
+          inscripcion.category.nombre,
+          inscripcion.tournament.costoInscripcion?.toString() || '0',
+        );
+      }
     } catch (error) {
       // Silenciar error de email - no crítico
       console.log('Error enviando email de inscripción:', error);
