@@ -340,6 +340,65 @@ export class EmailService {
   }
 
   /**
+   * Envía email de inscripción pendiente de pago
+   */
+  async sendInscripcionPendientePago(
+    to: string,
+    nombre: string,
+    torneoNombre: string,
+    categoria: string,
+    costo: string,
+  ): Promise<void> {
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #df2531;">¡Inscripción realizada!</h2>
+        <p>Hola ${nombre},</p>
+        <p>Tu inscripción en el torneo <strong>${torneoNombre}</strong> ha sido registrada exitosamente.</p>
+        
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p><strong>Detalles:</strong></p>
+          <ul>
+            <li><strong>Torneo:</strong> ${torneoNombre}</li>
+            <li><strong>Categoría:</strong> ${categoria}</li>
+            <li><strong>Costo:</strong> Gs. ${costo}</li>
+          </ul>
+        </div>
+        
+        <p><strong>Próximos pasos:</strong></p>
+        <p>El organizador se pondrá en contacto contigo para coordinar el pago de la inscripción.</p>
+        
+        <p style="margin-top: 30px; color: #666; font-size: 12px;">
+          Este es un mensaje automático de FairPadel.
+        </p>
+      </div>
+    `;
+    
+    try {
+      if (!this.resend) {
+        this.logger.warn(`[MODO DESARROLLO] Inscripción pendiente de pago para ${to}`);
+        return;
+      }
+
+      const { data, error } = await this.resend.emails.send({
+        from: this.getFromEmail(),
+        to: [to],
+        subject: `✅ Inscripción registrada - ${torneoNombre}`,
+        html,
+      });
+
+      if (error) {
+        this.logger.error('Error enviando email:', error);
+        throw new Error(`Error enviando email: ${error.message}`);
+      }
+
+      this.logger.log(`Email de inscripción pendiente enviado a ${to}, ID: ${data?.id}`);
+    } catch (error) {
+      this.logger.error(`Error enviando inscripción pendiente a ${to}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Envía email cuando un partido es programado (recordatorio)
    */
   async sendPartidoProgramado(

@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { EmailService } from '../../email/email.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User, InscripcionEstado, TournamentStatus, Gender } from '@prisma/client';
@@ -97,6 +98,7 @@ export class PublicInscripcionesController {
   constructor(
     private prisma: PrismaService,
     private notificacionesService: NotificacionesService,
+    private emailService: EmailService,
   ) {}
 
   /**
@@ -440,6 +442,11 @@ export class PublicInscripcionesController {
       throw new BadRequestException('Debes seleccionar o crear un jugador 2');
     }
 
+    // Notificar al jugador1 (quien realizó la inscripción) por email
+    this.notificarInscripcionJugador1(inscripcion, user).catch(() => {
+      // Silenciar errores de notificación - no fallar la inscripción
+    });
+
     return {
       success: true,
       message: requiereInvitacion
@@ -725,5 +732,32 @@ export class PublicInscripcionesController {
         enlace: `/inscripciones`,
       },
     });
+  }
+
+  private async notificarInscripcionJugador1(inscripcion: any, jugador1: User) {
+    // Crear notificación en sistema
+    await this.prisma.notificacion.create({
+      data: {
+        userId: jugador1.id,
+        tipo: 'INSCRIPCION',
+        titulo: '¡Inscripción realizada!',
+        contenido: `Te inscribiste exitosamente en "${inscripcion.tournament.nombre}" - ${inscripcion.category.nombre}`,
+        enlace: `/inscripciones/${inscripcion.id}`,
+      },
+    });
+
+    // Enviar email de confirmación
+    try {
+      await this.emailService.sendInscripcionPendientePago(
+        jugador1.email,
+        jugador1.nombre,
+        inscripcion.tournament.nombre,
+        inscripcion.category.nombre,
+        inscripcion.tournament.costoInscripcion?.toString() || '0',
+      );
+    } catch (error) {
+      // Silenciar error de email - no crítico
+      console.log('Error enviando email de inscripción:', error);
+    }
   }
 }
