@@ -451,7 +451,7 @@ export class PublicInscripcionesController {
       success: true,
       message: requiereInvitacion
         ? 'Inscripción creada. Tu pareja recibirá una invitación para registrarse.'
-        : '¡Inscripción confirmada! Tu lugar está reservado.'
+        : '¡Inscripción confirmada! Tu lugar está reservado.',
       inscripcion: {
         id: inscripcion.id,
         estado: inscripcion.estado,
