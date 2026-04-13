@@ -552,7 +552,7 @@ export class PublicInscripcionesController {
       data: {
         jugador2Id: user.id,
         estado: InscripcionEstado.CONFIRMADA,
-      }
+      },
       include: {
         tournament: true,
         category: true,
