@@ -14,8 +14,6 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { IsString, IsOptional } from 'class-validator';
 import { UploadsService } from './uploads.service';
 import { JwtAuthGuard } from '../modules/auth/guards/jwt-auth.guard';
-import { GetUser } from '../modules/auth/decorators/get-user.decorator';
-import { User } from '@prisma/client';
 
 // DTO para upload de imágenes
 class UploadImageDto {
@@ -33,11 +31,9 @@ export class UploadsController {
    * POST /api/uploads/avatar
    */
   @Post('avatar')
-  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('image'))
   async uploadAvatar(
     @UploadedFile() file: Express.Multer.File,
-    @GetUser() user: User,
   ) {
     if (!file) {
       throw new BadRequestException('No se proporcionó ninguna imagen');
