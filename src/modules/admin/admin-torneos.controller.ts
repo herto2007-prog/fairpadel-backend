@@ -1288,6 +1288,9 @@ export class AdminTorneosController {
     }
 
     // Verificar jugador2 si existe
+    let jugador2Documento = jugador2Temp?.documento || '';
+    let jugador2Email = jugador2Temp?.email;
+
     if (jugador2Id) {
       const existeJugador2 = await this.prisma.inscripcion.findFirst({
         where: {
@@ -1304,6 +1307,16 @@ export class AdminTorneosController {
       if (existeJugador2) {
         throw new BadRequestException('El jugador 2 ya está inscrito en esta categoría');
       }
+
+      const jugador2DB = await this.prisma.user.findUnique({
+        where: { id: jugador2Id },
+        select: { documento: true, email: true },
+      });
+
+      if (jugador2DB) {
+        jugador2Documento = jugador2DB.documento;
+        jugador2Email = jugador2DB.email;
+      }
     }
 
     // Crear inscripción
@@ -1313,8 +1326,8 @@ export class AdminTorneosController {
         categoryId,
         jugador1Id,
         jugador2Id,
-        jugador2Email: jugador2Temp?.email,
-        jugador2Documento: jugador2Temp?.documento,
+        jugador2Email,
+        jugador2Documento,
         estado: montoPagado > 0 ? 'CONFIRMADA' : 'PENDIENTE_PAGO',
         modoPago,
         notas: notas,
@@ -1376,15 +1389,31 @@ export class AdminTorneosController {
       notas?: string;
     },
   ) {
+    let updateData: any = {
+      jugador2Id: body.jugador2Id,
+      modoPago: body.modoPago,
+      notas: body.notas,
+    };
+
+    if (body.jugador2Temp) {
+      updateData.jugador2Email = body.jugador2Temp.email;
+      updateData.jugador2Documento = body.jugador2Temp.documento;
+    }
+
+    if (body.jugador2Id && !body.jugador2Temp) {
+      const jugador2DB = await this.prisma.user.findUnique({
+        where: { id: body.jugador2Id },
+        select: { documento: true, email: true },
+      });
+      if (jugador2DB) {
+        updateData.jugador2Documento = jugador2DB.documento;
+        updateData.jugador2Email = jugador2DB.email;
+      }
+    }
+
     const inscripcion = await this.prisma.inscripcion.update({
       where: { id: inscripcionId, tournamentId },
-      data: {
-        jugador2Id: body.jugador2Id,
-        jugador2Email: body.jugador2Temp?.email,
-        jugador2Documento: body.jugador2Temp?.documento,
-        modoPago: body.modoPago,
-        notas: body.notas,
-      },
+      data: updateData,
       include: {
         jugador1: { select: { id: true, nombre: true, apellido: true, email: true, telefono: true } },
         jugador2: { select: { id: true, nombre: true, apellido: true, email: true, telefono: true } },
