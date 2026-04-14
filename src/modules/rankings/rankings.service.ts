@@ -267,13 +267,19 @@ export class RankingsService {
       _count: { id: true },
     });
 
-    // Ordenar por puntos y asignar posiciones
+    // Ordenar por puntos descendente
     const ordenados = historiales.sort((a, b) => (b._sum.puntosGanados || 0) - (a._sum.puntosGanados || 0));
 
+    // Asignar posiciones con ranking empatado (1224)
+    let posicion = 1;
     for (let i = 0; i < ordenados.length; i++) {
       const { jugadorId, _sum, _count } = ordenados[i];
       const puntosTotales = _sum.puntosGanados || 0;
       const torneosJugados = _count.id;
+
+      if (i > 0 && puntosTotales !== (ordenados[i - 1]._sum.puntosGanados || 0)) {
+        posicion = i + 1;
+      }
 
       await this.prisma.ranking.upsert({
         where: {
@@ -286,7 +292,7 @@ export class RankingsService {
         },
         update: {
           puntosTotales,
-          posicion: i + 1,
+          posicion,
           torneosJugados,
           ultimaActualizacion: this.dateService.now(),
         },
@@ -296,7 +302,7 @@ export class RankingsService {
           alcance: categoryId,
           genero: 'MASCULINO', // Se actualizará con el género real
           puntosTotales,
-          posicion: i + 1,
+          posicion,
           torneosJugados,
           temporada: new Date().getFullYear().toString(),
         },
