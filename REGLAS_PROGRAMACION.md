@@ -1,5 +1,9 @@
 # Reglas de Programación - FairPadel
 
+> ⚠️ **ESTADO: PRODUCCIÓN ACTIVA CON DATOS REALES**
+> El sistema ya procesó torneos con jugadores reales. La base de datos contiene datos de producción.
+> **Cualquier cambio en BD, schema o flujo crítico debe ser tratado con EXTREMA precaución.**
+
 > Documento de oro para desarrollo. Violaciones = bugs en producción.
 > **Para nuevos agentes:** Leer completo antes de tocar código. Cuando dudes, preguntar.
 
@@ -13,6 +17,12 @@
 | Frontend Prod | https://www.fairpadel.com | Deploy automático desde main |
 | Backend Prod | https://api.fairpadel.com | Railway + PostgreSQL |
 | Health Check | https://api.fairpadel.com/api/health | Para verificar estado |
+
+### 🚨 Estado del Sistema
+- **Producción activa:** Sí, con datos reales de jugadores e inscripciones.
+- **Base de datos:** PostgreSQL en Railway con datos de producción.
+- **Política de BD:** NUNCA tocar datos reales directamente sin backup/explicación clara.
+- **Deploys:** Automáticos desde `main`. Cada push impacta a usuarios reales.
 
 ### Repositorios (GitHub)
 ```bash
@@ -51,7 +61,7 @@ frontend/
 - **Backend:** NestJS + Prisma + PostgreSQL + TypeScript
 - **Frontend:** React 18 + Vite + Tailwind CSS + framer-motion
 - **Deploy:** Railway (Docker) + GitHub Actions
-- **BD:** PostgreSQL en Railway (producción), SQLite local (dev opcional)
+- **BD:** PostgreSQL en Railway (**PRODUCCIÓN CON DATOS REALES**). SQLite local solo para dev de features aislados.
 
 ### Documentación de Contexto
 - **`Kimi_Context_Fairpadel.md`** - Historial completo de decisiones, features implementados, estado del proyecto
@@ -65,12 +75,17 @@ frontend/
 
 **"Probar localmente y si todo corre bien, ahí recién pushear"**
 
+> En producción activa, cada push a `main` llega a usuarios reales. No hay segunda oportunidad.
+
 - Siempre ejecutar `npm run build` antes de pushear
 - Verificar 0 errores de TypeScript
 - Verificar 0 errores de ESLint
+- Para cambios en backend: ejecutar localmente y probar endpoints críticos
+- Para cambios en BD: validar migraciones con `npx prisma migrate dev` en local primero
 - Solo entonces: `git push`
 
 ❌ **NUNCA** pushear código sin compilar localmente primero.
+❌ **NUNCA** hacer push directo a `main` sin pasar por revisión mental del impacto en usuarios reales.
 
 **Para nuevos agentes:** Si ves errores de TypeScript que no entiendes, NO uses `any`. Pregunta primero.
 
@@ -117,16 +132,24 @@ frontend/
 
 ---
 
-## 5. Protección de Datos
+## 5. Protección de Datos (CRÍTICO - DATOS REALES)
 
-**La base de datos es sagrada.**
+**La base de datos es sagrada. Ahora más que nunca: contiene datos reales de jugadores, inscripciones y pagos.**
 
 - **NUNCA** usar `--force-reset` en producción
+- **NUNCA** ejecutar SQL destructivo (`DELETE`, `DROP`, `TRUNCATE`) sin doble verificación
+- **NUNCA** modificar datos de usuario directamente sin entender las relaciones (`inscripciones`, `pagos`, `partidos`, `brackets`)
 - Usar `--accept-data-loss` solo cuando sea absolutamente necesario
-- Schema changes con migraciones controladas
-- Backup mental: cada deploy podría afectar datos reales
+- Schema changes con migraciones controladas y rollback planificado
+- Backup mental: cada deploy podría afectar datos reales de personas
 
 ❌ **PROHIBIDO** en Dockerfile/CI/CD: `prisma db push --force-reset`
+❌ **PROHIBIDO:** Modificar columnas críticas (`documento`, `email`, `jugador2_id`, `estado`) sin plan de contingencia
+
+### Acceso a Datos de Producción
+- **Solo lectura** salvo emergencias justificadas.
+- Cualquier fix que requiera tocar BD debe documentarse en `Kimi_Context_Fairpadel.md`.
+- Preferir siempre soluciones por API/panel admin antes de tocar la BD directamente.
 
 ---
 
@@ -657,6 +680,6 @@ Antes de dejar el proyecto, documentar:
 
 ---
 
-*Última actualización: Marzo 2025*
+*Última actualización: Abril 2025 - Sistema en producción con datos reales*
 *Responsable: Kimi Code CLI + Equipo FairPadel*
 *Para nuevos agentes: Leer completo, preguntar dudas, nunca asumir.*
