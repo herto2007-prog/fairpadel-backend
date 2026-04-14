@@ -95,6 +95,14 @@ export class RankingsService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
+    // Protección contra duplicados
+    const existentes = await this.prisma.historialPuntos.count({
+      where: { tournamentId, categoryId },
+    });
+    if (existentes > 0) {
+      throw new Error(`Ya existen ${existentes} registros de historial_puntos para este torneo/categoría. Si deseas recalcular, elimínalos primero.`);
+    }
+
     // Obtener partidos finalizados de esta categoría
     const partidos = await this.prisma.match.findMany({
       where: {
