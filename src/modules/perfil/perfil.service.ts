@@ -59,6 +59,9 @@ export class PerfilService {
     // Calcular logros
     const logros = await this.calcularLogros(userId, statsTorneos);
 
+    // Calcular estadísticas reales de partidos desde Match
+    const statsPartidos = await this.calcularStatsPartidos(userId);
+
     return {
       success: true,
       data: {
@@ -87,16 +90,7 @@ export class PerfilService {
           finalesJugadas: statsTorneos.finales,
           semifinalesJugadas: statsTorneos.semis,
         },
-        partidos: {
-          jugados: rankings.reduce((acc, r) => acc + r.torneosJugados, 0),
-          ganados: rankings.reduce((acc, r) => acc + r.victorias, 0),
-          perdidos: rankings.reduce((acc, r) => acc + r.derrotas, 0),
-          efectividad: rankings.length > 0 
-            ? Math.round(rankings.reduce((acc, r) => acc + (r.porcentajeVictorias?.toNumber() || 0), 0) / rankings.length)
-            : 0,
-          rachaActual: rankings[0]?.rachaActual || 0,
-          mejorRacha: 0, // TODO: Calcular desde historial
-        },
+        partidos: statsPartidos,
         ranking: rankings.map(r => ({
           tipo: r.tipoRanking,
           alcance: r.alcance,
@@ -623,5 +617,66 @@ export class PerfilService {
       success: true,
       message: 'Consentimiento de WhatsApp revocado',
     };
+  }
+
+  private async calcularStatsPartidos(userId: string) {
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: {
+        OR: [{ jugador1Id: userId }, { jugador2Id: userId }],
+      },
+      select: { id: true },
+    });
+
+    const ids = inscripciones.map(i => i.id);
+    if (ids.length === 0) {
+      return { jugados: 0, ganados: 0, perdidos: 0, efectividad: 0, rachaActual: 0, mejorRacha: 0 };
+    }
+
+    const partidos = await this.prisma.match.findMany({
+      where: {
+        OR: [{ inscripcion1Id: { in: ids } }, { inscripcion2Id: { in: ids } }],
+        estado: 'FINALIZADO',
+      },
+      select: {
+        inscripcionGanadoraId: true,
+        fechaProgramada: true,
+        horaProgramada: true,
+      },
+      orderBy: [
+        { fechaProgramada: 'desc' },
+        { horaProgramada: 'desc' },
+      ],
+    });
+
+    const jugados = partidos.length;
+    const ganados = partidos.filter(p => p.inscripcionGanadoraId && ids.includes(p.inscripcionGanadoraId)).length;
+    const perdidos = jugados - ganados;
+    const efectividad = jugados > 0 ? Math.round((ganados / jugados) * 100) : 0;
+
+    // Racha actual: victorias consecutivas desde el partido más reciente
+    let rachaActual = 0;
+    for (const p of partidos) {
+      if (p.inscripcionGanadoraId && ids.includes(p.inscripcionGanadoraId)) {
+        rachaActual++;
+      } else {
+        break;
+      }
+    }
+
+    // Mejor racha: máxima streak histórica de victorias consecutivas
+    let mejorRacha = 0;
+    let rachaTemporal = 0;
+    // Iteramos de más antiguo a más reciente (array está en desc, así que recorremos al revés)
+    for (let i = partidos.length - 1; i >= 0; i--) {
+      const p = partidos[i];
+      if (p.inscripcionGanadoraId && ids.includes(p.inscripcionGanadoraId)) {
+        rachaTemporal++;
+        mejorRacha = Math.max(mejorRacha, rachaTemporal);
+      } else {
+        rachaTemporal = 0;
+      }
+    }
+
+    return { jugados, ganados, perdidos, efectividad, rachaActual, mejorRacha };
   }
 }
