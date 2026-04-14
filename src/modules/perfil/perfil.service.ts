@@ -40,7 +40,7 @@ export class PerfilService {
     const historialPuntos = await this.prisma.historialPuntos.findMany({
       where: { jugadorId: userId },
       include: {
-        tournament: { select: { nombre: true } },
+        tournament: { select: { id: true, nombre: true, flyerUrl: true } },
         category: { select: { nombre: true } },
       },
       orderBy: { fechaTorneo: 'desc' },
@@ -49,6 +49,9 @@ export class PerfilService {
 
     // Calcular estadísticas desde el historial
     const statsTorneos = await this.calcularStatsTorneos(userId);
+
+    // Obtener torneo destacado (primer o último torneo enriquecido)
+    const destacadoTorneo = await this.obtenerDestacadoTorneo(userId, statsTorneos.jugados);
     
     // Obtener actividad reciente
     const actividadReciente = await this.obtenerActividadReciente(userId);
@@ -112,6 +115,7 @@ export class PerfilService {
         })),
         actividadReciente,
         logros,
+        destacadoTorneo,
       },
     };
   }
@@ -307,7 +311,110 @@ export class PerfilService {
       });
     }
 
+    // Logro: Debutante (siempre que haya jugado al menos 1 torneo)
+    if (stats.jugados >= 1) {
+      logros.push({
+        id: 'debutante',
+        icon: '🎾',
+        nombre: stats.jugados === 1 ? 'Debutante' : 'Veterano en camino',
+        descripcion: stats.jugados === 1 ? 'Primer torneo jugado' : `${stats.jugados} torneos jugados`,
+        nivel: 'especial',
+        progreso: 100,
+      });
+    }
+
     return logros;
+  }
+
+  private async obtenerDestacadoTorneo(userId: string, torneosJugados: number) {
+    const ultimo = await this.prisma.historialPuntos.findFirst({
+      where: { jugadorId: userId },
+      include: {
+        tournament: { select: { id: true, nombre: true, flyerUrl: true } },
+        category: { select: { nombre: true } },
+      },
+      orderBy: { fechaTorneo: 'desc' },
+    });
+
+    if (!ultimo) return null;
+
+    const inscripcion = await this.prisma.inscripcion.findFirst({
+      where: {
+        tournamentId: ultimo.tournamentId,
+        categoryId: ultimo.categoryId,
+        OR: [{ jugador1Id: userId }, { jugador2Id: userId }],
+      },
+      include: {
+        jugador2: { select: { nombre: true, apellido: true, fotoUrl: true } },
+      },
+    });
+
+    const partidosJugados = inscripcion
+      ? await this.prisma.match.count({
+          where: {
+            tournamentId: ultimo.tournamentId,
+            categoryId: ultimo.categoryId,
+            OR: [{ inscripcion1Id: inscripcion.id }, { inscripcion2Id: inscripcion.id }],
+            estado: { in: ['FINALIZADO', 'EN_JUEGO', 'PROGRAMADO'] },
+          },
+        })
+      : 0;
+
+    const partidos = inscripcion
+      ? await this.prisma.match.findMany({
+          where: {
+            tournamentId: ultimo.tournamentId,
+            categoryId: ultimo.categoryId,
+            OR: [{ inscripcion1Id: inscripcion.id }, { inscripcion2Id: inscripcion.id }],
+            estado: { in: ['FINALIZADO', 'EN_JUEGO', 'PROGRAMADO'] },
+          },
+          select: { ronda: true },
+        })
+      : [];
+
+    const ordenFase: Record<string, number> = {
+      ZONA: 1,
+      REPECHAJE: 2,
+      OCTAVOS: 3,
+      CUARTOS: 4,
+      SEMIS: 5,
+      FINAL: 6,
+    };
+
+    const faseMap: Record<number, 'ZONA' | 'CUARTOS' | 'SEMIS' | 'FINAL'> = {
+      1: 'ZONA',
+      2: 'ZONA',
+      3: 'CUARTOS',
+      4: 'CUARTOS',
+      5: 'SEMIS',
+      6: 'FINAL',
+    };
+
+    let faseMasLejana: 'ZONA' | 'CUARTOS' | 'SEMIS' | 'FINAL' = 'ZONA';
+    if (partidos.length > 0) {
+      const maxOrden = Math.max(...partidos.map((p) => ordenFase[p.ronda?.toUpperCase()] || 1));
+      faseMasLejana = faseMap[maxOrden] || 'ZONA';
+    }
+
+    return {
+      torneoId: ultimo.tournamentId,
+      nombre: ultimo.tournament.nombre,
+      flyerUrl: ultimo.tournament.flyerUrl,
+      categoria: ultimo.category.nombre,
+      posicionFinal: ultimo.posicionFinal,
+      puntosGanados: ultimo.puntosGanados,
+      fecha: ultimo.fechaTorneo,
+      partidosJugados,
+      faseMasLejana,
+      pareja: inscripcion?.jugador2
+        ? {
+            nombre: inscripcion.jugador2.nombre,
+            apellido: inscripcion.jugador2.apellido,
+            fotoUrl: inscripcion.jugador2.fotoUrl,
+          }
+        : null,
+      esPrimerTorneo: torneosJugados === 1,
+    };
   }
 
   private calcularEdad(fechaNacimiento: string): number | null {
