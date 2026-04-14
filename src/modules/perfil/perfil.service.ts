@@ -36,6 +36,16 @@ export class PerfilService {
       orderBy: { puntosTotales: 'desc' },
     });
 
+    // Lookup de nombres de categoría para rankings de tipo CATEGORIA
+    const categoryIds = rankings
+      .filter(r => r.tipoRanking === 'CATEGORIA')
+      .map(r => r.alcance);
+    const categories = await this.prisma.category.findMany({
+      where: { id: { in: categoryIds } },
+      select: { id: true, nombre: true },
+    });
+    const categoryMap = new Map(categories.map(c => [c.id, c.nombre]));
+
     // Obtener historial de puntos para gráfico
     const historialPuntos = await this.prisma.historialPuntos.findMany({
       where: { jugadorId: userId },
@@ -94,6 +104,7 @@ export class PerfilService {
         ranking: rankings.map(r => ({
           tipo: r.tipoRanking,
           alcance: r.alcance,
+          alcanceNombre: r.tipoRanking === 'CATEGORIA' ? categoryMap.get(r.alcance) || r.alcance : r.alcance,
           posicion: r.posicion,
           puntosTotales: r.puntosTotales,
           torneosJugados: r.torneosJugados,
