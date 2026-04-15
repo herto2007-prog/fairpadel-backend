@@ -3925,3 +3925,35 @@ CREATE INDEX "idx_control_pagos_inscripcion" ON "control_pagos_organizador"("ins
 CREATE INDEX "idx_control_pagos_jugador" ON "control_pagos_organizador"("jugador_id");
 CREATE INDEX "idx_control_pagos_fecha" ON "control_pagos_organizador"("fecha");
 ```
+
+---
+
+## 2026-04-14 - Ajuste modelo de finanzas: separación de comisión del progreso del torneo
+
+### Contexto
+Se ajustó la visualización de finanzas en el panel del organizador para reflejar fielmente el modelo de negocio de FairPadel:
+- La comisión es una deuda del organizador con la plataforma, no parte del progreso operativo del torneo.
+- El organizador cobra por fuera (efectivo/transferencia) y al final del torneo paga la comisión acumulada.
+- El bloqueo por comisión sigue siendo herramienta de cobranza del admin de FairPadel.
+
+### Cambios realizados
+
+**Backend:**
+- `src/modules/admin/admin-torneos.controller.ts`
+  - Endpoint `overview`: se eliminó `comision` del array de `requisitos` y se redistribuyeron los pesos (Flyer 12%, Sede 18%, Fixture 30%, Canchas 23%, Inscripciones 17%).
+  - Endpoint `overview`: se agregó `controlPagos: true` a la consulta de inscripciones.
+  - Endpoint `overview`: el cálculo de `ingresos` ahora suma `pagos online (Pago)` + `pagos manuales (ControlPagoOrganizador)`.
+  - Endpoint `inscripciones`: se agregó `controlPagos: true` y el cálculo de `stats.ingresos` también suma ambas fuentes.
+
+**Frontend:**
+- `frontend/src/features/organizador/components/overview/OverviewTab.tsx`
+  - Se eliminó el ítem "Comisión" de los checks debajo de la barra de progreso.
+  - Se ajustó la tarjeta "Estado" para mostrar el monto de comisión acumulado informativamente (`Gs. X comisión acumulada`), o `Bloqueado - Gs. X comisión` si el bloqueo está activo.
+  - Se eliminó el `onClick` roto de la tarjeta Estado que intentaba ir a un tab inexistente.
+
+### Resultado esperado
+- El organizador ve el progreso de su torneo al 100% cuando la parte operativa está lista, sin depender del pago de comisión.
+- Los "Ingresos" reflejan el dinero real cobrado, incluyendo efectivo/transferencia registrado manualmente.
+- La comisión sigue visible como información financiera, pero ya no condiciona la percepción de avance del evento.
+
+**Builds:** ✅ Backend y frontend compilan sin errores.

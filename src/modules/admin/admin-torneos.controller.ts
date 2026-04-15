@@ -1004,6 +1004,7 @@ export class AdminTorneosController {
             pagos: {
               where: { estado: 'CONFIRMADO' },
             },
+            controlPagos: true,
           },
           orderBy: { createdAt: 'desc' },
         }),
@@ -1035,7 +1036,11 @@ export class AdminTorneosController {
         incompletas: inscripciones.filter(i => !i.jugador2Id).length,
         ingresos: inscripciones
           .filter(i => i.estado === 'CONFIRMADA')
-          .reduce((sum, i: any) => sum + (i.pagos?.reduce((pSum: number, p: any) => pSum + Number(p.monto || 0), 0) || 0), 0),
+          .reduce((sum, i: any) => {
+            const pagosOnline = i.pagos?.reduce((pSum: number, p: any) => pSum + Number(p.monto || 0), 0) || 0;
+            const pagosOrganizador = i.controlPagos?.reduce((pSum: number, p: any) => pSum + Number(p.monto || 0), 0) || 0;
+            return sum + pagosOnline + pagosOrganizador;
+          }, 0),
       };
 
       return {
@@ -1563,6 +1568,7 @@ export class AdminTorneosController {
         include: {
           category: true,
           pagos: { where: { estado: 'CONFIRMADO' } },
+          controlPagos: true,
         },
       }),
       this.prisma.tournamentCategory.findMany({
@@ -1611,7 +1617,11 @@ export class AdminTorneosController {
       incompletas: inscripciones.filter(i => !i.jugador2Id).length,
       ingresos: inscripciones
         .filter(i => i.estado === 'CONFIRMADA')
-        .reduce((sum, i: any) => sum + (i.pagos?.reduce((pSum: number, p: any) => pSum + Number(p.monto || 0), 0) || 0), 0),
+        .reduce((sum, i: any) => {
+          const pagosOnline = i.pagos?.reduce((pSum: number, p: any) => pSum + Number(p.monto || 0), 0) || 0;
+          const pagosOrganizador = i.controlPagos?.reduce((pSum: number, p: any) => pSum + Number(p.monto || 0), 0) || 0;
+          return sum + pagosOnline + pagosOrganizador;
+        }, 0),
     };
 
     const inscripcionesPorCategoria = categorias.map(cat => {
@@ -1705,13 +1715,12 @@ export class AdminTorneosController {
     }
 
     const requisitos = [
-      { nombre: 'flyer', completado: !!torneo.flyerUrl, peso: 10 },
+      { nombre: 'flyer', completado: !!torneo.flyerUrl, peso: 12 },
       // @ts-ignore - sedeId viene del schema
-      { nombre: 'sede', completado: !!(torneo as any).sedeId, peso: 15 },
-      { nombre: 'comision', completado: !comision?.bloqueoActivo, peso: 15 },
-      { nombre: 'fixture', completado: tieneFixture, peso: 25 },
-      { nombre: 'disponibilidad', completado: disponibilidad.length > 0, peso: 20 },
-      { nombre: 'inscripciones', completado: inscripcionesStats.confirmadas >= 4, peso: 15 },
+      { nombre: 'sede', completado: !!(torneo as any).sedeId, peso: 18 },
+      { nombre: 'fixture', completado: tieneFixture, peso: 30 },
+      { nombre: 'disponibilidad', completado: disponibilidad.length > 0, peso: 23 },
+      { nombre: 'inscripciones', completado: inscripcionesStats.confirmadas >= 4, peso: 17 },
     ];
 
     const progresoGeneral = Math.round(
