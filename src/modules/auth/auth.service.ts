@@ -18,6 +18,7 @@ import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { UserStatus, WhatsappConsentStatus, InscripcionEstado } from '@prisma/client';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { ComisionService } from '../../common/services/comision.service';
 
 @Injectable()
 export class AuthService {
@@ -30,6 +31,7 @@ export class AuthService {
     private emailService: EmailService,
     private whatsAppService: WhatsAppService,
     private notificacionesService: NotificacionesService,
+    private comisionService: ComisionService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -415,6 +417,8 @@ export class AuthService {
             estado: InscripcionEstado.CONFIRMADA,
           },
         });
+
+        await this.comisionService.recalcularComision(inscripcion.tournamentId);
 
         // Marcar invitación como aceptada (si existe)
         await this.prisma.invitacionJugador.updateMany({

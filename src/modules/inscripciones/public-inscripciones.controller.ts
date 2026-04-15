@@ -14,6 +14,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { EmailService } from '../../email/email.service';
+import { ComisionService } from '../../common/services/comision.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User, InscripcionEstado, TournamentStatus, Gender } from '@prisma/client';
@@ -99,6 +100,7 @@ export class PublicInscripcionesController {
     private prisma: PrismaService,
     private notificacionesService: NotificacionesService,
     private emailService: EmailService,
+    private comisionService: ComisionService,
   ) {}
 
   /**
@@ -374,6 +376,7 @@ export class PublicInscripcionesController {
 
       // Notificar a jugador2 que fue inscrito
       await this.notificarInscripcionPareja(inscripcion, user, jugador2);
+      await this.comisionService.recalcularComision(tournamentId);
 
     } else if (jugador2NoRegistrado) {
       // CASO B: Jugador2 NO registrado - crear invitación
@@ -567,6 +570,7 @@ export class PublicInscripcionesController {
 
     // Notificar a jugador1 que su pareja aceptó
     await this.notificarAceptacionInvitacion(inscripcionActualizada);
+    await this.comisionService.recalcularComision(inscripcionActualizada.tournamentId);
 
     return {
       success: true,

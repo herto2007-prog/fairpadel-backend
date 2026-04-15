@@ -4,6 +4,7 @@ import {
   Put,
   Body,
   Param,
+  Query,
   UseGuards,
   Post,
   NotFoundException,
@@ -166,6 +167,78 @@ export class FairpadelAdminController {
           comprobanteUrl: t.comprobanteUrl,
           bloqueoActivo: t.bloqueoActivo,
           rondaBloqueo: t.rondaBloqueo,
+        },
+      })),
+    };
+  }
+
+  /**
+   * GET /fairpadel/admin/torneos/comisiones
+   * Listar todos los torneos con su estado de comisión
+   */
+  @Get('torneos/comisiones')
+  async getTorneosComisiones(
+    @Query('estado') estado?: string, // todos | pendientes | bloqueados | pagados
+    @Query('busqueda') busqueda?: string,
+  ) {
+    const whereComision: any = {};
+
+    if (estado === 'pendientes') {
+      whereComision.estado = { in: ['PENDIENTE', 'PENDIENTE_VERIFICACION'] };
+    } else if (estado === 'bloqueados') {
+      whereComision.bloqueoActivo = true;
+    } else if (estado === 'pagados') {
+      whereComision.estado = 'PAGADO';
+    }
+
+    const comisiones = await this.prisma.torneoComision.findMany({
+      where: whereComision,
+      include: {
+        tournament: {
+          include: {
+            organizador: {
+              select: {
+                id: true,
+                nombre: true,
+                apellido: true,
+                email: true,
+                telefono: true,
+              },
+            },
+            _count: {
+              select: { inscripciones: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Filtro de búsqueda por nombre de torneo u organizador
+    let resultado = comisiones;
+    if (busqueda?.trim()) {
+      const q = busqueda.toLowerCase();
+      resultado = comisiones.filter(
+        (c) =>
+          c.tournament.nombre.toLowerCase().includes(q) ||
+          `${c.tournament.organizador.nombre} ${c.tournament.organizador.apellido}`.toLowerCase().includes(q) ||
+          c.tournament.organizador.email.toLowerCase().includes(q)
+      );
+    }
+
+    return {
+      torneos: resultado.map((c) => ({
+        id: c.tournament.id,
+        nombre: c.tournament.nombre,
+        organizador: c.tournament.organizador,
+        inscripciones: c.tournament._count.inscripciones,
+        comision: {
+          estado: c.estado,
+          montoEstimado: c.montoEstimado,
+          montoPagado: c.montoPagado,
+          comprobanteUrl: c.comprobanteUrl,
+          bloqueoActivo: c.bloqueoActivo,
+          rondaBloqueo: c.rondaBloqueo,
         },
       })),
     };

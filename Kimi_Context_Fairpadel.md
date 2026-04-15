@@ -3957,3 +3957,47 @@ Se ajustó la visualización de finanzas en el panel del organizador para reflej
 - La comisión sigue visible como información financiera, pero ya no condiciona la percepción de avance del evento.
 
 **Builds:** ✅ Backend y frontend compilan sin errores.
+
+---
+
+## 2026-04-14 - Panel de comisiones para admin + recálculo automático
+
+### Contexto
+Se implementó el control completo de comisiones para el dueño de FairPadel, incluyendo recálculo automático de deudas y una nueva pantalla de administración.
+
+### Cambios realizados
+
+**Backend:**
+- `src/common/services/comision.service.ts` (nuevo) - Servicio global `ComisionService` con método `recalcularComision(tournamentId)`.
+- `src/common/common.module.ts` - Exporta `ComisionService` como servicio global.
+- `src/modules/admin/admin-torneos.controller.ts` - Inyecta `ComisionService`. Llama a recálculo en:
+  - `confirmarInscripcion`
+  - `cancelarInscripcion`
+  - `crearInscripcionManual` (solo si estado es CONFIRMADA)
+- `src/modules/inscripciones/inscripciones.service.ts` - Inyecta `ComisionService`. Llama a recálculo en:
+  - `confirmar`
+  - `cancelar`
+- `src/modules/inscripciones/public-inscripciones.controller.ts` - Inyecta `ComisionService`. Llama a recálculo en:
+  - Creación de inscripción confirmada (jugador2 existente)
+  - Aceptación de invitación (jugador2 se registra)
+- `src/modules/auth/auth.service.ts` - Inyecta `ComisionService`. Llama a recálculo en:
+  - Confirmación automática de inscripciones pendientes al registrar usuario
+- `src/modules/admin/fairpadel-admin.controller.ts` - Nuevo endpoint:
+  - `GET /fairpadel/admin/torneos/comisiones` - Lista TODOS los torneos con comisión, soporta filtros (`estado`, `busqueda`).
+
+**Frontend:**
+- `frontend/src/services/torneoV2Service.ts` - Agregado `getTorneosComisiones(params)`.
+- `frontend/src/features/admin/components/FairpadelPanel.tsx` - Nueva pestaña "Comisiones" con:
+  - Tabla/lista de todos los torneos que tienen comisión
+  - Filtros: Todos / Pendientes / Bloqueados / Pagados
+  - Buscador por nombre de torneo u organizador
+  - Botones de acción: Bloquear / Liberar directamente desde la tabla
+  - Visualización de monto estimado, monto pagado, estado y comprobante
+
+### Flujo resultante
+1. Cada vez que una inscripción pasa a (o desde) CONFIRMADA, el sistema recalcula automáticamente la comisión del torneo.
+2. El dueño de FairPadel entra al panel Admin → Comisiones.
+3. Ve todos los torneos con su deuda acumulada actualizada.
+4. Puede bloquear un torneo para forzar el pago, o liberarlo si ya pagó.
+
+**Builds:** ✅ Backend y frontend compilan sin errores.

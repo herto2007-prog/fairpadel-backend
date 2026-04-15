@@ -5,6 +5,7 @@ import { UpdateInscripcionDto, ConfirmarInscripcionDto } from './dto/update-insc
 import { InscripcionEstado, TournamentStatus } from '@prisma/client';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { NotificacionesWhatsAppService } from '../notificaciones/notificaciones-whatsapp.service';
+import { ComisionService } from '../../common/services/comision.service';
 
 @Injectable()
 export class InscripcionesService {
@@ -12,6 +13,7 @@ export class InscripcionesService {
     private prisma: PrismaService,
     private notificacionesService: NotificacionesService,
     private notificacionesWhatsApp: NotificacionesWhatsAppService,
+    private comisionService: ComisionService,
   ) {}
 
   async create(dto: CreateInscripcionDto, jugador1Id: string) {
@@ -259,6 +261,8 @@ export class InscripcionesService {
         // Silenciar errores de WhatsApp
       });
     }
+
+    await this.comisionService.recalcularComision(inscripcion.tournamentId);
 
     return inscripcionConfirmada;
   }

@@ -17,6 +17,7 @@ import { IsString, IsOptional, IsDateString, IsNumber, IsArray, IsUUID, Validate
 import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
+import { ComisionService } from '../../common/services/comision.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -156,6 +157,7 @@ export class AdminTorneosController {
   constructor(
     private prisma: PrismaService,
     private dateService: DateService,
+    private comisionService: ComisionService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -1068,6 +1070,8 @@ export class AdminTorneosController {
         data: { estado: 'CONFIRMADA' },
       });
 
+      await this.comisionService.recalcularComision(tournamentId);
+
       return {
         success: true,
         message: 'Inscripción confirmada',
@@ -1093,6 +1097,8 @@ export class AdminTorneosController {
         where: { id: inscripcionId, tournamentId },
         data: { estado: 'CANCELADA' },
       });
+
+      await this.comisionService.recalcularComision(tournamentId);
 
       return {
         success: true,
@@ -1359,6 +1365,10 @@ export class AdminTorneosController {
           fechaConfirm: new Date().toISOString().split('T')[0],
         },
       });
+    }
+
+    if (inscripcion.estado === 'CONFIRMADA') {
+      await this.comisionService.recalcularComision(tournamentId);
     }
 
     return {
