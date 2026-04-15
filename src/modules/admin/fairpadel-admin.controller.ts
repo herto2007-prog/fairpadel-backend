@@ -29,6 +29,12 @@ class LiberarTorneoDto {
   notas?: string;
 }
 
+class ExonerarTorneoDto {
+  @IsString()
+  @IsOptional()
+  motivo?: string;
+}
+
 @Controller('fairpadel/admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
@@ -188,7 +194,9 @@ export class FairpadelAdminController {
     } else if (estado === 'bloqueados') {
       whereComision.bloqueoActivo = true;
     } else if (estado === 'pagados') {
-      whereComision.estado = 'PAGADO';
+      whereComision.estado = { in: ['PAGADO', 'EXONERADO'] };
+    } else if (estado === 'exonerados') {
+      whereComision.estado = 'EXONERADO';
     }
 
     const comisiones = await this.prisma.torneoComision.findMany({
@@ -331,6 +339,31 @@ export class FairpadelAdminController {
     return {
       success: true,
       message: 'Torneo liberado correctamente',
+      comision,
+    };
+  }
+
+  /**
+   * Exonerar torneo (no se cobra comisión)
+   */
+  @Post('torneos/:id/exonerar')
+  async exonerarTorneo(
+    @Param('id') tournamentId: string,
+    @Body() dto: ExonerarTorneoDto,
+  ) {
+    const comision = await this.prisma.torneoComision.update({
+      where: { tournamentId },
+      data: {
+        estado: 'EXONERADO',
+        bloqueoActivo: false,
+        montoPagado: 0,
+        comprobanteNotas: dto.motivo || 'Exonerado por admin',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Torneo exonerado correctamente',
       comision,
     };
   }
