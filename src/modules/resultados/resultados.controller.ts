@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ResultadosService } from './resultados.service';
 import { RegistrarResultadoDto, RegistrarPuntoDto, IniciarPartidoDto, FinalizarPartidoDto, CambiarConfiguracionDto } from './dto/registrar-resultado.dto';
 import { ResultadoEspecialDto } from './dto/resultado-especial.dto';
@@ -27,6 +27,19 @@ export class ResultadosController {
     @Body() dto: RegistrarResultadoDto,
   ) {
     return this.resultadosService.registrarResultado(matchId, dto);
+  }
+
+  /**
+   * Edita un resultado completo ya registrado
+   * PATCH /admin/resultados/matches/:matchId/resultado
+   */
+  @Patch('matches/:matchId/resultado')
+  @HttpCode(HttpStatus.OK)
+  async editarResultado(
+    @Param('matchId') matchId: string,
+    @Body() dto: RegistrarResultadoDto,
+  ) {
+    return this.resultadosService.editarResultado(matchId, dto);
   }
 
   /**
@@ -102,6 +115,19 @@ export class ResultadosController {
     @Body() dto: FinalizarPartidoDto,
   ) {
     return this.resultadosService.finalizarPartido(matchId, dto);
+  }
+
+  /**
+   * Edita un resultado especial ya registrado
+   * PATCH /admin/resultados/matches/:matchId/resultado-especial
+   */
+  @Patch('matches/:matchId/resultado-especial')
+  @HttpCode(HttpStatus.OK)
+  async editarResultadoEspecial(
+    @Param('matchId') matchId: string,
+    @Body() dto: ResultadoEspecialDto,
+  ) {
+    return this.resultadosService.editarResultadoEspecial(matchId, dto);
   }
 
   /**

@@ -256,6 +256,244 @@ export class ResultadosService {
   }
 
   // ═══════════════════════════════════════════════════════════
+  // MÉTODOS PÚBLICOS - EDICIÓN DE RESULTADOS
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Edita un resultado completo ya registrado
+   * Solo permite editar si los partidos siguientes no tienen resultado
+   */
+  async editarResultado(matchId: string, dto: RegistrarResultadoDto) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        inscripcion1: true,
+        inscripcion2: true,
+      },
+    });
+
+    if (!match) {
+      throw new NotFoundException('Partido no encontrado');
+    }
+
+    const estadosEditables: MatchStatus[] = [MatchStatus.FINALIZADO, MatchStatus.WO, MatchStatus.RETIRADO, MatchStatus.DESCALIFICADO];
+    if (!estadosEditables.includes(match.estado)) {
+      throw new BadRequestException('El partido no tiene un resultado registrado para editar');
+    }
+
+    await this.validarPuedeEditar(matchId);
+    this.validarResultado(dto);
+
+    const { ganadorId, perdedorId, setsGanadosP1, setsGanadosP2 } = this.calcularGanador(match, dto);
+
+    const matchCompleto = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true,
+        tournamentId: true,
+        categoryId: true,
+        partidoSiguienteId: true,
+        partidoPerdedorSiguienteId: true,
+        posicionEnSiguiente: true,
+        posicionEnPerdedor: true,
+        inscripcion1Id: true,
+        inscripcion2Id: true,
+        esBye: true,
+        ronda: true,
+      },
+    });
+
+    const matchActualizado = await this.prisma.match.update({
+      where: { id: matchId },
+      data: {
+        estado: MatchStatus.FINALIZADO,
+        set1Pareja1: dto.set1Pareja1,
+        set1Pareja2: dto.set1Pareja2,
+        set2Pareja1: dto.set2Pareja1,
+        set2Pareja2: dto.set2Pareja2,
+        set3Pareja1: dto.set3Pareja1,
+        set3Pareja2: dto.set3Pareja2,
+        formatoSet3: dto.formatoSet3,
+        inscripcionGanadoraId: ganadorId,
+        inscripcionPerdedoraId: perdedorId,
+        observaciones: dto.observaciones,
+        duracionMinutos: dto.duracionMinutos,
+        parejaRetirada: null,
+        razonResultado: null,
+      },
+      include: {
+        inscripcion1: true,
+        inscripcion2: true,
+        inscripcionGanadora: true,
+      },
+    });
+
+    if (matchCompleto) {
+      await this.avanzarGanador(matchCompleto, ganadorId);
+    }
+
+    return {
+      success: true,
+      message: 'Resultado actualizado correctamente',
+      data: {
+        match: matchActualizado,
+        resultado: {
+          sets: `${setsGanadosP1}-${setsGanadosP2}`,
+          ganadorId,
+          score: this.formatearScore(dto),
+        },
+      },
+    };
+  }
+
+  /**
+   * Edita un resultado especial ya registrado
+   * Solo permite editar si los partidos siguientes no tienen resultado
+   */
+  async editarResultadoEspecial(matchId: string, dto: ResultadoEspecialDto) {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        inscripcion1: true,
+        inscripcion2: true,
+      },
+    });
+
+    if (!match) {
+      throw new NotFoundException('Partido no encontrado');
+    }
+
+    const estadosEditables: MatchStatus[] = [MatchStatus.FINALIZADO, MatchStatus.WO, MatchStatus.RETIRADO, MatchStatus.DESCALIFICADO];
+    if (!estadosEditables.includes(match.estado)) {
+      throw new BadRequestException('El partido no tiene un resultado registrado para editar');
+    }
+
+    await this.validarPuedeEditar(matchId);
+
+    const ganadorId = dto.parejaAfectada === 1 ? match.inscripcion2Id : match.inscripcion1Id;
+    const perdedorId = dto.parejaAfectada === 1 ? match.inscripcion1Id : match.inscripcion2Id;
+
+    let estado: MatchStatus;
+    switch (dto.tipo) {
+      case TipoResultadoEspecial.RETIRO_LESION:
+      case TipoResultadoEspecial.RETIRO_OTRO:
+        estado = MatchStatus.RETIRADO;
+        break;
+      case TipoResultadoEspecial.DESCALIFICACION:
+        estado = MatchStatus.DESCALIFICADO;
+        break;
+      case TipoResultadoEspecial.WO:
+        estado = MatchStatus.WO;
+        break;
+      default:
+        throw new BadRequestException('Tipo de resultado especial inválido');
+    }
+
+    const matchCompleto = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true,
+        tournamentId: true,
+        categoryId: true,
+        partidoSiguienteId: true,
+        partidoPerdedorSiguienteId: true,
+        posicionEnSiguiente: true,
+        posicionEnPerdedor: true,
+        inscripcion1Id: true,
+        inscripcion2Id: true,
+        esBye: true,
+        ronda: true,
+      },
+    });
+
+    const matchActualizado = await this.prisma.match.update({
+      where: { id: matchId },
+      data: {
+        estado,
+        inscripcionGanadoraId: ganadorId,
+        inscripcionPerdedoraId: perdedorId,
+        parejaRetirada: dto.parejaAfectada,
+        razonResultado: dto.razon || dto.tipo,
+        observaciones: dto.observaciones,
+        duracionMinutos: dto.duracionMinutos,
+        set1Pareja1: null,
+        set1Pareja2: null,
+        set2Pareja1: null,
+        set2Pareja2: null,
+        set3Pareja1: null,
+        set3Pareja2: null,
+      },
+      include: {
+        inscripcion1: true,
+        inscripcion2: true,
+        inscripcionGanadora: true,
+      },
+    });
+
+    if (matchCompleto) {
+      await this.avanzarGanador(matchCompleto, ganadorId);
+    }
+
+    const mensajes = {
+      [TipoResultadoEspecial.RETIRO_LESION]: 'Retiro por lesión actualizado',
+      [TipoResultadoEspecial.RETIRO_OTRO]: 'Retiro actualizado',
+      [TipoResultadoEspecial.DESCALIFICACION]: 'Descalificación actualizada',
+      [TipoResultadoEspecial.WO]: 'WO actualizado',
+    };
+
+    return {
+      success: true,
+      message: mensajes[dto.tipo],
+      data: {
+        match: matchActualizado,
+        resultado: {
+          tipo: dto.tipo,
+          ganadorId,
+          parejaAfectada: dto.parejaAfectada,
+          razon: dto.razon,
+        },
+      },
+    };
+  }
+
+  /**
+   * Valida que un partido pueda ser editado verificando que
+   * los partidos siguientes no tengan resultado cargado
+   */
+  private async validarPuedeEditar(matchId: string): Promise<void> {
+    const match = await this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        partidoSiguienteId: true,
+        partidoPerdedorSiguienteId: true,
+      },
+    });
+
+    if (!match) return;
+
+    const idsSiguientes = [
+      match.partidoSiguienteId,
+      match.partidoPerdedorSiguienteId,
+    ].filter((id): id is string => !!id);
+
+    if (idsSiguientes.length === 0) return;
+
+    const partidosSiguientes = await this.prisma.match.findMany({
+      where: {
+        id: { in: idsSiguientes },
+        inscripcionGanadoraId: { not: null },
+      },
+      select: { id: true },
+    });
+
+    if (partidosSiguientes.length > 0) {
+      throw new BadRequestException(
+        'No se puede editar el resultado porque ya hay partidos posteriores definidos. Si necesitas corregirlo, contacta al administrador.',
+      );
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // MÉTODOS PÚBLICOS - MARCADOR EN VIVO
   // ═══════════════════════════════════════════════════════════
 
