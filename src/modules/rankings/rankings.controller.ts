@@ -90,6 +90,40 @@ export class RankingsController {
     return this.rankingsService.calcularPuntosTorneo(tournamentId, categoryId);
   }
 
+  @Post('admin/recalcular-global')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async recalcularGlobal(@Body('temporada') temporada?: string) {
+    const temp = temporada || new Date().getFullYear().toString();
+    await this.rankingsService.actualizarRankingsGlobal(temp);
+    return { success: true, message: `Ranking global recalculado para ${temp}` };
+  }
+
+  @Post('admin/recalcular-circuito/:circuitoId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async recalcularCircuito(
+    @Param('circuitoId') circuitoId: string,
+    @Body('categoryId') categoryId: string,
+    @Body('temporada') temporada?: string,
+  ) {
+    const temp = temporada || new Date().getFullYear().toString();
+    await this.rankingsService.actualizarRankingsCircuito(circuitoId, categoryId, temp);
+    return { success: true, message: `Ranking de circuito recalculado para ${temp}` };
+  }
+
+  @Post('admin/recalcular-categoria/:categoryId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async recalcularCategoria(
+    @Param('categoryId') categoryId: string,
+    @Body('temporada') temporada?: string,
+  ) {
+    const temp = temporada || new Date().getFullYear().toString();
+    await this.rankingsService.actualizarRankingsCategoria(categoryId, temp);
+    return { success: true, message: `Ranking de categoría recalculado para ${temp}` };
+  }
+
   // ═══════════════════════════════════════════════════════════
   // ASCENSOS PENDIENTES (Admin)
   // ═══════════════════════════════════════════════════════════

@@ -18,6 +18,7 @@ import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { ComisionService } from '../../common/services/comision.service';
+import { RankingsService } from '../rankings/rankings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -158,6 +159,7 @@ export class AdminTorneosController {
     private prisma: PrismaService,
     private dateService: DateService,
     private comisionService: ComisionService,
+    private rankingsService: RankingsService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -2439,6 +2441,77 @@ export class AdminTorneosController {
     return {
       success: true,
       message: 'Pago eliminado correctamente',
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // FINALIZACIÓN DE CATEGORÍA Y CÁLCULO DE PUNTOS
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * POST /admin/torneos/:tournamentId/categorias/:categoryId/finalizar
+   * Finaliza una categoría de torneo y calcula automáticamente los puntos de ranking.
+   * Solo disponible para torneos con circuito aprobado.
+   */
+  @Post(':tournamentId/categorias/:categoryId/finalizar')
+  async finalizarCategoria(
+    @Param('tournamentId') tournamentId: string,
+    @Param('categoryId') categoryId: string,
+    @Request() req: any,
+  ) {
+    const user = req.user;
+
+    // Verificar que el torneo existe
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, organizadorId: true, nombre: true },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    // Verificar permisos
+    if (!user.roles.includes('admin') && torneo.organizadorId !== user.userId) {
+      throw new ForbiddenException('No tienes permiso para finalizar esta categoría');
+    }
+
+    // Verificar que la categoría pertenezca al torneo
+    const tournamentCategory = await this.prisma.tournamentCategory.findFirst({
+      where: { tournamentId, categoryId },
+    });
+
+    if (!tournamentCategory) {
+      throw new NotFoundException('Categoría no encontrada en este torneo');
+    }
+
+    // Verificar que el torneo tenga un circuito aprobado
+    const torneoCircuito = await this.prisma.torneoCircuito.findFirst({
+      where: { torneoId: tournamentId, estado: 'APROBADO' },
+      include: { circuito: true },
+    });
+
+    if (!torneoCircuito) {
+      throw new BadRequestException('Esta categoría no puede finalizarse automáticamente porque el torneo no está asignado a un circuito aprobado');
+    }
+
+    // Actualizar estado de la categoría
+    await this.prisma.tournamentCategory.update({
+      where: { id: tournamentCategory.id },
+      data: { estado: 'FINALIZADA' },
+    });
+
+    // Calcular puntos
+    const resultado = await this.rankingsService.calcularPuntosTorneo(tournamentId, categoryId);
+
+    return {
+      success: true,
+      message: `Categoría finalizada y puntos calculados para ${torneo.nombre}`,
+      data: {
+        categoriaId: categoryId,
+        circuito: torneoCircuito.circuito.nombre,
+        puntos: resultado.data,
+      },
     };
   }
 

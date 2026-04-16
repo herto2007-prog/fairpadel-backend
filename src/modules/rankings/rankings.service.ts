@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { TipoRanking } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { QueryRankingsDto } from './dto/query-rankings.dto';
@@ -88,7 +89,7 @@ export class RankingsService {
     // Obtener torneo con multiplicador
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
-      select: { multiplicadorPuntos: true, nombre: true },
+      select: { multiplicadorPuntos: true, nombre: true, fechaInicio: true },
     });
 
     if (!torneo) {
@@ -101,6 +102,18 @@ export class RankingsService {
     });
     if (existentes > 0) {
       throw new Error(`Ya existen ${existentes} registros de historial_puntos para este torneo/categoría. Si deseas recalcular, elimínalos primero.`);
+    }
+
+    // Buscar circuito aprobado del torneo
+    const torneoCircuito = await this.prisma.torneoCircuito.findFirst({
+      where: { torneoId: tournamentId, estado: 'APROBADO' },
+      include: { circuito: true },
+    });
+
+    // Calcular multiplicador final
+    let multiplicadorFinal = torneo.multiplicadorPuntos;
+    if (torneoCircuito?.circuito) {
+      multiplicadorFinal *= (torneoCircuito.multiplicador || 1) * (torneoCircuito.circuito.multiplicadorGlobal || 1);
     }
 
     // Obtener partidos finalizados de esta categoría
@@ -140,7 +153,7 @@ export class RankingsService {
     for (const resultado of resultados) {
       const config = this.encontrarConfigParaPosicion(configs, resultado.posicion);
       if (config) {
-        const puntosFinales = Math.round(config.puntosBase * torneo.multiplicadorPuntos);
+        const puntosFinales = Math.round(config.puntosBase * multiplicadorFinal);
         
         // Guardar en historial
         for (const jugadorId of resultado.jugadoresIds) {
@@ -152,7 +165,7 @@ export class RankingsService {
               posicionFinal: resultado.posicion,
               puntosGanados: puntosFinales,
               puntosBase: config.puntosBase,
-              multiplicadorAplicado: torneo.multiplicadorPuntos,
+              multiplicadorAplicado: multiplicadorFinal,
               // FIX: fechaTorneo es String YYYY-MM-DD
               fechaTorneo: new Date().toISOString().split('T')[0],
             },
@@ -163,14 +176,19 @@ export class RankingsService {
     }
 
     // Actualizar rankings
-    await this.actualizarRankings(categoryId);
+    const temporada = torneo.fechaInicio.substring(0, 4);
+    await this.actualizarRankingsCategoria(categoryId, temporada);
+    if (torneoCircuito?.circuito) {
+      await this.actualizarRankingsCircuito(torneoCircuito.circuito.id, categoryId, temporada);
+    }
+    await this.actualizarRankingsGlobal(temporada);
 
     return {
       success: true,
       message: 'Puntos calculados y guardados',
       data: {
         torneo: torneo.nombre,
-        multiplicador: torneo.multiplicadorPuntos,
+        multiplicador: multiplicadorFinal,
         puntosAsignados: puntosCalculados.length,
       },
     };
@@ -266,19 +284,88 @@ export class RankingsService {
     return config;
   }
 
-  private async actualizarRankings(categoryId: string) {
-    // Obtener todos los jugadores con historial en esta categoría
+  async actualizarRankingsCategoria(categoryId: string, temporada: string): Promise<void> {
+    const torneoIds = await this.obtenerTorneosEnCircuitosAprobados();
+    if (torneoIds.length === 0) return;
+
     const historiales = await this.prisma.historialPuntos.groupBy({
       by: ['jugadorId'],
-      where: { categoryId },
+      where: {
+        categoryId,
+        tournamentId: { in: torneoIds },
+        fechaTorneo: { startsWith: temporada },
+      },
       _sum: { puntosGanados: true },
       _count: { id: true },
     });
 
-    // Ordenar por puntos descendente
+    await this.upsertRankings(historiales, 'CATEGORIA', categoryId, temporada);
+  }
+
+  async actualizarRankingsGlobal(temporada: string): Promise<void> {
+    const torneoIds = await this.obtenerTorneosEnCircuitosAprobados();
+    if (torneoIds.length === 0) return;
+
+    const historiales = await this.prisma.historialPuntos.groupBy({
+      by: ['jugadorId'],
+      where: {
+        tournamentId: { in: torneoIds },
+        fechaTorneo: { startsWith: temporada },
+      },
+      _sum: { puntosGanados: true },
+      _count: { id: true },
+    });
+
+    await this.upsertRankings(historiales, 'GLOBAL', '', temporada);
+  }
+
+  async actualizarRankingsCircuito(circuitoId: string, categoryId: string, temporada: string): Promise<void> {
+    const torneosCircuito = await this.prisma.torneoCircuito.findMany({
+      where: { circuitoId, estado: 'APROBADO' },
+      select: { torneoId: true },
+    });
+    const torneoIds = torneosCircuito.map(t => t.torneoId);
+    if (torneoIds.length === 0) return;
+
+    const historiales = await this.prisma.historialPuntos.groupBy({
+      by: ['jugadorId'],
+      where: {
+        tournamentId: { in: torneoIds },
+        categoryId,
+        fechaTorneo: { startsWith: temporada },
+      },
+      _sum: { puntosGanados: true },
+      _count: { id: true },
+    });
+
+    await this.upsertRankings(historiales, 'LIGA', circuitoId, temporada);
+  }
+
+  private async obtenerTorneosEnCircuitosAprobados(): Promise<string[]> {
+    const torneos = await this.prisma.torneoCircuito.findMany({
+      where: { estado: 'APROBADO' },
+      select: { torneoId: true },
+    });
+    return [...new Set(torneos.map(t => t.torneoId))];
+  }
+
+  private async upsertRankings(
+    historiales: any[],
+    tipoRanking: TipoRanking,
+    alcance: string,
+    temporada: string,
+  ): Promise<void> {
+    if (historiales.length === 0) return;
+
+    const jugadorIds = historiales.map(h => h.jugadorId);
+    const jugadores = await this.prisma.user.findMany({
+      where: { id: { in: jugadorIds } },
+      select: { id: true, genero: true },
+    });
+    const generoMap = new Map(jugadores.map(j => [j.id, j.genero]));
+
     const ordenados = historiales.sort((a, b) => (b._sum.puntosGanados || 0) - (a._sum.puntosGanados || 0));
 
-    // Asignar posiciones con ranking empatado (1224)
     let posicion = 1;
     for (let i = 0; i < ordenados.length; i++) {
       const { jugadorId, _sum, _count } = ordenados[i];
@@ -293,9 +380,9 @@ export class RankingsService {
         where: {
           jugadorId_tipoRanking_alcance_temporada: {
             jugadorId,
-            tipoRanking: 'CATEGORIA',
-            alcance: categoryId,
-            temporada: new Date().getFullYear().toString(),
+            tipoRanking,
+            alcance,
+            temporada,
           },
         },
         update: {
@@ -306,13 +393,13 @@ export class RankingsService {
         },
         create: {
           jugadorId,
-          tipoRanking: 'CATEGORIA',
-          alcance: categoryId,
-          genero: 'MASCULINO', // Se actualizará con el género real
+          tipoRanking,
+          alcance,
+          genero: generoMap.get(jugadorId) || 'MASCULINO',
           puntosTotales,
           posicion,
           torneosJugados,
-          temporada: new Date().getFullYear().toString(),
+          temporada,
         },
       });
     }
