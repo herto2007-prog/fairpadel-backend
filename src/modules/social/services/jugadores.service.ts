@@ -166,18 +166,9 @@ export class JugadoresService {
    * Optimizado con batch queries
    */
   private async getStatsJugador(userId: string) {
-    // Optimización: usar Promise.all para paralelizar queries
-    const [historialCount, victoriasAgg, totalPartidosAgg, torneosGanados] = await Promise.all([
+    // Torneos jugados y ganados desde historial de puntos
+    const [historialCount, torneosGanados] = await Promise.all([
       this.prisma.historialPuntos.count({ where: { jugadorId: userId } }),
-      this.prisma.ranking.aggregate({
-        where: { jugadorId: userId },
-        _sum: { victorias: true },
-      }),
-      this.prisma.ranking.aggregate({
-        where: { jugadorId: userId },
-        _sum: { victorias: true, derrotas: true },
-      }),
-      // Contar torneos ganados (posición = "1ro")
       this.prisma.historialPuntos.count({
         where: {
           jugadorId: userId,
@@ -186,15 +177,43 @@ export class JugadoresService {
       }),
     ]);
 
-    const totalVictorias = victoriasAgg._sum.victorias || 0;
-    const totalDerrotas = totalPartidosAgg._sum.derrotas || 0;
-    const total = totalVictorias + totalDerrotas;
-    const efectividad = total > 0 ? Math.round((totalVictorias / total) * 100) : 0;
+    // Victorias y derrotas reales desde partidos (Match) incluyendo zona, octavos, cuartos, semis, final
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: {
+        OR: [{ jugador1Id: userId }, { jugador2Id: userId }],
+      },
+      select: { id: true },
+    });
+
+    const ids = inscripciones.map(i => i.id);
+    let victorias = 0;
+    let derrotas = 0;
+
+    if (ids.length > 0) {
+      const partidos = await this.prisma.match.findMany({
+        where: {
+          OR: [{ inscripcion1Id: { in: ids } }, { inscripcion2Id: { in: ids } }],
+          estado: 'FINALIZADO',
+        },
+        select: { inscripcionGanadoraId: true },
+      });
+
+      for (const p of partidos) {
+        if (p.inscripcionGanadoraId && ids.includes(p.inscripcionGanadoraId)) {
+          victorias++;
+        } else {
+          derrotas++;
+        }
+      }
+    }
+
+    const total = victorias + derrotas;
+    const efectividad = total > 0 ? Math.round((victorias / total) * 100) : 0;
 
     return {
       torneosJugados: historialCount,
-      torneosGanados: torneosGanados,
-      victorias: totalVictorias,
+      torneosGanados,
+      victorias,
       efectividad,
     };
   }

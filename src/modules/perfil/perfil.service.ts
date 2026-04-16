@@ -118,7 +118,7 @@ export class PerfilService {
           posicion: r.posicion,
           puntosTotales: r.puntosTotales,
           torneosJugados: r.torneosJugados,
-          victorias: r.victorias,
+          victorias: statsPartidos.ganados,
           temporada: r.temporada,
         })),
         circuitos: rankings
