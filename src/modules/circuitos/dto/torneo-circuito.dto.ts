@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsBoolean, Min } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, Min } from 'class-validator';
 
 // NUEVO: DTO para asignación directa por admin (sin solicitud)
 export class AsignarTorneoDirectoDto {
@@ -66,6 +66,10 @@ export class ConfigurarTorneoCircuitoDto {
   @IsOptional()
   @IsBoolean({ message: 'Es final debe ser booleano' })
   esFinal?: boolean;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'El multiplicador debe ser un número' })
+  multiplicador?: number;
 
   @IsOptional()
   @IsString({ message: 'Las notas deben ser texto' })

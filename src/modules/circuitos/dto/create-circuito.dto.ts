@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, Min } from 'class-validator';
 
 export class CreateCircuitoDto {
   @IsString({ message: 'El nombre es requerido' })
@@ -55,6 +55,10 @@ export class CreateCircuitoDto {
   @IsOptional()
   @IsBoolean({ message: 'Destacado debe ser booleano' })
   destacado?: boolean;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'El multiplicador global debe ser un número' })
+  multiplicadorGlobal?: number;
 }
 
 export class UpdateCircuitoDto {

@@ -293,6 +293,7 @@ export class CircuitosService {
         puntosValidos: dto.puntosValidos,
         orden: dto.orden,
         esFinal: dto.esFinal,
+        multiplicador: dto.multiplicador,
         notas: dto.notas,
       },
     });
