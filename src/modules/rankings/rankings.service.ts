@@ -321,7 +321,7 @@ export class RankingsService {
 
   async actualizarRankingsCircuito(circuitoId: string, categoryId: string, temporada: string): Promise<void> {
     const torneosCircuito = await this.prisma.torneoCircuito.findMany({
-      where: { circuitoId, estado: 'APROBADO' },
+      where: { circuitoId, estado: 'APROBADO', puntosValidos: true },
       include: { torneo: { select: { id: true, multiplicadorPuntos: true } } },
     });
     const torneoIds = torneosCircuito.map(t => t.torneoId);

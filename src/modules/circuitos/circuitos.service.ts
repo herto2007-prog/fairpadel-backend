@@ -239,6 +239,48 @@ export class CircuitosService {
     };
   }
 
+  async getEstadoCircuitoPorTorneo(torneoId: string, userId: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: torneoId },
+      select: { organizadorId: true },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    if (torneo.organizadorId !== userId) {
+      throw new BadRequestException('No tienes permiso para este torneo');
+    }
+
+    const relaciones = await this.prisma.torneoCircuito.findMany({
+      where: { torneoId },
+      include: {
+        circuito: { select: { id: true, nombre: true, temporada: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const activa = relaciones.find(r => r.estado === 'APROBADO') || relaciones[0];
+
+    return {
+      success: true,
+      data: {
+        tieneRelacion: relaciones.length > 0,
+        estado: activa?.estado || null,
+        circuito: activa?.circuito || null,
+        puntosValidos: activa?.puntosValidos ?? null,
+        relaciones: relaciones.map(r => ({
+          id: r.id,
+          estado: r.estado,
+          circuito: r.circuito,
+          puntosValidos: r.puntosValidos,
+          createdAt: r.createdAt,
+        })),
+      },
+    };
+  }
+
   async getSolicitudesPendientes() {
     const solicitudes = await this.prisma.torneoCircuito.findMany({
       where: { estado: 'PENDIENTE' },

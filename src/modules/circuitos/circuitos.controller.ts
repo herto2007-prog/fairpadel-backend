@@ -46,6 +46,15 @@ export class CircuitosController {
   // SOLICITUDES DE INCLUSIÓN (Organizadores)
   // ═══════════════════════════════════════════════════════════
 
+  @Get('torneo/:torneoId/estado-circuito')
+  @UseGuards(JwtAuthGuard)
+  async getEstadoCircuito(
+    @Param('torneoId') torneoId: string,
+    @Request() req: any,
+  ) {
+    return this.circuitosService.getEstadoCircuitoPorTorneo(torneoId, req.user.userId);
+  }
+
   @Post('torneo/:torneoId/solicitar')
   @UseGuards(JwtAuthGuard)
   async solicitarInclusion(

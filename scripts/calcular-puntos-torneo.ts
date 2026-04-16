@@ -291,7 +291,7 @@ async function actualizarRankingsGlobal(temporada: string) {
 
 async function actualizarRankingsCircuito(circuitoId: string, categoryId: string, temporada: string) {
   const torneosCircuito = await prisma.torneoCircuito.findMany({
-    where: { circuitoId, estado: 'APROBADO' },
+    where: { circuitoId, estado: 'APROBADO', puntosValidos: true },
     include: { torneo: { select: { id: true, multiplicadorPuntos: true } } },
   });
   const torneoIds = torneosCircuito.map((t) => t.torneoId);
