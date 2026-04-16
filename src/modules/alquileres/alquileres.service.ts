@@ -69,6 +69,9 @@ export class AlquileresService {
     // Obtener horarios ocupados por torneos para esa fecha
     const horariosTorneo = await this.obtenerHorariosOcupadosPorTorneo(sedeId, fecha);
 
+    // Obtener bloqueos para esta sede y fecha
+    const bloqueos = await this.obtenerBloqueos([sedeId], canchas.map(c => c.id), fecha);
+
     // Obtener disponibilidades configuradas
     const disponibilidades = await this.prisma.alquilerDisponibilidad.findMany({
       where: {
@@ -80,6 +83,23 @@ export class AlquileresService {
 
     // Construir horarios disponibles por cancha
     const disponibilidadPorCancha = canchas.map(cancha => {
+      // Verificar si la cancha está bloqueada (bloqueo específico o general de sede)
+      const bloqueada = bloqueos.some(b =>
+        b.sedeId === sedeId && (!b.sedeCanchaId || b.sedeCanchaId === cancha.id)
+      );
+
+      if (bloqueada) {
+        return {
+          cancha: {
+            id: cancha.id,
+            nombre: cancha.nombre,
+            tipo: cancha.tipo,
+            tieneLuz: cancha.tieneLuz,
+          },
+          slots: [],
+        };
+      }
+
       const disponibilidadCancha = disponibilidades.filter(d => d.sedeCanchaId === cancha.id);
       const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
 
@@ -103,6 +123,30 @@ export class AlquileresService {
       duracionMinutos: duracion,
       disponibilidad: disponibilidadPorCancha,
     };
+  }
+
+  /**
+   * Obtiene bloqueos activos para sedes y canchas en una fecha específica
+   */
+  private async obtenerBloqueos(
+    sedeIds: string[],
+    canchaIds: string[],
+    fecha: string,
+    tx?: any,
+  ): Promise<{ sedeId: string; sedeCanchaId: string | null }[]> {
+    const prismaClient = tx || this.prisma;
+    return prismaClient.alquilerBloqueo.findMany({
+      where: {
+        sedeId: { in: sedeIds },
+        fechaInicio: { lte: fecha },
+        fechaFin: { gte: fecha },
+        OR: [
+          { sedeCanchaId: null },
+          { sedeCanchaId: { in: canchaIds } },
+        ],
+      },
+      select: { sedeId: true, sedeCanchaId: true },
+    });
   }
 
   /**
@@ -303,6 +347,9 @@ export class AlquileresService {
     const todasSedesIds = sedes.map(s => s.id);
     const horariosTorneo = await this.obtenerHorariosOcupadosPorTorneoGlobal(todasSedesIds, fecha);
 
+    // Obtener bloqueos para todas las sedes y canchas en la fecha
+    const bloqueos = await this.obtenerBloqueos(todasSedesIds, todasCanchasIds, fecha);
+
     // Obtener disponibilidades para el día
     const disponibilidades = await this.prisma.alquilerDisponibilidad.findMany({
       where: {
@@ -320,6 +367,23 @@ export class AlquileresService {
       sedes.map(async (sede) => {
         const canchasSede = sede.canchas;
         const canchasConHorarios = canchasSede.map(cancha => {
+          // Verificar si la cancha está bloqueada
+          const bloqueada = bloqueos.some(b =>
+            b.sedeId === sede.id && (!b.sedeCanchaId || b.sedeCanchaId === cancha.id)
+          );
+
+          if (bloqueada) {
+            return {
+              cancha: {
+                id: cancha.id,
+                nombre: cancha.nombre,
+                tipo: cancha.tipo,
+                tieneLuz: cancha.tieneLuz,
+              },
+              slots: [],
+            };
+          }
+
           const disponibilidadCancha = disponibilidades.filter(d => d.sedeCanchaId === cancha.id);
           const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
 
@@ -419,135 +483,162 @@ export class AlquileresService {
       duracionMinutos: createDto.duracionMinutos,
     });
 
-    // Verificar que la cancha existe
-    const cancha = await this.prisma.sedeCancha.findUnique({
-      where: { id: createDto.sedeCanchaId },
-      include: { sede: { include: { alquilerConfig: true } } },
+    return this.prisma.$transaction(async (tx) => {
+      // Verificar que la cancha existe
+      const cancha = await tx.sedeCancha.findUnique({
+        where: { id: createDto.sedeCanchaId },
+        include: { sede: { include: { alquilerConfig: true } } },
+      });
+
+      console.log(`[DEBUG crearReserva] Cancha encontrada:`, {
+        canchaId: cancha?.id,
+        activa: cancha?.activa,
+        alquilerConfig: cancha?.sede?.alquilerConfig ? 'existe' : 'no existe',
+        habilitado: cancha?.sede?.alquilerConfig?.habilitado,
+      });
+
+      if (!cancha || !cancha.activa) {
+        console.log(`[DEBUG crearReserva] ERROR: Cancha no encontrada o inactiva`);
+        throw new NotFoundException('Cancha no encontrada');
+      }
+
+      const config = cancha.sede.alquilerConfig;
+      if (!config || !config.habilitado) {
+        console.log(`[DEBUG crearReserva] ERROR: Alquileres no habilitados`);
+        throw new BadRequestException('Los alquileres no están habilitados para esta sede');
+      }
+
+      // Validar anticipacionMaxDias
+      const hoyStr = new Date().toISOString().split('T')[0];
+      const diasDiff = this.diasEntre(hoyStr, createDto.fecha);
+      const anticipacionMaxDias = config.anticipacionMaxDias ?? 14;
+      if (diasDiff > anticipacionMaxDias) {
+        throw new BadRequestException(
+          `No se pueden reservar canchas con más de ${anticipacionMaxDias} días de anticipación`,
+        );
+      }
+
+      // Advisory lock para evitar race conditions en reservas concurrentes
+      const lockKey = this.hashStringToInt64(`${createDto.sedeCanchaId}:${createDto.fecha}`);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+
+      // Verificar bloqueos para esta cancha/fecha
+      const bloqueos = await this.obtenerBloqueos(
+        [cancha.sedeId],
+        [createDto.sedeCanchaId],
+        createDto.fecha,
+        tx,
+      );
+      const bloqueada = bloqueos.some(b =>
+        b.sedeId === cancha.sedeId && (!b.sedeCanchaId || b.sedeCanchaId === createDto.sedeCanchaId)
+      );
+      if (bloqueada) {
+        console.log(`[DEBUG crearReserva] ERROR: Cancha bloqueada para esta fecha`);
+        throw new BadRequestException('La cancha no está disponible para esta fecha');
+      }
+
+      // FIX: fecha es String YYYY-MM-DD
+      const diaSemana = this.getDiaSemanaFromString(createDto.fecha);
+      console.log(`[DEBUG crearReserva] DiaSemana calculado: ${diaSemana}`);
+
+      // Buscar disponibilidad que cubra el horario solicitado
+      const disponibilidades = await tx.alquilerDisponibilidad.findMany({
+        where: {
+          sedeCanchaId: createDto.sedeCanchaId,
+          diaSemana,
+          horaInicio: { lte: createDto.horaInicio },
+          activo: true,
+        },
+      });
+
+      // Filtrar manualmente considerando que 00:00 = 24:00
+      const disponibilidad = disponibilidades.find(d => {
+        const finEsMedianoche = d.horaFin === '00:00';
+        if (finEsMedianoche) return true;
+        return d.horaFin >= createDto.horaFin;
+      });
+
+      console.log(`[DEBUG crearReserva] Disponibilidad encontrada:`, disponibilidad ? {
+        id: disponibilidad.id,
+        horaInicio: disponibilidad.horaInicio,
+        horaFin: disponibilidad.horaFin,
+        activo: disponibilidad.activo,
+      } : 'NO ENCONTRADA');
+      console.log(`[DEBUG crearReserva] Total disponibilidades revisadas: ${disponibilidades.length}`);
+
+      if (!disponibilidad) {
+        console.log(`[DEBUG crearReserva] ERROR: No hay disponibilidad para el horario solicitado`);
+        throw new BadRequestException('Horario no disponible');
+      }
+
+      // Verificar que no haya conflicto con otra reserva
+      const reservasExistentes = await tx.reservaCancha.findMany({
+        where: {
+          sedeCanchaId: createDto.sedeCanchaId,
+          fecha: createDto.fecha,
+          estado: { in: [ReservaCanchaEstado.PENDIENTE, ReservaCanchaEstado.CONFIRMADA] },
+        },
+      });
+
+      const inicioMin = this.parseTimeToMinutes(createDto.horaInicio);
+      const finMin = this.parseTimeToMinutes(createDto.horaFin);
+      const finMinAjustado = finMin === 0 && createDto.horaFin === '00:00' ? 24 * 60 : finMin;
+
+      const conflicto = reservasExistentes.find(r => {
+        const rInicio = this.parseTimeToMinutes(r.horaInicio);
+        let rFin = this.parseTimeToMinutes(r.horaFin);
+        if (rFin === 0 && r.horaFin === '00:00') rFin = 24 * 60;
+        return inicioMin < rFin && finMinAjustado > rInicio;
+      });
+
+      console.log(`[DEBUG crearReserva] Conflicto encontrado:`, conflicto ? {
+        reservaId: conflicto.id,
+        horaInicio: conflicto.horaInicio,
+        horaFin: conflicto.horaFin,
+        estado: conflicto.estado,
+      } : 'NINGUNO');
+      console.log(`[DEBUG crearReserva] Reservas existentes revisadas: ${reservasExistentes.length}`);
+
+      if (conflicto) {
+        console.log(`[DEBUG crearReserva] ERROR: Horario ya reservado`);
+        throw new BadRequestException('El horario ya está reservado');
+      }
+
+      // Crear reserva - SIEMPRE CONFIRMADA
+      const estado = ReservaCanchaEstado.CONFIRMADA;
+
+      console.log(`[DEBUG crearReserva] Creando reserva CONFIRMADA automaticamente`);
+
+      // Determinar si fue creado por encargado: si tiene datos externos es manual
+      const creadoPorEncargado = !!createDto.nombreExterno || !!createDto.telefonoExterno;
+
+      const reserva = await tx.reservaCancha.create({
+        data: {
+          ...createDto,
+          userId,
+          estado,
+          duracionMinutos:
+            createDto.duracionMinutos ??
+            (this.parseTimeToMinutes(createDto.horaFin) -
+              this.parseTimeToMinutes(createDto.horaInicio)),
+          creadoPorEncargado,
+        },
+        include: {
+          sedeCancha: { include: { sede: true } },
+          user: { select: { id: true, nombre: true, apellido: true, telefono: true } },
+        },
+      });
+
+      console.log(`[DEBUG crearReserva] Reserva creada exitosamente: ${reserva.id}`);
+      return reserva;
     });
-
-    console.log(`[DEBUG crearReserva] Cancha encontrada:`, {
-      canchaId: cancha?.id,
-      activa: cancha?.activa,
-      alquilerConfig: cancha?.sede?.alquilerConfig ? 'existe' : 'no existe',
-      habilitado: cancha?.sede?.alquilerConfig?.habilitado,
-    });
-
-    if (!cancha || !cancha.activa) {
-      console.log(`[DEBUG crearReserva] ERROR: Cancha no encontrada o inactiva`);
-      throw new NotFoundException('Cancha no encontrada');
-    }
-
-    const config = cancha.sede.alquilerConfig;
-    if (!config || !config.habilitado) {
-      console.log(`[DEBUG crearReserva] ERROR: Alquileres no habilitados`);
-      throw new BadRequestException('Los alquileres no están habilitados para esta sede');
-    }
-
-    // FIX: fecha es String YYYY-MM-DD
-    const diaSemana = this.getDiaSemanaFromString(createDto.fecha);
-    console.log(`[DEBUG crearReserva] DiaSemana calculado: ${diaSemana}`);
-
-    // Buscar disponibilidad que cubra el horario solicitado
-    // Considerar que horaFin = '00:00' significa medianoche (24:00)
-    const disponibilidades = await this.prisma.alquilerDisponibilidad.findMany({
-      where: {
-        sedeCanchaId: createDto.sedeCanchaId,
-        diaSemana,
-        horaInicio: { lte: createDto.horaInicio },
-        activo: true,
-      },
-    });
-
-    // Filtrar manualmente considerando que 00:00 = 24:00
-    const disponibilidad = disponibilidades.find(d => {
-      const finEsMedianoche = d.horaFin === '00:00';
-      if (finEsMedianoche) return true; // 00:00 cubre cualquier horaFin
-      return d.horaFin >= createDto.horaFin;
-    });
-
-    console.log(`[DEBUG crearReserva] Disponibilidad encontrada:`, disponibilidad ? {
-      id: disponibilidad.id,
-      horaInicio: disponibilidad.horaInicio,
-      horaFin: disponibilidad.horaFin,
-      activo: disponibilidad.activo,
-    } : 'NO ENCONTRADA');
-    console.log(`[DEBUG crearReserva] Total disponibilidades revisadas: ${disponibilidades.length}`);
-
-    if (!disponibilidad) {
-      console.log(`[DEBUG crearReserva] ERROR: No hay disponibilidad para el horario solicitado`);
-      throw new BadRequestException('Horario no disponible');
-    }
-
-    // Verificar que no haya conflicto con otra reserva
-    // Usar comparacion de minutos para evitar problemas con 00:00
-    const reservasExistentes = await this.prisma.reservaCancha.findMany({
-      where: {
-        sedeCanchaId: createDto.sedeCanchaId,
-        fecha: createDto.fecha,
-        estado: { in: [ReservaCanchaEstado.PENDIENTE, ReservaCanchaEstado.CONFIRMADA] },
-      },
-    });
-
-    const inicioMin = this.parseTimeToMinutes(createDto.horaInicio);
-    const finMin = this.parseTimeToMinutes(createDto.horaFin);
-    // Si horaFin es 00:00, tratar como 24:00 (1440 minutos)
-    const finMinAjustado = finMin === 0 && createDto.horaFin === '00:00' ? 24 * 60 : finMin;
-
-    const conflicto = reservasExistentes.find(r => {
-      const rInicio = this.parseTimeToMinutes(r.horaInicio);
-      let rFin = this.parseTimeToMinutes(r.horaFin);
-      // Si la reserva existente termina a medianoche
-      if (rFin === 0 && r.horaFin === '00:00') rFin = 24 * 60;
-      
-      // Hay solapamiento si:
-      // (inicioReserva < finExistente) AND (finReserva > inicioExistente)
-      return inicioMin < rFin && finMinAjustado > rInicio;
-    });
-
-    console.log(`[DEBUG crearReserva] Conflicto encontrado:`, conflicto ? {
-      reservaId: conflicto.id,
-      horaInicio: conflicto.horaInicio,
-      horaFin: conflicto.horaFin,
-      estado: conflicto.estado,
-    } : 'NINGUNO');
-    console.log(`[DEBUG crearReserva] Reservas existentes revisadas: ${reservasExistentes.length}`);
-
-    if (conflicto) {
-      console.log(`[DEBUG crearReserva] ERROR: Horario ya reservado`);
-      throw new BadRequestException('El horario ya está reservado');
-    }
-
-    // Crear reserva - SIEMPRE CONFIRMADA (no requiere aprobacion del dueño)
-    const estado = ReservaCanchaEstado.CONFIRMADA;
-
-    console.log(`[DEBUG crearReserva] Creando reserva CONFIRMADA automaticamente`);
-
-    // Determinar si fue creado por encargado: si tiene datos externos es manual
-    const creadoPorEncargado = !!createDto.nombreExterno || !!createDto.telefonoExterno;
-
-    const reserva = await this.prisma.reservaCancha.create({
-      data: {
-        ...createDto,
-        userId,
-        estado,
-        duracionMinutos: createDto.duracionMinutos || 70,
-        creadoPorEncargado,
-      },
-      include: {
-        sedeCancha: { include: { sede: true } },
-        user: { select: { id: true, nombre: true, apellido: true, telefono: true } },
-      },
-    });
-
-    console.log(`[DEBUG crearReserva] Reserva creada exitosamente: ${reserva.id}`);
-    return reserva;
   }
 
   async obtenerMisReservas(userId: string) {
     return this.prisma.reservaCancha.findMany({
       where: { userId },
       include: {
-        sedeCancha: { include: { sede: true } },
+        sedeCancha: { include: { sede: { include: { alquilerConfig: true } } } },
       },
       orderBy: { fecha: 'desc' },
     });
@@ -600,6 +691,9 @@ export class AlquileresService {
   async cancelarReserva(reservaId: string, cancelarDto: CancelarReservaDto, userId?: string) {
     const reserva = await this.prisma.reservaCancha.findUnique({
       where: { id: reservaId },
+      include: {
+        sedeCancha: { include: { sede: { include: { alquilerConfig: true } } } },
+      },
     });
 
     if (!reserva) {
@@ -608,6 +702,21 @@ export class AlquileresService {
 
     if (reserva.estado === ReservaCanchaEstado.CANCELADA) {
       throw new BadRequestException('La reserva ya está cancelada');
+    }
+
+    const config = reserva.sedeCancha?.sede?.alquilerConfig;
+    const cancelacionMinHoras = config?.cancelacionMinHoras ?? 4;
+
+    const [year, month, day] = reserva.fecha.split('-').map(Number);
+    const [hour, minute] = reserva.horaInicio.split(':').map(Number);
+    const inicioReserva = new Date(year, month - 1, day, hour, minute);
+    const ahora = new Date();
+    const diffHoras = (inicioReserva.getTime() - ahora.getTime()) / (1000 * 60 * 60);
+
+    if (diffHoras < cancelacionMinHoras) {
+      throw new BadRequestException(
+        `No se puede cancelar la reserva con menos de ${cancelacionMinHoras} horas de anticipación`,
+      );
     }
 
     return this.prisma.reservaCancha.update({
@@ -1026,5 +1135,28 @@ export class AlquileresService {
     // Crear fecha en hora local de Paraguay (UTC-3)
     const date = new Date(year, month - 1, day, 12, 0, 0);
     return date.getDay();
+  }
+
+  /**
+   * Calcula la diferencia en días entre dos fechas YYYY-MM-DD
+   */
+  private diasEntre(fechaInicio: string, fechaFin: string): number {
+    const d1 = new Date(`${fechaInicio}T00:00:00`);
+    const d2 = new Date(`${fechaFin}T00:00:00`);
+    return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  /**
+   * Convierte un string en un entero de 64 bits consistente
+   * para usar con pg_advisory_xact_lock
+   */
+  private hashStringToInt64(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash) % Number.MAX_SAFE_INTEGER;
   }
 }

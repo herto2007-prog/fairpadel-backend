@@ -341,7 +341,6 @@ export class AdminSuscripcionesController {
         data: {
           sedeId,
           habilitado: true,
-          requiereAprobacion: true,
           duracionSlotMinutos: 90,
           anticipacionMaxDias: 14,
           cancelacionMinHoras: 4,

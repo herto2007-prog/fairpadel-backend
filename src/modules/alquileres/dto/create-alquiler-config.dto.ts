@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean, IsInt, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsInt, IsEmail, Min } from 'class-validator';
 
 export class CreateAlquilerConfigDto {
   @IsString()
@@ -12,20 +12,19 @@ export class CreateAlquilerConfigDto {
   @IsOptional()
   habilitado?: boolean;
 
-  @IsBoolean()
-  @IsOptional()
-  requiereAprobacion?: boolean;
-
   @IsInt()
   @IsOptional()
+  @Min(1)
   duracionSlotMinutos?: number;
 
   @IsInt()
   @IsOptional()
+  @Min(0)
   anticipacionMaxDias?: number;
 
   @IsInt()
   @IsOptional()
+  @Min(0)
   cancelacionMinHoras?: number;
 
   @IsString()

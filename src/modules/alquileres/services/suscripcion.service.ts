@@ -44,7 +44,6 @@ export class SuscripcionService {
         data: {
           sedeId,
           habilitado: false, // Se habilitará al pagar
-          requiereAprobacion: true,
           duracionSlotMinutos: 90,
           anticipacionMaxDias: 14,
           cancelacionMinHoras: 4,

@@ -3960,6 +3960,104 @@ Se ajustó la visualización de finanzas en el panel del organizador para reflej
 
 ---
 
+## 2026-04-15 - Automatización de Rankings, Circuitos y Multiplicadores
+
+### Contexto
+El sistema de rankings requería evolucionar para soportar el modelo real de negocio de FairPadel:
+- Cada circuito tiene N torneos a lo largo de la temporada.
+- Cada torneo dentro de un circuito tiene su propio multiplicador de puntos.
+- Solo los torneos con circuito aprobado generan puntos de ranking (para el circuito y para el ranking general de FairPadel).
+- FairPadel tiene un ranking GENERAL que acumula todos los puntos de todos los circuitos.
+- El cálculo de puntos era 100% manual y no existía un endpoint para marcar una categoría como finalizada.
+
+### Cambios realizados
+
+#### Backend - RankingsService
+**Archivo:** `src/modules/rankings/rankings.service.ts`
+
+- `calcularPuntosTorneo()` ahora:
+  - Busca el `TorneoCircuito` con `estado = 'APROBADO'` del torneo.
+  - Calcula `multiplicadorFinal = torneo.multiplicadorPuntos * torneoCircuito.multiplicador * circuito.multiplicadorGlobal`.
+  - Guarda el multiplicador final en `historial_puntos.multiplicadorAplicado`.
+  - Al finalizar, recalcula automáticamente 3 rankings:
+    1. `actualizarRankingsCategoria(categoryId, temporada)` — ranking por categoría de FairPadel.
+    2. `actualizarRankingsCircuito(circuitoId, categoryId, temporada)` — ranking del circuito (`tipoRanking = 'LIGA'`).
+    3. `actualizarRankingsGlobal(temporada)` — ranking general de FairPadel.
+
+- **Nuevos métodos públicos:**
+  - `actualizarRankingsCategoria(categoryId, temporada)` — suma `historial_puntos` de torneos con circuito aprobado, filtrado por categoría y temporada.
+  - `actualizarRankingsGlobal(temporada)` — suma `historial_puntos` de **todos** los torneos con circuito aprobado, por temporada.
+  - `actualizarRankingsCircuito(circuitoId, categoryId, temporada)` — suma `historial_puntos` de torneos del circuito específico.
+  - `upsertRankings(...)` — helper privado que centraliza la lógica de ordenamiento, asignación de posiciones y upsert en tabla `rankings` (incluye género real del jugador).
+  - `obtenerTorneosEnCircuitosAprobados()` — devuelve los IDs de torneos que pertenecen a circuitos aprobados.
+
+#### Backend - RankingsController
+**Archivo:** `src/modules/rankings/rankings.controller.ts`
+
+**Nuevos endpoints de recálculo manual (admin):**
+- `POST /rankings/admin/recalcular-global` — body opcional `{ temporada }`.
+- `POST /rankings/admin/recalcular-circuito/:circuitoId` — body `{ categoryId, temporada? }`.
+- `POST /rankings/admin/recalcular-categoria/:categoryId` — body opcional `{ temporada }`.
+
+#### Backend - AdminTorneosController
+**Archivo:** `src/modules/admin/admin-torneos.controller.ts`
+
+**Nuevo endpoint:**
+- `POST /admin/torneos/:tournamentId/categorias/:categoryId/finalizar`
+  - Valida permisos (admin u organizador del torneo).
+  - Valida que la categoría pertenezca al torneo.
+  - Valida que el torneo tenga un **circuito aprobado**.
+  - Marca `TournamentCategory.estado = 'FINALIZADA'`.
+  - Dispara automáticamente `calcularPuntosTorneo()`.
+  - Retorna mensaje combinado con info del circuito y puntos calculados.
+
+### Reglas de negocio establecidas
+1. **Solo torneos con circuito aprobado generan ranking.** Los torneos sueltos no afectan rankings CATEGORIA, GLOBAL ni LIGA.
+2. **Un torneo = un circuito** (práctica de negocio).
+3. **El multiplicador de circuito se aplica automáticamente** al calcular puntos.
+4. **El endpoint manual `POST /rankings/admin/calcular` sigue existiendo** como respaldo para casos especiales.
+5. **El género del jugador se respeta** en la creación de registros de ranking (mejora sobre el hardcodeado `'MASCULINO'` anterior).
+
+### Resultado esperado
+- El organizador/admin puede finalizar una categoría con un solo click, cerrando el torneo y calculando automáticamente todos los puntos y rankings.
+- Los jugadores ven sus puntos reflejados inmediatamente en:
+  - El ranking de su circuito.
+  - El ranking general de FairPadel.
+  - El ranking por categoría.
+
+**Builds:** ✅ Backend compila sin errores.
+
+---
+
+## 2026-04-15 - Botón "Finalizar categoría" en panel del organizador
+
+### Contexto
+Se agregó la acción de finalización de categoría directamente en el flujo de trabajo del organizador, sin necesidad de usar Postman o llamadas manuales al API.
+
+### Cambios realizados
+
+**Frontend:**
+- `frontend/src/features/organizador/components/bracket/BracketManager.tsx`
+  - Se agregó el estado `finalizandoCategoria` para manejar el loading del botón.
+  - Se creó `handleFinalizarCategoria(categoria)` que:
+    - Muestra un modal de confirmación (`useConfirm`) con advertencia clara.
+    - Llama al endpoint `POST /admin/torneos/:tournamentId/categorias/:categoryId/finalizar`.
+    - Refresca la lista de categorías tras éxito.
+  - Se agregó el botón **"Finalizar"** (icono `Trophy`, color verde esmeralda) en las acciones de cada card de categoría.
+  - El botón solo aparece cuando la categoría ya fue sorteada (`yaSorteado`) y su estado **no es `FINALIZADA`**.
+  - Se agregó el estado `FINALIZADA` al helper `getEstadoInfo()` con estilo visual verde esmeralda.
+
+### Flujo de usuario resultante
+1. El organizador entra al torneo → pestaña **Fixture**.
+2. Ve la lista de categorías sorteadas.
+3. Al terminar todos los partidos de una categoría, presiona **"Finalizar"**.
+4. Confirma en el modal.
+5. El sistema marca la categoría como `FINALIZADA`, calcula los puntos aplicando multiplicadores de circuito, y actualiza los 3 rankings automáticamente.
+
+**Builds:** ✅ Backend y frontend compilan sin errores.
+
+---
+
 ## 2026-04-14 - Panel de comisiones para admin + recálculo automático
 
 ### Contexto

@@ -295,18 +295,6 @@ enum FixtureVersionEstado {
 }
 
 // Enums para módulo de alquileres
-enum TipoDia {
-  SEMANA
-  FIN_DE_SEMANA
-  FERIADO
-}
-
-enum FranjaHoraria {
-  MANANA
-  TARDE
-  NOCHE
-}
-
 enum ReservaCanchaEstado {
   PENDIENTE
   CONFIRMADA
@@ -435,12 +423,8 @@ model User {
   // Alertas
   alertasPersonalizadas    AlertaPersonalizada[]
   
-  // Reservas como mensualero
-  jugadorMensualero        JugadorMensualero[]
-  
   // Alquileres
   encargadoAlquileres      AlquilerConfig[]
-  responsableMensualeros   GrupoMensualero[]
   
   // Sedes como dueño o encargado
   sedesComoDueno           Sede[] @relation("SedeDueno")
@@ -567,10 +551,8 @@ model Sede {
   torneosPrincipal        Tournament[] @relation("SedePrincipal")
   ubicacionesInstructores InstructorUbicacion[]
   alquilerConfig          AlquilerConfig?
-  alquilerPrecios         AlquilerPrecio[]
   alquilerBloqueos        AlquilerBloqueo[]
   alquilerPagos           AlquilerPago[]
-  gruposMensualeros       GrupoMensualero[]
   dueno                   User?       @relation("SedeDueno", fields: [duenoId], references: [id], onDelete: SetNull)
   encargado               User?       @relation("SedeEncargado", fields: [encargadoId], references: [id], onDelete: SetNull)
 
@@ -595,7 +577,6 @@ model SedeCancha {
   partidos                Match[]
   alquilerDisponibilidades AlquilerDisponibilidad[]
   alquilerBloqueos        AlquilerBloqueo[]
-  gruposMensualeros       GrupoMensualero[]
 
   @@map("sede_canchas")
 }
@@ -2018,7 +1999,6 @@ model AlquilerConfig {
   sedeId                String   @unique @map("sede_id")
   encargadoId           String?  @map("encargado_id")
   habilitado            Boolean  @default(false)
-  requiereAprobacion    Boolean  @default(true) @map("requiere_aprobacion")
   duracionSlotMinutos   Int      @default(90) @map("duracion_slot_minutos")
   anticipacionMaxDias   Int      @default(14) @map("anticipacion_max_dias")
   cancelacionMinHoras   Int      @default(4) @map("cancelacion_min_horas")
@@ -2067,22 +2047,6 @@ model AlquilerPago {
   @@index([estado])
   @@index([createdAt])
   @@map("alquiler_pagos")
-}
-
-model AlquilerPrecio {
-  id            String        @id @default(uuid())
-  sedeId        String        @map("sede_id")
-  tipoCancha    TipoCancha    @map("tipo_cancha")
-  tipoDia       TipoDia       @map("tipo_dia")
-  franja        FranjaHoraria
-  precio        Int
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-
-  sede Sede @relation(fields: [sedeId], references: [id], onDelete: Cascade)
-
-  @@unique([sedeId, tipoCancha, tipoDia, franja])
-  @@map("alquiler_precios")
 }
 
 model AlquilerDisponibilidad {
@@ -2140,89 +2104,8 @@ model ReservaCancha {
 
   sedeCancha SedeCancha @relation("ReservasCanchas", fields: [sedeCanchaId], references: [id], onDelete: Cascade)
   user       User?      @relation("ReservasCanchaUsuario", fields: [userId], references: [id], onDelete: SetNull)
-  reservaMensualero ReservaMensualero?
 
   @@map("reservas_canchas")
-}
-
-// ═══════════════════════════════════════════════════════
-// MENSUALEROS - Grupos recurrentes de alquiler
-// ═══════════════════════════════════════════════════════
-
-enum TipoPagoMensualero {
-  MENSUAL_ANTICIPADO
-  POR_DIA
-}
-
-enum EstadoMensualero {
-  ACTIVO
-  SUSPENDIDO
-  CANCELADO
-}
-
-model GrupoMensualero {
-  id                      String               @id @default(uuid())
-  sedeId                  String               @map("sede_id")
-  sedeCanchaId            String               @map("sede_cancha_id")
-  nombre                  String
-  diaSemana               Int                  @map("dia_semana")
-  horaInicio              String               @map("hora_inicio")
-  tipoPago                TipoPagoMensualero   @default(POR_DIA) @map("tipo_pago")
-  precioPorHora           Int                  @map("precio_por_hora")
-  duracionHoras           Int                  @default(2) @map("duracion_horas")
-  estado                  EstadoMensualero     @default(ACTIVO)
-  notas                   String?              @db.Text
-  
-  // Responsable/Capitan del grupo
-  responsableUserId       String?              @map("responsable_user_id")
-  responsableNombre       String?              @map("responsable_nombre")
-  responsableTelefono     String?              @map("responsable_telefono")
-  
-  createdAt               DateTime             @default(now()) @map("created_at")
-  updatedAt               DateTime             @updatedAt @map("updated_at")
-
-  sede                    Sede                 @relation(fields: [sedeId], references: [id], onDelete: Cascade)
-  cancha                  SedeCancha           @relation(fields: [sedeCanchaId], references: [id], onDelete: Cascade)
-  responsable             User?                @relation(fields: [responsableUserId], references: [id], onDelete: SetNull)
-  jugadores               JugadorMensualero[]
-  reservas                ReservaMensualero[]
-
-  @@map("grupos_mensualeros")
-}
-
-model JugadorMensualero {
-  id                String            @id @default(uuid())
-  grupoId           String            @map("grupo_id")
-  userId            String?           @map("user_id")
-  nombreExterno     String?           @map("nombre_externo")
-  telefonoExterno   String?           @map("telefono_externo")
-  esTitular         Boolean           @default(true) @map("es_titular")
-  createdAt         DateTime          @default(now()) @map("created_at")
-
-  grupo             GrupoMensualero   @relation(fields: [grupoId], references: [id], onDelete: Cascade)
-  user              User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@map("jugadores_mensualeros")
-}
-
-model ReservaMensualero {
-  id                String               @id @default(uuid())
-  grupoId           String               @map("grupo_id")
-  fecha             String               // YYYY-MM-DD
-  estado            ReservaCanchaEstado  @default(PENDIENTE)
-  pagado            Boolean              @default(false)
-  montoPagado       Int                  @default(0) @map("monto_pagado")
-  metodoPago        MetodoPagoAlquiler?  @map("metodo_pago")
-  notas             String?              @db.Text
-  createdAt         DateTime             @default(now()) @map("created_at")
-  updatedAt         DateTime             @updatedAt @map("updated_at")
-
-  reservaRealId     String?              @unique @map("reserva_real_id")
-  reservaReal       ReservaCancha?       @relation(fields: [reservaRealId], references: [id])
-
-  grupo             GrupoMensualero      @relation(fields: [grupoId], references: [id], onDelete: Cascade)
-
-  @@map("reservas_mensualeros")
 }
 
 // ═══════════════════════════════════════════════════════
