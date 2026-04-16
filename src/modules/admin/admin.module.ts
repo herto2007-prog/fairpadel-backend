@@ -15,9 +15,10 @@ import { BracketModule } from '../bracket';
 import { ProgramacionModule } from '../programacion';
 import { DemoModule } from '../demo/demo.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { RankingsModule } from '../rankings/rankings.module';
 
 @Module({
-  imports: [PrismaModule, BracketModule, DemoModule, ProgramacionModule, WhatsAppModule],
+  imports: [PrismaModule, BracketModule, DemoModule, ProgramacionModule, WhatsAppModule, RankingsModule],
   controllers: [
     // Orden importante: rutas más específicas primero
     WhatsAppAdminController,
