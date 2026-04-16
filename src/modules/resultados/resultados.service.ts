@@ -87,6 +87,8 @@ export class ResultadosService {
     // Determinar ganador
     const { ganadorId, perdedorId, setsGanadosP1, setsGanadosP2 } = this.calcularGanador(match, dto);
 
+    this.validarGanadorDeterminado(ganadorId, perdedorId);
+
     // Actualizar partido
     const matchActualizado = await this.prisma.match.update({
       where: { id: matchId },
@@ -182,6 +184,8 @@ export class ResultadosService {
     const perdedorId = dto.parejaAfectada === 1
       ? match.inscripcion1Id
       : match.inscripcion2Id;
+
+    this.validarGanadorDeterminado(ganadorId, perdedorId);
 
     // Determinar estado según tipo
     let estado: MatchStatus;
@@ -286,6 +290,8 @@ export class ResultadosService {
 
     const { ganadorId, perdedorId, setsGanadosP1, setsGanadosP2 } = this.calcularGanador(match, dto);
 
+    this.validarGanadorDeterminado(ganadorId, perdedorId);
+
     const matchCompleto = await this.prisma.match.findUnique({
       where: { id: matchId },
       select: {
@@ -372,6 +378,8 @@ export class ResultadosService {
 
     const ganadorId = dto.parejaAfectada === 1 ? match.inscripcion2Id : match.inscripcion1Id;
     const perdedorId = dto.parejaAfectada === 1 ? match.inscripcion1Id : match.inscripcion2Id;
+
+    this.validarGanadorDeterminado(ganadorId, perdedorId);
 
     let estado: MatchStatus;
     switch (dto.tipo) {
@@ -460,6 +468,17 @@ export class ResultadosService {
    * Valida que un partido pueda ser editado verificando que
    * los partidos siguientes no tengan resultado cargado
    */
+  private validarGanadorDeterminado(
+    ganadorId: string | null | undefined,
+    perdedorId: string | null | undefined,
+  ) {
+    if (!ganadorId || !perdedorId) {
+      throw new BadRequestException(
+        'No se pudo determinar el ganador o perdedor del partido. Verifica que ambas parejas estén asignadas.',
+      );
+    }
+  }
+
   private async validarPuedeEditar(matchId: string): Promise<void> {
     const match = await this.prisma.match.findUnique({
       where: { id: matchId },
@@ -877,6 +896,8 @@ export class ResultadosService {
       set3: set3 ? [set3.gamesP1, set3.gamesP2] : null,
       ganadorId,
     });
+
+    this.validarGanadorDeterminado(ganadorId, perdedorId);
 
     // Actualizar partido
     const matchActualizado = await this.prisma.match.update({

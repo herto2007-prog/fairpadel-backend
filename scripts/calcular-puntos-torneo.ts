@@ -30,7 +30,7 @@ async function main() {
 
   const torneo = await prisma.tournament.findUnique({
     where: { id: tournamentId },
-    select: { multiplicadorPuntos: true, nombre: true },
+    select: { multiplicadorPuntos: true, nombre: true, fechaInicio: true },
   });
 
   if (!torneo) {
@@ -38,7 +38,21 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`📌 Torneo: ${torneo.nombre} | Multiplicador: ${torneo.multiplicadorPuntos}`);
+  // Buscar relación con circuito aprobada
+  const torneoCircuito = await prisma.torneoCircuito.findFirst({
+    where: { torneoId: tournamentId, estado: 'APROBADO' },
+    include: { circuito: true },
+  });
+
+  let multiplicadorFinal = torneo.multiplicadorPuntos || 1;
+  if (torneoCircuito?.circuito) {
+    multiplicadorFinal *= (torneoCircuito.multiplicador || 1) * (torneoCircuito.circuito.multiplicadorGlobal || 1);
+  }
+
+  console.log(`📌 Torneo: ${torneo.nombre} | Multiplicador base: ${torneo.multiplicadorPuntos} | Final: ${multiplicadorFinal.toFixed(2)}`);
+  if (torneoCircuito?.circuito) {
+    console.log(`   🏆 Circuito: ${torneoCircuito.circuito.nombre} (multiplicador torneo-circuito=${torneoCircuito.multiplicador}, global=${torneoCircuito.circuito.multiplicadorGlobal})`);
+  }
 
   const partidos = await prisma.match.findMany({
     where: {
@@ -113,7 +127,8 @@ async function main() {
   }
 
   const puntosCalculados: any[] = [];
-  const fechaTorneo = new Date().toISOString().split('T')[0];
+  const fechaTorneo = torneo.fechaInicio || new Date().toISOString().split('T')[0];
+  const temporada = fechaTorneo.split('-')[0];
 
   for (const resultado of resultados) {
     const config = encontrarConfigParaPosicion(configs, resultado.posicion);
@@ -122,7 +137,7 @@ async function main() {
       continue;
     }
 
-    const puntosFinales = Math.round(config.puntosBase * torneo.multiplicadorPuntos);
+    const puntosFinales = Math.round(config.puntosBase * multiplicadorFinal);
 
     for (const jugadorId of resultado.jugadoresIds) {
       const historial = await prisma.historialPuntos.create({
@@ -133,7 +148,7 @@ async function main() {
           posicionFinal: resultado.posicion,
           puntosGanados: puntosFinales,
           puntosBase: config.puntosBase,
-          multiplicadorAplicado: torneo.multiplicadorPuntos,
+          multiplicadorAplicado: multiplicadorFinal,
           fechaTorneo,
         },
       });
@@ -143,7 +158,12 @@ async function main() {
   }
 
   // Actualizar rankings
-  await actualizarRankings(categoryId);
+  console.log('\n📊 Actualizando rankings...');
+  await actualizarRankingsCategoria(categoryId, temporada);
+  if (torneoCircuito?.circuito) {
+    await actualizarRankingsCircuito(torneoCircuito.circuito.id, categoryId, temporada);
+  }
+  await actualizarRankingsGlobal(temporada);
 
   console.log(`\n✅ Listo. ${puntosCalculados.length} registros creados en historial_puntos.`);
 }
@@ -162,50 +182,136 @@ function encontrarConfigParaPosicion(configs: any[], posicion: string) {
   return config;
 }
 
-async function actualizarRankings(categoryId: string) {
-  const historiales = await prisma.historialPuntos.groupBy({
-    by: ['jugadorId'],
-    where: { categoryId },
-    _sum: { puntosGanados: true },
-    _count: { id: true },
+async function obtenerTorneosEnCircuitosAprobados(): Promise<string[]> {
+  const torneos = await prisma.torneoCircuito.findMany({
+    where: { estado: 'APROBADO' },
+    select: { torneoId: true },
   });
+  return Array.from(new Set(torneos.map((t) => t.torneoId)));
+}
+
+async function upsertRankings(
+  historiales: any[],
+  tipoRanking: 'CATEGORIA' | 'GLOBAL' | 'LIGA',
+  alcance: string,
+  temporada: string,
+) {
+  if (historiales.length === 0) return;
+
+  const jugadorIds = historiales.map((h) => h.jugadorId);
+  const jugadores = await prisma.user.findMany({
+    where: { id: { in: jugadorIds } },
+    select: { id: true, genero: true },
+  });
+  const generoMap = new Map(jugadores.map((j) => [j.id, j.genero]));
 
   const ordenados = historiales.sort((a, b) => (b._sum.puntosGanados || 0) - (a._sum.puntosGanados || 0));
 
+  let posicion = 1;
   for (let i = 0; i < ordenados.length; i++) {
     const { jugadorId, _sum, _count } = ordenados[i];
     const puntosTotales = _sum.puntosGanados || 0;
     const torneosJugados = _count.id;
 
+    if (i > 0 && puntosTotales !== (ordenados[i - 1]._sum.puntosGanados || 0)) {
+      posicion = i + 1;
+    }
+
     await prisma.ranking.upsert({
       where: {
         jugadorId_tipoRanking_alcance_temporada: {
           jugadorId,
-          tipoRanking: 'CATEGORIA',
-          alcance: categoryId,
-          temporada: new Date().getFullYear().toString(),
+          tipoRanking,
+          alcance,
+          temporada,
         },
       },
       update: {
         puntosTotales,
-        posicion: i + 1,
+        posicion,
         torneosJugados,
         ultimaActualizacion: new Date(),
       },
       create: {
         jugadorId,
-        tipoRanking: 'CATEGORIA',
-        alcance: categoryId,
-        genero: 'MASCULINO',
+        tipoRanking,
+        alcance,
+        genero: generoMap.get(jugadorId) || 'MASCULINO',
         puntosTotales,
-        posicion: i + 1,
+        posicion,
         torneosJugados,
-        temporada: new Date().getFullYear().toString(),
+        temporada,
       },
     });
   }
 
-  console.log(`   📊 ${ordenados.length} ranking(s) actualizados`);
+  console.log(`   📊 ${tipoRanking}${alcance ? `(${alcance})` : ''}: ${ordenados.length} ranking(s) actualizados`);
+}
+
+async function actualizarRankingsCategoria(categoryId: string, temporada: string) {
+  const torneoIds = await obtenerTorneosEnCircuitosAprobados();
+  if (torneoIds.length === 0) {
+    console.log('   ⚠️  No hay torneos en circuitos aprobados. Ranking de categoría no actualizado.');
+    return;
+  }
+
+  const historiales = await prisma.historialPuntos.groupBy({
+    by: ['jugadorId'],
+    where: {
+      categoryId,
+      tournamentId: { in: torneoIds },
+      fechaTorneo: { startsWith: temporada },
+    },
+    _sum: { puntosGanados: true },
+    _count: { id: true },
+  });
+
+  await upsertRankings(historiales, 'CATEGORIA', categoryId, temporada);
+}
+
+async function actualizarRankingsGlobal(temporada: string) {
+  const torneoIds = await obtenerTorneosEnCircuitosAprobados();
+  if (torneoIds.length === 0) {
+    console.log('   ⚠️  No hay torneos en circuitos aprobados. Ranking global no actualizado.');
+    return;
+  }
+
+  const historiales = await prisma.historialPuntos.groupBy({
+    by: ['jugadorId'],
+    where: {
+      tournamentId: { in: torneoIds },
+      fechaTorneo: { startsWith: temporada },
+    },
+    _sum: { puntosGanados: true },
+    _count: { id: true },
+  });
+
+  await upsertRankings(historiales, 'GLOBAL', '', temporada);
+}
+
+async function actualizarRankingsCircuito(circuitoId: string, categoryId: string, temporada: string) {
+  const torneosCircuito = await prisma.torneoCircuito.findMany({
+    where: { circuitoId, estado: 'APROBADO' },
+    select: { torneoId: true },
+  });
+  const torneoIds = torneosCircuito.map((t) => t.torneoId);
+  if (torneoIds.length === 0) {
+    console.log('   ⚠️  No hay torneos aprobados en el circuito. Ranking de circuito no actualizado.');
+    return;
+  }
+
+  const historiales = await prisma.historialPuntos.groupBy({
+    by: ['jugadorId'],
+    where: {
+      tournamentId: { in: torneoIds },
+      categoryId,
+      fechaTorneo: { startsWith: temporada },
+    },
+    _sum: { puntosGanados: true },
+    _count: { id: true },
+  });
+
+  await upsertRankings(historiales, 'LIGA', circuitoId, temporada);
 }
 
 main()

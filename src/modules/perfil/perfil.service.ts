@@ -46,6 +46,16 @@ export class PerfilService {
     });
     const categoryMap = new Map(categories.map(c => [c.id, c.nombre]));
 
+    // Lookup de nombres de circuito para rankings de tipo LIGA
+    const circuitoIds = rankings
+      .filter(r => r.tipoRanking === 'LIGA')
+      .map(r => r.alcance);
+    const circuitos = await this.prisma.circuito.findMany({
+      where: { id: { in: circuitoIds } },
+      select: { id: true, nombre: true, slug: true, logoUrl: true },
+    });
+    const circuitoMap = new Map(circuitos.map(c => [c.id, c]));
+
     // Obtener historial de puntos para gráfico
     const historialPuntos = await this.prisma.historialPuntos.findMany({
       where: { jugadorId: userId },
@@ -111,6 +121,21 @@ export class PerfilService {
           victorias: r.victorias,
           temporada: r.temporada,
         })),
+        circuitos: rankings
+          .filter(r => r.tipoRanking === 'LIGA')
+          .map(r => {
+            const c = circuitoMap.get(r.alcance);
+            return {
+              id: r.alcance,
+              nombre: c?.nombre || r.alcance,
+              slug: c?.slug || r.alcance,
+              logoUrl: c?.logoUrl || null,
+              posicion: r.posicion,
+              puntosTotales: r.puntosTotales,
+              torneosJugados: r.torneosJugados,
+              temporada: r.temporada,
+            };
+          }),
         historialPuntos: historialPuntos.map(h => ({
           torneo: h.tournament.nombre,
           categoria: h.category.nombre,

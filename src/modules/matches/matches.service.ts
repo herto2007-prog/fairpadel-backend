@@ -79,6 +79,10 @@ export class MatchesService {
       throw new BadRequestException('Resultado inválido: no hay ganador claro');
     }
 
+    if (!inscripcionGanadoraId || !inscripcionPerdedoraId) {
+      throw new BadRequestException('No se pudo determinar el ganador o perdedor del partido. Verifica que ambas parejas estén asignadas.');
+    }
+
     // Actualizar el match con el resultado
     const matchActualizado = await this.prisma.match.update({
       where: { id: matchId },
