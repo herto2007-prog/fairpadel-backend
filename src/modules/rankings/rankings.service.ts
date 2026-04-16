@@ -322,23 +322,47 @@ export class RankingsService {
   async actualizarRankingsCircuito(circuitoId: string, categoryId: string, temporada: string): Promise<void> {
     const torneosCircuito = await this.prisma.torneoCircuito.findMany({
       where: { circuitoId, estado: 'APROBADO' },
-      select: { torneoId: true },
+      include: { torneo: { select: { id: true, multiplicadorPuntos: true } } },
     });
     const torneoIds = torneosCircuito.map(t => t.torneoId);
     if (torneoIds.length === 0) return;
 
-    const historiales = await this.prisma.historialPuntos.groupBy({
-      by: ['jugadorId'],
+    const historiales = await this.prisma.historialPuntos.findMany({
       where: {
         tournamentId: { in: torneoIds },
         categoryId,
         fechaTorneo: { startsWith: temporada },
       },
-      _sum: { puntosGanados: true },
-      _count: { id: true },
+      select: {
+        jugadorId: true,
+        tournamentId: true,
+        puntosBase: true,
+      },
     });
 
-    await this.upsertRankings(historiales, 'LIGA', circuitoId, temporada);
+    // Recalcular puntos de circuito SIN aplicar circuito.multiplicadorGlobal
+    const puntosPorJugador = new Map<string, { puntos: number; torneos: number }>();
+    for (const h of historiales) {
+      const tc = torneosCircuito.find(t => t.torneoId === h.tournamentId);
+      if (!tc) continue;
+      const puntosCircuito = Math.round(
+        h.puntosBase * (tc.torneo.multiplicadorPuntos || 1) * (tc.multiplicador || 1),
+      );
+      const actual = puntosPorJugador.get(h.jugadorId) || { puntos: 0, torneos: 0 };
+      actual.puntos += puntosCircuito;
+      actual.torneos += 1;
+      puntosPorJugador.set(h.jugadorId, actual);
+    }
+
+    const historialesRecalculados = Array.from(puntosPorJugador.entries()).map(
+      ([jugadorId, { puntos, torneos }]) => ({
+        jugadorId,
+        _sum: { puntosGanados: puntos },
+        _count: { id: torneos },
+      }),
+    );
+
+    await this.upsertRankings(historialesRecalculados, 'LIGA', circuitoId, temporada);
   }
 
   private async obtenerTorneosEnCircuitosAprobados(): Promise<string[]> {
