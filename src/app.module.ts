@@ -26,6 +26,7 @@ import { CircuitosModule } from './modules/circuitos/circuitos.module';
 import { PerfilModule } from './modules/perfil/perfil.module';
 import { SocialModule } from './modules/social/social.module';
 import { WhatsAppModule } from './modules/whatsapp/whatsapp.module';
+import { StatsModule } from './modules/stats/stats.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { WhatsAppModule } from './modules/whatsapp/whatsapp.module';
     PerfilModule,     // Perfiles de jugadores
     SocialModule,     // Comunidad, búsqueda de jugadores, seguimiento
     WhatsAppModule,   // WhatsApp Business API (con feature flag WHATSAPP_ENABLED)
+    StatsModule,      // Estadísticas globales públicas
   ],
   controllers: [AppController],
 })
