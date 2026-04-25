@@ -2444,6 +2444,63 @@ export class AdminTorneosController {
     };
   }
 
+  /**
+   * PUT /admin/torneos/:id/control-pagos/:pagoId
+   * Editar un pago registrado
+   */
+  @Put(':id/control-pagos/:pagoId')
+  async editarPago(
+    @Param('id') tournamentId: string,
+    @Param('pagoId') pagoId: string,
+    @Request() req: any,
+    @Body() body: { monto: number; metodo: 'EFECTIVO' | 'TRANSFERENCIA'; fecha: string; nota?: string },
+  ) {
+    // Verificar organizador
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { organizadorId: true },
+    });
+
+    if (!torneo || torneo.organizadorId !== req.user.userId) {
+      throw new ForbiddenException('No tienes permiso');
+    }
+
+    // Verificar que el pago existe y pertenece a una inscripción del torneo
+    const pagoExistente = await this.prisma.controlPagoOrganizador.findFirst({
+      where: {
+        id: pagoId,
+        inscripcion: { tournamentId },
+      },
+    });
+
+    if (!pagoExistente) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+
+    // Actualizar el pago
+    const pago = await this.prisma.controlPagoOrganizador.update({
+      where: { id: pagoId },
+      data: {
+        monto: body.monto,
+        metodo: body.metodo,
+        fecha: body.fecha,
+        nota: body.nota,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Pago actualizado correctamente',
+      pago: {
+        id: pago.id,
+        monto: pago.monto,
+        metodo: pago.metodo,
+        fecha: pago.fecha,
+        nota: pago.nota,
+      },
+    };
+  }
+
   // ═══════════════════════════════════════════════════════════
   // FINALIZACIÓN DE CATEGORÍA Y CÁLCULO DE PUNTOS
   // ═══════════════════════════════════════════════════════════
