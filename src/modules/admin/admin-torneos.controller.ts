@@ -418,7 +418,7 @@ export class AdminTorneosController {
             tournamentId: torneo.id,
             montoEstimado: 0,
             montoPagado: 0,
-            estado: 'PENDIENTE',
+            estado: 'PENDIENTE_PAGO',
             bloqueoActivo: false,
           },
         });
@@ -1242,7 +1242,14 @@ export class AdminTorneosController {
     @Param('id') tournamentId: string,
     @Body() body: {
       categoryId: string;
-      jugador1Id: string;
+      jugador1Id?: string;
+      jugador1Temp?: {
+        nombre: string;
+        apellido: string;
+        email: string;
+        telefono?: string;
+        documento?: string;
+      };
       jugador2Id?: string;
       jugador2Temp?: {
         nombre: string;
@@ -1252,7 +1259,6 @@ export class AdminTorneosController {
         documento?: string;
       };
       modoPago?: 'COMPLETO' | 'INDIVIDUAL';
-      montoPagado?: number;
       notas?: string;
     },
     @Request() req,
@@ -1260,10 +1266,10 @@ export class AdminTorneosController {
     const {
       categoryId,
       jugador1Id,
+      jugador1Temp,
       jugador2Id,
       jugador2Temp,
       modoPago = 'COMPLETO',
-      montoPagado = 0,
       notas,
     } = body;
 
@@ -1283,14 +1289,56 @@ export class AdminTorneosController {
       throw new BadRequestException('Categoría no válida para este torneo');
     }
 
+    // Resolver jugador 1 (registrado o temporal)
+    let jugador1IdFinal = jugador1Id;
+    if (jugador1Temp) {
+      // Buscar si ya existe por email
+      const existente = await this.prisma.user.findUnique({
+        where: { email: jugador1Temp.email },
+      });
+      if (existente) {
+        jugador1IdFinal = existente.id;
+      } else {
+        // Crear usuario temporal
+        const bcrypt = require('bcrypt');
+        const crypto = require('crypto');
+        const passwordHash = await bcrypt.hash(crypto.randomUUID(), 10);
+        const nuevo = await this.prisma.user.create({
+          data: {
+            email: jugador1Temp.email,
+            password: passwordHash,
+            nombre: jugador1Temp.nombre,
+            apellido: jugador1Temp.apellido,
+            documento: jugador1Temp.documento || `TEMP-${crypto.randomUUID().slice(0, 12)}`,
+            telefono: jugador1Temp.telefono || null,
+            genero: 'MASCULINO',
+            estado: 'NO_VERIFICADO',
+
+            roles: {
+              create: {
+                role: {
+                  connect: { nombre: 'jugador' },
+                },
+              },
+            },
+          },
+        });
+        jugador1IdFinal = nuevo.id;
+      }
+    }
+
+    if (!jugador1IdFinal) {
+      throw new BadRequestException('Debe proporcionar jugador1Id o jugador1Temp');
+    }
+
     // Verificar si jugador1 ya está inscrito
     const existeJugador1 = await this.prisma.inscripcion.findFirst({
       where: {
         tournamentId,
         categoryId,
         OR: [
-          { jugador1Id },
-          { jugador2Id: jugador1Id },
+          { jugador1Id: jugador1IdFinal },
+          { jugador2Id: jugador1IdFinal },
         ],
         estado: { not: 'CANCELADA' },
       },
@@ -1337,11 +1385,11 @@ export class AdminTorneosController {
       data: {
         tournamentId,
         categoryId,
-        jugador1Id,
+        jugador1Id: jugador1IdFinal,
         jugador2Id,
         jugador2Email,
         jugador2Documento,
-        estado: montoPagado > 0 ? 'CONFIRMADA' : 'PENDIENTE_PAGO',
+        estado: 'PENDIENTE_PAGO',
         modoPago,
         notas: notas,
       },
@@ -1351,27 +1399,6 @@ export class AdminTorneosController {
         category: true,
       },
     });
-
-    // Crear pago si corresponde
-    if (montoPagado > 0) {
-      await this.prisma.pago.create({
-        data: {
-          inscripcionId: inscripcion.id,
-          monto: montoPagado,
-          comision: 0,
-          estado: 'CONFIRMADO',
-          metodoPago: 'EFECTIVO',
-          jugadorId: req.user.userId,
-          // FIX: fechas son String YYYY-MM-DD
-          fechaPago: new Date().toISOString().split('T')[0],
-          fechaConfirm: new Date().toISOString().split('T')[0],
-        },
-      });
-    }
-
-    if (inscripcion.estado === 'CONFIRMADA') {
-      await this.comisionService.recalcularComision(tournamentId);
-    }
 
     return {
       success: true,
