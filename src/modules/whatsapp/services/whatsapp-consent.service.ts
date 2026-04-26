@@ -62,7 +62,7 @@ export class WhatsAppConsentService {
       // Enviar mensaje de solicitud
       const messageId = await this.messagingService.sendTemplateMessage(
         user.telefono,
-        'confirmacion_consentimiento',
+        'solicitud_consentimiento',
         { nombre: user.nombre || 'Jugador' },
         userId,
         'CONSENTIMIENTO',

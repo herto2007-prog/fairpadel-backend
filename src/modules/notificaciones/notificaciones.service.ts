@@ -27,14 +27,11 @@ export class NotificacionesService {
 
       if (!inscripcion || !inscripcion.jugador2Email) return;
 
-      const linkConfirmacion = `https://www.fairpadel.com/invitacion/${inscripcion.id}`;
-
       await this.emailService.sendInvitacionJugador(
         inscripcion.jugador2Email,
         nombreJugador2 || 'Jugador',
         `${inscripcion.jugador1.nombre} ${inscripcion.jugador1.apellido}`,
         inscripcion.tournament.nombre,
-        linkConfirmacion,
       );
     } catch (error) {
       console.error(`[Notificaciones] Error al enviar invitación:`, error);

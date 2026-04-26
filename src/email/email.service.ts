@@ -272,14 +272,12 @@ export class EmailService {
     nombreJugador2: string,
     nombreJugador1: string,
     torneoNombre: string,
-    linkConfirmacion: string,
   ): Promise<void> {
-    const html = this.getInvitacionJugadorTemplate(nombreJugador2, nombreJugador1, torneoNombre, linkConfirmacion);
+    const html = this.getInvitacionJugadorTemplate(to, nombreJugador2, nombreJugador1, torneoNombre);
     
     try {
       if (!this.resend) {
-        this.logger.warn(`[MODO DESARROLLO] Invitación para ${to}:`);
-        this.logger.warn(`Link: ${linkConfirmacion}`);
+        this.logger.warn(`[MODO DESARROLLO] Invitación para ${to}: ${torneoNombre}`);
         return;
       }
 
@@ -442,10 +440,10 @@ export class EmailService {
    * Template HTML para invitación a jugador 2
    */
   private getInvitacionJugadorTemplate(
+    to: string,
     nombreJugador2: string,
     nombreJugador1: string,
     torneoNombre: string,
-    link: string,
   ): string {
     const logoUrl = 'https://res.cloudinary.com/dncjaaybv/image/upload/v1773057029/logo_h4y1tl.png';
     
@@ -536,16 +534,14 @@ export class EmailService {
         <div class="info-item"><strong>👤 Tu pareja:</strong> ${nombreJugador1}</div>
       </div>
       
-      <p style="color: #d1d5db; margin-bottom: 16px;">
-        Confirmá tu participación haciendo clic aquí:
-      </p>
-      
-      <a href="${link}" class="button">Confirmar inscripción</a>
-      
-      <div class="divider"></div>
-      
-      <p class="link-text">Si el botón no funciona, copia y pega este link:</p>
-      <p class="link">${link}</p>
+      <div class="info-box" style="text-align: center;">
+        <p style="color: #ffffff; font-size: 16px; margin-bottom: 12px;">
+          📩 Tu pareja te inscribió en este torneo.
+        </p>
+        <p style="color: #d1d5db; font-size: 14px;">
+          Para confirmar tu inscripción, <strong>registrate en fairpadel.com</strong> usando este email (<code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${to}</code>).
+        </p>
+      </div>
       
       <div class="footer">
         <p>¿No conocés a ${nombreJugador1}? Podés ignorar este email.</p>

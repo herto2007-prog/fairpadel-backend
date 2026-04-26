@@ -1,10 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificacionPreferencia } from '@prisma/client';
+import { WhatsAppService } from '../whatsapp/services/whatsapp.service';
 
 @Injectable()
 export class PerfilService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private whatsAppService: WhatsAppService,
+  ) {}
 
   /**
    * Obtiene el perfil completo de un jugador con estadísticas
@@ -633,6 +637,50 @@ export class PerfilService {
     return {
       success: true,
       message: 'Preferencias de notificación actualizadas',
+    };
+  }
+
+  /**
+   * Solicita consentimiento de WhatsApp para usuarios existentes
+   * Activa el checkbox y envía mensaje de confirmación
+   */
+  async solicitarConsentimientoWhatsapp(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { telefono: true, consentWhatsappStatus: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (!user.telefono) {
+      throw new BadRequestException('Debes tener un número de teléfono registrado para activar WhatsApp');
+    }
+
+    if (user.consentWhatsappStatus === 'CONFIRMADO') {
+      return {
+        success: true,
+        message: 'Ya tienes activadas las notificaciones por WhatsApp',
+      };
+    }
+
+    // Activar checkbox y setear como pendiente
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        consentCheckboxWhatsapp: true,
+        consentWhatsappStatus: 'PENDIENTE',
+        consentWhatsappDate: new Date(),
+      },
+    });
+
+    // Enviar mensaje de solicitud (esto setea PENDIENTE y envía template)
+    await this.whatsAppService.requestConsent(userId);
+
+    return {
+      success: true,
+      message: 'Te enviamos un mensaje de WhatsApp. Respondé SI para confirmar.',
     };
   }
 

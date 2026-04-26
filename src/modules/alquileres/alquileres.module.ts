@@ -12,6 +12,7 @@ import { SedesAdminService } from '../sedes/sedes-admin.service';
 import { DuenoController } from './controllers/dueno.controller';
 import { EmailService } from '../../email/email.service';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
+import { AlquileresCronService } from './alquileres-cron.service';
 
 @Module({
   imports: [PrismaModule, AuthModule, ConfigModule, NotificacionesModule],
@@ -23,6 +24,7 @@ import { NotificacionesModule } from '../notificaciones/notificaciones.module';
     BancardService,
     SedesAdminService,
     EmailService,
+    AlquileresCronService,
   ],
   exports: [AlquileresService, SuscripcionService, SuscripcionGuard],
 })

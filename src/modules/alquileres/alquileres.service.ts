@@ -483,7 +483,7 @@ export class AlquileresService {
       duracionMinutos: createDto.duracionMinutos,
     });
 
-    return this.prisma.$transaction(async (tx) => {
+    const reserva = await this.prisma.$transaction(async (tx) => {
       // Verificar que la cancha existe
       const cancha = await tx.sedeCancha.findUnique({
         where: { id: createDto.sedeCanchaId },
@@ -632,6 +632,15 @@ export class AlquileresService {
       console.log(`[DEBUG crearReserva] Reserva creada exitosamente: ${reserva.id}`);
       return reserva;
     });
+
+    // Notificación WhatsApp (no bloqueante, fuera de la transacción)
+    if (reserva.userId) {
+      this.notificacionesWhatsApp.notificarReservaConfirmada(reserva.id).catch(() => {
+        // Silenciar errores de WhatsApp
+      });
+    }
+
+    return reserva;
   }
 
   async obtenerMisReservas(userId: string) {
@@ -677,7 +686,7 @@ export class AlquileresService {
       throw new BadRequestException('La reserva no está pendiente');
     }
 
-    return this.prisma.reservaCancha.update({
+    const reservaConfirmada = await this.prisma.reservaCancha.update({
       where: { id: reservaId },
       data: {
         estado: ReservaCanchaEstado.CONFIRMADA,
@@ -686,6 +695,15 @@ export class AlquileresService {
         pagado: confirmarDto.metodoPago !== 'EFECTIVO',
       },
     });
+
+    // Notificación WhatsApp (no bloqueante)
+    if (reservaConfirmada.userId) {
+      this.notificacionesWhatsApp.notificarReservaConfirmada(reservaConfirmada.id).catch(() => {
+        // Silenciar errores de WhatsApp
+      });
+    }
+
+    return reservaConfirmada;
   }
 
   async cancelarReserva(reservaId: string, cancelarDto: CancelarReservaDto, userId?: string) {

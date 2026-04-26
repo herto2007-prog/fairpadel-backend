@@ -305,22 +305,26 @@ export class PublicInscripcionesController {
     }
 
     // 4. Validar categoría según reglas de género/nivel
+    if (!user.categoriaActualId) {
+      throw new BadRequestException('Debes tener una categoría asignada para inscribirte a un torneo.');
+    }
+
     const todasCategorias = await this.prisma.category.findMany({ orderBy: { orden: 'asc' } });
-    const categoriaJugador = user.categoriaActualId
-      ? todasCategorias.find((c) => c.id === user.categoriaActualId)
-      : null;
+    const categoriaJugador = todasCategorias.find((c) => c.id === user.categoriaActualId);
 
-    if (categoriaJugador) {
-      const validacion = this.validarReglasCategoria(
-        user.genero,
-        categoriaJugador,
-        tournamentCategory.category,
-        todasCategorias
-      );
+    if (!categoriaJugador) {
+      throw new BadRequestException('Tu categoría asignada no es válida. Contacta al administrador.');
+    }
 
-      if (!validacion.permitido) {
-        throw new ForbiddenException(validacion.mensaje);
-      }
+    const validacion = this.validarReglasCategoria(
+      user.genero,
+      categoriaJugador,
+      tournamentCategory.category,
+      todasCategorias
+    );
+
+    if (!validacion.permitido) {
+      throw new ForbiddenException(validacion.mensaje);
     }
 
     // 5. PROCESAR SEGÚN CASO

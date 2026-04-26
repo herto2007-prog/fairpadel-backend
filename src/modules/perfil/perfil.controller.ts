@@ -105,6 +105,16 @@ export class PerfilController {
   }
 
   /**
+   * POST /users/profile/whatsapp/solicitar-consentimiento
+   * Solicita consentimiento de WhatsApp para usuarios existentes
+   */
+  @Post('profile/whatsapp/solicitar-consentimiento')
+  @UseGuards(JwtAuthGuard)
+  async solicitarConsentimientoWhatsapp(@Request() req: any) {
+    return this.perfilService.solicitarConsentimientoWhatsapp(req.user.userId);
+  }
+
+  /**
    * POST /users/profile/whatsapp/revocar
    * Revoca el consentimiento de WhatsApp
    */
