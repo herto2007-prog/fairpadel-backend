@@ -1,8 +1,8 @@
--- Migración: Corregir variables de templates de WhatsApp
+-- Migracion: Corregir variables de templates de WhatsApp
 -- Fecha: 2026-04-15
--- Issue: El código pasa variables como {'1': valor, '2': valor} pero los templates
---        en BD tenían nombres descriptivos que no coincidían.
--- Solución: Actualizar el campo parametros para usar keys numéricas.
+-- Issue: El codigo pasa variables como {'1': valor, '2': valor} pero los templates
+--        en BD tenian nombres descriptivos que no coincidian.
+-- Solucion: Actualizar el campo parametros para usar keys numericas.
 
 UPDATE whatsapp_templates
 SET parametros = '{"contenido":"Datos de tu reserva confirmada: Cancha numero {{1}} asignada para fecha {{2}} segun disponibilidad.","variables":["1","2"]}'
@@ -36,7 +36,7 @@ UPDATE whatsapp_templates
 SET parametros = '{"contenido":"Informacion del fixture: El rival asignado es {{1}} en el torneo {{2}} segun programacion.","variables":["1","2"]}'
 WHERE nombre = 'torneo_rival_asignado';
 
--- Verificación
+-- Verificacion
 SELECT nombre, parametros FROM whatsapp_templates WHERE nombre IN (
   'reserva_confirmada', 'reserva_sede_info', 'torneo_fecha_partido',
   'torneo_inscripcion_confirmada', 'recordatorio_24h', 'recordatorio_4h',
