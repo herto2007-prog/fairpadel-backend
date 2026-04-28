@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UnauthorizedException, NotFoundException, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -225,11 +225,13 @@ export class AdminController {
       nombre: user.nombre,
       apellido: user.apellido,
       email: user.email,
+      telefono: user.telefono,
       documento: user.documento,
       estado: user.estado,
       fotoUrl: user.fotoUrl,
       roles: user.roles.map(r => r.role.nombre),
       categoriaActual: user.categoriaActual ? { nombre: user.categoriaActual.nombre } : null,
+      consentWhatsappStatus: user.consentWhatsappStatus,
     }));
   }
 
@@ -268,6 +270,45 @@ export class AdminController {
     }
 
     return { success: true, message: 'Roles actualizados correctamente' };
+  }
+
+  /**
+   * Confirmar consentimiento de WhatsApp para un usuario (solo admin)
+   * Workaround: mientras la app no esté publicada en Meta, los webhooks no llegan.
+   * Este endpoint permite confirmar manualmente el consentimiento.
+   */
+  @Post('users/:id/whatsapp/confirmar-consentimiento')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async confirmarConsentimientoWhatsapp(@Param('id') userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { telefono: true, consentWhatsappStatus: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (!user.telefono) {
+      return { success: false, message: 'El usuario no tiene teléfono registrado' };
+    }
+
+    if (user.consentWhatsappStatus === 'CONFIRMADO') {
+      return { success: true, message: 'El usuario ya tiene WhatsApp confirmado' };
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        consentCheckboxWhatsapp: true,
+        consentWhatsappStatus: 'CONFIRMADO',
+        consentWhatsappDate: new Date(),
+        preferenciaNotificacion: 'AMBOS',
+      },
+    });
+
+    return { success: true, message: 'Consentimiento de WhatsApp confirmado' };
   }
 
   /**
