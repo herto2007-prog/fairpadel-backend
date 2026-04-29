@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
   UseGuards,
@@ -10,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { AmericanoService } from './americano.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '@prisma/client';
 import { CreateAmericanoTorneoDto, InscribirJugadorAmericanoDto } from './dto';
@@ -24,6 +26,7 @@ export class AmericanoController {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   @Get('torneos')
+  @UseGuards(OptionalJwtAuthGuard)
   listarTorneos(@Request() req: any) {
     // Si hay token, extraer userId para mostrar también privados propios
     const userId = req.user?.id;
@@ -42,6 +45,15 @@ export class AmericanoController {
     @Body() dto: CreateAmericanoTorneoDto,
   ) {
     return this.americanoService.crearTorneo(user.id, dto);
+  }
+
+  @Delete('torneos/:id')
+  @UseGuards(JwtAuthGuard)
+  eliminarTorneo(
+    @GetUser() user: User,
+    @Param('id') id: string,
+  ) {
+    return this.americanoService.eliminarTorneo(id, user.id);
   }
 
   @Post('torneos/:id/configurar-modo')

@@ -50,7 +50,7 @@ export class AmericanoService {
       region: dto.ciudad,
       pais: 'Paraguay',
       organizadorId,
-      estado: 'BORRADOR',
+      estado: 'PUBLICADO',
       costoInscripcion: 0, // AMERICANO ES GRATIS
       formato: 'americano',
       configAmericano: config as any,
@@ -60,6 +60,38 @@ export class AmericanoService {
     const torneo = await this.prisma.tournament.create({ data });
 
     return torneo;
+  }
+
+  async eliminarTorneo(torneoId: string, userId: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: torneoId },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    if (torneo.formato !== 'americano') {
+      throw new BadRequestException('Este torneo no es de formato americano');
+    }
+
+    // Verificar si es el organizador o un admin
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: { include: { role: true } } },
+    });
+
+    const isAdmin = user?.roles.some((ur) => ur.role.nombre === 'admin');
+
+    if (torneo.organizadorId !== userId && !isAdmin) {
+      throw new ForbiddenException('No tenés permisos para eliminar este torneo');
+    }
+
+    await this.prisma.tournament.delete({
+      where: { id: torneoId },
+    });
+
+    return { message: 'Torneo eliminado correctamente' };
   }
 
   async configurarModoJuego(torneoId: string, organizadorId: string, modoJuego: ModoJuegoConfig) {
@@ -145,7 +177,7 @@ export class AmericanoService {
     return this.prisma.tournament.findMany({
       where,
       include: {
-        organizador: { select: { id: true, nombre: true, apellido: true } },
+        organizador: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
         sedePrincipal: { select: { id: true, nombre: true } },
         _count: { select: { inscripciones: true } },
       },
