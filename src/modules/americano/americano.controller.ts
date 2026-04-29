@@ -6,6 +6,7 @@ import {
   Param,
   UseGuards,
   Query,
+  Request,
 } from '@nestjs/common';
 import { AmericanoService } from './americano.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -22,8 +23,10 @@ export class AmericanoController {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   @Get('torneos')
-  listarTorneos() {
-    return this.americanoService.listarTorneosActivos();
+  listarTorneos(@Request() req: any) {
+    // Si hay token, extraer userId para mostrar también privados propios
+    const userId = req.user?.id;
+    return this.americanoService.listarTorneosActivos(userId);
   }
 
   @Get('torneos/:id')

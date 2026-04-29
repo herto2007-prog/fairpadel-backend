@@ -9,6 +9,7 @@ export interface ConfigAmericano {
   puntosPorDerrota: number;
   gamesPorSet: number;
   rondaActual: number;
+  visibilidad: string; // 'publico' | 'privado'
 }
 
 const DEFAULT_CONFIG: ConfigAmericano = {
@@ -17,6 +18,7 @@ const DEFAULT_CONFIG: ConfigAmericano = {
   puntosPorDerrota: 1,
   gamesPorSet: 6,
   rondaActual: 0,
+  visibilidad: 'publico',
 };
 
 @Injectable()
@@ -34,6 +36,7 @@ export class AmericanoService {
       puntosPorDerrota: dto.puntosPorDerrota ?? DEFAULT_CONFIG.puntosPorDerrota,
       gamesPorSet: dto.gamesPorSet ?? DEFAULT_CONFIG.gamesPorSet,
       rondaActual: 0,
+      visibilidad: dto.visibilidad ?? DEFAULT_CONFIG.visibilidad,
     };
 
     const data: any = {
@@ -97,12 +100,25 @@ export class AmericanoService {
     return torneo;
   }
 
-  async listarTorneosActivos() {
+  async listarTorneosActivos(userId?: string) {
+    const where: any = {
+      formato: 'americano',
+      estado: { in: ['BORRADOR', 'PUBLICADO', 'EN_CURSO'] },
+    };
+
+    // Si no hay usuario autenticado, solo mostrar públicos
+    // Si hay usuario, mostrar públicos + privados propios
+    if (!userId) {
+      where.configAmericano = { path: ['visibilidad'], equals: 'publico' };
+    } else {
+      where.OR = [
+        { configAmericano: { path: ['visibilidad'], equals: 'publico' } },
+        { organizadorId: userId },
+      ];
+    }
+
     return this.prisma.tournament.findMany({
-      where: {
-        formato: 'americano',
-        estado: { in: ['BORRADOR', 'PUBLICADO', 'EN_CURSO'] },
-      },
+      where,
       include: {
         organizador: { select: { id: true, nombre: true, apellido: true } },
         sedePrincipal: { select: { id: true, nombre: true } },

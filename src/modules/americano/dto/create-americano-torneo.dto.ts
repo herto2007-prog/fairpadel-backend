@@ -52,4 +52,8 @@ export class CreateAmericanoTorneoDto {
   @IsString()
   @IsOptional()
   flyerUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  visibilidad?: string; // 'publico' | 'privado'
 }
