@@ -3,23 +3,26 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAmericanoTorneoDto } from './dto/create-americano-torneo.dto';
 import { InscribirJugadorAmericanoDto } from './dto/inscribir-jugador.dto';
 
-export interface ConfigAmericano {
-  numRondas: number;
-  puntosPorVictoria: number;
-  puntosPorDerrota: number;
-  gamesPorSet: number;
-  rondaActual: number;
-  visibilidad: string; // 'publico' | 'privado'
+export interface ModoJuegoConfig {
+  tipoInscripcion: 'individual' | 'parejasFijas';
+  rotacion: 'automatica' | 'manual';
+  sistemaPuntos: 'games' | 'sets' | 'partido' | 'diferencia';
+  formatoPartido: 'tiempo' | 'games' | 'mejorDe3Sets';
+  valorObjetivo: number;
+  conTieBreak?: boolean;
+  categorias: 'sin' | 'con';
+  numRondas: number | string; // número o 'automatico'
+  canchasSimultaneas?: number;
+  premios?: { puesto: string; descripcion: string }[];
 }
 
-const DEFAULT_CONFIG: ConfigAmericano = {
-  numRondas: 4,
-  puntosPorVictoria: 3,
-  puntosPorDerrota: 1,
-  gamesPorSet: 6,
-  rondaActual: 0,
-  visibilidad: 'publico',
-};
+export interface ConfigAmericano {
+  visibilidad: string;
+  limiteInscripciones?: number;
+  modoJuegoConfigurado: boolean;
+  modoJuego?: ModoJuegoConfig;
+  rondaActual: number;
+}
 
 @Injectable()
 export class AmericanoService {
@@ -31,39 +34,61 @@ export class AmericanoService {
 
   async crearTorneo(organizadorId: string, dto: CreateAmericanoTorneoDto) {
     const config: ConfigAmericano = {
-      numRondas: dto.numRondas ?? DEFAULT_CONFIG.numRondas,
-      puntosPorVictoria: dto.puntosPorVictoria ?? DEFAULT_CONFIG.puntosPorVictoria,
-      puntosPorDerrota: dto.puntosPorDerrota ?? DEFAULT_CONFIG.puntosPorDerrota,
-      gamesPorSet: dto.gamesPorSet ?? DEFAULT_CONFIG.gamesPorSet,
+      visibilidad: dto.visibilidad ?? 'publico',
+      limiteInscripciones: dto.limiteInscripciones,
+      modoJuegoConfigurado: false,
       rondaActual: 0,
-      visibilidad: dto.visibilidad ?? DEFAULT_CONFIG.visibilidad,
     };
 
     const data: any = {
       nombre: dto.nombre,
       descripcion: dto.descripcion ?? null,
-      fechaInicio: dto.fechaInicio,
-      fechaFin: dto.fechaFin,
-      fechaLimiteInscr: dto.fechaLimiteInscripcion ?? dto.fechaInicio,
+      fechaInicio: dto.fecha,
+      fechaFin: dto.fecha,
+      fechaLimiteInscr: dto.fecha,
       ciudad: dto.ciudad,
       region: dto.ciudad,
-      pais: dto.pais ?? 'Paraguay',
+      pais: 'Paraguay',
       organizadorId,
       estado: 'BORRADOR',
       costoInscripcion: 0, // AMERICANO ES GRATIS
       formato: 'americano',
       configAmericano: config as any,
-      flyerUrl: dto.flyerUrl ?? '',
-      minutosPorPartido: 30,
+      flyerUrl: '',
     };
-
-    if (dto.sedeId) {
-      data.sedeId = dto.sedeId;
-    }
 
     const torneo = await this.prisma.tournament.create({ data });
 
     return torneo;
+  }
+
+  async configurarModoJuego(torneoId: string, organizadorId: string, modoJuego: ModoJuegoConfig) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: torneoId },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    if (torneo.organizadorId !== organizadorId) {
+      throw new ForbiddenException('No tienes permisos para este torneo');
+    }
+
+    if (torneo.formato !== 'americano') {
+      throw new BadRequestException('Este torneo no es de formato americano');
+    }
+
+    const config = (torneo.configAmericano as any as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false };
+    config.modoJuegoConfigurado = true;
+    config.modoJuego = modoJuego;
+
+    await this.prisma.tournament.update({
+      where: { id: torneoId },
+      data: { configAmericano: config as any },
+    });
+
+    return { message: 'Modo de juego configurado' };
   }
 
   async findById(torneoId: string) {
@@ -328,7 +353,7 @@ export class AmericanoService {
     }
 
     // Actualizar config del torneo
-    const config = (torneo.configAmericano as any as ConfigAmericano) ?? DEFAULT_CONFIG;
+    const config = (torneo.configAmericano as any as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false };
     config.rondaActual = 1;
 
     await this.prisma.tournament.update({
@@ -393,10 +418,13 @@ export class AmericanoService {
       throw new BadRequestException('La ronda anterior debe estar finalizada');
     }
 
-    const config = (torneo.configAmericano as any as ConfigAmericano) ?? DEFAULT_CONFIG;
+    const config = (torneo.configAmericano as any as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false };
     const nuevaRondaNumero = ultimaRonda.numero + 1;
 
-    if (nuevaRondaNumero > config.numRondas) {
+    const numRondasConfig = config.modoJuego?.numRondas ?? 4;
+    const numRondasMax = numRondasConfig === 'automatico' ? 999 : (typeof numRondasConfig === 'number' ? numRondasConfig : 4);
+
+    if (nuevaRondaNumero > numRondasMax) {
       throw new BadRequestException('Todas las rondas configuradas ya fueron jugadas');
     }
 
@@ -667,9 +695,6 @@ export class AmericanoService {
       throw new BadRequestException('Se requiere al menos un set');
     }
 
-    const config = (torneo.configAmericano as any as ConfigAmericano) ?? DEFAULT_CONFIG;
-    const gamesPorSet = config.gamesPorSet;
-
     let setsGanadosA = 0;
     let setsGanadosB = 0;
     let gamesTotalA = 0;
@@ -688,6 +713,8 @@ export class AmericanoService {
     const ganoA = setsGanadosA > setsGanadosB;
 
     // Actualizar puntajes de los 4 jugadores
+    // SISTEMA: GAMES ACUMULADOS
+    // Cada jugador suma los games que ganó en el partido como puntos
     const jugadoresA = [parejaA.jugador1Id, parejaA.jugador2Id];
     const jugadoresB = [parejaB.jugador1Id, parejaB.jugador2Id];
 
@@ -705,24 +732,26 @@ export class AmericanoService {
 
       const esEquipoA = jugadoresA.includes(jugadorId);
       const gano = esEquipoA ? ganoA : !ganoA;
-      const puntosPartido = gano ? config.puntosPorVictoria : config.puntosPorDerrota;
-      const gamesGanados = esEquipoA ? gamesTotalA : gamesTotalB;
-      const gamesPerdidos = esEquipoA ? gamesTotalB : gamesTotalA;
+      const gamesGanadosPartido = esEquipoA ? gamesTotalA : gamesTotalB;
+      const gamesPerdidosPartido = esEquipoA ? gamesTotalB : gamesTotalA;
       const setsG = esEquipoA ? setsGanadosA : setsGanadosB;
       const setsP = esEquipoA ? setsGanadosB : setsGanadosA;
+
+      // En americano, los PUNTOS = GAMES GANADOS acumulados
+      const puntosNuevos = gamesGanadosPartido;
 
       await this.prisma.americanoPuntaje.update({
         where: { id: puntaje.id },
         data: {
-          puntos: puntaje.puntos + puntosPartido,
+          puntos: puntaje.puntos + puntosNuevos,
           partidosJugados: puntaje.partidosJugados + 1,
           partidosGanados: gano ? puntaje.partidosGanados + 1 : puntaje.partidosGanados,
           partidosPerdidos: !gano ? puntaje.partidosPerdidos + 1 : puntaje.partidosPerdidos,
           setsGanados: puntaje.setsGanados + setsG,
           setsPerdidos: puntaje.setsPerdidos + setsP,
-          gamesGanados: puntaje.gamesGanados + gamesGanados,
-          gamesPerdidos: puntaje.gamesPerdidos + gamesPerdidos,
-          diferenciaGames: puntaje.diferenciaGames + (gamesGanados - gamesPerdidos),
+          gamesGanados: puntaje.gamesGanados + gamesGanadosPartido,
+          gamesPerdidos: puntaje.gamesPerdidos + gamesPerdidosPartido,
+          diferenciaGames: puntaje.diferenciaGames + (gamesGanadosPartido - gamesPerdidosPartido),
         },
       });
     }

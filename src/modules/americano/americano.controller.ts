@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '@prisma/client';
 import { CreateAmericanoTorneoDto, InscribirJugadorAmericanoDto } from './dto';
+import { ConfigurarModoJuegoDto } from './dto/configurar-modo.dto';
 
 @Controller('americano')
 export class AmericanoController {
@@ -41,6 +42,16 @@ export class AmericanoController {
     @Body() dto: CreateAmericanoTorneoDto,
   ) {
     return this.americanoService.crearTorneo(user.id, dto);
+  }
+
+  @Post('torneos/:id/configurar-modo')
+  @UseGuards(JwtAuthGuard)
+  configurarModoJuego(
+    @Param('id') torneoId: string,
+    @Body() dto: ConfigurarModoJuegoDto,
+    @GetUser() user: User,
+  ) {
+    return this.americanoService.configurarModoJuego(torneoId, user.id, dto);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
