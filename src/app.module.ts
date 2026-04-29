@@ -27,6 +27,7 @@ import { PerfilModule } from './modules/perfil/perfil.module';
 import { SocialModule } from './modules/social/social.module';
 import { WhatsAppModule } from './modules/whatsapp/whatsapp.module';
 import { StatsModule } from './modules/stats/stats.module';
+import { AmericanoModule } from './modules/americano/americano.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { StatsModule } from './modules/stats/stats.module';
     SocialModule,     // Comunidad, búsqueda de jugadores, seguimiento
     WhatsAppModule,   // WhatsApp Business API (con feature flag WHATSAPP_ENABLED)
     StatsModule,      // Estadísticas globales públicas
+    AmericanoModule,  // Torneos Americano (formato round-robin rotativo)
   ],
   controllers: [AppController],
 })

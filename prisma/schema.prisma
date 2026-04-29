@@ -435,6 +435,11 @@ model User {
   
   // WhatsApp Business API
   whatsappConversations  WhatsappConversation[]
+  
+  // NUEVO: Relaciones Americano
+  americanosPareja1      AmericanoParejaRonda[] @relation("AmericanoJugador1")
+  americanosPareja2      AmericanoParejaRonda[] @relation("AmericanoJugador2")
+  americanosPuntaje      AmericanoPuntaje[]
 
   @@map("users")
 }
@@ -883,6 +888,14 @@ model Tournament {
   canchasFinales       String[]       @map("canchas_finales") // Array de TorneoCancha IDs
   horaInicioFinales    String?        @map("hora_inicio_finales") // Ej: "09:00"
   horaFinFinales       String?        @map("hora_fin_finales")   // Ej: "23:00"
+  
+  // NUEVO: Formato del torneo (eliminacion = default, americano = round-robin rotativo)
+  formato              String         @default("eliminacion") @map("formato")
+  configAmericano      Json?          @map("config_americano")
+  
+  // Relaciones Americano
+  americanosRonda      AmericanoRonda[]
+  americanosPuntaje    AmericanoPuntaje[]
 
   @@map("tournaments")
 }
@@ -2316,4 +2329,105 @@ model WhatsappTemplate {
   @@index([categoria])
   @@index([activo])
   @@map("whatsapp_templates")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODELO AMERICANO (Torneos de Formato Americano / Round-Robin Rotativo)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+model AmericanoRonda {
+  id            String   @id @default(uuid())
+  numero        Int      // Número de ronda (1, 2, 3...)
+  
+  torneoId      String   @map("torneo_id")
+  torneo        Tournament @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+  
+  // Timestamp de inicio/fin de esta ronda (String YYYY-MM-DD HH:mm como el resto del sistema)
+  fechaInicio   String?  @map("fecha_inicio")
+  fechaFin      String?  @map("fecha_fin")
+  
+  // Estado: PENDIENTE, EN_JUEGO, FINALIZADA
+  estado        String   @default("PENDIENTE")
+  
+  // Parejas que participan en esta ronda
+  parejas       AmericanoParejaRonda[]
+  
+  // Puntajes registrados en esta ronda (referencia cruzada)
+  puntajes      AmericanoPuntaje[]
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  @@unique([torneoId, numero])
+  @@index([torneoId])
+  @@index([estado])
+  @@map("americano_rondas")
+}
+
+model AmericanoParejaRonda {
+  id            String   @id @default(uuid())
+  
+  rondaId       String   @map("ronda_id")
+  ronda         AmericanoRonda @relation(fields: [rondaId], references: [id], onDelete: Cascade)
+  
+  jugador1Id    String   @map("jugador1_id")
+  jugador1      User     @relation("AmericanoJugador1", fields: [jugador1Id], references: [id], onDelete: Cascade)
+  
+  jugador2Id    String   @map("jugador2_id")
+  jugador2      User     @relation("AmericanoJugador2", fields: [jugador2Id], references: [id], onDelete: Cascade)
+  
+  // Identificador visual de la pareja (opcional, ej: "Equipo 1")
+  nombre        String?
+  
+  // Color o identificador visual para la app
+  color         String?
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  @@index([rondaId])
+  @@index([jugador1Id])
+  @@index([jugador2Id])
+  @@map("americano_parejas_ronda")
+}
+
+model AmericanoPuntaje {
+  id            String   @id @default(uuid())
+  
+  torneoId      String   @map("torneo_id")
+  torneo        Tournament @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+  
+  rondaId       String?  @map("ronda_id")
+  ronda         AmericanoRonda? @relation(fields: [rondaId], references: [id], onDelete: SetNull)
+  
+  jugadorId     String   @map("jugador_id")
+  jugador       User     @relation(fields: [jugadorId], references: [id], onDelete: Cascade)
+  
+  // Puntaje acumulado del jugador en esta ronda (o total si no hay ronda)
+  puntos        Int      @default(0)
+  
+  // Estadísticas detalladas
+  partidosJugados  Int   @default(0) @map("partidos_jugados")
+  partidosGanados  Int   @default(0) @map("partidos_ganados")
+  partidosPerdidos Int   @default(0) @map("partidos_perdidos")
+  setsGanados      Int   @default(0) @map("sets_ganados")
+  setsPerdidos     Int   @default(0) @map("sets_perdidos")
+  gamesGanados     Int   @default(0) @map("games_ganados")
+  gamesPerdidos    Int   @default(0) @map("games_perdidos")
+  
+  // Diferencia de games (para desempates)
+  diferenciaGames  Int   @default(0) @map("diferencia_games")
+  
+  // Posición en la clasificación de esta ronda/torneo
+  posicion         Int?  @map("posicion")
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  @@unique([rondaId, jugadorId])
+  @@index([torneoId])
+  @@index([rondaId])
+  @@index([jugadorId])
+  @@index([posicion])
+  @@map("americano_puntajes")
 }
