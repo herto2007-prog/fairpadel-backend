@@ -6,5 +6,9 @@ export class InscribirJugadorAmericanoDto {
 
   @IsString()
   @IsOptional()
+  jugador2Id?: string;
+
+  @IsString()
+  @IsOptional()
   telefonoEmergencia?: string;
 }

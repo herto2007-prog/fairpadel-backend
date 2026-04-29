@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, Matches } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Matches, IsEnum } from 'class-validator';
 
 export class CreateAmericanoTorneoDto {
   @IsString()
@@ -21,4 +21,8 @@ export class CreateAmericanoTorneoDto {
   @IsNumber()
   @IsOptional()
   limiteInscripciones?: number;
+
+  @IsEnum(['individual', 'parejasFijas'])
+  @IsOptional()
+  tipoInscripcion?: 'individual' | 'parejasFijas';
 }

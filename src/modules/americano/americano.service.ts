@@ -22,6 +22,8 @@ export interface ConfigAmericano {
   modoJuegoConfigurado: boolean;
   modoJuego?: ModoJuegoConfig;
   rondaActual: number;
+  inscripcionesAbiertas: boolean;
+  tipoInscripcion: 'individual' | 'parejasFijas';
 }
 
 @Injectable()
@@ -38,6 +40,8 @@ export class AmericanoService {
       limiteInscripciones: dto.limiteInscripciones,
       modoJuegoConfigurado: false,
       rondaActual: 0,
+      inscripcionesAbiertas: true,
+      tipoInscripcion: dto.tipoInscripcion ?? 'individual',
     };
 
     const data: any = {
@@ -111,9 +115,10 @@ export class AmericanoService {
       throw new BadRequestException('Este torneo no es de formato americano');
     }
 
-    const config = (torneo.configAmericano as any as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false };
+    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
     config.modoJuegoConfigurado = true;
     config.modoJuego = modoJuego;
+    config.inscripcionesAbiertas = false; // Al configurar el modo, se cierran las inscripciones
 
     await this.prisma.tournament.update({
       where: { id: torneoId },
@@ -121,6 +126,34 @@ export class AmericanoService {
     });
 
     return { message: 'Modo de juego configurado' };
+  }
+
+  async cerrarInscripciones(torneoId: string, organizadorId: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: torneoId },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    if (torneo.organizadorId !== organizadorId) {
+      throw new ForbiddenException('No tenés permisos para este torneo');
+    }
+
+    if (torneo.formato !== 'americano') {
+      throw new BadRequestException('Este torneo no es de formato americano');
+    }
+
+    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
+    config.inscripcionesAbiertas = false;
+
+    await this.prisma.tournament.update({
+      where: { id: torneoId },
+      data: { configAmericano: config as any },
+    });
+
+    return { message: 'Inscripciones cerradas' };
   }
 
   async findById(torneoId: string) {
@@ -202,6 +235,13 @@ export class AmericanoService {
       throw new BadRequestException('Este torneo no es de formato americano');
     }
 
+    const config = torneo.configAmericano as unknown as ConfigAmericano | null;
+
+    // Verificar que las inscripciones estén abiertas
+    if (config && config.inscripcionesAbiertas === false) {
+      throw new BadRequestException('Las inscripciones para este torneo están cerradas');
+    }
+
     // Verificar que el jugador existe
     const jugador = await this.prisma.user.findUnique({
       where: { id: dto.jugadorId },
@@ -223,8 +263,38 @@ export class AmericanoService {
       throw new BadRequestException('El jugador ya está inscrito en este torneo');
     }
 
+    // Si es parejas fijas, validar jugador2
+    let jugador2Id: string | null = null;
+    if (config?.tipoInscripcion === 'parejasFijas') {
+      if (!dto.jugador2Id) {
+        throw new BadRequestException('En torneos por parejas fijas debés indicar a tu compañero');
+      }
+      if (dto.jugador2Id === dto.jugadorId) {
+        throw new BadRequestException('No podés ser tu propio compañero');
+      }
+      const jugador2 = await this.prisma.user.findUnique({
+        where: { id: dto.jugador2Id },
+      });
+      if (!jugador2) {
+        throw new NotFoundException('Compañero no encontrado');
+      }
+      // Verificar que el compañero no esté ya inscrito
+      const existente2 = await this.prisma.inscripcion.findFirst({
+        where: {
+          tournamentId: torneoId,
+          OR: [
+            { jugador1Id: dto.jugador2Id },
+            { jugador2Id: dto.jugador2Id },
+          ],
+        },
+      });
+      if (existente2) {
+        throw new BadRequestException('Tu compañero ya está inscrito en este torneo');
+      }
+      jugador2Id = dto.jugador2Id;
+    }
+
     // Para americano, usamos la primera categoría disponible o una default
-    // En un torneo americano típicamente no hay categorías fijas, todos juegan juntos
     const categoria = await this.prisma.category.findFirst({
       orderBy: { orden: 'asc' },
     });
@@ -233,18 +303,19 @@ export class AmericanoService {
       throw new BadRequestException('No hay categorías configuradas');
     }
 
-    // Crear inscripción individual (jugador2Id = null para americano)
     const inscripcion = await this.prisma.inscripcion.create({
       data: {
         tournamentId: torneoId,
         categoryId: categoria.id,
         jugador1Id: dto.jugadorId,
+        jugador2Id: jugador2Id ?? undefined,
         jugador2Documento: jugador.documento,
-        estado: 'CONFIRMADA', // Americano no requiere pago
+        estado: 'CONFIRMADA',
         estadoClasificacion: 'PENDIENTE',
       },
       include: {
         jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+        jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
       },
     });
 
@@ -385,7 +456,7 @@ export class AmericanoService {
     }
 
     // Actualizar config del torneo
-    const config = (torneo.configAmericano as any as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false };
+    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
     config.rondaActual = 1;
 
     await this.prisma.tournament.update({
@@ -450,7 +521,7 @@ export class AmericanoService {
       throw new BadRequestException('La ronda anterior debe estar finalizada');
     }
 
-    const config = (torneo.configAmericano as any as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false };
+    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
     const nuevaRondaNumero = ultimaRonda.numero + 1;
 
     const numRondasConfig = config.modoJuego?.numRondas ?? 4;

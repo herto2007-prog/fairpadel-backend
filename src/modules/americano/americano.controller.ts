@@ -66,6 +66,15 @@ export class AmericanoController {
     return this.americanoService.configurarModoJuego(torneoId, user.id, dto);
   }
 
+  @Post('torneos/:id/cerrar-inscripciones')
+  @UseGuards(JwtAuthGuard)
+  cerrarInscripciones(
+    @Param('id') torneoId: string,
+    @GetUser() user: User,
+  ) {
+    return this.americanoService.cerrarInscripciones(torneoId, user.id);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // INSCRIPCIONES
   // ═══════════════════════════════════════════════════════════════════════════════
