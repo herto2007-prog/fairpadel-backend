@@ -372,11 +372,12 @@ export class PublicTournamentsController {
       }
 
       // REGLA 2: Categoría igual o superior - permitida para todos
-      if (ordenCategoria >= ordenJugador) {
+      // menor orden = categoría superior
+      if (ordenCategoria <= ordenJugador) {
         return true;
       }
 
-      // REGLA 3: Categorías INFERIORES (ordenCategoria < ordenJugador)
+      // REGLA 3: Categorías INFERIORES (ordenCategoria > ordenJugador)
       // Hombres: NO pueden en inferiores (bajo ninguna circunstancia)
       if (jugadorGenero === 'MASCULINO') {
         return false;
@@ -388,7 +389,11 @@ export class PublicTournamentsController {
       }
 
       // Mujeres en categorías Caballeros: SÍ pueden bajar UNA como excepción
-      // Aquí deberíamos verificar si ya usó su excepción
+      const diferencia = ordenCategoria - ordenJugador;
+      if (diferencia > 1) {
+        return false;
+      }
+
       return true;
     });
   }
