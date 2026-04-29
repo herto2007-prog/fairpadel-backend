@@ -2352,6 +2352,9 @@ model AmericanoRonda {
   // Parejas que participan en esta ronda
   parejas       AmericanoParejaRonda[]
   
+  // Partidos de esta ronda
+  partidos      AmericanoPartido[]
+  
   // Puntajes registrados en esta ronda (referencia cruzada)
   puntajes      AmericanoPuntaje[]
   
@@ -2382,6 +2385,10 @@ model AmericanoParejaRonda {
   // Color o identificador visual para la app
   color         String?
   
+  // Partidos donde esta pareja es equipo A o B
+  partidosA     AmericanoPartido[] @relation("PartidoParejaA")
+  partidosB     AmericanoPartido[] @relation("PartidoParejaB")
+  
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   
@@ -2389,6 +2396,36 @@ model AmericanoParejaRonda {
   @@index([jugador1Id])
   @@index([jugador2Id])
   @@map("americano_parejas_ronda")
+}
+
+model AmericanoPartido {
+  id            String   @id @default(uuid())
+  
+  rondaId       String   @map("ronda_id")
+  ronda         AmericanoRonda @relation(fields: [rondaId], references: [id], onDelete: Cascade)
+  
+  parejaAId     String   @map("pareja_a_id")
+  parejaA       AmericanoParejaRonda @relation("PartidoParejaA", fields: [parejaAId], references: [id], onDelete: Cascade)
+  
+  parejaBId     String   @map("pareja_b_id")
+  parejaB       AmericanoParejaRonda @relation("PartidoParejaB", fields: [parejaBId], references: [id], onDelete: Cascade)
+  
+  // Cancha asignada (1, 2, 3...)
+  cancha        Int      @default(1)
+  
+  // Estado: PENDIENTE, FINALIZADO
+  estado        String   @default("PENDIENTE")
+  
+  // Sets del partido: [{ gamesEquipoA, gamesEquipoB }]
+  sets          Json?
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  @@index([rondaId])
+  @@index([parejaAId])
+  @@index([parejaBId])
+  @@map("americano_partidos")
 }
 
 model AmericanoPuntaje {

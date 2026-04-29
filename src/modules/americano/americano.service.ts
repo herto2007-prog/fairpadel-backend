@@ -171,6 +171,22 @@ export class AmericanoService {
                 jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
               },
             },
+            partidos: {
+              include: {
+                parejaA: {
+                  include: {
+                    jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+                    jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+                  },
+                },
+                parejaB: {
+                  include: {
+                    jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+                    jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+                  },
+                },
+              },
+            },
           },
         },
         _count: {
@@ -422,18 +438,25 @@ export class AmericanoService {
     });
 
     // Generar parejas aleatorias (sin repetir compañero - en ronda 1 todos son nuevos)
-    const parejas = this.generarParejasAleatorias(jugadores.map(j => j.id));
+    const parejasJugadores = this.generarParejasAleatorias(jugadores.map(j => j.id));
 
-    // Guardar parejas
-    for (const [j1, j2] of parejas) {
-      await this.prisma.americanoParejaRonda.create({
+    // Guardar parejas y obtener sus IDs
+    const parejasCreadas: { id: string; jugador1Id: string; jugador2Id: string }[] = [];
+    for (const [j1, j2] of parejasJugadores) {
+      const p = await this.prisma.americanoParejaRonda.create({
         data: {
           rondaId: ronda.id,
           jugador1Id: j1,
           jugador2Id: j2,
         },
       });
+      parejasCreadas.push({ id: p.id, jugador1Id: j1, jugador2Id: j2 });
     }
+
+    // Crear partidos emparejando parejas entre sí
+    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
+    const canchasSimultaneas = config.modoJuego?.canchasSimultaneas ?? 1;
+    await this.crearPartidosDeRonda(ronda.id, parejasCreadas, canchasSimultaneas);
 
     // Inicializar puntajes en 0 para todos los jugadores
     for (const j of jugadores) {
@@ -456,7 +479,6 @@ export class AmericanoService {
     }
 
     // Actualizar config del torneo
-    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
     config.rondaActual = 1;
 
     await this.prisma.tournament.update({
@@ -489,6 +511,7 @@ export class AmericanoService {
               },
             },
             parejas: true,
+            partidos: true,
           },
         },
         inscripciones: {
@@ -517,8 +540,13 @@ export class AmericanoService {
       throw new BadRequestException('No hay rondas iniciadas. Use iniciarPrimeraRonda primero.');
     }
 
-    if (ultimaRonda.estado !== 'FINALIZADA') {
-      throw new BadRequestException('La ronda anterior debe estar finalizada');
+    // Permitir generar siguiente ronda si está finalizada o queda 1 partido pendiente
+    const partidos = ultimaRonda.partidos ?? [];
+    const partidosFinalizados = partidos.filter(p => p.estado === 'FINALIZADO').length;
+    const puedeGenerarSiguiente = ultimaRonda.estado === 'FINALIZADA' || (partidos.length > 0 && partidos.length - partidosFinalizados <= 1);
+
+    if (!puedeGenerarSiguiente) {
+      throw new BadRequestException('La ronda anterior debe estar finalizada o quedar solo 1 partido pendiente');
     }
 
     const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
@@ -556,16 +584,22 @@ export class AmericanoService {
       },
     });
 
-    // Guardar parejas
+    // Guardar parejas y obtener IDs
+    const parejasCreadas: { id: string; jugador1Id: string; jugador2Id: string }[] = [];
     for (const [j1, j2] of nuevaParejas) {
-      await this.prisma.americanoParejaRonda.create({
+      const p = await this.prisma.americanoParejaRonda.create({
         data: {
           rondaId: nuevaRonda.id,
           jugador1Id: j1,
           jugador2Id: j2,
         },
       });
+      parejasCreadas.push({ id: p.id, jugador1Id: j1, jugador2Id: j2 });
     }
+
+    // Crear partidos
+    const canchasSimultaneas = config.modoJuego?.canchasSimultaneas ?? 1;
+    await this.crearPartidosDeRonda(nuevaRonda.id, parejasCreadas, canchasSimultaneas);
 
     // Inicializar puntajes en 0 para esta ronda (o acumular? En americano típicamente se muestra ranking acumulado)
     // Vamos a crear un nuevo registro por ronda para trackear progreso
@@ -650,6 +684,22 @@ export class AmericanoService {
           include: {
             jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
             jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+          },
+        },
+        partidos: {
+          include: {
+            parejaA: {
+              include: {
+                jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+                jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+              },
+            },
+            parejaB: {
+              include: {
+                jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+                jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+              },
+            },
           },
         },
         puntajes: {
@@ -818,6 +868,27 @@ export class AmericanoService {
     // Actualizar puntajes de los 4 jugadores
     // SISTEMA: GAMES ACUMULADOS
     // Cada jugador suma los games que ganó en el partido como puntos
+    // Buscar y actualizar el partido correspondiente
+    const partido = await this.prisma.americanoPartido.findFirst({
+      where: {
+        rondaId,
+        OR: [
+          { parejaAId, parejaBId },
+          { parejaAId: parejaBId, parejaBId: parejaAId },
+        ],
+      },
+    });
+
+    if (partido) {
+      await this.prisma.americanoPartido.update({
+        where: { id: partido.id },
+        data: {
+          estado: 'FINALIZADO',
+          sets: sets as any,
+        },
+      });
+    }
+
     const jugadoresA = [parejaA.jugador1Id, parejaA.jugador2Id];
     const jugadoresB = [parejaB.jugador1Id, parejaB.jugador2Id];
 
@@ -943,5 +1014,32 @@ export class AmericanoService {
     }
 
     return parejas;
+  }
+
+  private async crearPartidosDeRonda(
+    rondaId: string,
+    parejas: { id: string; jugador1Id: string; jugador2Id: string }[],
+    canchasSimultaneas: number,
+  ) {
+    if (parejas.length < 2) return;
+
+    // Emparejar parejas: 0 vs 1, 2 vs 3, etc.
+    const partidosData: { rondaId: string; parejaAId: string; parejaBId: string; cancha: number; estado: string }[] = [];
+    for (let i = 0; i < parejas.length; i += 2) {
+      if (i + 1 < parejas.length) {
+        const cancha = (Math.floor(i / 2) % canchasSimultaneas) + 1;
+        partidosData.push({
+          rondaId,
+          parejaAId: parejas[i].id,
+          parejaBId: parejas[i + 1].id,
+          cancha,
+          estado: 'PENDIENTE',
+        });
+      }
+    }
+
+    if (partidosData.length > 0) {
+      await this.prisma.americanoPartido.createMany({ data: partidosData });
+    }
   }
 }
