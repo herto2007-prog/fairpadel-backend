@@ -304,27 +304,31 @@ export class PublicInscripcionesController {
       throw new BadRequestException('Ya estás inscrito en este torneo');
     }
 
-    // 4. Validar categoría según reglas de género/nivel
+    // 4. Validar categoría según tipo y reglas
     if (!user.categoriaActualId) {
       throw new BadRequestException('Debes tener una categoría asignada para inscribirte a un torneo.');
     }
 
+    const categoriaTorneo = tournamentCategory.category;
     const todasCategorias = await this.prisma.category.findMany({ orderBy: { orden: 'asc' } });
-    const categoriaJugador = todasCategorias.find((c) => c.id === user.categoriaActualId);
 
-    if (!categoriaJugador) {
-      throw new BadRequestException('Tu categoría asignada no es válida. Contacta al administrador.');
-    }
+    if (categoriaTorneo.tipoCategoria === 'STANDARD') {
+      const categoriaJugador = todasCategorias.find((c) => c.id === user.categoriaActualId);
 
-    const validacion = this.validarReglasCategoria(
-      user.genero,
-      categoriaJugador,
-      tournamentCategory.category,
-      todasCategorias
-    );
+      if (!categoriaJugador) {
+        throw new BadRequestException('Tu categoría asignada no es válida. Contacta al administrador.');
+      }
 
-    if (!validacion.permitido) {
-      throw new ForbiddenException(validacion.mensaje);
+      const validacion = this.validarReglasCategoria(
+        user.genero,
+        categoriaJugador,
+        categoriaTorneo,
+        todasCategorias
+      );
+
+      if (!validacion.permitido) {
+        throw new ForbiddenException(validacion.mensaje);
+      }
     }
 
     // 5. PROCESAR SEGÚN CASO
@@ -352,6 +356,61 @@ export class PublicInscripcionesController {
 
       if (inscripcionJ2Existente) {
         throw new BadRequestException('Tu pareja ya está inscrita en este torneo');
+      }
+
+      // Validaciones especiales para MIXTO y SUMAS
+      if (categoriaTorneo.tipoCategoria === 'MIXTO') {
+        const reglas = categoriaTorneo.reglas as { damaCategoriaId: string; caballeroCategoriaId: string };
+
+        if (user.genero === jugador2.genero) {
+          throw new BadRequestException('En categoría mixta, la pareja debe ser de géneros opuestos');
+        }
+
+        if (!jugador2.categoriaActualId) {
+          throw new BadRequestException('Tu pareja debe tener una categoría asignada');
+        }
+
+        if (user.genero === 'MASCULINO') {
+          if (user.categoriaActualId !== reglas.caballeroCategoriaId) {
+            throw new BadRequestException('Tu categoría no corresponde a esta mixta');
+          }
+          if (jugador2.categoriaActualId !== reglas.damaCategoriaId) {
+            throw new BadRequestException('La categoría de tu pareja no corresponde a esta mixta');
+          }
+        } else {
+          if (user.categoriaActualId !== reglas.damaCategoriaId) {
+            throw new BadRequestException('Tu categoría no corresponde a esta mixta');
+          }
+          if (jugador2.categoriaActualId !== reglas.caballeroCategoriaId) {
+            throw new BadRequestException('La categoría de tu pareja no corresponde a esta mixta');
+          }
+        }
+      }
+
+      if (categoriaTorneo.tipoCategoria === 'SUMAS') {
+        const reglas = categoriaTorneo.reglas as { sumaObjetivo: number };
+
+        if (user.genero !== jugador2.genero) {
+          throw new BadRequestException('En categoría suma, ambos jugadores deben ser del mismo género');
+        }
+
+        if (!jugador2.categoriaActualId) {
+          throw new BadRequestException('Tu pareja debe tener una categoría asignada');
+        }
+
+        const catJ1 = todasCategorias.find((c) => c.id === user.categoriaActualId);
+        const catJ2 = todasCategorias.find((c) => c.id === jugador2.categoriaActualId);
+
+        if (!catJ1 || !catJ2) {
+          throw new BadRequestException('Categoría no válida para uno de los jugadores');
+        }
+
+        if (catJ1.orden + catJ2.orden !== reglas.sumaObjetivo) {
+          throw new BadRequestException(
+            `La suma de las categorías debe ser ${reglas.sumaObjetivo}. ` +
+            `Tu categoría (${catJ1.orden}) + categoría de tu pareja (${catJ2.orden}) = ${catJ1.orden + catJ2.orden}`
+          );
+        }
       }
 
       // Crear inscripción confirmada (ambos jugadores registrados)

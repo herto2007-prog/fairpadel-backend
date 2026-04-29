@@ -510,12 +510,20 @@ model PasswordReset {
 // MÓDULO 2: CATEGORÍAS Y SEDES
 // ═══════════════════════════════════════════════════════
 
+enum TipoCategoria {
+  STANDARD
+  MIXTO
+  SUMAS
+}
+
 model Category {
-  id        String   @id @default(uuid())
-  nombre    String   @unique
-  tipo      Gender
-  orden     Int
-  createdAt DateTime @default(now()) @map("created_at")
+  id            String          @id @default(uuid())
+  nombre        String          @unique
+  tipo          Gender
+  orden         Int
+  tipoCategoria TipoCategoria   @default(STANDARD)
+  reglas        Json?
+  createdAt     DateTime        @default(now()) @map("created_at")
 
   torneos           TournamentCategory[]
   inscripciones     Inscripcion[]
