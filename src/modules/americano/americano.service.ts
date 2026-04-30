@@ -507,6 +507,12 @@ export class AmericanoService {
       throw new BadRequestException('Ya existe al menos una ronda iniciada');
     }
 
+    // Si es automático, calcular y fijar el máximo de rondas según inscripciones
+    const numRondasMax = await this.getNumRondasMax(torneoId, config);
+    if (config.modoJuego && config.modoJuego.numRondas === 'automatico') {
+      config.modoJuego.numRondas = numRondasMax;
+    }
+
     const canchasSimultaneas = config.modoJuego?.canchasSimultaneas ?? 1;
 
     const ronda = await this.prisma.$transaction(async (tx) => {
@@ -654,11 +660,10 @@ export class AmericanoService {
     const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
     const nuevaRondaNumero = ultimaRonda.numero + 1;
 
-    const numRondasConfig = config.modoJuego?.numRondas ?? 4;
-    const numRondasMax = numRondasConfig === 'automatico' ? 999 : (typeof numRondasConfig === 'number' ? numRondasConfig : parseInt(numRondasConfig as string, 10) || 4);
+    const numRondasMax = await this.getNumRondasMax(torneoId, config);
 
     if (nuevaRondaNumero > numRondasMax) {
-      throw new BadRequestException('Todas las rondas configuradas ya fueron jugadas');
+      throw new BadRequestException(`Todas las rondas posibles ya fueron jugadas. Máximo: ${numRondasMax} rondas para este número de jugadores.`);
     }
 
 // Si es parejas fijas, mantener las mismas parejas que en la primera ronda
@@ -1065,6 +1070,46 @@ export class AmericanoService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
+  // CÁLCULO DE RONDAS MÁXIMAS (MODO AUTOMÁTICO)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Calcula el máximo de rondas posibles sin repetir compañeros/enfrentamientos.
+   * 
+   * Matemática:
+   * - N entidades (jugadores individuales o parejas fijas)
+   * - En cada ronda se forman floor(N/2) parejas/enfrentamientos
+   * - Total de combinaciones únicas = C(N,2) = N*(N-1)/2
+   * - Máximo rondas = C(N,2) / floor(N/2)
+   * 
+   * Simplificado:
+   * - N par → N-1
+   * - N impar → N
+   */
+  private calcularRondasMaximas(numEntidades: number): number {
+    if (numEntidades < 2) return 0;
+    return numEntidades % 2 === 0 ? numEntidades - 1 : numEntidades;
+  }
+
+  private async getNumRondasMax(torneoId: string, config: ConfigAmericano): Promise<number> {
+    const numRondasConfig = config.modoJuego?.numRondas;
+    if (numRondasConfig !== 'automatico') {
+      return typeof numRondasConfig === 'number' ? numRondasConfig : parseInt(numRondasConfig as string, 10) || 4;
+    }
+
+    // Modo automático: calcular según inscripciones actuales
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: { tournamentId: torneoId, estado: 'CONFIRMADA' },
+    });
+
+    const esParejasFijas = config.tipoInscripcion === 'parejasFijas';
+    // Individual: cada inscripción = 1 jugador
+    // Parejas fijas: cada inscripción = 1 pareja
+    const numEntidades = inscripciones.length;
+    return this.calcularRondasMaximas(numEntidades);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // ALGORITMOS DE PAREJAS
   // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1131,6 +1176,13 @@ export class AmericanoService {
               encontrado = true;
             }
           }
+        }
+        // Si no se encontró alternativa, se agotaron las combinaciones posibles
+        if (!encontrado) {
+          throw new BadRequestException(
+            'No hay más combinaciones de parejas posibles sin repetir compañeros. ' +
+            'El torneo ha alcanzado el máximo de rondas según el número de jugadores.'
+          );
         }
       }
 

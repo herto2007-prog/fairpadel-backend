@@ -464,7 +464,49 @@ describe('AmericanoService', () => {
   // NUM RONDAS (regresión del bug string vs number)
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  describe('numRondasMax', () => {
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CÁLCULO DE RONDAS MÁXIMAS (MODO AUTOMÁTICO)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('calcularRondasMaximas', () => {
+    it('4 jugadores → 3 rondas', () => {
+      expect((service as any).calcularRondasMaximas(4)).toBe(3);
+    });
+    it('5 jugadores → 5 rondas', () => {
+      expect((service as any).calcularRondasMaximas(5)).toBe(5);
+    });
+    it('6 jugadores → 5 rondas', () => {
+      expect((service as any).calcularRondasMaximas(6)).toBe(5);
+    });
+    it('7 jugadores → 7 rondas', () => {
+      expect((service as any).calcularRondasMaximas(7)).toBe(7);
+    });
+    it('8 jugadores → 7 rondas', () => {
+      expect((service as any).calcularRondasMaximas(8)).toBe(7);
+    });
+    it('10 jugadores → 9 rondas', () => {
+      expect((service as any).calcularRondasMaximas(10)).toBe(9);
+    });
+    it('menos de 2 → 0', () => {
+      expect((service as any).calcularRondasMaximas(1)).toBe(0);
+    });
+  });
+
+  describe('generarParejasPorRanking sin combinaciones', () => {
+    it('debe lanzar error cuando se agotan todas las combinaciones posibles', () => {
+      const ranking = ['a', 'b', 'c', 'd'];
+      // Historial con TODAS las combinaciones posibles
+      const historial = new Set<string>([
+        'a-b', 'a-c', 'a-d',
+        'b-c', 'b-d',
+        'c-d',
+      ]);
+
+      expect(() => (service as any).generarParejasPorRanking(ranking, historial)).toThrow(BadRequestException);
+    });
+  });
+
+  describe('numRondasMax manual', () => {
     it('debe interpretar numRondas="5" como 5 rondas', () => {
       const numRondasConfig: any = '5';
       const numRondasMax = numRondasConfig === 'automatico' ? 999 : (typeof numRondasConfig === 'number' ? numRondasConfig : parseInt(numRondasConfig as string, 10) || 4);
@@ -477,7 +519,7 @@ describe('AmericanoService', () => {
       expect(numRondasMax).toBe(5);
     });
 
-    it('debe interpretar numRondas="automatico" como 999', () => {
+    it('debe interpretar numRondas="automatico" como 999 (fallback legacy)', () => {
       const numRondasConfig: any = 'automatico';
       const numRondasMax = numRondasConfig === 'automatico' ? 999 : (typeof numRondasConfig === 'number' ? numRondasConfig : parseInt(numRondasConfig as string, 10) || 4);
       expect(numRondasMax).toBe(999);
