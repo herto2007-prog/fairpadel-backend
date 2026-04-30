@@ -455,6 +455,7 @@ export class AmericanoService {
           where: { estado: 'CONFIRMADA' },
           include: {
             jugador1: { select: { id: true, nombre: true, apellido: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true } },
           },
         },
         americanosRonda: true,
@@ -472,6 +473,9 @@ export class AmericanoService {
     if (torneo.formato !== 'americano') {
       throw new BadRequestException('Este torneo no es de formato americano');
     }
+
+    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
+    const esParejasFijas = config.tipoInscripcion === 'parejasFijas';
 
     const jugadores = torneo.inscripciones.map(i => i.jugador1);
 
@@ -492,24 +496,43 @@ export class AmericanoService {
       },
     });
 
-    // Generar parejas aleatorias (sin repetir compañero - en ronda 1 todos son nuevos)
-    const parejasJugadores = this.generarParejasAleatorias(jugadores.map(j => j.id));
+    let parejasCreadas: { id: string; jugador1Id: string; jugador2Id: string }[] = [];
 
-    // Guardar parejas y obtener sus IDs
-    const parejasCreadas: { id: string; jugador1Id: string; jugador2Id: string }[] = [];
-    for (const [j1, j2] of parejasJugadores) {
-      const p = await this.prisma.americanoParejaRonda.create({
-        data: {
-          rondaId: ronda.id,
-          jugador1Id: j1,
-          jugador2Id: j2,
-        },
-      });
-      parejasCreadas.push({ id: p.id, jugador1Id: j1, jugador2Id: j2 });
+    if (esParejasFijas) {
+      // Usar las parejas definidas en las inscripciones
+      const inscripcionesConPareja = torneo.inscripciones.filter(i => i.jugador2Id);
+      if (inscripcionesConPareja.length < 2) {
+        throw new BadRequestException('Se necesitan al menos 2 parejas completas para iniciar (parejas fijas)');
+      }
+      if (inscripcionesConPareja.length !== torneo.inscripciones.length) {
+        throw new BadRequestException('Todos los inscriptos deben tener un companero asignado (parejas fijas)');
+      }
+      for (const insc of inscripcionesConPareja) {
+        const p = await this.prisma.americanoParejaRonda.create({
+          data: {
+            rondaId: ronda.id,
+            jugador1Id: insc.jugador1Id,
+            jugador2Id: insc.jugador2Id!,
+          },
+        });
+        parejasCreadas.push({ id: p.id, jugador1Id: insc.jugador1Id, jugador2Id: insc.jugador2Id! });
+      }
+    } else {
+      // Generar parejas aleatorias (sin repetir companero)
+      const parejasJugadores = this.generarParejasAleatorias(jugadores.map(j => j.id));
+      for (const [j1, j2] of parejasJugadores) {
+        const p = await this.prisma.americanoParejaRonda.create({
+          data: {
+            rondaId: ronda.id,
+            jugador1Id: j1,
+            jugador2Id: j2,
+          },
+        });
+        parejasCreadas.push({ id: p.id, jugador1Id: j1, jugador2Id: j2 });
+      }
     }
 
-    // Crear partidos emparejando parejas entre sí
-    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
+    // Crear partidos emparejando parejas entre si
     const canchasSimultaneas = config.modoJuego?.canchasSimultaneas ?? 1;
     await this.crearPartidosDeRonda(ronda.id, parejasCreadas, canchasSimultaneas);
 
@@ -614,23 +637,42 @@ export class AmericanoService {
       throw new BadRequestException('Todas las rondas configuradas ya fueron jugadas');
     }
 
-    // Obtener jugadores ordenados por ranking de la ronda anterior
-    const ranking = ultimaRonda.puntajes.map(p => ({
-      jugadorId: p.jugadorId,
-      puntos: p.puntos,
-      diferenciaGames: p.diferenciaGames,
-    }));
+// Si es parejas fijas, mantener las mismas parejas que en la primera ronda
+    let nuevaParejas: [string, string][] = [];
+    let parejasRondaAnterior: { id: string; jugador1Id: string; jugador2Id: string }[] = [];
 
-    // Obtener historial de parejas para evitar repetir compañeros
-    const historialParejas = await this.obtenerHistorialParejas(torneoId);
+    if (config.tipoInscripcion === 'parejasFijas') {
+      // Obtener parejas de la primera ronda (o de inscripciones)
+      const primeraRonda = await this.prisma.americanoRonda.findFirst({
+        where: { torneoId },
+        orderBy: { numero: 'asc' },
+        include: { parejas: true },
+      });
+      if (primeraRonda) {
+        for (const par of primeraRonda.parejas) {
+          nuevaParejas.push([par.jugador1Id, par.jugador2Id]);
+          parejasRondaAnterior.push(par);
+        }
+      }
+    } else {
+      // Obtener jugadores ordenados por ranking de la ronda anterior
+      const ranking = ultimaRonda.puntajes.map(p => ({
+        jugadorId: p.jugadorId,
+        puntos: p.puntos,
+        diferenciaGames: p.diferenciaGames,
+      }));
 
-    // Generar nuevas parejas (1ro con último, evitando repetir compañeros)
-    const nuevaParejas = this.generarParejasPorRanking(
-      ranking.map(r => r.jugadorId),
-      historialParejas,
-    );
+      // Obtener historial de parejas para evitar repetir companeros
+      const historialParejas = await this.obtenerHistorialParejas(torneoId);
 
-    // Crear nueva ronda
+      // Generar nuevas parejas (1ro con ultimo, evitando repetir companeros)
+      nuevaParejas = this.generarParejasPorRanking(
+        ranking.map(r => r.jugadorId),
+        historialParejas,
+      );
+    }
+
+// Crear nueva ronda
     const nuevaRonda = await this.prisma.americanoRonda.create({
       data: {
         numero: nuevaRondaNumero,
