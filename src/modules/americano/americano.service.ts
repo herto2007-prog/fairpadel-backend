@@ -656,23 +656,48 @@ export class AmericanoService {
     const canchasSimultaneas = config.modoJuego?.canchasSimultaneas ?? 1;
     await this.crearPartidosDeRonda(nuevaRonda.id, parejasCreadas, canchasSimultaneas);
 
-    // Inicializar puntajes en 0 para esta ronda (o acumular? En americano típicamente se muestra ranking acumulado)
-    // Vamos a crear un nuevo registro por ronda para trackear progreso
+    // Inicializar puntajes para esta ronda ACUMULANDO los de rondas anteriores
+    // En americano los games se acumulan entre rondas
+    const puntajesAnteriores = await this.prisma.americanoPuntaje.findMany({
+      where: { torneoId, rondaId: ultimaRonda.id },
+    });
+
+    const acumuladoPorJugador = new Map<string, {
+      puntos: number; partidosJugados: number; partidosGanados: number;
+      partidosPerdidos: number; setsGanados: number; setsPerdidos: number;
+      gamesGanados: number; gamesPerdidos: number; diferenciaGames: number;
+    }>();
+
+    for (const p of puntajesAnteriores) {
+      acumuladoPorJugador.set(p.jugadorId, {
+        puntos: p.puntos,
+        partidosJugados: p.partidosJugados,
+        partidosGanados: p.partidosGanados,
+        partidosPerdidos: p.partidosPerdidos,
+        setsGanados: p.setsGanados,
+        setsPerdidos: p.setsPerdidos,
+        gamesGanados: p.gamesGanados,
+        gamesPerdidos: p.gamesPerdidos,
+        diferenciaGames: p.diferenciaGames,
+      });
+    }
+
     for (const jugador of torneo.inscripciones.map(i => i.jugador1)) {
+      const acum = acumuladoPorJugador.get(jugador.id);
       await this.prisma.americanoPuntaje.create({
         data: {
           torneoId,
           rondaId: nuevaRonda.id,
           jugadorId: jugador.id,
-          puntos: 0,
-          partidosJugados: 0,
-          partidosGanados: 0,
-          partidosPerdidos: 0,
-          setsGanados: 0,
-          setsPerdidos: 0,
-          gamesGanados: 0,
-          gamesPerdidos: 0,
-          diferenciaGames: 0,
+          puntos: acum?.puntos ?? 0,
+          partidosJugados: acum?.partidosJugados ?? 0,
+          partidosGanados: acum?.partidosGanados ?? 0,
+          partidosPerdidos: acum?.partidosPerdidos ?? 0,
+          setsGanados: acum?.setsGanados ?? 0,
+          setsPerdidos: acum?.setsPerdidos ?? 0,
+          gamesGanados: acum?.gamesGanados ?? 0,
+          gamesPerdidos: acum?.gamesPerdidos ?? 0,
+          diferenciaGames: acum?.diferenciaGames ?? 0,
         },
       });
     }
@@ -1012,8 +1037,7 @@ export class AmericanoService {
       parejas.push([shuffled[i], shuffled[i + 1]]);
     }
 
-    // Si hay jugador impar, no se empareja (queda con bye)
-    // En el futuro podemos manejar bye
+    // Si hay jugador impar, queda con bye (no se empareja consigo mismo)
     return parejas;
   }
 
@@ -1043,17 +1067,20 @@ export class AmericanoService {
     const parejas: [string, string][] = [];
     const usados = new Set<number>();
 
-    for (let i = 0; i < n / 2; i++) {
+    for (let i = 0; i < Math.floor(n / 2); i++) {
       let idxA = i;
       let idxB = n - 1 - i;
+
+      // Evitar emparejar un jugador consigo mismo (número impar de jugadores)
+      if (idxA === idxB) continue;
 
       // Si ya fueron pareja, intentar encontrar alternativa
       const key = [jugadoresOrdenados[idxA], jugadoresOrdenados[idxB]].sort().join('-');
       if (historialParejas.has(key)) {
         // Buscar swap con algún índice no usado
         let encontrado = false;
-        for (let swap = i + 1; swap < n - 1 - i && !encontrado; swap++) {
-          if (!usados.has(swap) && !usados.has(n - 1 - swap)) {
+        for (let swap = i + 1; swap < n && !encontrado; swap++) {
+          if (!usados.has(swap) && swap !== idxA) {
             const newKey = [jugadoresOrdenados[idxA], jugadoresOrdenados[swap]].sort().join('-');
             if (!historialParejas.has(newKey)) {
               idxB = swap;
