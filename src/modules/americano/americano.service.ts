@@ -237,6 +237,11 @@ export class AmericanoService {
                 },
               },
             },
+            puntajes: {
+              include: {
+                jugador: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+              },
+            },
           },
         },
         _count: {
