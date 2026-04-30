@@ -56,6 +56,15 @@ export class AmericanoController {
     return this.americanoService.eliminarTorneo(id, user.id);
   }
 
+  @Post('torneos/:id/reiniciar')
+  @UseGuards(JwtAuthGuard)
+  reiniciarTorneo(
+    @GetUser() user: User,
+    @Param('id') id: string,
+  ) {
+    return this.americanoService.reiniciarTorneo(id, user.id);
+  }
+
   @Post('torneos/:id/configurar-modo')
   @UseGuards(JwtAuthGuard)
   configurarModoJuego(

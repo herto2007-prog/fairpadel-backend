@@ -98,6 +98,56 @@ export class AmericanoService {
     return { message: 'Torneo eliminado correctamente' };
   }
 
+  async reiniciarTorneo(torneoId: string, userId: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: torneoId },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    if (torneo.formato !== 'americano') {
+      throw new BadRequestException('Este torneo no es de formato americano');
+    }
+
+    // Verificar si es el organizador o un admin
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: { include: { role: true } } },
+    });
+
+    const isAdmin = user?.roles.some((ur) => ur.role.nombre === 'admin');
+
+    if (torneo.organizadorId !== userId && !isAdmin) {
+      throw new ForbiddenException('No tenés permisos para reiniciar este torneo');
+    }
+
+    // Eliminar todas las rondas (cascade: elimina parejas y partidos)
+    await this.prisma.americanoRonda.deleteMany({
+      where: { torneoId },
+    });
+
+    // Eliminar todos los puntajes del torneo (por si quedan con rondaId null)
+    await this.prisma.americanoPuntaje.deleteMany({
+      where: { torneoId },
+    });
+
+    // Resetear config
+    const config = (torneo.configAmericano as unknown as ConfigAmericano) ?? { rondaActual: 0, visibilidad: 'publico', modoJuegoConfigurado: false, inscripcionesAbiertas: true, tipoInscripcion: 'individual' };
+    config.rondaActual = 0;
+
+    await this.prisma.tournament.update({
+      where: { id: torneoId },
+      data: {
+        estado: 'PUBLICADO',
+        configAmericano: config as any,
+      },
+    });
+
+    return { message: 'Torneo reiniciado correctamente. Podés volver a iniciar la primera ronda.' };
+  }
+
   async configurarModoJuego(torneoId: string, organizadorId: string, modoJuego: ModoJuegoConfig) {
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: torneoId },
