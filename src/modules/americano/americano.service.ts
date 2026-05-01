@@ -432,20 +432,40 @@ export class AmericanoService {
   async eliminarInscripcion(torneoId: string, jugadorId: string, organizadorId: string) {
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: torneoId },
+      include: { americanosRonda: true },
     });
 
     if (!torneo) {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== organizadorId) {
-      throw new ForbiddenException('No tienes permisos para este torneo');
+    // Verificar permisos: organizador o admin
+    const user = await this.prisma.user.findUnique({
+      where: { id: organizadorId },
+      include: { roles: { include: { role: true } } },
+    });
+    const isAdmin = user?.roles.some((ur) => ur.role.nombre === 'admin');
+
+    if (torneo.organizadorId !== organizadorId && !isAdmin) {
+      throw new ForbiddenException('No tenés permisos para este torneo');
     }
 
+    // No permitir eliminar si ya se iniciaron rondas
+    if (torneo.americanosRonda.length > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar inscripciones porque ya se iniciaron rondas. ' +
+        'Reiniciá el torneo si necesitás modificar los inscriptos.'
+      );
+    }
+
+    // Buscar inscripción por jugador1Id O jugador2Id
     const inscripcion = await this.prisma.inscripcion.findFirst({
       where: {
         tournamentId: torneoId,
-        jugador1Id: jugadorId,
+        OR: [
+          { jugador1Id: jugadorId },
+          { jugador2Id: jugadorId },
+        ],
       },
     });
 
@@ -921,6 +941,25 @@ export class AmericanoService {
   // RESULTADOS
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  private calcularStatsSets(sets: { gamesEquipoA: number; gamesEquipoB: number }[]) {
+    let setsGanadosA = 0;
+    let setsGanadosB = 0;
+    let gamesTotalA = 0;
+    let gamesTotalB = 0;
+
+    for (const set of sets) {
+      gamesTotalA += set.gamesEquipoA;
+      gamesTotalB += set.gamesEquipoB;
+      if (set.gamesEquipoA > set.gamesEquipoB) {
+        setsGanadosA++;
+      } else if (set.gamesEquipoB > set.gamesEquipoA) {
+        setsGanadosB++;
+      }
+    }
+
+    return { setsGanadosA, setsGanadosB, gamesTotalA, gamesTotalB, ganoA: setsGanadosA > setsGanadosB };
+  }
+
   async registrarResultado(
     torneoId: string,
     rondaId: string,
@@ -957,10 +996,6 @@ export class AmericanoService {
       throw new NotFoundException('Ronda no encontrada');
     }
 
-    if (ronda.estado !== 'EN_JUEGO') {
-      throw new BadRequestException('La ronda no está en juego');
-    }
-
     const parejaA = ronda.parejas.find(p => p.id === parejaAId);
     const parejaB = ronda.parejas.find(p => p.id === parejaBId);
 
@@ -973,26 +1008,6 @@ export class AmericanoService {
       throw new BadRequestException('Se requiere al menos un set');
     }
 
-    let setsGanadosA = 0;
-    let setsGanadosB = 0;
-    let gamesTotalA = 0;
-    let gamesTotalB = 0;
-
-    for (const set of sets) {
-      gamesTotalA += set.gamesEquipoA;
-      gamesTotalB += set.gamesEquipoB;
-      if (set.gamesEquipoA > set.gamesEquipoB) {
-        setsGanadosA++;
-      } else if (set.gamesEquipoB > set.gamesEquipoA) {
-        setsGanadosB++;
-      }
-    }
-
-    const ganoA = setsGanadosA > setsGanadosB;
-
-    // Actualizar puntajes de los 4 jugadores
-    // SISTEMA: GAMES ACUMULADOS
-    // Cada jugador suma los games que ganó en el partido como puntos
     // Buscar y actualizar el partido correspondiente
     const partido = await this.prisma.americanoPartido.findFirst({
       where: {
@@ -1006,6 +1021,21 @@ export class AmericanoService {
 
     if (!partido) {
       throw new BadRequestException('No se encontró el partido entre estas parejas en esta ronda');
+    }
+
+    const esEdicion = partido.estado === 'FINALIZADO';
+
+    // Si es nuevo registro (no edición), validar que ronda esté EN_JUEGO
+    if (!esEdicion && ronda.estado !== 'EN_JUEGO') {
+      throw new BadRequestException('La ronda no está en juego');
+    }
+
+    const statsNuevos = this.calcularStatsSets(sets);
+
+    // Si es edición, calcular valores anteriores del partido para revertir
+    let statsPrevios = null;
+    if (esEdicion && partido.sets && Array.isArray(partido.sets)) {
+      statsPrevios = this.calcularStatsSets(partido.sets as { gamesEquipoA: number; gamesEquipoB: number }[]);
     }
 
     const jugadoresA = [parejaA.jugador1Id, parejaA.jugador2Id];
@@ -1033,19 +1063,37 @@ export class AmericanoService {
         if (!puntaje) continue;
 
         const esEquipoA = jugadoresA.includes(jugadorId);
-        const gano = esEquipoA ? ganoA : !ganoA;
-        const gamesGanadosPartido = esEquipoA ? gamesTotalA : gamesTotalB;
-        const gamesPerdidosPartido = esEquipoA ? gamesTotalB : gamesTotalA;
-        const setsG = esEquipoA ? setsGanadosA : setsGanadosB;
-        const setsP = esEquipoA ? setsGanadosB : setsGanadosA;
 
-        // En americano, los PUNTOS = GAMES GANADOS acumulados
-        const puntosNuevos = gamesGanadosPartido;
+        // Si es edición, revertir valores anteriores
+        if (statsPrevios) {
+          const ganoPrev = esEquipoA ? statsPrevios.ganoA : !statsPrevios.ganoA;
+          const gamesGanadosPrev = esEquipoA ? statsPrevios.gamesTotalA : statsPrevios.gamesTotalB;
+          const gamesPerdidosPrev = esEquipoA ? statsPrevios.gamesTotalB : statsPrevios.gamesTotalA;
+          const setsGPrev = esEquipoA ? statsPrevios.setsGanadosA : statsPrevios.setsGanadosB;
+          const setsPPrev = esEquipoA ? statsPrevios.setsGanadosB : statsPrevios.setsGanadosA;
+
+          puntaje.puntos -= gamesGanadosPrev;
+          puntaje.partidosJugados -= 1;
+          puntaje.partidosGanados -= ganoPrev ? 1 : 0;
+          puntaje.partidosPerdidos -= !ganoPrev ? 1 : 0;
+          puntaje.setsGanados -= setsGPrev;
+          puntaje.setsPerdidos -= setsPPrev;
+          puntaje.gamesGanados -= gamesGanadosPrev;
+          puntaje.gamesPerdidos -= gamesPerdidosPrev;
+          puntaje.diferenciaGames -= (gamesGanadosPrev - gamesPerdidosPrev);
+        }
+
+        // Aplicar nuevos valores
+        const gano = esEquipoA ? statsNuevos.ganoA : !statsNuevos.ganoA;
+        const gamesGanadosPartido = esEquipoA ? statsNuevos.gamesTotalA : statsNuevos.gamesTotalB;
+        const gamesPerdidosPartido = esEquipoA ? statsNuevos.gamesTotalB : statsNuevos.gamesTotalA;
+        const setsG = esEquipoA ? statsNuevos.setsGanadosA : statsNuevos.setsGanadosB;
+        const setsP = esEquipoA ? statsNuevos.setsGanadosB : statsNuevos.setsGanadosA;
 
         await tx.americanoPuntaje.update({
           where: { id: puntaje.id },
           data: {
-            puntos: puntaje.puntos + puntosNuevos,
+            puntos: puntaje.puntos + gamesGanadosPartido,
             partidosJugados: puntaje.partidosJugados + 1,
             partidosGanados: gano ? puntaje.partidosGanados + 1 : puntaje.partidosGanados,
             partidosPerdidos: !gano ? puntaje.partidosPerdidos + 1 : puntaje.partidosPerdidos,
@@ -1060,12 +1108,12 @@ export class AmericanoService {
     });
 
     return {
-      message: 'Resultado registrado',
-      ganador: ganoA ? 'Equipo A' : 'Equipo B',
-      setsGanadosA,
-      setsGanadosB,
-      gamesTotalA,
-      gamesTotalB,
+      message: esEdicion ? 'Resultado actualizado' : 'Resultado registrado',
+      ganador: statsNuevos.ganoA ? 'Equipo A' : 'Equipo B',
+      setsGanadosA: statsNuevos.setsGanadosA,
+      setsGanadosB: statsNuevos.setsGanadosB,
+      gamesTotalA: statsNuevos.gamesTotalA,
+      gamesTotalB: statsNuevos.gamesTotalB,
     };
   }
 

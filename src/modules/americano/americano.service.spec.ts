@@ -458,6 +458,112 @@ describe('AmericanoService', () => {
       expect(result.gamesTotalA).toBe(6);
       expect(result.gamesTotalB).toBe(4);
     });
+
+    it('debe editar resultado sobre partido ya finalizado (revertir y re-aplicar)', async () => {
+      const torneo = { id: 't1', organizadorId: 'org1', formato: 'americano' };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.americanoRonda.findUnique.mockResolvedValue({
+        id: 'r1',
+        torneoId: 't1',
+        estado: 'EN_JUEGO',
+        parejas: [
+          { id: 'pa', jugador1Id: 'a', jugador2Id: 'b' },
+          { id: 'pb', jugador1Id: 'c', jugador2Id: 'd' },
+        ],
+      });
+      // Partido ya FINALIZADO con sets anteriores 6-4
+      prisma.americanoPartido.findFirst.mockResolvedValue({
+        id: 'm1',
+        estado: 'FINALIZADO',
+        sets: [{ gamesEquipoA: 6, gamesEquipoB: 4 }],
+      });
+      // Puntajes con valores acumulados del partido anterior
+      prisma.americanoPuntaje.findUnique
+        .mockResolvedValueOnce({ id: 'pa1', puntos: 6, partidosJugados: 1, partidosGanados: 1, partidosPerdidos: 0, setsGanados: 1, setsPerdidos: 0, gamesGanados: 6, gamesPerdidos: 4, diferenciaGames: 2 })
+        .mockResolvedValueOnce({ id: 'pa2', puntos: 6, partidosJugados: 1, partidosGanados: 1, partidosPerdidos: 0, setsGanados: 1, setsPerdidos: 0, gamesGanados: 6, gamesPerdidos: 4, diferenciaGames: 2 })
+        .mockResolvedValueOnce({ id: 'pb1', puntos: 4, partidosJugados: 1, partidosGanados: 0, partidosPerdidos: 1, setsGanados: 0, setsPerdidos: 1, gamesGanados: 4, gamesPerdidos: 6, diferenciaGames: -2 })
+        .mockResolvedValueOnce({ id: 'pb2', puntos: 4, partidosJugados: 1, partidosGanados: 0, partidosPerdidos: 1, setsGanados: 0, setsPerdidos: 1, gamesGanados: 4, gamesPerdidos: 6, diferenciaGames: -2 });
+
+      const txUpdates: any[] = [];
+      prisma.$transaction.mockImplementation(async (fn) => {
+        const txMock = {
+          americanoPartido: { update: jest.fn() },
+          americanoPuntaje: {
+            findUnique: prisma.americanoPuntaje.findUnique,
+            update: jest.fn((args) => { txUpdates.push(args); }),
+          },
+        };
+        return fn(txMock);
+      });
+
+      // Nuevo resultado: 4-6 (ahora gana B)
+      const result = await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 4, gamesEquipoB: 6 }], 'org1');
+
+      expect(result.message).toBe('Resultado actualizado');
+      expect(result.ganador).toBe('Equipo B');
+
+      // Verificar que los puntajes fueron actualizados correctamente
+      // Equipo A: (6-6) + 4 = 4 pts (revierte 6, suma 4)
+      // Equipo B: (4-4) + 6 = 6 pts (revierte 4, suma 6)
+      const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
+      const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
+      expect(pa1Update.data.puntos).toBe(4);
+      expect(pa1Update.data.partidosGanados).toBe(0); // antes ganó, ahora perdió
+      expect(pb1Update.data.puntos).toBe(6);
+      expect(pb1Update.data.partidosGanados).toBe(1); // antes perdió, ahora ganó
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // ELIMINAR INSCRIPCIÓN
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('eliminarInscripcion', () => {
+    it('debe rechazar si ya hay rondas iniciadas', async () => {
+      const torneo = {
+        id: 't1',
+        organizadorId: 'org1',
+        formato: 'americano',
+        americanosRonda: [{ id: 'r1' }],
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.user.findUnique.mockResolvedValue({ id: 'org1', roles: [] });
+
+      await expect(service.eliminarInscripcion('t1', 'u1', 'org1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('debe eliminar inscripción buscando por jugador2', async () => {
+      const torneo = {
+        id: 't1',
+        organizadorId: 'org1',
+        formato: 'americano',
+        americanosRonda: [],
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.user.findUnique.mockResolvedValue({ id: 'org1', roles: [] });
+      prisma.inscripcion.findFirst.mockResolvedValue({ id: 'insc1', jugador1Id: 'a', jugador2Id: 'b' });
+
+      const result = await service.eliminarInscripcion('t1', 'b', 'org1');
+
+      expect(prisma.inscripcion.delete).toHaveBeenCalledWith({ where: { id: 'insc1' } });
+      expect(result.message).toBe('Inscripción eliminada');
+    });
+
+    it('debe permitir eliminar a un admin aunque no sea organizador', async () => {
+      const torneo = {
+        id: 't1',
+        organizadorId: 'org1',
+        formato: 'americano',
+        americanosRonda: [],
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.user.findUnique.mockResolvedValue({ id: 'admin1', roles: [{ role: { nombre: 'admin' } }] });
+      prisma.inscripcion.findFirst.mockResolvedValue({ id: 'insc1', jugador1Id: 'a' });
+
+      const result = await service.eliminarInscripcion('t1', 'a', 'admin1');
+
+      expect(result.message).toBe('Inscripción eliminada');
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════
