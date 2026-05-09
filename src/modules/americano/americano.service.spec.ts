@@ -30,10 +30,16 @@ function createMockPrisma() {
       create: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
+      count: jest.fn(),
     },
     americanoParejaRonda: {
       create: jest.fn(),
       findMany: jest.fn(),
+    },
+    americanoGrupo: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
     },
     americanoPartido: {
       findFirst: jest.fn(),
@@ -206,11 +212,12 @@ describe('AmericanoService', () => {
       const torneo = {
         id: 't1',
         formato: 'americano',
-        configAmericano: { tipoInscripcion: 'parejasFijas', inscripcionesAbiertas: true } as unknown as ConfigAmericano,
+        configAmericano: { tipoInscripcion: 'parejasFijas', inscripcionesAbiertas: true, formatoAmericano: 'parejasSinCat' } as unknown as ConfigAmericano,
       };
       prisma.tournament.findUnique.mockResolvedValue(torneo);
-      prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', genero: 'MASCULINO', categoriaActualId: 'cat1', documento: '123' });
       prisma.category.findFirst.mockResolvedValue({ id: 'cat1' });
+      prisma.americanoGrupo.findFirst.mockResolvedValue({ id: 'g1', nombre: 'Masculino' });
       // Primera búsqueda: el jugador principal no está inscrito
       // Segunda búsqueda: el compañero no está inscrito
       prisma.inscripcion.findFirst
@@ -307,14 +314,15 @@ describe('AmericanoService', () => {
         id: 't1',
         organizadorId: 'org1',
         formato: 'americano',
-        configAmericano: { tipoInscripcion: 'parejasFijas', modoJuego: { canchasSimultaneas: 1 } } as unknown as ConfigAmericano,
-        inscripciones: [
-          { id: 'i1', jugador1Id: 'a', jugador2Id: 'b', estado: 'CONFIRMADA', jugador1: { id: 'a', nombre: 'A', apellido: '' }, jugador2: { id: 'b', nombre: 'B', apellido: '' } },
-          { id: 'i2', jugador1Id: 'c', jugador2Id: 'd', estado: 'CONFIRMADA', jugador1: { id: 'c', nombre: 'C', apellido: '' }, jugador2: { id: 'd', nombre: 'D', apellido: '' } },
-        ],
-        americanosRonda: [],
+        configAmericano: { tipoInscripcion: 'parejasFijas', modoJuego: { canchasSimultaneas: 1 }, formatoAmericano: 'parejasSinCat' } as unknown as ConfigAmericano,
+        americanosGrupo: [{ id: 'g1', nombre: 'Masculino' }],
       };
       prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.americanoRonda.count.mockResolvedValue(0);
+      prisma.inscripcion.findMany.mockResolvedValue([
+        { id: 'i1', jugador1Id: 'a', jugador2Id: 'b', estado: 'CONFIRMADA', grupoId: 'g1', grupo: { id: 'g1', nombre: 'Masculino' }, jugador1: { id: 'a', nombre: 'A', apellido: '' }, jugador2: { id: 'b', nombre: 'B', apellido: '' } },
+        { id: 'i2', jugador1Id: 'c', jugador2Id: 'd', estado: 'CONFIRMADA', grupoId: 'g1', grupo: { id: 'g1', nombre: 'Masculino' }, jugador1: { id: 'c', nombre: 'C', apellido: '' }, jugador2: { id: 'd', nombre: 'D', apellido: '' } },
+      ]);
       const rondaCreada = { id: 'r1', numero: 1, estado: 'EN_JUEGO' };
       prisma.americanoRonda.create.mockResolvedValue(rondaCreada);
       prisma.americanoParejaRonda.create
@@ -337,14 +345,15 @@ describe('AmericanoService', () => {
         id: 't1',
         organizadorId: 'org1',
         formato: 'americano',
-        configAmericano: { tipoInscripcion: 'parejasFijas', modoJuego: { canchasSimultaneas: 1 } } as unknown as ConfigAmericano,
-        inscripciones: [
-          { id: 'i1', jugador1Id: 'a', jugador2Id: 'b', estado: 'CONFIRMADA', jugador1: { id: 'a' }, jugador2: { id: 'b' } },
-          { id: 'i2', jugador1Id: 'c', jugador2Id: null, estado: 'CONFIRMADA', jugador1: { id: 'c' }, jugador2: null },
-        ],
-        americanosRonda: [],
+        configAmericano: { tipoInscripcion: 'parejasFijas', modoJuego: { canchasSimultaneas: 1 }, formatoAmericano: 'parejasSinCat' } as unknown as ConfigAmericano,
+        americanosGrupo: [{ id: 'g1', nombre: 'Masculino' }],
       };
       prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.americanoRonda.count.mockResolvedValue(0);
+      prisma.inscripcion.findMany.mockResolvedValue([
+        { id: 'i1', jugador1Id: 'a', jugador2Id: 'b', estado: 'CONFIRMADA', grupoId: 'g1', grupo: { id: 'g1', nombre: 'Masculino' }, jugador1: { id: 'a' }, jugador2: { id: 'b' } },
+        { id: 'i2', jugador1Id: 'c', jugador2Id: null, estado: 'CONFIRMADA', grupoId: 'g1', grupo: { id: 'g1', nombre: 'Masculino' }, jugador1: { id: 'c' }, jugador2: null },
+      ]);
 
       await expect(service.iniciarPrimeraRonda('t1', 'org1')).rejects.toThrow(BadRequestException);
     });
@@ -362,6 +371,8 @@ describe('AmericanoService', () => {
         americanosRonda: [
           {
             numero: 1,
+            grupoId: 'g1',
+            grupo: { id: 'g1', nombre: 'General' },
             puntajes: [
               { jugador: { id: 'a', nombre: 'A', apellido: '', fotoUrl: null }, puntos: 6, partidosJugados: 1, partidosGanados: 1, partidosPerdidos: 0, setsGanados: 1, setsPerdidos: 0, gamesGanados: 6, gamesPerdidos: 4, diferenciaGames: 2 },
               { jugador: { id: 'b', nombre: 'B', apellido: '', fotoUrl: null }, puntos: 4, partidosJugados: 1, partidosGanados: 0, partidosPerdidos: 1, setsGanados: 0, setsPerdidos: 1, gamesGanados: 4, gamesPerdidos: 6, diferenciaGames: -2 },
@@ -369,6 +380,8 @@ describe('AmericanoService', () => {
           },
           {
             numero: 2,
+            grupoId: 'g1',
+            grupo: { id: 'g1', nombre: 'General' },
             puntajes: [
               // Acumulados: a ganó 6+5=11, b ganó 4+3=7
               { jugador: { id: 'a', nombre: 'A', apellido: '', fotoUrl: null }, puntos: 11, partidosJugados: 2, partidosGanados: 2, partidosPerdidos: 0, setsGanados: 2, setsPerdidos: 0, gamesGanados: 11, gamesPerdidos: 7, diferenciaGames: 4 },
@@ -379,9 +392,9 @@ describe('AmericanoService', () => {
       };
       prisma.tournament.findUnique.mockResolvedValue(torneo);
 
-      const clasificacion = await service.getClasificacionTorneo('t1');
+      const clasificacion = await service.getClasificacionTorneo('t1') as any;
 
-      // Solo debe reflejar los puntajes de la ronda 2 (la última)
+      // Con un solo grupo, devuelve array plano para compatibilidad con frontend legacy
       expect(clasificacion).toHaveLength(2);
       expect(clasificacion[0].puntosTotal).toBe(11); // no 6+11=17
       expect(clasificacion[1].puntosTotal).toBe(7);  // no 4+7=11
@@ -421,7 +434,7 @@ describe('AmericanoService', () => {
       prisma.americanoPartido.findFirst.mockResolvedValue(null); // no existe partido
 
       await expect(
-        service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], 'org1')
+        service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1')
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -452,7 +465,7 @@ describe('AmericanoService', () => {
         return fn(txMock);
       });
 
-      const result = await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], 'org1');
+      const result = await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
 
       expect(result.ganador).toBe('Equipo A');
       expect(result.gamesTotalA).toBe(6);
@@ -497,7 +510,7 @@ describe('AmericanoService', () => {
       });
 
       // Nuevo resultado: 4-6 (ahora gana B)
-      const result = await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 4, gamesEquipoB: 6 }], 'org1');
+      const result = await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 4, gamesEquipoB: 6 }], undefined, undefined, 'org1');
 
       expect(result.message).toBe('Resultado actualizado');
       expect(result.ganador).toBe('Equipo B');
@@ -511,6 +524,247 @@ describe('AmericanoService', () => {
       expect(pa1Update.data.partidosGanados).toBe(0); // antes ganó, ahora perdió
       expect(pb1Update.data.puntos).toBe(6);
       expect(pb1Update.data.partidosGanados).toBe(1); // antes perdió, ahora ganó
+    });
+
+    it('debe acumular sets ganados cuando sistemaPuntos es "sets"', async () => {
+      const torneo = {
+        id: 't1',
+        organizadorId: 'org1',
+        formato: 'americano',
+        configAmericano: {
+          modoJuego: { sistemaPuntos: 'sets', formatoPartido: 'mejorDe3Sets', valorObjetivo: 6 },
+        },
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.americanoRonda.findUnique.mockResolvedValue({
+        id: 'r1',
+        torneoId: 't1',
+        estado: 'EN_JUEGO',
+        parejas: [
+          { id: 'pa', jugador1Id: 'a', jugador2Id: 'b' },
+          { id: 'pb', jugador1Id: 'c', jugador2Id: 'd' },
+        ],
+      });
+      prisma.americanoPartido.findFirst.mockResolvedValue({ id: 'm1' });
+      prisma.americanoPuntaje.findUnique
+        .mockResolvedValueOnce({ id: 'pa1', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pa2', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pb1', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pb2', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 });
+
+      const txUpdates: any[] = [];
+      prisma.$transaction.mockImplementation(async (fn) => {
+        const txMock = {
+          americanoPartido: { update: jest.fn() },
+          americanoPuntaje: { findUnique: prisma.americanoPuntaje.findUnique, update: jest.fn((args) => { txUpdates.push(args); }) },
+        };
+        return fn(txMock);
+      });
+
+      // 2 sets a 1 → Equipo A gana 2 sets
+      await service.registrarResultado('t1', 'r1', 'pa', 'pb', [
+        { gamesEquipoA: 6, gamesEquipoB: 4 },
+        { gamesEquipoA: 4, gamesEquipoB: 6 },
+        { gamesEquipoA: 6, gamesEquipoB: 2 },
+      ], undefined, undefined, 'org1');
+
+      const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
+      const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
+      expect(pa1Update.data.puntos).toBe(2); // +2 sets ganados
+      expect(pb1Update.data.puntos).toBe(1); // +1 set ganado
+    });
+
+    it('debe acumular 1 punto por partido ganado cuando sistemaPuntos es "partido"', async () => {
+      const torneo = {
+        id: 't1',
+        organizadorId: 'org1',
+        formato: 'americano',
+        configAmericano: {
+          modoJuego: { sistemaPuntos: 'partido', formatoPartido: 'games', valorObjetivo: 6 },
+        },
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.americanoRonda.findUnique.mockResolvedValue({
+        id: 'r1',
+        torneoId: 't1',
+        estado: 'EN_JUEGO',
+        parejas: [
+          { id: 'pa', jugador1Id: 'a', jugador2Id: 'b' },
+          { id: 'pb', jugador1Id: 'c', jugador2Id: 'd' },
+        ],
+      });
+      prisma.americanoPartido.findFirst.mockResolvedValue({ id: 'm1' });
+      prisma.americanoPuntaje.findUnique
+        .mockResolvedValueOnce({ id: 'pa1', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pa2', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pb1', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pb2', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 });
+
+      const txUpdates: any[] = [];
+      prisma.$transaction.mockImplementation(async (fn) => {
+        const txMock = {
+          americanoPartido: { update: jest.fn() },
+          americanoPuntaje: { findUnique: prisma.americanoPuntaje.findUnique, update: jest.fn((args) => { txUpdates.push(args); }) },
+        };
+        return fn(txMock);
+      });
+
+      await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
+
+      const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
+      const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
+      expect(pa1Update.data.puntos).toBe(1); // ganó → +1
+      expect(pb1Update.data.puntos).toBe(0); // perdió → 0
+    });
+
+    it('debe acumular diferencia de games cuando sistemaPuntos es "diferencia"', async () => {
+      const torneo = {
+        id: 't1',
+        organizadorId: 'org1',
+        formato: 'americano',
+        configAmericano: {
+          modoJuego: { sistemaPuntos: 'diferencia', formatoPartido: 'games', valorObjetivo: 6 },
+        },
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.americanoRonda.findUnique.mockResolvedValue({
+        id: 'r1',
+        torneoId: 't1',
+        estado: 'EN_JUEGO',
+        parejas: [
+          { id: 'pa', jugador1Id: 'a', jugador2Id: 'b' },
+          { id: 'pb', jugador1Id: 'c', jugador2Id: 'd' },
+        ],
+      });
+      prisma.americanoPartido.findFirst.mockResolvedValue({ id: 'm1' });
+      prisma.americanoPuntaje.findUnique
+        .mockResolvedValueOnce({ id: 'pa1', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pa2', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pb1', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pb2', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 });
+
+      const txUpdates: any[] = [];
+      prisma.$transaction.mockImplementation(async (fn) => {
+        const txMock = {
+          americanoPartido: { update: jest.fn() },
+          americanoPuntaje: { findUnique: prisma.americanoPuntaje.findUnique, update: jest.fn((args) => { txUpdates.push(args); }) },
+        };
+        return fn(txMock);
+      });
+
+      await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
+
+      const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
+      const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
+      expect(pa1Update.data.puntos).toBe(2); // 6-4 = +2
+      expect(pb1Update.data.puntos).toBe(-2); // 4-6 = -2
+    });
+
+    it('debe registrar resultado con puntosFijos y validar suma exacta', async () => {
+      const torneo = {
+        id: 't1',
+        organizadorId: 'org1',
+        formato: 'americano',
+        configAmericano: {
+          modoJuego: { sistemaPuntos: 'puntosFijos', formatoPartido: 'puntosFijos', valorObjetivo: 16 },
+        },
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.americanoRonda.findUnique.mockResolvedValue({
+        id: 'r1',
+        torneoId: 't1',
+        estado: 'EN_JUEGO',
+        parejas: [
+          { id: 'pa', jugador1Id: 'a', jugador2Id: 'b' },
+          { id: 'pb', jugador1Id: 'c', jugador2Id: 'd' },
+        ],
+      });
+      prisma.americanoPartido.findFirst.mockResolvedValue({ id: 'm1' });
+      prisma.americanoPuntaje.findUnique
+        .mockResolvedValueOnce({ id: 'pa1', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pa2', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pb1', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 })
+        .mockResolvedValueOnce({ id: 'pb2', puntos: 0, partidosJugados: 0, partidosGanados: 0, partidosPerdidos: 0, setsGanados: 0, setsPerdidos: 0, gamesGanados: 0, gamesPerdidos: 0, diferenciaGames: 0 });
+
+      const txUpdates: any[] = [];
+      prisma.$transaction.mockImplementation(async (fn) => {
+        const txMock = {
+          americanoPartido: { update: jest.fn() },
+          americanoPuntaje: { findUnique: prisma.americanoPuntaje.findUnique, update: jest.fn((args) => { txUpdates.push(args); }) },
+        };
+        return fn(txMock);
+      });
+
+      // Suma exacta 16
+      await service.registrarResultado('t1', 'r1', 'pa', 'pb', undefined, 10, 6, 'org1');
+
+      const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
+      const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
+      expect(pa1Update.data.puntos).toBe(10);
+      expect(pb1Update.data.puntos).toBe(6);
+      expect(pa1Update.data.gamesGanados).toBe(10); // se mapea a games para desempates
+      expect(pb1Update.data.gamesGanados).toBe(6);
+
+      // Suma incorrecta debe fallar
+      await expect(
+        service.registrarResultado('t1', 'r1', 'pa', 'pb', undefined, 10, 5, 'org1')
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debe revertir usando sistemaPuntos original al editar (games → sets)', async () => {
+      const torneo = {
+        id: 't1',
+        organizadorId: 'org1',
+        formato: 'americano',
+        configAmericano: {
+          // Ahora el torneo usa sistemaPuntos 'sets'
+          modoJuego: { sistemaPuntos: 'sets', formatoPartido: 'mejorDe3Sets', valorObjetivo: 6 },
+        },
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.americanoRonda.findUnique.mockResolvedValue({
+        id: 'r1',
+        torneoId: 't1',
+        estado: 'EN_JUEGO',
+        parejas: [
+          { id: 'pa', jugador1Id: 'a', jugador2Id: 'b' },
+          { id: 'pb', jugador1Id: 'c', jugador2Id: 'd' },
+        ],
+      });
+      // Partido ya FINALIZADO registrado con sistema anterior 'games'
+      prisma.americanoPartido.findFirst.mockResolvedValue({
+        id: 'm1',
+        estado: 'FINALIZADO',
+        sets: [{ gamesEquipoA: 6, gamesEquipoB: 4 }],
+        sistemaPuntos: 'games', // persistido en su momento
+      });
+      // Puntajes acumulados con +6 games (sistema anterior)
+      prisma.americanoPuntaje.findUnique
+        .mockResolvedValueOnce({ id: 'pa1', puntos: 6, partidosJugados: 1, partidosGanados: 1, partidosPerdidos: 0, setsGanados: 1, setsPerdidos: 0, gamesGanados: 6, gamesPerdidos: 4, diferenciaGames: 2 })
+        .mockResolvedValueOnce({ id: 'pa2', puntos: 6, partidosJugados: 1, partidosGanados: 1, partidosPerdidos: 0, setsGanados: 1, setsPerdidos: 0, gamesGanados: 6, gamesPerdidos: 4, diferenciaGames: 2 })
+        .mockResolvedValueOnce({ id: 'pb1', puntos: 4, partidosJugados: 1, partidosGanados: 0, partidosPerdidos: 1, setsGanados: 0, setsPerdidos: 1, gamesGanados: 4, gamesPerdidos: 6, diferenciaGames: -2 })
+        .mockResolvedValueOnce({ id: 'pb2', puntos: 4, partidosJugados: 1, partidosGanados: 0, partidosPerdidos: 1, setsGanados: 0, setsPerdidos: 1, gamesGanados: 4, gamesPerdidos: 6, diferenciaGames: -2 });
+
+      const txUpdates: any[] = [];
+      prisma.$transaction.mockImplementation(async (fn) => {
+        const txMock = {
+          americanoPartido: { update: jest.fn() },
+          americanoPuntaje: { findUnique: prisma.americanoPuntaje.findUnique, update: jest.fn((args) => { txUpdates.push(args); }) },
+        };
+        return fn(txMock);
+      });
+
+      // Nuevo resultado con sistema actual 'sets'
+      await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
+
+      const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
+      const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
+      // Revertir +6 games (sistema original) → 6-6 = 0
+      // Aplicar +1 set (sistema actual) → 0+1 = 1
+      expect(pa1Update.data.puntos).toBe(1);
+      // Revertir +4 games → 4-4 = 0
+      // Aplicar 0 sets → 0+0 = 0
+      expect(pb1Update.data.puntos).toBe(0);
     });
   });
 

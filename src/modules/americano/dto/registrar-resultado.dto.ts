@@ -19,10 +19,21 @@ export class RegistrarResultadoDto {
   @IsString()
   parejaBId: string;
 
+  // Para formatos tradicionales (games, mejorDe3Sets, tiempo)
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SetResultDto)
-  sets: SetResultDto[];
+  sets?: SetResultDto[];
+
+  // Para formato puntosFijos
+  @IsNumber()
+  @IsOptional()
+  puntosA?: number;
+
+  @IsNumber()
+  @IsOptional()
+  puntosB?: number;
 
   @IsNumber()
   @IsOptional()

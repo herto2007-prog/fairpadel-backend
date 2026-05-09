@@ -14,7 +14,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '@prisma/client';
-import { CreateAmericanoTorneoDto, InscribirJugadorAmericanoDto } from './dto';
+import { CreateAmericanoTorneoDto, InscribirJugadorAmericanoDto, RegistrarResultadoDto } from './dto';
 import { ConfigurarModoJuegoDto } from './dto/configurar-modo.dto';
 
 @Controller('americano')
@@ -82,6 +82,15 @@ export class AmericanoController {
     @GetUser() user: User,
   ) {
     return this.americanoService.cerrarInscripciones(torneoId, user.id);
+  }
+
+  @Post('torneos/:id/reabrir-inscripciones')
+  @UseGuards(JwtAuthGuard)
+  reabrirInscripciones(
+    @Param('id') torneoId: string,
+    @GetUser() user: User,
+  ) {
+    return this.americanoService.reabrirInscripciones(torneoId, user.id);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -156,8 +165,11 @@ export class AmericanoController {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   @Get('torneos/:id/clasificacion')
-  getClasificacion(@Param('id') torneoId: string) {
-    return this.americanoService.getClasificacionTorneo(torneoId);
+  getClasificacion(
+    @Param('id') torneoId: string,
+    @Query('grupoId') grupoId?: string,
+  ) {
+    return this.americanoService.getClasificacionTorneo(torneoId, grupoId);
   }
 
   @Post('torneos/:id/rondas/:rondaId/resultado')
@@ -165,11 +177,7 @@ export class AmericanoController {
   registrarResultado(
     @Param('id') torneoId: string,
     @Param('rondaId') rondaId: string,
-    @Body() body: {
-      parejaAId: string;
-      parejaBId: string;
-      sets: { gamesEquipoA: number; gamesEquipoB: number }[];
-    },
+    @Body() body: RegistrarResultadoDto,
     @GetUser() user: User,
   ) {
     return this.americanoService.registrarResultado(
@@ -178,6 +186,8 @@ export class AmericanoController {
       body.parejaAId,
       body.parejaBId,
       body.sets,
+      body.puntosA,
+      body.puntosB,
       user.id,
     );
   }

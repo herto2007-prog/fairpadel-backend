@@ -66,6 +66,7 @@ export class JugadoresService {
         nombre: true,
         apellido: true,
         fotoUrl: true,
+        genero: true,
         ciudad: true,
         pais: true,
         categoriaActual: {

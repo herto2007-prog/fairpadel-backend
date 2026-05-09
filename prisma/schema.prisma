@@ -893,9 +893,13 @@ model Tournament {
   formato              String         @default("eliminacion") @map("formato")
   configAmericano      Json?          @map("config_americano")
   
+  // Anti-doble-click: timestamp de la última acción destructiva del organizador
+  ultimaAccionEn      DateTime?       @map("ultima_accion_en")
+  
   // Relaciones Americano
   americanosRonda      AmericanoRonda[]
   americanosPuntaje    AmericanoPuntaje[]
+  americanosGrupo      AmericanoGrupo[]
 
   @@map("tournaments")
 }
@@ -1009,14 +1013,17 @@ model Inscripcion {
   estadoClasificacion String?          @map("estado_clasificacion") // PENDIENTE, CLASIFICADO_DIRECTO, REPECHAJE, EN_BRACKET, ELIMINADO
   posicionClasificacion Int?           @map("posicion_clasificacion") // Orden de clasificación (1, 2, 3...)
   rondaClasificacion  String?          @map("ronda_clasificacion") // ZONA, REPECHAJE, OCTAVOS, CUARTOS, etc.
-  
+
+  grupoId      String?               @map("grupo_id")
+
   createdAt    DateTime              @default(now()) @map("created_at")
   updatedAt    DateTime              @updatedAt @map("updated_at")
 
   // Relaciones
   tournament   Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   category     Category          @relation(fields: [categoryId], references: [id])
-  
+  grupo        AmericanoGrupo?   @relation(fields: [grupoId], references: [id])
+
   // NUEVO: Relaciones directas a usuarios
   jugador1     User              @relation("InscripcionJugador1", fields: [jugador1Id], references: [id])
   jugador2     User?             @relation("InscripcionJugador2", fields: [jugador2Id], references: [id])
@@ -1033,6 +1040,7 @@ model Inscripcion {
   controlPagos ControlPagoOrganizador[] // Pagos registrados por el organizador
 
   @@unique([tournamentId, categoryId, jugador1Id, jugador2Documento])
+  @@index([grupoId])
   @@map("inscripciones")
 }
 
@@ -2335,35 +2343,60 @@ model WhatsappTemplate {
 // MODELO AMERICANO (Torneos de Formato Americano / Round-Robin Rotativo)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+model AmericanoGrupo {
+  id            String   @id @default(uuid())
+  torneoId      String   @map("torneo_id")
+  torneo        Tournament @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+
+  nombre        String
+  tipo          String   @default("DEFAULT") // DEFAULT, GENERO, CATEGORIA_GENERO, COMBINACION, COMBINACION_MIXTA
+  config        Json?    // Datos extra según tipo (género, categoría, combinación)
+
+  inscripciones Inscripcion[]
+  rondas        AmericanoRonda[]
+  puntajes      AmericanoPuntaje[]
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([torneoId])
+  @@index([tipo])
+  @@map("americano_grupos")
+}
+
 model AmericanoRonda {
   id            String   @id @default(uuid())
   numero        Int      // Número de ronda (1, 2, 3...)
   
   torneoId      String   @map("torneo_id")
   torneo        Tournament @relation(fields: [torneoId], references: [id], onDelete: Cascade)
-  
+
+  grupoId       String?  @map("grupo_id")
+  grupo         AmericanoGrupo? @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+
   // Timestamp de inicio/fin de esta ronda (String YYYY-MM-DD HH:mm como el resto del sistema)
   fechaInicio   String?  @map("fecha_inicio")
   fechaFin      String?  @map("fecha_fin")
-  
+
   // Estado: PENDIENTE, EN_JUEGO, FINALIZADA
   estado        String   @default("PENDIENTE")
-  
+
   // Parejas que participan en esta ronda
   parejas       AmericanoParejaRonda[]
-  
+
   // Partidos de esta ronda
   partidos      AmericanoPartido[]
-  
+
   // Puntajes registrados en esta ronda (referencia cruzada)
   puntajes      AmericanoPuntaje[]
-  
+
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
-  
+
   @@unique([torneoId, numero])
   @@index([torneoId])
   @@index([estado])
+  @@index([grupoId])
   @@map("americano_rondas")
 }
 
@@ -2416,8 +2449,13 @@ model AmericanoPartido {
   // Estado: PENDIENTE, FINALIZADO
   estado        String   @default("PENDIENTE")
   
-  // Sets del partido: [{ gamesEquipoA, gamesEquipoB }]
+  // Sets del partido: [{ gamesEquipoA, gamesEquipoB }] o { puntosA, puntosB }
   sets          Json?
+  
+  // Sistema de puntos y formato activos cuando se registró el resultado
+  // (crítico para editar/revertir correctamente)
+  sistemaPuntos   String? @map("sistema_puntos")
+  formatoPartido  String? @map("formato_partido")
   
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -2457,14 +2495,18 @@ model AmericanoPuntaje {
   
   // Posición en la clasificación de esta ronda/torneo
   posicion         Int?  @map("posicion")
-  
+
+  grupoId          String?  @map("grupo_id")
+  grupo            AmericanoGrupo? @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
-  
+
   @@unique([rondaId, jugadorId])
   @@index([torneoId])
   @@index([rondaId])
   @@index([jugadorId])
   @@index([posicion])
+  @@index([grupoId])
   @@map("americano_puntajes")
 }
