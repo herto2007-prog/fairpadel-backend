@@ -458,11 +458,51 @@ export class AmericanoService {
     // Validar duplicados de inscripción
     await this.validarDuplicadosInscripcion(torneoId, dto.jugadorId, dto.jugador2Id);
 
-    // Determinar grupo según formato
-    const grupo = await this.determinarGrupoAmericano(torneoId, formatoAmericano, config, jugador, companero);
+    // Determinar categoría para la inscripción
+    let categoryId = dto.categoryId || jugador.categoriaActualId;
+    let categoriaSeleccionada = null;
 
-    // Determinar categoría para la inscripción (fallback a primera disponible)
-    let categoryId = jugador.categoriaActualId;
+    if (dto.categoryId) {
+      // Validar que la categoría elegida exista y esté habilitada para el torneo
+      categoriaSeleccionada = await this.prisma.category.findUnique({
+        where: { id: dto.categoryId },
+      });
+      if (!categoriaSeleccionada) {
+        throw new BadRequestException('Categoría seleccionada no encontrada');
+      }
+      const catHabilitada = await this.validarCategoriaHabilitadaInferior(
+        categoriaSeleccionada.nombre,
+        config.categoriasHabilitadas,
+      );
+      if (!catHabilitada) {
+        throw new BadRequestException(`Categoría ${categoriaSeleccionada.nombre} no está habilitada para este torneo`);
+      }
+      // Validar que el jugador sea elegible para esta categoría (su categoría <= categoría elegida)
+      if (jugador.categoriaActual) {
+        const esElegible = await this.esCategoriaInferiorOIgual(
+          jugador.categoriaActual.nombre,
+          categoriaSeleccionada.nombre,
+        );
+        if (!esElegible) {
+          throw new BadRequestException(
+            `No podés inscribirte en ${categoriaSeleccionada.nombre} porque tu categoría actual (${jugador.categoriaActual.nombre}) es superior`,
+          );
+        }
+      }
+      // Si hay pareja, validar que también sea elegible
+      if (companero?.categoriaActual) {
+        const esElegible = await this.esCategoriaInferiorOIgual(
+          companero.categoriaActual.nombre,
+          categoriaSeleccionada.nombre,
+        );
+        if (!esElegible) {
+          throw new BadRequestException(
+            `Tu compañero no puede jugar en ${categoriaSeleccionada.nombre} porque su categoría actual (${companero.categoriaActual.nombre}) es superior`,
+          );
+        }
+      }
+    }
+
     if (!categoryId) {
       const defaultCat = await this.prisma.category.findFirst({ orderBy: { orden: 'asc' } });
       if (!defaultCat) {
@@ -470,6 +510,11 @@ export class AmericanoService {
       }
       categoryId = defaultCat.id;
     }
+
+    // Determinar grupo según formato
+    const grupo = await this.determinarGrupoAmericano(
+      torneoId, formatoAmericano, config, jugador, companero, dto.categoryId,
+    );
 
     const inscripcion = await this.prisma.inscripcion.create({
       data: {
@@ -513,6 +558,71 @@ export class AmericanoService {
       },
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  async getCategoriasHabilitadas(torneoId: string, userId?: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: torneoId },
+    });
+
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    if (torneo.formato !== 'americano') {
+      throw new BadRequestException('Este torneo no es de formato americano');
+    }
+
+    const configRaw = torneo.configAmericano as unknown as ConfigAmericano | null;
+    const config: ConfigAmericano = configRaw ?? {
+      visibilidad: 'publico',
+      modoJuegoConfigurado: false,
+      rondaActual: 0,
+      inscripcionesAbiertas: true,
+      tipoInscripcion: 'individual',
+    };
+
+    let categorias: Array<{ id: string; nombre: string; orden: number; tipo: string }> = [];
+
+    if (config.categoriasHabilitadas && config.categoriasHabilitadas.length > 0) {
+      categorias = await this.prisma.category.findMany({
+        where: { nombre: { in: config.categoriasHabilitadas } },
+        orderBy: { orden: 'asc' },
+        select: { id: true, nombre: true, orden: true, tipo: true },
+      });
+    } else {
+      categorias = await this.prisma.category.findMany({
+        orderBy: { orden: 'asc' },
+        select: { id: true, nombre: true, orden: true, tipo: true },
+      });
+    }
+
+    let usuario = null;
+    if (userId) {
+      usuario = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { categoriaActual: true },
+      });
+    }
+
+    const resultado = await Promise.all(
+      categorias.map(async (cat) => {
+        if (!usuario?.categoriaActual) {
+          return { ...cat, elegible: true };
+        }
+        const esElegible = await this.esCategoriaInferiorOIgual(
+          usuario.categoriaActual.nombre,
+          cat.nombre,
+        );
+        return {
+          ...cat,
+          elegible: esElegible,
+          razon: esElegible ? undefined : `Tu categoría actual (${usuario.categoriaActual.nombre}) no te permite jugar en ${cat.nombre}`,
+        };
+      }),
+    );
+
+    return { success: true, categorias: resultado };
   }
 
   async eliminarInscripcion(torneoId: string, jugadorId: string, organizadorId: string) {
@@ -1841,6 +1951,7 @@ export class AmericanoService {
     config: ConfigAmericano,
     jugador: any,
     companero: any,
+    categoriaSeleccionadaId?: string,
   ): Promise<any> {
     switch (formato) {
       case 'clasico': {
@@ -1894,9 +2005,10 @@ export class AmericanoService {
           throw new BadRequestException('Ambos jugadores deben tener el mismo género');
         }
 
-        const catJugador = await this.prisma.category.findUnique({ where: { id: jugador.categoriaActualId } });
+        const catId = categoriaSeleccionadaId ?? jugador.categoriaActualId;
+        const catJugador = await this.prisma.category.findUnique({ where: { id: catId } });
         const catCompanero = companero
-          ? await this.prisma.category.findUnique({ where: { id: companero.categoriaActualId } })
+          ? await this.prisma.category.findUnique({ where: { id: categoriaSeleccionadaId ?? companero.categoriaActualId } })
           : null;
         if (!catJugador) throw new BadRequestException('Categoría del jugador no encontrada');
         if (companero && (!catCompanero || catJugador.id !== catCompanero.id)) {
@@ -1929,7 +2041,8 @@ export class AmericanoService {
       }
 
       case 'porCategorias': {
-        const catJugador = await this.prisma.category.findUnique({ where: { id: jugador.categoriaActualId } });
+        const catId = categoriaSeleccionadaId ?? jugador.categoriaActualId;
+        const catJugador = await this.prisma.category.findUnique({ where: { id: catId } });
         if (!catJugador) throw new BadRequestException('Categoría del jugador no encontrada');
 
         const catValida = await this.validarCategoriaHabilitadaInferior(

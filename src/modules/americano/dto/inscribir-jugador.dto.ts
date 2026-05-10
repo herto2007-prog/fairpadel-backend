@@ -11,4 +11,8 @@ export class InscribirJugadorAmericanoDto {
   @IsString()
   @IsOptional()
   telefonoEmergencia?: string;
+
+  @IsString()
+  @IsOptional()
+  categoryId?: string;
 }

@@ -104,6 +104,16 @@ export class AmericanoController {
     return this.americanoService.listarInscripciones(torneoId);
   }
 
+  @Get('torneos/:id/categorias-habilitadas')
+  @UseGuards(OptionalJwtAuthGuard)
+  getCategoriasHabilitadas(
+    @Param('id') torneoId: string,
+    @Request() req: any,
+  ) {
+    const userId = req.user?.id;
+    return this.americanoService.getCategoriasHabilitadas(torneoId, userId);
+  }
+
   @Post('torneos/:id/inscribir')
   @UseGuards(JwtAuthGuard)
   inscribirJugador(
