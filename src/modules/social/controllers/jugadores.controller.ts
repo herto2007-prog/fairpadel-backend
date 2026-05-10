@@ -20,14 +20,6 @@ export class JugadoresController {
   /**
    * GET /users/buscar
    * Buscar jugadores con filtros (público)
-   *
-   * Query params:
-   * - q: string (búsqueda por nombre/apellido)
-   * - ciudad: string
-   * - categoriaId: string
-   * - page: number (default: 1)
-   * - limit: number (default: 20)
-   * - _t: string (cache buster, ignorado)
    */
   @Get('buscar')
   @Public()
@@ -52,12 +44,17 @@ export class JugadoresController {
       success: true,
       data: result.users,
       pagination: result.pagination,
+      _debug: {
+        version: '2025-05-08-memfilter-v1',
+        q: query.q,
+        esDocumento: /^\d{5,}$/.test((query.q || '').replace(/\D/g, '')),
+        total: result.pagination.total,
+      },
     };
   }
 
   /**
    * GET /users/filtros/datos
-   * Obtener ciudades y categorías disponibles para filtros
    */
   @Get('filtros/datos')
   @Public()
@@ -67,11 +64,7 @@ export class JugadoresController {
   @Header('CDN-Cache-Control', 'no-store')
   async getDatosFiltros() {
     const data = await this.jugadoresService.getDatosFiltros();
-
-    return {
-      success: true,
-      data,
-    };
+    return { success: true, data };
   }
 
   /**
@@ -83,25 +76,46 @@ export class JugadoresController {
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('CDN-Cache-Control', 'no-store')
   async debugUsuarios() {
-    // Contar todos los usuarios por estado
-    const todos = await this.prisma.user.count();
-    const activos = await this.prisma.user.count({ where: { estado: 'ACTIVO' } });
-    const noVerificados = await this.prisma.user.count({ where: { estado: 'NO_VERIFICADO' } });
-    const inactivos = await this.prisma.user.count({ where: { estado: 'INACTIVO' } });
-    const suspendidos = await this.prisma.user.count({ where: { estado: 'SUSPENDIDO' } });
+    try {
+      const todos = await this.prisma.user.count();
+      const activos = await this.prisma.user.count({ where: { estado: 'ACTIVO' } });
+      const noVerificados = await this.prisma.user.count({ where: { estado: 'NO_VERIFICADO' } });
+      const inactivos = await this.prisma.user.count({ where: { estado: 'INACTIVO' } });
+      const suspendidos = await this.prisma.user.count({ where: { estado: 'SUSPENDIDO' } });
 
-    // Traer 5 usuarios de ejemplo
-    const ejemplos = await this.prisma.user.findMany({
-      take: 5,
-      select: { id: true, nombre: true, apellido: true, estado: true, email: true, documento: true },
-    });
+      const ejemplos = await this.prisma.user.findMany({
+        take: 5,
+        select: { id: true, nombre: true, apellido: true, estado: true, email: true, documento: true },
+      });
 
+      return {
+        success: true,
+        data: {
+          conteos: { todos, activos, noVerificados, inactivos, suspendidos },
+          ejemplos,
+        },
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message,
+        stack: err.stack,
+      };
+    }
+  }
+
+  /**
+   * GET /users/debug/version
+   * Debug: Verificar versión deployada
+   */
+  @Get('debug/version')
+  @Public()
+  @Header('Cache-Control', 'no-store')
+  async debugVersion() {
     return {
       success: true,
-      data: {
-        conteos: { todos, activos, noVerificados, inactivos, suspendidos },
-        ejemplos,
-      },
+      version: '2025-05-08-memfilter-v1',
+      timestamp: new Date().toISOString(),
     };
   }
 
@@ -114,39 +128,47 @@ export class JugadoresController {
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('CDN-Cache-Control', 'no-store')
   async debugBuscarDocumento(@Param('doc') doc: string) {
-    const searchTerm = doc.trim();
-    const digitsOnly = searchTerm.replace(/\D/g, '');
+    try {
+      const searchTerm = doc.trim();
+      const digitsOnly = searchTerm.replace(/\D/g, '');
 
-    const candidatos = await this.prisma.user.findMany({
-      where: {
-        estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
-        documento: { not: '' },
-      },
-      select: { id: true, nombre: true, apellido: true, documento: true, estado: true },
-      orderBy: [{ nombre: 'asc' }, { apellido: 'asc' }],
-    });
+      const candidatos = await this.prisma.user.findMany({
+        where: {
+          estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
+          documento: { not: '' },
+        },
+        select: { id: true, nombre: true, apellido: true, documento: true, estado: true },
+        orderBy: [{ nombre: 'asc' }, { apellido: 'asc' }],
+      });
 
-    const cleanDoc = (d: string) => d.replace(/[.\-\s]/g, '');
-    const memResults = candidatos.filter(u => cleanDoc(u.documento).includes(digitsOnly)).slice(0, 10);
+      const cleanDoc = (d: string) => d.replace(/[.\-\s]/g, '');
+      const memResults = candidatos.filter(u => cleanDoc(u.documento).includes(digitsOnly)).slice(0, 10);
 
-    const normalUsers = await this.prisma.user.findMany({
-      where: {
-        estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
-        documento: { contains: searchTerm, mode: 'insensitive' },
-      },
-      select: { id: true, nombre: true, apellido: true, documento: true, estado: true },
-      take: 10,
-    });
+      const normalUsers = await this.prisma.user.findMany({
+        where: {
+          estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
+          documento: { contains: searchTerm, mode: 'insensitive' },
+        },
+        select: { id: true, nombre: true, apellido: true, documento: true, estado: true },
+        take: 10,
+      });
 
-    return {
-      success: true,
-      data: {
-        searchTerm,
-        digitsOnly,
-        totalCandidatos: candidatos.length,
-        memResults,
-        normalResults: normalUsers,
-      },
-    };
+      return {
+        success: true,
+        data: {
+          searchTerm,
+          digitsOnly,
+          totalCandidatos: candidatos.length,
+          memResults,
+          normalResults: normalUsers,
+        },
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message,
+        stack: err.stack,
+      };
+    }
   }
 }
