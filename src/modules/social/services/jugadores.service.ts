@@ -26,87 +26,125 @@ export class JugadoresService {
 
     this.logger.log(`Buscando jugadores: q=${q}, ciudad=${ciudad}, categoriaId=${categoriaId}`);
 
-    // Construir where clause - mostrar usuarios activos y verificados
-    const where: any = {
-      estado: {
-        in: [UserStatus.ACTIVO, UserStatus.NO_VERIFICADO],
-      },
-    };
-    
-    this.logger.log(`Filtro where: ${JSON.stringify(where)}`);
+    const searchTerm = q?.trim();
+    const digitsOnly = searchTerm ? searchTerm.replace(/\D/g, '') : '';
+    const esDocumento = /^\d{5,}$/.test(digitsOnly);
 
-    // Búsqueda por nombre/apellido/documento (case insensitive)
-    if (q && q.trim()) {
-      const searchTerm = q.trim();
-      const orConditions: any[] = [
-        { nombre: { contains: searchTerm, mode: 'insensitive' } },
-        { apellido: { contains: searchTerm, mode: 'insensitive' } },
-      ];
+    let users: any[] = [];
+    let total = 0;
 
-      // Búsqueda por documento: varias variantes de formato (con/sin puntos/guiones)
-      const documentoVariants = new Set([searchTerm]);
-      const digitsOnly = searchTerm.replace(/\D/g, '');
-      if (digitsOnly.length >= 5) {
-        documentoVariants.add(digitsOnly);
-        // Formato con puntos cada 3 dígitos (paraguayo): 1234567 → 1.234.567
-        const withDots = digitsOnly.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-        documentoVariants.add(withDots);
-        // También probar guiones
-        const withDashes = digitsOnly.replace(/\B(?=(\d{3})+(?!\d))/g, '-');
-        documentoVariants.add(withDashes);
-      }
-      documentoVariants.forEach(doc => {
-        orConditions.push({ documento: { contains: doc, mode: 'insensitive' } });
-      });
+    if (esDocumento) {
+      // Búsqueda robusta por documento: limpiar puntos/guiones/espacios en SQL
+      this.logger.log(`Buscando por documento limpio: ${digitsOnly}`);
 
-      where.OR = orConditions;
-      this.logger.log(`Documento variants: ${Array.from(documentoVariants).join(', ')}`);
-    }
+      const rawUsers = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "User"
+        WHERE estado IN ('ACTIVO', 'NO_VERIFICADO')
+          AND REPLACE(REPLACE(REPLACE(documento, '.', ''), '-', ''), ' ', '') ILIKE ${'%' + digitsOnly + '%'}
+        ORDER BY nombre ASC, apellido ASC
+        LIMIT ${limit} OFFSET ${skip}
+      `;
 
-    // Filtro por ciudad
-    if (ciudad && ciudad.trim()) {
-      where.ciudad = { contains: ciudad.trim(), mode: 'insensitive' };
-    }
+      const ids = rawUsers.map(u => u.id);
+      this.logger.log(`IDs encontrados por documento: ${ids.length} → ${ids.join(', ')}`);
 
-    // Filtro por categoría
-    if (categoriaId) {
-      where.categoriaActualId = categoriaId;
-    }
+      const totalRaw = await this.prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(*) as count FROM "User"
+        WHERE estado IN ('ACTIVO', 'NO_VERIFICADO')
+          AND REPLACE(REPLACE(REPLACE(documento, '.', ''), '-', ''), ' ', '') ILIKE ${'%' + digitsOnly + '%'}
+      `;
+      total = Number(totalRaw[0].count);
 
-    // Contar total para paginación
-    const total = await this.prisma.user.count({ where });
-    this.logger.log(`Total usuarios encontrados: ${total}`);
-
-    // Obtener jugadores
-    const users = await this.prisma.user.findMany({
-      where,
-      select: {
-        id: true,
-        nombre: true,
-        apellido: true,
-        fotoUrl: true,
-        genero: true,
-        ciudad: true,
-        pais: true,
-        categoriaActual: {
+      if (ids.length > 0) {
+        users = await this.prisma.user.findMany({
+          where: { id: { in: ids } },
           select: {
             id: true,
             nombre: true,
+            apellido: true,
+            fotoUrl: true,
+            genero: true,
+            ciudad: true,
+            pais: true,
+            documento: true,
+            categoriaActual: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
+            _count: {
+              select: {
+                seguidores: true,
+              },
+            },
+          },
+          orderBy: [
+            { nombre: 'asc' },
+            { apellido: 'asc' },
+          ],
+        });
+      }
+    } else {
+      // Búsqueda normal por nombre/apellido/documento (contains)
+      const where: any = {
+        estado: {
+          in: [UserStatus.ACTIVO, UserStatus.NO_VERIFICADO],
+        },
+      };
+
+      if (searchTerm) {
+        where.OR = [
+          { nombre: { contains: searchTerm, mode: 'insensitive' } },
+          { apellido: { contains: searchTerm, mode: 'insensitive' } },
+          { documento: { contains: searchTerm, mode: 'insensitive' } },
+        ];
+      }
+
+      if (ciudad && ciudad.trim()) {
+        where.ciudad = { contains: ciudad.trim(), mode: 'insensitive' };
+      }
+
+      if (categoriaId) {
+        where.categoriaActualId = categoriaId;
+      }
+
+      total = await this.prisma.user.count({ where });
+      this.logger.log(`Total usuarios encontrados (nombre/apellido): ${total}`);
+
+      users = await this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          nombre: true,
+          apellido: true,
+          fotoUrl: true,
+          genero: true,
+          ciudad: true,
+          pais: true,
+          documento: true,
+          categoriaActual: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+          _count: {
+            select: {
+              seguidores: true,
+            },
           },
         },
-        _count: {
-          select: {
-            seguidores: true,
-          },
-        },
-      },
-      orderBy: [
-        { nombre: 'asc' },
-        { apellido: 'asc' },
-      ],
-      skip,
-      take: limit,
-    });
+        orderBy: [
+          { nombre: 'asc' },
+          { apellido: 'asc' },
+        ],
+        skip,
+        take: limit,
+      });
+    }
+
+    this.logger.log(`Usuarios tras query: ${users.length}`);
 
     // Obtener stats adicionales para cada jugador
     const jugadoresConStats = await Promise.all(
@@ -118,6 +156,7 @@ export class JugadoresService {
           apellido: user.apellido,
           fotoUrl: user.fotoUrl,
           genero: user.genero,
+          documento: user.documento,
           ciudad: user.ciudad,
           pais: user.pais,
           categoria: user.categoriaActual,
