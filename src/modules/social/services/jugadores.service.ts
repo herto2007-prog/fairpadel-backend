@@ -38,11 +38,29 @@ export class JugadoresService {
     // Búsqueda por nombre/apellido/documento (case insensitive)
     if (q && q.trim()) {
       const searchTerm = q.trim();
-      where.OR = [
+      const orConditions: any[] = [
         { nombre: { contains: searchTerm, mode: 'insensitive' } },
         { apellido: { contains: searchTerm, mode: 'insensitive' } },
-        { documento: { contains: searchTerm, mode: 'insensitive' } },
       ];
+
+      // Búsqueda por documento: varias variantes de formato (con/sin puntos/guiones)
+      const documentoVariants = new Set([searchTerm]);
+      const digitsOnly = searchTerm.replace(/\D/g, '');
+      if (digitsOnly.length >= 5) {
+        documentoVariants.add(digitsOnly);
+        // Formato con puntos cada 3 dígitos (paraguayo): 1234567 → 1.234.567
+        const withDots = digitsOnly.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        documentoVariants.add(withDots);
+        // También probar guiones
+        const withDashes = digitsOnly.replace(/\B(?=(\d{3})+(?!\d))/g, '-');
+        documentoVariants.add(withDashes);
+      }
+      documentoVariants.forEach(doc => {
+        orConditions.push({ documento: { contains: doc, mode: 'insensitive' } });
+      });
+
+      where.OR = orConditions;
+      this.logger.log(`Documento variants: ${Array.from(documentoVariants).join(', ')}`);
     }
 
     // Filtro por ciudad
@@ -99,9 +117,11 @@ export class JugadoresService {
           nombre: user.nombre,
           apellido: user.apellido,
           fotoUrl: user.fotoUrl,
+          genero: user.genero,
           ciudad: user.ciudad,
           pais: user.pais,
           categoria: user.categoriaActual,
+          categoriaActual: user.categoriaActual,
           seguidores: user._count.seguidores,
           stats,
         };
