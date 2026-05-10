@@ -4099,3 +4099,40 @@ Se implementó el control completo de comisiones para el dueño de FairPadel, in
 4. Puede bloquear un torneo para forzar el pago, o liberarlo si ya pagó.
 
 **Builds:** ✅ Backend y frontend compilan sin errores.
+
+
+---
+
+## 🆕 COMPLETADO (2026-05-08) - Mejoras UX en AmericanoDetailPage y Búsqueda de Pareja
+
+### ✅ Partner Search UX Overhaul
+
+**Problema:** La búsqueda de pareja filtraba silenciosamente jugadores incompatibles, dejando a los usuarios sin entender por qué no aparecía alguien.
+
+**Solución:** Mostrar TODOS los jugadores encontrados con indicador visual de compatibilidad y razón específica de incompatibilidad.
+
+#### Cambios en Frontend
+- **`AmericanoDetailPage.tsx`**:
+  - `buscarPareja()`: refactorizado de `filter` a `map` con campo `compatible` + `razon`
+  - Razones computadas por formato:
+    - `parejasSinCat`: género diferente, género del usuario no habilitado
+    - `parejasConCat`: género diferente, categoría diferente
+    - `sumas`: combinación de sumas no válida, categoría faltante
+    - `mixto`: género opuesto requerido, combinación mixta no válida
+  - Render de resultados: compatibles → interactivos con `ChevronRight`; incompatibles → opacos (`opacity-60`) con badge roja explicando la razón
+  - Los incompatibles no son clickeables (`cursor-not-allowed`)
+  - Mensaje vacío actualizado: "No se encontraron jugadores" (antes: "...compatibles")
+
+- **`src/lib/utils.ts`** (nuevo):
+  - Helper `cn(...classes)` para unir clases CSS condicionales sin dependencias externas
+
+#### Cambios Previos Acumulados (misma sesión)
+- **`OptionalJwtAuthGuard`** en `GET /americano/torneos/:id` + `puedeGestionar` calculado vía `TournamentsService.puedeGestionarTorneo()`
+- **Separación Player vs Manager:** Players ya no ven Configuración, Link, Organizador card, tab "Gestionar"
+- **Rediseño `PerfilAlert`:** banner compacto amber (antes: bloque rojo multiline)
+- **Fix perfil alert falso:** `refreshUser()` en carga de página
+- **Búsqueda por documento:** backend `/users/buscar` ahora busca por CI
+- **Fix parse API:** `res.data?.data` para búsqueda de jugadores
+- **Categorías habilitadas:** players ven `configAmericano.categoriasHabilitadas` en tab Info
+
+**Builds:** ✅ Backend y frontend compilan sin errores. Tests: 38/38 verdes.
