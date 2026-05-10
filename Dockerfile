@@ -42,4 +42,4 @@ EXPOSE 3000
 
 # Runtime: Railway inyecta la verdadera DATABASE_URL
 # Fallback: si falla migrate, al menos iniciar la app
-CMD ["sh", "-c", "npx prisma migrate resolve --rolled-back '20260509114447_add_americano_grupos_y_campos_faltantes' 2>/dev/null || true && npx prisma migrate deploy || true && exec node dist/main.js"]
+CMD ["sh", "-c", "npx prisma migrate resolve --rolled-back '20260509114447_add_americano_grupos_y_campos_faltantes' 2>/dev/null || true && npx prisma migrate resolve --rolled-back '20260509140000_fix_americano_grupos_y_campos_faltantes' 2>/dev/null || true && npx prisma migrate deploy || true && exec node dist/main.js"]
