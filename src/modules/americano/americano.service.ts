@@ -1804,6 +1804,7 @@ export class AmericanoService {
     '5TA': 6, '5ta': 6, 'Quinta': 6, 'QUINTA': 6,
     '6TA': 5, '6ta': 5, 'Sexta': 5, 'SEXTA': 5,
     '7MA': 4, '7ma': 4, 'Septima': 4, 'SEPTIMA': 4,
+    'Principiante': 2, 'PRINCIPIANTE': 2, 'principiante': 2,
   };
 
   private obtenerPesoCategoria(nombre: string): number | null {
@@ -1812,7 +1813,7 @@ export class AmericanoService {
       return this.PESOS_CATEGORIA[nombre];
     }
     // Fallback: extraer número romano/ordinal del nombre
-    const match = nombre.match(/(\d+)[°RAra]?/);
+    const match = nombre.match(/(\d+)[°ªºRAra]?/);
     if (match) {
       return 11 - parseInt(match[1], 10); // 1RA → 10, 2DA → 9, etc.
     }
