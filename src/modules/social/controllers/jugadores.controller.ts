@@ -138,7 +138,7 @@ export class JugadoresController {
         totalPages: Math.ceil(total / limit),
       },
       _debug: {
-        version: '2025-05-08-inline-v2',
+        version: '2025-05-08-inline-v3',
         q: query.q,
         esDocumento,
         total,
@@ -207,7 +207,7 @@ export class JugadoresController {
   async debugVersion() {
     return {
       success: true,
-      version: '2025-05-08-memfilter-v1',
+      version: '2025-05-08-inline-v3',
       timestamp: new Date().toISOString(),
     };
   }
