@@ -107,7 +107,7 @@ export class JugadoresController {
 
   /**
    * GET /users/debug/buscar-doc/:doc
-   * Debug: Buscar por documento con raw query limpia
+   * Debug: Buscar por documento limpiando formato en memoria
    */
   @Get('debug/buscar-doc/:doc')
   @Public()
@@ -117,17 +117,18 @@ export class JugadoresController {
     const searchTerm = doc.trim();
     const digitsOnly = searchTerm.replace(/\D/g, '');
 
-    // Raw query exacta que usamos en buscarJugadores
-    const rawUsers = await this.prisma.$queryRaw<{ id: string; nombre: string; apellido: string; documento: string; estado: string }[]>`
-      SELECT id, nombre, apellido, documento, estado
-      FROM "User"
-      WHERE estado IN ('ACTIVO', 'NO_VERIFICADO')
-        AND REPLACE(REPLACE(REPLACE(documento, '.', ''), '-', ''), ' ', '') ILIKE ${'%' + digitsOnly + '%'}
-      ORDER BY nombre ASC, apellido ASC
-      LIMIT 10
-    `;
+    const candidatos = await this.prisma.user.findMany({
+      where: {
+        estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
+        documento: { not: '' },
+      },
+      select: { id: true, nombre: true, apellido: true, documento: true, estado: true },
+      orderBy: [{ nombre: 'asc' }, { apellido: 'asc' }],
+    });
 
-    // También buscar sin limpiar (contains normal)
+    const cleanDoc = (d: string) => d.replace(/[.\-\s]/g, '');
+    const memResults = candidatos.filter(u => cleanDoc(u.documento).includes(digitsOnly)).slice(0, 10);
+
     const normalUsers = await this.prisma.user.findMany({
       where: {
         estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
@@ -142,7 +143,8 @@ export class JugadoresController {
       data: {
         searchTerm,
         digitsOnly,
-        rawResults: rawUsers,
+        totalCandidatos: candidatos.length,
+        memResults,
         normalResults: normalUsers,
       },
     };

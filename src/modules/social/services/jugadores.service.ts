@@ -34,57 +34,48 @@ export class JugadoresService {
     let total = 0;
 
     if (esDocumento) {
-      // Búsqueda robusta por documento: limpiar puntos/guiones/espacios en SQL
+      // Búsqueda robusta por documento: traer candidatos y filtrar en memoria limpiando puntos/guiones/espacios
       this.logger.log(`Buscando por documento limpio: ${digitsOnly}`);
 
-      const rawUsers = await this.prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "User"
-        WHERE estado IN ('ACTIVO', 'NO_VERIFICADO')
-          AND REPLACE(REPLACE(REPLACE(documento, '.', ''), '-', ''), ' ', '') ILIKE ${'%' + digitsOnly + '%'}
-        ORDER BY nombre ASC, apellido ASC
-        LIMIT ${limit} OFFSET ${skip}
-      `;
-
-      const ids = rawUsers.map(u => u.id);
-      this.logger.log(`IDs encontrados por documento: ${ids.length} → ${ids.join(', ')}`);
-
-      const totalRaw = await this.prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(*) as count FROM "User"
-        WHERE estado IN ('ACTIVO', 'NO_VERIFICADO')
-          AND REPLACE(REPLACE(REPLACE(documento, '.', ''), '-', ''), ' ', '') ILIKE ${'%' + digitsOnly + '%'}
-      `;
-      total = Number(totalRaw[0].count);
-
-      if (ids.length > 0) {
-        users = await this.prisma.user.findMany({
-          where: { id: { in: ids } },
-          select: {
-            id: true,
-            nombre: true,
-            apellido: true,
-            fotoUrl: true,
-            genero: true,
-            ciudad: true,
-            pais: true,
-            documento: true,
-            categoriaActual: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-            _count: {
-              select: {
-                seguidores: true,
-              },
+      const candidatos = await this.prisma.user.findMany({
+        where: {
+          estado: { in: [UserStatus.ACTIVO, UserStatus.NO_VERIFICADO] },
+          documento: { not: '' },
+        },
+        select: {
+          id: true,
+          nombre: true,
+          apellido: true,
+          fotoUrl: true,
+          genero: true,
+          ciudad: true,
+          pais: true,
+          documento: true,
+          categoriaActual: {
+            select: {
+              id: true,
+              nombre: true,
             },
           },
-          orderBy: [
-            { nombre: 'asc' },
-            { apellido: 'asc' },
-          ],
-        });
-      }
+          _count: {
+            select: {
+              seguidores: true,
+            },
+          },
+        },
+        orderBy: [
+          { nombre: 'asc' },
+          { apellido: 'asc' },
+        ],
+      });
+
+      const cleanDoc = (doc: string) => doc.replace(/[.\-\s]/g, '');
+      const filtrados = candidatos.filter(u => cleanDoc(u.documento).includes(digitsOnly));
+
+      total = filtrados.length;
+      users = filtrados.slice(skip, skip + limit);
+
+      this.logger.log(`Documento ${digitsOnly}: ${candidatos.length} candidatos, ${filtrados.length} coincidencias`);
     } else {
       // Búsqueda normal por nombre/apellido/documento (contains)
       const where: any = {
