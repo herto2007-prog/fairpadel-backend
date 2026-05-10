@@ -1929,7 +1929,7 @@ export class AmericanoService {
           throw new BadRequestException(`Categoría ${catJugador.nombre} no está habilitada para este torneo`);
         }
 
-        const nombreGrupo = `${catJugador.nombre} ${genero === 'MASCULINO' ? 'Masculino' : 'Femenino'}`;
+        const nombreGrupo = catJugador.nombre;
         let grupo = await this.prisma.americanoGrupo.findFirst({
           where: { torneoId, tipo: 'CATEGORIA_GENERO', nombre: nombreGrupo },
         });
@@ -1964,12 +1964,11 @@ export class AmericanoService {
           }
         }
 
-        let nombreGrupo = catJugador.nombre;
+        const nombreGrupo = catJugador.nombre;
         let tipoGrupo = 'CATEGORIA';
         let grupoConfig: any = { categoria: catJugador.nombre, categoriaId: catJugador.id };
 
         if (config.generosHabilitados && config.generosHabilitados.length > 0) {
-          nombreGrupo = `${catJugador.nombre} ${jugador.genero === 'MASCULINO' ? 'Masculino' : 'Femenino'}`;
           tipoGrupo = 'CATEGORIA_GENERO';
           grupoConfig.genero = jugador.genero;
         }
