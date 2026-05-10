@@ -35,12 +35,13 @@ export class JugadoresService {
     
     this.logger.log(`Filtro where: ${JSON.stringify(where)}`);
 
-    // Búsqueda por nombre/apellido (case insensitive)
+    // Búsqueda por nombre/apellido/documento (case insensitive)
     if (q && q.trim()) {
       const searchTerm = q.trim();
       where.OR = [
         { nombre: { contains: searchTerm, mode: 'insensitive' } },
         { apellido: { contains: searchTerm, mode: 'insensitive' } },
+        { documento: { contains: searchTerm, mode: 'insensitive' } },
       ];
     }
 
