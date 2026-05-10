@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Query,
+  Param,
   Header,
 } from '@nestjs/common';
 import { JugadoresService } from '../services/jugadores.service';
@@ -92,7 +93,7 @@ export class JugadoresController {
     // Traer 5 usuarios de ejemplo
     const ejemplos = await this.prisma.user.findMany({
       take: 5,
-      select: { id: true, nombre: true, apellido: true, estado: true, email: true },
+      select: { id: true, nombre: true, apellido: true, estado: true, email: true, documento: true },
     });
 
     return {
@@ -100,6 +101,49 @@ export class JugadoresController {
       data: {
         conteos: { todos, activos, noVerificados, inactivos, suspendidos },
         ejemplos,
+      },
+    };
+  }
+
+  /**
+   * GET /users/debug/buscar-doc/:doc
+   * Debug: Buscar por documento con raw query limpia
+   */
+  @Get('debug/buscar-doc/:doc')
+  @Public()
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('CDN-Cache-Control', 'no-store')
+  async debugBuscarDocumento(@Param('doc') doc: string) {
+    const searchTerm = doc.trim();
+    const digitsOnly = searchTerm.replace(/\D/g, '');
+
+    // Raw query exacta que usamos en buscarJugadores
+    const rawUsers = await this.prisma.$queryRaw<{ id: string; nombre: string; apellido: string; documento: string; estado: string }[]>`
+      SELECT id, nombre, apellido, documento, estado
+      FROM "User"
+      WHERE estado IN ('ACTIVO', 'NO_VERIFICADO')
+        AND REPLACE(REPLACE(REPLACE(documento, '.', ''), '-', ''), ' ', '') ILIKE ${'%' + digitsOnly + '%'}
+      ORDER BY nombre ASC, apellido ASC
+      LIMIT 10
+    `;
+
+    // También buscar sin limpiar (contains normal)
+    const normalUsers = await this.prisma.user.findMany({
+      where: {
+        estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
+        documento: { contains: searchTerm, mode: 'insensitive' },
+      },
+      select: { id: true, nombre: true, apellido: true, documento: true, estado: true },
+      take: 10,
+    });
+
+    return {
+      success: true,
+      data: {
+        searchTerm,
+        digitsOnly,
+        rawResults: rawUsers,
+        normalResults: normalUsers,
       },
     };
   }
