@@ -6,9 +6,10 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 import { EmailModule } from '../../email/email.module';
+import { TournamentsModule } from '../tournaments/tournaments.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, NotificacionesModule, EmailModule],
+  imports: [PrismaModule, AuthModule, NotificacionesModule, EmailModule, TournamentsModule],
   controllers: [InscripcionesController, PublicInscripcionesController],
   providers: [InscripcionesService],
   exports: [InscripcionesService],
