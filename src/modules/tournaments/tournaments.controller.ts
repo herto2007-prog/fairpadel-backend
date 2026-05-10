@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { TournamentsService } from './tournaments.service';
@@ -25,8 +26,8 @@ export class TournamentsController {
   }
 
   @Get('categories')
-  getCategories() {
-    return this.tournamentsService.getCategories();
+  getCategories(@Query('tipo') tipo?: string) {
+    return this.tournamentsService.getCategories(tipo);
   }
 
   @Get('my-tournaments')

@@ -53,8 +53,10 @@ export class TournamentsService {
     return this.findOne(id);
   }
 
-  async getCategories() {
+  async getCategories(tipo?: string) {
+    const where = tipo ? { tipoCategoria: tipo as any } : {};
     return this.prisma.category.findMany({
+      where,
       orderBy: { orden: 'asc' },
     });
   }
