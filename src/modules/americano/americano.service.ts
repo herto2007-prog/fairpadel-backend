@@ -305,11 +305,12 @@ export class AmericanoService {
     return { message: 'Inscripciones reabiertas' };
   }
 
-  async findById(torneoId: string) {
+  async findById(torneoId: string, userId?: string) {
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: torneoId },
       include: {
         organizador: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+        coorganizadores: { select: { userId: true } },
         sedePrincipal: true,
         americanosGrupo: {
           select: { id: true, nombre: true, tipo: true },
@@ -362,7 +363,11 @@ export class AmericanoService {
       throw new BadRequestException('Este torneo no es de formato americano');
     }
 
-    return torneo;
+    const puedeGestionar = userId
+      ? await this.tournamentsService.puedeGestionarTorneo(torneoId, userId)
+      : false;
+
+    return { ...torneo, puedeGestionar };
   }
 
   async listarTorneosActivos(userId?: string) {

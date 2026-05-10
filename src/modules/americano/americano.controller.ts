@@ -34,8 +34,10 @@ export class AmericanoController {
   }
 
   @Get('torneos/:id')
-  getTorneo(@Param('id') id: string) {
-    return this.americanoService.findById(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  getTorneo(@Param('id') id: string, @Request() req: any) {
+    const userId = req.user?.id;
+    return this.americanoService.findById(id, userId);
   }
 
   @Post('torneos')
