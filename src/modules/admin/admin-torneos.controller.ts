@@ -19,6 +19,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { ComisionService } from '../../common/services/comision.service';
 import { RankingsService } from '../rankings/rankings.service';
+import { TournamentsService } from '../tournaments/tournaments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -160,6 +161,7 @@ export class AdminTorneosController {
     private dateService: DateService,
     private comisionService: ComisionService,
     private rankingsService: RankingsService,
+    private tournamentsService: TournamentsService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -169,9 +171,14 @@ export class AdminTorneosController {
   @Get()
   async findAll(@Request() req) {
     const user = req.user;
-    const where = user.roles.includes('admin') 
-      ? {} 
-      : { organizadorId: user.userId };
+    const where = user.roles.includes('admin')
+      ? {}
+      : {
+          OR: [
+            { organizadorId: user.userId },
+            { coorganizadores: { some: { userId: user.userId } } },
+          ],
+        };
 
     const torneos = await this.prisma.tournament.findMany({
       where,
@@ -509,11 +516,9 @@ export class AdminTorneosController {
         throw new NotFoundException('Torneo no encontrado');
       }
       
-      // Si es organizador (no admin), verificar que sea el dueño del torneo
-      const esAdmin = user.roles?.includes('admin');
-      const esOrganizador = user.roles?.includes('organizador');
-      
-      if (!esAdmin && esOrganizador && torneo.organizadorId !== user.userId) {
+      // Verificar permisos (admin, organizador o co-organizador)
+      const puede = await this.tournamentsService.puedeGestionarTorneo(torneoId, user.userId, user.roles);
+      if (!puede) {
         throw new ForbiddenException('No tienes permiso para editar este torneo');
       }
 
@@ -2244,7 +2249,8 @@ export class AdminTorneosController {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== req.user.userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, req.user.userId, req.user.roles);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso para ver este torneo');
     }
 
@@ -2387,7 +2393,8 @@ export class AdminTorneosController {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== req.user.userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, req.user.userId, req.user.roles);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso');
     }
 
@@ -2445,7 +2452,8 @@ export class AdminTorneosController {
       select: { organizadorId: true },
     });
 
-    if (!torneo || torneo.organizadorId !== req.user.userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, req.user.userId, req.user.roles);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso');
     }
 
@@ -2488,7 +2496,8 @@ export class AdminTorneosController {
       select: { organizadorId: true },
     });
 
-    if (!torneo || torneo.organizadorId !== req.user.userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, req.user.userId, req.user.roles);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso');
     }
 
@@ -2556,7 +2565,8 @@ export class AdminTorneosController {
     }
 
     // Verificar permisos
-    if (!user.roles.includes('admin') && torneo.organizadorId !== user.userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, user.userId, user.roles);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso para finalizar esta categoría');
     }
 

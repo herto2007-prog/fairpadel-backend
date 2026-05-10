@@ -1,5 +1,6 @@
 import { Controller, Post, Param, UseGuards, Get, Req, Query } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TournamentsService } from './tournaments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Request } from 'express';
 
@@ -8,6 +9,7 @@ import { Request } from 'express';
 export class TournamentPublicationController {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly tournamentsService: TournamentsService,
   ) {}
 
   @Post(':id/publicar-bracket')
@@ -33,7 +35,8 @@ export class TournamentPublicationController {
       return { success: false, message: 'Torneo no encontrado' };
     }
 
-    if (torneo.organizadorId !== user.userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, user.userId, user.roles);
+    if (!puede) {
       return { success: false, message: 'No tienes permiso para publicar este bracket' };
     }
 
@@ -78,7 +81,8 @@ export class TournamentPublicationController {
       return { success: false, message: 'Torneo no encontrado' };
     }
 
-    if (torneo.organizadorId !== user.userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, user.userId, user.roles);
+    if (!puede) {
       return { success: false, message: 'No tienes permiso para despublicar este bracket' };
     }
 
@@ -115,8 +119,8 @@ export class TournamentPublicationController {
       return { success: false, message: 'Torneo no encontrado' };
     }
 
-    // Solo el organizador puede ver el estado completo
-    const esOrganizador = torneo.organizadorId === user.userId;
+    // Solo el organizador/co-organizador puede ver el estado completo
+    const esOrganizador = await this.tournamentsService.puedeGestionarTorneo(tournamentId, user.userId, user.roles);
 
     if (!esOrganizador) {
       return {

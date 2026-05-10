@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TournamentsService } from '../tournaments/tournaments.service';
 import { FixtureVersionEstado, MatchStatus } from '@prisma/client';
 
 export interface GenerarFixtureData {
@@ -34,7 +35,10 @@ export interface FixtureDefinicion {
 
 @Injectable()
 export class FixtureService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private tournamentsService: TournamentsService,
+  ) {}
 
   /**
    * Genera un fixture con el sistema de acomodación paraguaya
@@ -65,7 +69,8 @@ export class FixtureService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (tournament.organizadorId !== organizadorId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, organizadorId);
+    if (!puede) {
       throw new BadRequestException('No tienes permiso para generar el fixture');
     }
 
@@ -326,7 +331,8 @@ export class FixtureService {
       throw new NotFoundException('Fixture no encontrado');
     }
 
-    if (fixtureVersion.tournamentCategory.tournamentId !== organizadorId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(fixtureVersion.tournamentCategory.tournamentId, organizadorId);
+    if (!puede) {
       throw new BadRequestException('No tienes permiso para publicar este fixture');
     }
 

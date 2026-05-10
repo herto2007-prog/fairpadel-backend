@@ -407,6 +407,7 @@ model User {
   
   // Torneos
   torneosOrganizados       Tournament[] @relation("OrganizadorTorneos")
+  torneosCoorganizador     TournamentOrganizador[]
   ayudanteEnTorneos        TorneoAyudante[] @relation("AyudanteEnTorneos")
   reportesFotos            ReporteFoto[]
   
@@ -901,7 +902,22 @@ model Tournament {
   americanosPuntaje    AmericanoPuntaje[]
   americanosGrupo      AmericanoGrupo[]
 
+  coorganizadores      TournamentOrganizador[]
+
   @@map("tournaments")
+}
+
+model TournamentOrganizador {
+  id           String     @id @default(uuid())
+  torneoId     String     @map("torneo_id")
+  userId       String     @map("user_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  torneo       Tournament @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([torneoId, userId])
+  @@map("tournament_organizadores")
 }
 
 model TournamentCategory {

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
+import { TournamentsService } from '../tournaments/tournaments.service';
 import { CreateCircuitoDto, UpdateCircuitoDto } from './dto/create-circuito.dto';
 import { AsignarTorneoDirectoDto, SolicitarInclusionDto, ProcesarSolicitudDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
 import { v4 as uuidv4 } from 'uuid';
@@ -10,6 +11,7 @@ export class CircuitosService {
   constructor(
     private prisma: PrismaService,
     private dateService: DateService,
+    private tournamentsService: TournamentsService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -199,7 +201,8 @@ export class CircuitosService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(torneoId, userId);
+    if (!puede) {
       throw new BadRequestException('No tienes permiso para este torneo');
     }
 
@@ -249,7 +252,8 @@ export class CircuitosService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== userId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(torneoId, userId);
+    if (!puede) {
       throw new BadRequestException('No tienes permiso para este torneo');
     }
 

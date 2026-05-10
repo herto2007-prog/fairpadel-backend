@@ -63,7 +63,12 @@ export class TournamentsService {
 
   async findByOrganizador(organizadorId: string) {
     return this.prisma.tournament.findMany({
-      where: { organizadorId },
+      where: {
+        OR: [
+          { organizadorId },
+          { coorganizadores: { some: { userId: organizadorId } } },
+        ],
+      },
       include: {
         categorias: {
           include: { category: true },
@@ -116,7 +121,8 @@ export class TournamentsService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (tournament.organizadorId !== userId) {
+    const puede = await this.puedeGestionarTorneo(id, userId);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso para editar este torneo');
     }
 
@@ -135,7 +141,8 @@ export class TournamentsService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (tournament.organizadorId !== userId) {
+    const puede = await this.puedeGestionarTorneo(id, userId);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso para publicar este torneo');
     }
 
@@ -154,12 +161,82 @@ export class TournamentsService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (tournament.organizadorId !== userId) {
+    const puede = await this.puedeGestionarTorneo(id, userId);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso para eliminar este torneo');
     }
 
     return this.prisma.tournament.delete({
       where: { id },
+    });
+  }
+
+  /**
+   * Verifica si un usuario puede gestionar un torneo
+   * (es organizador, co-organizador o admin)
+   */
+  async puedeGestionarTorneo(torneoId: string, userId: string, roles?: string[]): Promise<boolean> {
+    let userRoles = roles;
+    if (!userRoles) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { roles: { include: { role: true } } },
+      });
+      userRoles = user?.roles.map((ur) => ur.role.nombre) ?? [];
+    }
+
+    if (userRoles.includes('admin')) return true;
+
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: torneoId },
+      select: { organizadorId: true },
+    });
+
+    if (!torneo) return false;
+    if (torneo.organizadorId === userId) return true;
+
+    const coorganizador = await this.prisma.tournamentOrganizador.findUnique({
+      where: {
+        torneoId_userId: {
+          torneoId,
+          userId,
+        },
+      },
+    });
+
+    return !!coorganizador;
+  }
+
+  async listarCoorganizadores(torneoId: string) {
+    return this.prisma.tournamentOrganizador.findMany({
+      where: { torneoId },
+      include: {
+        user: {
+          select: { id: true, nombre: true, apellido: true, email: true, fotoUrl: true },
+        },
+      },
+    });
+  }
+
+  async agregarCoorganizador(torneoId: string, userId: string) {
+    return this.prisma.tournamentOrganizador.create({
+      data: { torneoId, userId },
+      include: {
+        user: {
+          select: { id: true, nombre: true, apellido: true, email: true, fotoUrl: true },
+        },
+      },
+    });
+  }
+
+  async removerCoorganizador(torneoId: string, userId: string) {
+    return this.prisma.tournamentOrganizador.delete({
+      where: {
+        torneoId_userId: {
+          torneoId,
+          userId,
+        },
+      },
     });
   }
 }

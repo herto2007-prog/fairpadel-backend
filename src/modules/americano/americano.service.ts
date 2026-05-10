@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TournamentsService } from '../tournaments/tournaments.service';
 import { CreateAmericanoTorneoDto } from './dto/create-americano-torneo.dto';
 import { InscribirJugadorAmericanoDto } from './dto/inscribir-jugador.dto';
 
@@ -49,7 +50,26 @@ export interface ConfigAmericano {
 
 @Injectable()
 export class AmericanoService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private tournamentsService: TournamentsService,
+  ) {}
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PERMISOS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  private async verificarPermiso(torneoId: string, userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: { include: { role: true } } },
+    });
+    const roles = user?.roles.map((ur) => ur.role.nombre) ?? [];
+    const puede = await this.tournamentsService.puedeGestionarTorneo(torneoId, userId, roles);
+    if (!puede) {
+      throw new ForbiddenException('No tenés permisos para este torneo');
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // TORNEO AMERICANO
@@ -102,17 +122,7 @@ export class AmericanoService {
       throw new BadRequestException('Este torneo no es de formato americano');
     }
 
-    // Verificar si es el organizador o un admin
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { roles: { include: { role: true } } },
-    });
-
-    const isAdmin = user?.roles.some((ur) => ur.role.nombre === 'admin');
-
-    if (torneo.organizadorId !== userId && !isAdmin) {
-      throw new ForbiddenException('No tenés permisos para eliminar este torneo');
-    }
+    await this.verificarPermiso(torneoId, userId);
 
     await this.prisma.tournament.delete({
       where: { id: torneoId },
@@ -136,17 +146,7 @@ export class AmericanoService {
       throw new BadRequestException('Este torneo no es de formato americano');
     }
 
-    // Verificar si es el organizador o un admin
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { roles: { include: { role: true } } },
-    });
-
-    const isAdmin = user?.roles.some((ur) => ur.role.nombre === 'admin');
-
-    if (torneo.organizadorId !== userId && !isAdmin) {
-      throw new ForbiddenException('No tenés permisos para reiniciar este torneo');
-    }
+    await this.verificarPermiso(torneoId, userId);
 
     await this.prisma.$transaction(async (tx) => {
       // Eliminar todas las rondas (cascade: elimina parejas y partidos)
@@ -201,9 +201,7 @@ export class AmericanoService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== organizadorId) {
-      throw new ForbiddenException('No tienes permisos para este torneo');
-    }
+    await this.verificarPermiso(torneoId, organizadorId);
 
     if (torneo.formato !== 'americano') {
       throw new BadRequestException('Este torneo no es de formato americano');
@@ -253,9 +251,7 @@ export class AmericanoService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== organizadorId) {
-      throw new ForbiddenException('No tenés permisos para este torneo');
-    }
+    await this.verificarPermiso(torneoId, organizadorId);
 
     if (torneo.formato !== 'americano') {
       throw new BadRequestException('Este torneo no es de formato americano');
@@ -284,9 +280,7 @@ export class AmericanoService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== organizadorId) {
-      throw new ForbiddenException('No tenés permisos para este torneo');
-    }
+    await this.verificarPermiso(torneoId, organizadorId);
 
     if (torneo.formato !== 'americano') {
       throw new BadRequestException('Este torneo no es de formato americano');
@@ -526,16 +520,7 @@ export class AmericanoService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    // Verificar permisos: organizador o admin
-    const user = await this.prisma.user.findUnique({
-      where: { id: organizadorId },
-      include: { roles: { include: { role: true } } },
-    });
-    const isAdmin = user?.roles.some((ur) => ur.role.nombre === 'admin');
-
-    if (torneo.organizadorId !== organizadorId && !isAdmin) {
-      throw new ForbiddenException('No tenés permisos para este torneo');
-    }
+    await this.verificarPermiso(torneoId, organizadorId);
 
     // No permitir eliminar si ya se iniciaron rondas
     if (torneo.americanosRonda.length > 0) {
@@ -583,9 +568,7 @@ export class AmericanoService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== organizadorId) {
-      throw new ForbiddenException('No tienes permisos para este torneo');
-    }
+    await this.verificarPermiso(torneoId, organizadorId);
 
     if (torneo.formato !== 'americano') {
       throw new BadRequestException('Este torneo no es de formato americano');
@@ -790,9 +773,7 @@ export class AmericanoService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== organizadorId) {
-      throw new ForbiddenException('No tienes permisos para este torneo');
-    }
+    await this.verificarPermiso(torneoId, organizadorId);
 
     if (torneo.formato !== 'americano') {
       throw new BadRequestException('Este torneo no es de formato americano');
@@ -1000,9 +981,7 @@ export class AmericanoService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== organizadorId) {
-      throw new ForbiddenException('No tienes permisos para este torneo');
-    }
+    await this.verificarPermiso(torneoId, organizadorId);
 
     const ronda = await this.prisma.americanoRonda.findUnique({
       where: { id: rondaId },
@@ -1257,9 +1236,7 @@ export class AmericanoService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.organizadorId !== organizadorId) {
-      throw new ForbiddenException('No tienes permisos para este torneo');
-    }
+    await this.verificarPermiso(torneoId, organizadorId);
 
     const config = (torneo.configAmericano ?? {}) as unknown as ConfigAmericano;
     const modoJuego = config.modoJuego;

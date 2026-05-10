@@ -6,6 +6,7 @@ import { InscripcionEstado, TournamentStatus } from '@prisma/client';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { NotificacionesWhatsAppService } from '../notificaciones/notificaciones-whatsapp.service';
 import { ComisionService } from '../../common/services/comision.service';
+import { TournamentsService } from '../tournaments/tournaments.service';
 
 @Injectable()
 export class InscripcionesService {
@@ -14,6 +15,7 @@ export class InscripcionesService {
     private notificacionesService: NotificacionesService,
     private notificacionesWhatsApp: NotificacionesWhatsAppService,
     private comisionService: ComisionService,
+    private tournamentsService: TournamentsService,
   ) {}
 
   async create(dto: CreateInscripcionDto, jugador1Id: string) {
@@ -157,7 +159,8 @@ export class InscripcionesService {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (tournament.organizadorId !== organizadorId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, organizadorId);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso para ver estas inscripciones');
     }
 
@@ -225,7 +228,8 @@ export class InscripcionesService {
       where: { id: inscripcion.tournamentId }
     });
 
-    if (!tournament || tournament.organizadorId !== organizadorId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(inscripcion.tournamentId, organizadorId);
+    if (!puede) {
       throw new ForbiddenException('No tienes permiso para confirmar esta inscripción');
     }
 
@@ -275,10 +279,10 @@ export class InscripcionesService {
       where: { id: inscripcion.tournamentId }
     });
 
-    const isOrganizador = tournament?.organizadorId === userId;
     const isJugador1 = inscripcion.jugador1Id === userId;
+    const puedeGestionar = await this.tournamentsService.puedeGestionarTorneo(inscripcion.tournamentId, userId);
 
-    if (!isOrganizador && !isJugador1) {
+    if (!puedeGestionar && !isJugador1) {
       throw new ForbiddenException('No tienes permiso para cancelar esta inscripción');
     }
 

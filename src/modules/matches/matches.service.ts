@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TournamentsService } from '../tournaments/tournaments.service';
 import { MatchStatus } from '@prisma/client';
 import { RegistrarResultadoDto } from './dto/registrar-resultado.dto';
 
 @Injectable()
 export class MatchesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private tournamentsService: TournamentsService,
+  ) {}
 
   /**
    * Registra el resultado de un partido y avanza al ganador en el bracket
@@ -29,7 +33,8 @@ export class MatchesService {
     }
 
     // Verificar permisos
-    if (match.tournament.organizadorId !== organizadorId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(match.tournamentId, organizadorId);
+    if (!puede) {
       throw new BadRequestException('No tienes permiso para registrar resultados');
     }
 
@@ -153,7 +158,8 @@ export class MatchesService {
       throw new NotFoundException('Partido no encontrado');
     }
 
-    if (match.tournament.organizadorId !== organizadorId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(match.tournamentId, organizadorId);
+    if (!puede) {
       throw new BadRequestException('No tienes permiso para programar este partido');
     }
 
@@ -263,7 +269,8 @@ export class MatchesService {
       throw new NotFoundException('Partido no encontrado');
     }
 
-    if (match.tournament.organizadorId !== organizadorId) {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(match.tournamentId, organizadorId);
+    if (!puede) {
       throw new BadRequestException('No tienes permiso');
     }
 

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { AmericanoService, ConfigAmericano, ModoJuegoConfig } from './americano.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TournamentsService } from '../tournaments/tournaments.service';
 
 function createMockPrisma() {
   return {
@@ -70,6 +71,7 @@ describe('AmericanoService', () => {
       providers: [
         AmericanoService,
         { provide: PrismaService, useValue: prisma },
+        { provide: TournamentsService, useValue: { findOne: jest.fn(), agregarCoorganizador: jest.fn(), eliminarCoorganizador: jest.fn(), puedeGestionarTorneo: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 
