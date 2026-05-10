@@ -32,23 +32,121 @@ export class JugadoresController {
     console.log('🔥 ENDPOINT /users/buscar LLAMADO');
     console.log('Query params:', query);
 
-    const result = await this.jugadoresService.buscarJugadores({
-      q: query.q,
-      ciudad: query.ciudad,
-      categoriaId: query.categoriaId,
-      page: query.page || 1,
-      limit: query.limit || 20,
-    });
+    const searchTerm = query.q?.trim();
+    const digitsOnly = searchTerm ? searchTerm.replace(/\D/g, '') : '';
+    const esDocumento = /^\d{5,}$/.test(digitsOnly);
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    const skip = (page - 1) * limit;
+
+    let users: any[] = [];
+    let total = 0;
+
+    if (esDocumento) {
+      // Búsqueda por documento: inline directo (evitar posible cache del service)
+      const candidatos = await this.prisma.user.findMany({
+        where: {
+          estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
+          documento: { not: '' },
+        },
+        select: {
+          id: true,
+          nombre: true,
+          apellido: true,
+          fotoUrl: true,
+          genero: true,
+          ciudad: true,
+          pais: true,
+          documento: true,
+          categoriaActual: { select: { id: true, nombre: true } },
+          _count: { select: { seguidores: true } },
+        },
+        orderBy: [{ nombre: 'asc' }, { apellido: 'asc' }],
+      });
+
+      const cleanDoc = (d: string) => d.replace(/[.\-\s]/g, '');
+      const filtrados = candidatos.filter(u => cleanDoc(u.documento).includes(digitsOnly));
+      total = filtrados.length;
+      users = filtrados.slice(skip, skip + limit);
+    } else {
+      // Búsqueda normal por nombre/apellido
+      const where: any = {
+        estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
+      };
+
+      if (searchTerm) {
+        where.OR = [
+          { nombre: { contains: searchTerm, mode: 'insensitive' } },
+          { apellido: { contains: searchTerm, mode: 'insensitive' } },
+          { documento: { contains: searchTerm, mode: 'insensitive' } },
+        ];
+      }
+
+      if (query.ciudad && query.ciudad.trim()) {
+        where.ciudad = { contains: query.ciudad.trim(), mode: 'insensitive' };
+      }
+
+      if (query.categoriaId) {
+        where.categoriaActualId = query.categoriaId;
+      }
+
+      total = await this.prisma.user.count({ where });
+
+      users = await this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          nombre: true,
+          apellido: true,
+          fotoUrl: true,
+          genero: true,
+          ciudad: true,
+          pais: true,
+          documento: true,
+          categoriaActual: { select: { id: true, nombre: true } },
+          _count: { select: { seguidores: true } },
+        },
+        orderBy: [{ nombre: 'asc' }, { apellido: 'asc' }],
+        skip,
+        take: limit,
+      });
+    }
+
+    // Obtener stats
+    const jugadoresConStats = await Promise.all(
+      users.map(async (user) => {
+        const stats = await this.jugadoresService.getStatsJugador(user.id);
+        return {
+          id: user.id,
+          nombre: user.nombre,
+          apellido: user.apellido,
+          fotoUrl: user.fotoUrl,
+          genero: user.genero,
+          documento: user.documento,
+          ciudad: user.ciudad,
+          pais: user.pais,
+          categoria: user.categoriaActual,
+          categoriaActual: user.categoriaActual,
+          seguidores: user._count.seguidores,
+          stats,
+        };
+      }),
+    );
 
     return {
       success: true,
-      data: result.users,
-      pagination: result.pagination,
+      data: jugadoresConStats,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
       _debug: {
-        version: '2025-05-08-memfilter-v1',
+        version: '2025-05-08-inline-v2',
         q: query.q,
-        esDocumento: /^\d{5,}$/.test((query.q || '').replace(/\D/g, '')),
-        total: result.pagination.total,
+        esDocumento,
+        total,
       },
     };
   }

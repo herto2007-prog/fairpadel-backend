@@ -217,7 +217,7 @@ export class JugadoresService {
    * Calcular estadísticas básicas del jugador
    * Optimizado con batch queries
    */
-  private async getStatsJugador(userId: string) {
+  async getStatsJugador(userId: string) {
     // Torneos jugados y ganados desde historial de puntos
     const [historialCount, torneosGanados] = await Promise.all([
       this.prisma.historialPuntos.count({ where: { jugadorId: userId } }),
