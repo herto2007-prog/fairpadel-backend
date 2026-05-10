@@ -43,7 +43,7 @@ export class JugadoresController {
     let total = 0;
 
     if (esDocumento) {
-      // Búsqueda por documento: inline directo (evitar posible cache del service)
+      // Búsqueda por documento: inline directo, sin dependencias del service
       const candidatos = await this.prisma.user.findMany({
         where: {
           estado: { in: ['ACTIVO', 'NO_VERIFICADO'] },
@@ -112,26 +112,21 @@ export class JugadoresController {
       });
     }
 
-    // Obtener stats
-    const jugadoresConStats = await Promise.all(
-      users.map(async (user) => {
-        const stats = await this.jugadoresService.getStatsJugador(user.id);
-        return {
-          id: user.id,
-          nombre: user.nombre,
-          apellido: user.apellido,
-          fotoUrl: user.fotoUrl,
-          genero: user.genero,
-          documento: user.documento,
-          ciudad: user.ciudad,
-          pais: user.pais,
-          categoria: user.categoriaActual,
-          categoriaActual: user.categoriaActual,
-          seguidores: user._count.seguidores,
-          stats,
-        };
-      }),
-    );
+    // Mapear a formato de respuesta (sin stats para evitar dependencias)
+    const jugadoresConStats = users.map((user) => ({
+      id: user.id,
+      nombre: user.nombre,
+      apellido: user.apellido,
+      fotoUrl: user.fotoUrl,
+      genero: user.genero,
+      documento: user.documento,
+      ciudad: user.ciudad,
+      pais: user.pais,
+      categoria: user.categoriaActual,
+      categoriaActual: user.categoriaActual,
+      seguidores: user._count.seguidores,
+      stats: { torneosJugados: 0, torneosGanados: 0, victorias: 0, efectividad: 0 },
+    }));
 
     return {
       success: true,
