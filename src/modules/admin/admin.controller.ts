@@ -1,8 +1,11 @@
-import { Controller, Post, Get, Body, Param, UnauthorizedException, NotFoundException, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Put, Body, Param, UnauthorizedException, NotFoundException, UseGuards, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { User } from '@prisma/client';
+import { UpdateUserAdminDto } from './dto/update-user-admin.dto';
 
 @Controller('admin')
 export class AdminController {
@@ -337,5 +340,232 @@ export class AdminController {
       tournaments: totalTournaments,
       inscripciones: totalInscripciones,
     };
+  }
+
+  /**
+   * Actualizar datos de un usuario desde admin (solo admin)
+   */
+  @Put('users/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async updateUser(
+    @Param('id') userId: string,
+    @Body() dto: UpdateUserAdminDto,
+    @GetUser() admin: User,
+  ) {
+    // Verificar que el usuario existe
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { categoriaActual: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const updateData: any = {};
+    const advertencias: { inscripciones: any[]; ascensosPendientes: any[] } = {
+      inscripciones: [],
+      ascensosPendientes: [],
+    };
+
+    // Campos básicos editables
+    if (dto.telefono !== undefined) updateData.telefono = dto.telefono || null;
+    if (dto.ciudad !== undefined) updateData.ciudad = dto.ciudad || null;
+    if (dto.fechaNacimiento !== undefined) updateData.fechaNacimiento = dto.fechaNacimiento || null;
+    if (dto.genero !== undefined) updateData.genero = dto.genero;
+    if (dto.estado !== undefined) updateData.estado = dto.estado;
+
+    // Cambio de categoría
+    if (dto.categoriaActualId !== undefined) {
+      const nuevaCategoria = await this.prisma.category.findUnique({
+        where: { id: dto.categoriaActualId },
+      });
+
+      if (!nuevaCategoria) {
+        throw new BadRequestException('La categoría seleccionada no existe');
+      }
+
+      if (nuevaCategoria.tipo !== user.genero) {
+        throw new BadRequestException(
+          `La categoría "${nuevaCategoria.nombre}" es ${nuevaCategoria.tipo.toLowerCase()} y el jugador es ${user.genero.toLowerCase()}`
+        );
+      }
+
+      const categoriaAnterior = user.categoriaActual;
+
+      // Solo procesar si realmente cambia
+      if (!categoriaAnterior || categoriaAnterior.id !== nuevaCategoria.id) {
+        updateData.categoriaActualId = nuevaCategoria.id;
+
+        // Determinar tipo de cambio según orden
+        let tipoCambio: string;
+        if (!categoriaAnterior) {
+          tipoCambio = 'MANTENIMIENTO';
+        } else if (nuevaCategoria.orden > categoriaAnterior.orden) {
+          tipoCambio = 'DESCENSO_MANUAL';
+        } else if (nuevaCategoria.orden < categoriaAnterior.orden) {
+          tipoCambio = 'ASCENSO_MANUAL';
+        } else {
+          tipoCambio = 'MANTENIMIENTO';
+        }
+
+        // Crear historial
+        await this.prisma.historialCategoria.create({
+          data: {
+            userId: user.id,
+            categoriaAnteriorId: categoriaAnterior?.id ?? null,
+            categoriaNuevaId: nuevaCategoria.id,
+            tipo: tipoCambio as any,
+            motivo: dto.motivoCambioCategoria || `Cambio de categoría realizado desde el panel de administración`,
+            realizadoPor: admin.id,
+          },
+        });
+
+        // Detectar inscripciones activas
+        const inscripcionesActivas = await this.prisma.inscripcion.findMany({
+          where: {
+            OR: [
+              { jugador1Id: userId },
+              { jugador2Id: userId },
+            ],
+            estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION'] },
+            tournament: {
+              estado: { in: ['PUBLICADO', 'EN_CURSO'] },
+            },
+          },
+          include: {
+            tournament: { select: { id: true, nombre: true, estado: true } },
+            category: { select: { id: true, nombre: true } },
+          },
+        });
+        advertencias.inscripciones = inscripcionesActivas;
+
+        // Detectar ascensos pendientes obsoletos
+        const ascensosPendientes = await this.prisma.ascensoPendiente.findMany({
+          where: {
+            userId,
+            estado: 'PENDIENTE',
+            categoriaActualId: categoriaAnterior?.id,
+          },
+          include: {
+            categoriaNueva: { select: { nombre: true } },
+          },
+        });
+        advertencias.ascensosPendientes = ascensosPendientes;
+      }
+    }
+
+    // Actualizar usuario
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      include: {
+        categoriaActual: true,
+        roles: { include: { role: true } },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Usuario actualizado correctamente',
+      user: {
+        id: updatedUser.id,
+        nombre: updatedUser.nombre,
+        apellido: updatedUser.apellido,
+        email: updatedUser.email,
+        telefono: updatedUser.telefono,
+        documento: updatedUser.documento,
+        estado: updatedUser.estado,
+        fotoUrl: updatedUser.fotoUrl,
+        genero: updatedUser.genero,
+        ciudad: updatedUser.ciudad,
+        fechaNacimiento: updatedUser.fechaNacimiento,
+        roles: updatedUser.roles.map(r => r.role.nombre),
+        categoriaActual: updatedUser.categoriaActual ? { id: updatedUser.categoriaActual.id, nombre: updatedUser.categoriaActual.nombre } : null,
+      },
+      advertencias: advertencias.inscripciones.length > 0 || advertencias.ascensosPendientes.length > 0
+        ? advertencias
+        : undefined,
+    };
+  }
+
+  /**
+   * Obtener inscripciones activas de un usuario (solo admin)
+   */
+  @Get('users/:id/inscripciones-activas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getInscripcionesActivas(@Param('id') userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: {
+        OR: [
+          { jugador1Id: userId },
+          { jugador2Id: userId },
+        ],
+        estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION'] },
+        tournament: {
+          estado: { in: ['PUBLICADO', 'EN_CURSO'] },
+        },
+      },
+      include: {
+        tournament: {
+          select: { id: true, nombre: true, estado: true, fechaInicio: true },
+        },
+        category: { select: { id: true, nombre: true } },
+        jugador1: { select: { id: true, nombre: true, apellido: true } },
+        jugador2: { select: { id: true, nombre: true, apellido: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return { success: true, data: inscripciones };
+  }
+
+  /**
+   * Obtener historial de categorías de un usuario (solo admin)
+   */
+  @Get('users/:id/historial-categorias')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getHistorialCategorias(@Param('id') userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const historial = await this.prisma.historialCategoria.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Enriquecer con nombres de categorías (no hay relaciones definidas en el schema)
+    const catIds = new Set<string>();
+    for (const h of historial) {
+      if (h.categoriaAnteriorId) catIds.add(h.categoriaAnteriorId);
+      if (h.categoriaNuevaId) catIds.add(h.categoriaNuevaId);
+    }
+
+    const categorias = catIds.size > 0
+      ? await this.prisma.category.findMany({
+          where: { id: { in: Array.from(catIds) } },
+          select: { id: true, nombre: true },
+        })
+      : [];
+
+    const catMap = new Map(categorias.map(c => [c.id, c.nombre]));
+
+    const data = historial.map(h => ({
+      ...h,
+      categoriaAnterior: h.categoriaAnteriorId ? { id: h.categoriaAnteriorId, nombre: catMap.get(h.categoriaAnteriorId) || 'Desconocida' } : null,
+      categoriaNueva: h.categoriaNuevaId ? { id: h.categoriaNuevaId, nombre: catMap.get(h.categoriaNuevaId) || 'Desconocida' } : null,
+    }));
+
+    return { success: true, data };
   }
 }
