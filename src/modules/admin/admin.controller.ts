@@ -422,7 +422,7 @@ export class AdminController {
           },
         });
 
-        // Detectar inscripciones activas
+        // Detectar inscripciones activas (solo torneos EN_CURSO)
         const inscripcionesActivas = await this.prisma.inscripcion.findMany({
           where: {
             OR: [
@@ -431,7 +431,7 @@ export class AdminController {
             ],
             estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION'] },
             tournament: {
-              estado: { in: ['PUBLICADO', 'EN_CURSO'] },
+              estado: 'EN_CURSO',
             },
           },
           include: {
@@ -510,7 +510,7 @@ export class AdminController {
         ],
         estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO', 'PENDIENTE_CONFIRMACION'] },
         tournament: {
-          estado: { in: ['PUBLICADO', 'EN_CURSO'] },
+          estado: 'EN_CURSO',
         },
       },
       include: {
