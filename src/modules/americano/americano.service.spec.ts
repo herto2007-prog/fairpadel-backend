@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { AmericanoService, ConfigAmericano, ModoJuegoConfig } from './americano.service';
+import { AmericanoComunService } from './americano-comun.service';
+import { AmericanoResultadosService } from './americano-resultados.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
 
@@ -61,6 +63,7 @@ function createMockPrisma() {
 
 describe('AmericanoService', () => {
   let service: AmericanoService;
+  let resultados: AmericanoResultadosService;
   let prisma: ReturnType<typeof createMockPrisma>;
 
   beforeEach(async () => {
@@ -70,12 +73,15 @@ describe('AmericanoService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AmericanoService,
+        AmericanoComunService,
+        AmericanoResultadosService,
         { provide: PrismaService, useValue: prisma },
         { provide: TournamentsService, useValue: { findOne: jest.fn(), agregarCoorganizador: jest.fn(), eliminarCoorganizador: jest.fn(), puedeGestionarTorneo: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 
     service = module.get<AmericanoService>(AmericanoService);
+    resultados = module.get<AmericanoResultadosService>(AmericanoResultadosService);
   });
 
   afterEach(() => {
@@ -394,7 +400,7 @@ describe('AmericanoService', () => {
       };
       prisma.tournament.findUnique.mockResolvedValue(torneo);
 
-      const clasificacion = await service.getClasificacionTorneo('t1') as any;
+      const clasificacion = await resultados.getClasificacionTorneo('t1') as any;
 
       // Con un solo grupo, devuelve array plano para compatibilidad con frontend legacy
       expect(clasificacion).toHaveLength(2);
@@ -411,7 +417,7 @@ describe('AmericanoService', () => {
       };
       prisma.tournament.findUnique.mockResolvedValue(torneo);
 
-      const clasificacion = await service.getClasificacionTorneo('t1');
+      const clasificacion = await resultados.getClasificacionTorneo('t1');
       expect(clasificacion).toEqual([]);
     });
   });
@@ -436,7 +442,7 @@ describe('AmericanoService', () => {
       prisma.americanoPartido.findFirst.mockResolvedValue(null); // no existe partido
 
       await expect(
-        service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1')
+        resultados.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1')
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -467,7 +473,7 @@ describe('AmericanoService', () => {
         return fn(txMock);
       });
 
-      const result = await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
+      const result = await resultados.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
 
       expect(result.ganador).toBe('Equipo A');
       expect(result.gamesTotalA).toBe(6);
@@ -512,7 +518,7 @@ describe('AmericanoService', () => {
       });
 
       // Nuevo resultado: 4-6 (ahora gana B)
-      const result = await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 4, gamesEquipoB: 6 }], undefined, undefined, 'org1');
+      const result = await resultados.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 4, gamesEquipoB: 6 }], undefined, undefined, 'org1');
 
       expect(result.message).toBe('Resultado actualizado');
       expect(result.ganador).toBe('Equipo B');
@@ -564,7 +570,7 @@ describe('AmericanoService', () => {
       });
 
       // 2 sets a 1 → Equipo A gana 2 sets
-      await service.registrarResultado('t1', 'r1', 'pa', 'pb', [
+      await resultados.registrarResultado('t1', 'r1', 'pa', 'pb', [
         { gamesEquipoA: 6, gamesEquipoB: 4 },
         { gamesEquipoA: 4, gamesEquipoB: 6 },
         { gamesEquipoA: 6, gamesEquipoB: 2 },
@@ -611,7 +617,7 @@ describe('AmericanoService', () => {
         return fn(txMock);
       });
 
-      await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
+      await resultados.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
 
       const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
       const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
@@ -654,7 +660,7 @@ describe('AmericanoService', () => {
         return fn(txMock);
       });
 
-      await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
+      await resultados.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
 
       const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
       const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
@@ -698,7 +704,7 @@ describe('AmericanoService', () => {
       });
 
       // Suma exacta 16
-      await service.registrarResultado('t1', 'r1', 'pa', 'pb', undefined, 10, 6, 'org1');
+      await resultados.registrarResultado('t1', 'r1', 'pa', 'pb', undefined, 10, 6, 'org1');
 
       const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
       const pb1Update = txUpdates.find(u => u.where.id === 'pb1');
@@ -709,7 +715,7 @@ describe('AmericanoService', () => {
 
       // Suma incorrecta debe fallar
       await expect(
-        service.registrarResultado('t1', 'r1', 'pa', 'pb', undefined, 10, 5, 'org1')
+        resultados.registrarResultado('t1', 'r1', 'pa', 'pb', undefined, 10, 5, 'org1')
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -757,7 +763,7 @@ describe('AmericanoService', () => {
       });
 
       // Nuevo resultado con sistema actual 'sets'
-      await service.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
+      await resultados.registrarResultado('t1', 'r1', 'pa', 'pb', [{ gamesEquipoA: 6, gamesEquipoB: 4 }], undefined, undefined, 'org1');
 
       const pa1Update = txUpdates.find(u => u.where.id === 'pa1');
       const pb1Update = txUpdates.find(u => u.where.id === 'pb1');

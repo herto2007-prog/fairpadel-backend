@@ -10,6 +10,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { AmericanoService } from './americano.service';
+import { AmericanoResultadosService } from './americano-resultados.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -19,7 +20,10 @@ import { ConfigurarModoJuegoDto } from './dto/configurar-modo.dto';
 
 @Controller('americano')
 export class AmericanoController {
-  constructor(private americanoService: AmericanoService) {}
+  constructor(
+    private americanoService: AmericanoService,
+    private americanoResultados: AmericanoResultadosService,
+  ) {}
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // TORNEOS
@@ -181,7 +185,7 @@ export class AmericanoController {
     @Param('id') torneoId: string,
     @Query('grupoId') grupoId?: string,
   ) {
-    return this.americanoService.getClasificacionTorneo(torneoId, grupoId);
+    return this.americanoResultados.getClasificacionTorneo(torneoId, grupoId);
   }
 
   @Post('torneos/:id/rondas/:rondaId/resultado')
@@ -192,7 +196,7 @@ export class AmericanoController {
     @Body() body: RegistrarResultadoDto,
     @GetUser() user: User,
   ) {
-    return this.americanoService.registrarResultado(
+    return this.americanoResultados.registrarResultado(
       torneoId,
       rondaId,
       body.parejaAId,
