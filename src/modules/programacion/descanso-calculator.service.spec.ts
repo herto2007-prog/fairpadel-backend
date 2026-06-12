@@ -44,12 +44,12 @@ describe('DescansoCalculatorService', () => {
       });
     });
 
-    it('debe usar 3 horas (180 min) por defecto si no se especifica', () => {
+    it('debe usar 2 horas (120 min) por defecto si no se especifica', () => {
       const resultado = service.calcularHoraMinimaDescanso('2024-03-17', '10:00');
-      
+
       expect(resultado).toEqual({
         fecha: '2024-03-17',
-        hora: '13:00',
+        hora: '12:00',
       });
     });
 
@@ -196,14 +196,14 @@ describe('DescansoCalculatorService', () => {
       expect(resultado).toBe(0);
     });
 
-    it('debe retornar 180 min (3h) para ZONA → SEMIS', () => {
+    it('debe retornar 120 min (2h) para ZONA → SEMIS', () => {
       const resultado = service.getDescansoEntreFases('ZONA', 'SEMIS');
-      expect(resultado).toBe(180);
+      expect(resultado).toBe(120);
     });
 
-    it('debe retornar 180 min (3h) para SEMIS → FINAL', () => {
+    it('debe retornar 120 min (2h) para SEMIS → FINAL', () => {
       const resultado = service.getDescansoEntreFases('SEMIS', 'FINAL');
-      expect(resultado).toBe(180);
+      expect(resultado).toBe(120);
     });
 
     it('debe permitir configuración personalizada', () => {
