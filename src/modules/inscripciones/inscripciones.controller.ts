@@ -44,8 +44,8 @@ export class InscripcionesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.inscripcionesService.findOne(id);
+  findOne(@Param('id') id: string, @GetUser() user: User) {
+    return this.inscripcionesService.findOneAutorizado(id, user.id);
   }
 
   @Patch(':id')

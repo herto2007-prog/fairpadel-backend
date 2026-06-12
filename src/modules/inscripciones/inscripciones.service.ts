@@ -189,6 +189,31 @@ export class InscripcionesService {
     return inscripcion;
   }
 
+  /**
+   * Igual que findOne pero autorizado: solo pueden ver el detalle (con datos
+   * personales) los jugadores de la inscripción o quien gestiona el torneo
+   * (dueño, coorganizadores o admin).
+   */
+  async findOneAutorizado(id: string, userId: string) {
+    const inscripcion = await this.findOne(id);
+
+    const esJugador =
+      inscripcion.jugador1Id === userId || inscripcion.jugador2Id === userId;
+    if (esJugador) {
+      return inscripcion;
+    }
+
+    const puede = await this.tournamentsService.puedeGestionarTorneo(
+      inscripcion.tournamentId,
+      userId,
+    );
+    if (!puede) {
+      throw new ForbiddenException('No tienes permiso para ver esta inscripción');
+    }
+
+    return inscripcion;
+  }
+
   async update(id: string, dto: UpdateInscripcionDto, userId: string) {
     const inscripcion = await this.findOne(id);
     
@@ -222,12 +247,8 @@ export class InscripcionesService {
 
   async confirmar(id: string, dto: ConfirmarInscripcionDto, organizadorId: string) {
     const inscripcion = await this.findOne(id);
-    
-    // Verificar que el organizador es dueño del torneo
-    const tournament = await this.prisma.tournament.findUnique({
-      where: { id: inscripcion.tournamentId }
-    });
 
+    // Verificar que el organizador puede gestionar el torneo (dueño/coorg/admin)
     const puede = await this.tournamentsService.puedeGestionarTorneo(inscripcion.tournamentId, organizadorId);
     if (!puede) {
       throw new ForbiddenException('No tienes permiso para confirmar esta inscripción');
@@ -273,12 +294,8 @@ export class InscripcionesService {
 
   async cancelar(id: string, userId: string, motivo?: string) {
     const inscripcion = await this.findOne(id);
-    
-    // Jugador1 o organizador pueden cancelar
-    const tournament = await this.prisma.tournament.findUnique({
-      where: { id: inscripcion.tournamentId }
-    });
 
+    // Jugador1 o quien gestiona el torneo (dueño/coorg/admin) pueden cancelar
     const isJugador1 = inscripcion.jugador1Id === userId;
     const puedeGestionar = await this.tournamentsService.puedeGestionarTorneo(inscripcion.tournamentId, userId);
 
@@ -311,10 +328,20 @@ export class InscripcionesService {
 
   async remove(id: string, userId: string) {
     const inscripcion = await this.findOne(id);
-    
+
     // Solo jugador1 puede eliminar su inscripción
     if (inscripcion.jugador1Id !== userId) {
       throw new ForbiddenException('No tienes permiso para eliminar esta inscripción');
+    }
+
+    // No permitir borrar una inscripción confirmada: puede estar dentro de un
+    // cuadro ya sorteado y borrarla dejaría partidos con casilleros en null
+    // (las referencias del bracket son SetNull / las parejas en cascada).
+    // Para retirarse, usar "cancelar".
+    if (inscripcion.estado === InscripcionEstado.CONFIRMADA) {
+      throw new BadRequestException(
+        'No se puede eliminar una inscripción confirmada. Usá "cancelar" en su lugar.',
+      );
     }
 
     return this.prisma.inscripcion.delete({
