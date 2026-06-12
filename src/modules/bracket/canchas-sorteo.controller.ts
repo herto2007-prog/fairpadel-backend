@@ -4,6 +4,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 import { CanchasSorteoService } from './canchas-sorteo.service';
+import { TorneoCalendarioService } from './torneo-calendario.service';
 import { FixtureAuditoriaService } from './fixture-auditoria.service';
 import { PartidoSlotsService } from './partido-slots.service';
 import {
@@ -20,6 +21,7 @@ export class CanchasSorteoController {
     private readonly canchasSorteoService: CanchasSorteoService,
     private readonly fixtureAuditoriaService: FixtureAuditoriaService,
     private readonly partidoSlotsService: PartidoSlotsService,
+    private readonly torneoCalendarioService: TorneoCalendarioService,
   ) {}
 
   /**
@@ -28,7 +30,7 @@ export class CanchasSorteoController {
    */
   @Post('finales')
   async configurarFinales(@Body() dto: ConfigurarFinalesDto) {
-    return this.canchasSorteoService.configurarFinales(dto);
+    return this.torneoCalendarioService.configurarFinales(dto);
   }
 
   /**
@@ -37,7 +39,7 @@ export class CanchasSorteoController {
    */
   @Post('dias')
   async configurarDiaJuego(@Body() dto: ConfigurarDiaJuegoDto) {
-    return this.canchasSorteoService.configurarDiaJuego(dto);
+    return this.torneoCalendarioService.configurarDiaJuego(dto);
   }
 
   /**
@@ -46,7 +48,7 @@ export class CanchasSorteoController {
    */
   @Get(':tournamentId/canchas')
   async obtenerCanchas(@Param('tournamentId') tournamentId: string) {
-    return this.canchasSorteoService.obtenerCanchas(tournamentId);
+    return this.torneoCalendarioService.obtenerCanchas(tournamentId);
   }
 
   /**
@@ -55,7 +57,7 @@ export class CanchasSorteoController {
    */
   @Get(':tournamentId/configuracion')
   async obtenerConfiguracion(@Param('tournamentId') tournamentId: string) {
-    return this.canchasSorteoService.obtenerConfiguracion(tournamentId);
+    return this.torneoCalendarioService.obtenerConfiguracion(tournamentId);
   }
 
   /**
@@ -67,7 +69,7 @@ export class CanchasSorteoController {
     @Body('tournamentId') tournamentId: string,
     @Body('categoriasIds') categoriasIds: string[],
   ) {
-    return this.canchasSorteoService.calcularSlotsNecesarios(
+    return this.torneoCalendarioService.calcularSlotsNecesarios(
       tournamentId,
       categoriasIds,
     );
@@ -88,7 +90,7 @@ export class CanchasSorteoController {
    */
   @Delete('dias/:diaId')
   async eliminarDia(@Param('diaId') diaId: string) {
-    return this.canchasSorteoService.eliminarDia(diaId);
+    return this.torneoCalendarioService.eliminarDia(diaId);
   }
 
   /**
