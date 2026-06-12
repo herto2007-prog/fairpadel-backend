@@ -3,6 +3,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CanchasSorteoService } from './canchas-sorteo.service';
+import { FixtureAuditoriaService } from './fixture-auditoria.service';
+import { PartidoSlotsService } from './partido-slots.service';
 import {
   ConfigurarFinalesDto,
   ConfigurarDiaJuegoDto,
@@ -13,7 +15,11 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('organizador', 'admin')
 export class CanchasSorteoController {
-  constructor(private readonly canchasSorteoService: CanchasSorteoService) {}
+  constructor(
+    private readonly canchasSorteoService: CanchasSorteoService,
+    private readonly fixtureAuditoriaService: FixtureAuditoriaService,
+    private readonly partidoSlotsService: PartidoSlotsService,
+  ) {}
 
   /**
    * PASO 1.a: Configurar horarios de finales
@@ -90,7 +96,7 @@ export class CanchasSorteoController {
    */
   @Get(':tournamentId/auditar')
   async auditarFixture(@Param('tournamentId') tournamentId: string) {
-    return this.canchasSorteoService.auditarFixture(tournamentId);
+    return this.fixtureAuditoriaService.auditarFixture(tournamentId);
   }
 
   /**
@@ -102,7 +108,7 @@ export class CanchasSorteoController {
     @Param('tournamentId') tournamentId: string,
     @Param('matchId') matchId: string,
   ) {
-    return this.canchasSorteoService.obtenerSlotsDisponibles(tournamentId, matchId);
+    return this.partidoSlotsService.obtenerSlotsDisponibles(tournamentId, matchId);
   }
 
   /**
@@ -115,7 +121,7 @@ export class CanchasSorteoController {
     @Param('matchId') matchId: string,
     @Body('nuevoSlotId') nuevoSlotId: string,
   ) {
-    return this.canchasSorteoService.cambiarSlot(tournamentId, matchId, nuevoSlotId);
+    return this.partidoSlotsService.cambiarSlot(tournamentId, matchId, nuevoSlotId);
   }
 
   /**
@@ -128,6 +134,6 @@ export class CanchasSorteoController {
     @Body('matchId1') matchId1: string,
     @Body('matchId2') matchId2: string,
   ) {
-    return this.canchasSorteoService.intercambiarSlots(tournamentId, matchId1, matchId2);
+    return this.partidoSlotsService.intercambiarSlots(tournamentId, matchId1, matchId2);
   }
 }
