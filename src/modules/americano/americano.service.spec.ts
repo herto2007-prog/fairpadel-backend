@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException, ForbiddenException } from '@nes
 import { AmericanoService, ConfigAmericano, ModoJuegoConfig } from './americano.service';
 import { AmericanoComunService } from './americano-comun.service';
 import { AmericanoResultadosService } from './americano-resultados.service';
+import { AmericanoRondasService } from './americano-rondas.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
 
@@ -64,6 +65,7 @@ function createMockPrisma() {
 describe('AmericanoService', () => {
   let service: AmericanoService;
   let resultados: AmericanoResultadosService;
+  let rondas: AmericanoRondasService;
   let prisma: ReturnType<typeof createMockPrisma>;
 
   beforeEach(async () => {
@@ -75,6 +77,7 @@ describe('AmericanoService', () => {
         AmericanoService,
         AmericanoComunService,
         AmericanoResultadosService,
+        AmericanoRondasService,
         { provide: PrismaService, useValue: prisma },
         { provide: TournamentsService, useValue: { findOne: jest.fn(), agregarCoorganizador: jest.fn(), eliminarCoorganizador: jest.fn(), puedeGestionarTorneo: jest.fn().mockResolvedValue(true) } },
       ],
@@ -82,6 +85,7 @@ describe('AmericanoService', () => {
 
     service = module.get<AmericanoService>(AmericanoService);
     resultados = module.get<AmericanoResultadosService>(AmericanoResultadosService);
+    rondas = module.get<AmericanoRondasService>(AmericanoRondasService);
   });
 
   afterEach(() => {
@@ -95,7 +99,7 @@ describe('AmericanoService', () => {
   describe('generarParejasAleatorias', () => {
     it('debe generar parejas sin repetir jugador (4 jugadores)', () => {
       const jugadores = ['a', 'b', 'c', 'd'];
-      const parejas = (service as any).generarParejasAleatorias(jugadores);
+      const parejas = (rondas as any).generarParejasAleatorias(jugadores);
       
       expect(parejas).toHaveLength(2);
       const usados = new Set<string>();
@@ -110,7 +114,7 @@ describe('AmericanoService', () => {
 
     it('debe manejar número impar dejugadores (5 jugadores = 2 parejas + 1 bye)', () => {
       const jugadores = ['a', 'b', 'c', 'd', 'e'];
-      const parejas = (service as any).generarParejasAleatorias(jugadores);
+      const parejas = (rondas as any).generarParejasAleatorias(jugadores);
       
       expect(parejas).toHaveLength(2);
       const usados = new Set<string>();
@@ -126,7 +130,7 @@ describe('AmericanoService', () => {
     it('debe emparejar 1ro con último, 2do con penúltimo', () => {
       const ranking = ['a', 'b', 'c', 'd'];
       const historial = new Set<string>();
-      const parejas = (service as any).generarParejasPorRanking(ranking, historial);
+      const parejas = (rondas as any).generarParejasPorRanking(ranking, historial);
       
       expect(parejas).toHaveLength(2);
       expect(parejas[0]).toEqual(['a', 'd']);
@@ -136,7 +140,7 @@ describe('AmericanoService', () => {
     it('debe evitar emparejar un jugador consigo mismo (número impar)', () => {
       const ranking = ['a', 'b', 'c', 'd', 'e'];
       const historial = new Set<string>();
-      const parejas = (service as any).generarParejasPorRanking(ranking, historial);
+      const parejas = (rondas as any).generarParejasPorRanking(ranking, historial);
       
       expect(parejas).toHaveLength(2); // 2 parejas, 1 jugador con bye
       const usados = new Set<string>();
@@ -151,7 +155,7 @@ describe('AmericanoService', () => {
     it('debe intentar evitar parejas repetidas del historial', () => {
       const ranking = ['a', 'b', 'c', 'd'];
       const historial = new Set<string>(['a-d']); // a ya jugó con d
-      const parejas = (service as any).generarParejasPorRanking(ranking, historial);
+      const parejas = (rondas as any).generarParejasPorRanking(ranking, historial);
       
       expect(parejas).toHaveLength(2);
       // Como 'a-d' está en historial, debería intentar swap
@@ -169,7 +173,7 @@ describe('AmericanoService', () => {
         { id: 'p4', jugador1Id: 'g', jugador2Id: 'h' },
       ];
       
-      await (service as any).crearPartidosDeRonda('ronda1', parejas, 2);
+      await (rondas as any).crearPartidosDeRonda('ronda1', parejas, 2);
       
       expect(prisma.americanoPartido.createMany).toHaveBeenCalledWith({
         data: expect.arrayContaining([
@@ -189,7 +193,7 @@ describe('AmericanoService', () => {
         { id: 'p6', jugador1Id: 'k', jugador2Id: 'l' },
       ];
       
-      await (service as any).crearPartidosDeRonda('ronda1', parejas, 2);
+      await (rondas as any).crearPartidosDeRonda('ronda1', parejas, 2);
       
       const callData = prisma.americanoPartido.createMany.mock.calls[0][0].data;
       expect(callData[0].cancha).toBe(1);
@@ -340,7 +344,7 @@ describe('AmericanoService', () => {
       prisma.americanoPuntaje.create.mockResolvedValue({});
       prisma.americanoPartido.createMany.mockResolvedValue({});
 
-      await service.iniciarPrimeraRonda('t1', 'org1');
+      await rondas.iniciarPrimeraRonda('t1', 'org1');
 
       expect(prisma.americanoParejaRonda.create).toHaveBeenCalledTimes(2);
       expect(prisma.americanoParejaRonda.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -363,7 +367,7 @@ describe('AmericanoService', () => {
         { id: 'i2', jugador1Id: 'c', jugador2Id: null, estado: 'CONFIRMADA', grupoId: 'g1', grupo: { id: 'g1', nombre: 'Masculino' }, jugador1: { id: 'c' }, jugador2: null },
       ]);
 
-      await expect(service.iniciarPrimeraRonda('t1', 'org1')).rejects.toThrow(BadRequestException);
+      await expect(rondas.iniciarPrimeraRonda('t1', 'org1')).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -838,25 +842,25 @@ describe('AmericanoService', () => {
 
   describe('calcularRondasMaximas', () => {
     it('4 jugadores → 3 rondas', () => {
-      expect((service as any).calcularRondasMaximas(4)).toBe(3);
+      expect((rondas as any).calcularRondasMaximas(4)).toBe(3);
     });
     it('5 jugadores → 5 rondas', () => {
-      expect((service as any).calcularRondasMaximas(5)).toBe(5);
+      expect((rondas as any).calcularRondasMaximas(5)).toBe(5);
     });
     it('6 jugadores → 5 rondas', () => {
-      expect((service as any).calcularRondasMaximas(6)).toBe(5);
+      expect((rondas as any).calcularRondasMaximas(6)).toBe(5);
     });
     it('7 jugadores → 7 rondas', () => {
-      expect((service as any).calcularRondasMaximas(7)).toBe(7);
+      expect((rondas as any).calcularRondasMaximas(7)).toBe(7);
     });
     it('8 jugadores → 7 rondas', () => {
-      expect((service as any).calcularRondasMaximas(8)).toBe(7);
+      expect((rondas as any).calcularRondasMaximas(8)).toBe(7);
     });
     it('10 jugadores → 9 rondas', () => {
-      expect((service as any).calcularRondasMaximas(10)).toBe(9);
+      expect((rondas as any).calcularRondasMaximas(10)).toBe(9);
     });
     it('menos de 2 → 0', () => {
-      expect((service as any).calcularRondasMaximas(1)).toBe(0);
+      expect((rondas as any).calcularRondasMaximas(1)).toBe(0);
     });
   });
 
@@ -870,7 +874,7 @@ describe('AmericanoService', () => {
         'c-d',
       ]);
 
-      expect(() => (service as any).generarParejasPorRanking(ranking, historial)).toThrow(BadRequestException);
+      expect(() => (rondas as any).generarParejasPorRanking(ranking, historial)).toThrow(BadRequestException);
     });
   });
 

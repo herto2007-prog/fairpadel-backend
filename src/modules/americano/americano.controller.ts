@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { AmericanoService } from './americano.service';
 import { AmericanoResultadosService } from './americano-resultados.service';
+import { AmericanoRondasService } from './americano-rondas.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -23,6 +24,7 @@ export class AmericanoController {
   constructor(
     private americanoService: AmericanoService,
     private americanoResultados: AmericanoResultadosService,
+    private americanoRondas: AmericanoRondasService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -147,7 +149,7 @@ export class AmericanoController {
     @Param('id') torneoId: string,
     @GetUser() user: User,
   ) {
-    return this.americanoService.iniciarPrimeraRonda(torneoId, user.id);
+    return this.americanoRondas.iniciarPrimeraRonda(torneoId, user.id);
   }
 
   @Post('torneos/:id/rondas/siguiente')
@@ -156,7 +158,7 @@ export class AmericanoController {
     @Param('id') torneoId: string,
     @GetUser() user: User,
   ) {
-    return this.americanoService.generarSiguienteRonda(torneoId, user.id);
+    return this.americanoRondas.generarSiguienteRonda(torneoId, user.id);
   }
 
   @Post('torneos/:id/rondas/:rondaId/finalizar')
@@ -166,14 +168,14 @@ export class AmericanoController {
     @Param('rondaId') rondaId: string,
     @GetUser() user: User,
   ) {
-    return this.americanoService.finalizarRonda(torneoId, rondaId, user.id);
+    return this.americanoRondas.finalizarRonda(torneoId, rondaId, user.id);
   }
 
   @Get('torneos/:id/rondas/:rondaId')
   getRonda(
     @Param('rondaId') rondaId: string,
   ) {
-    return this.americanoService.getRondaConParejas(rondaId);
+    return this.americanoRondas.getRondaConParejas(rondaId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
