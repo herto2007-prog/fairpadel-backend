@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BancardService } from './bancard.service';
 import { EmailService } from '../../../email/email.service';
@@ -16,13 +17,20 @@ interface CrearPagoDto {
 @Injectable()
 export class SuscripcionService {
   private readonly logger = new Logger(SuscripcionService.name);
-  private readonly PRECIO_MENSUAL = 1000; // Gs. 1.000 por mes (precio simbólico para testing)
+  // Precios en Gs. Configurables vía env (Railway) para el go-live de Bancard;
+  // los defaults mantienen los valores simbólicos de testing actuales.
+  private readonly PRECIO_MENSUAL: number;
+  private readonly PRECIO_ANUAL: number;
 
   constructor(
     private prisma: PrismaService,
     private bancardService: BancardService,
     private emailService: EmailService,
-  ) {}
+    private configService: ConfigService,
+  ) {
+    this.PRECIO_MENSUAL = parseInt(this.configService.get('SUSCRIPCION_PRECIO_MENSUAL') ?? '', 10) || 1000;
+    this.PRECIO_ANUAL = parseInt(this.configService.get('SUSCRIPCION_PRECIO_ANUAL') ?? '', 10) || 10000;
+  }
 
   /**
    * Inicia el proceso de pago de suscripción
@@ -53,7 +61,7 @@ export class SuscripcionService {
 
     // Calcular monto según tipo
     const monto = tipo === 'ANUAL' 
-      ? 10000 // Gs. 10.000 anual (precio simbólico - 10 meses por el precio de 10)
+      ? this.PRECIO_ANUAL
       : this.PRECIO_MENSUAL;
 
     const montoFormateado = monto.toFixed(2);
@@ -512,7 +520,7 @@ export class SuscripcionService {
       data: {
         sedeId,
         sedeConfigId: config.id,
-        monto: tipo === 'ANUAL' ? 10000 : this.PRECIO_MENSUAL,
+        monto: tipo === 'ANUAL' ? this.PRECIO_ANUAL : this.PRECIO_MENSUAL,
         moneda: 'PYG',
         estado: 'COMPLETADO',
         metodo: 'MANUAL',
