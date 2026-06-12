@@ -373,6 +373,16 @@ export class InstructoresService {
       throw new NotFoundException('No eres instructor');
     }
 
+    // La reserva referenciada debe ser de ESTE instructor
+    if (createDto.reservaId) {
+      const reserva = await this.prisma.reservaInstructor.findFirst({
+        where: { id: createDto.reservaId, instructorId: instructor.id },
+      });
+      if (!reserva) {
+        throw new NotFoundException('Reserva no encontrada');
+      }
+    }
+
     // FIX: fecha es String YYYY-MM-DD
     return this.prisma.pagoInstructor.create({
       data: {
