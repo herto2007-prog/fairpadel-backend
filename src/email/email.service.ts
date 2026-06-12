@@ -437,6 +437,68 @@ export class EmailService {
   }
 
   /**
+   * Aviso al organizador: las inscripciones de su torneo cierran hoy/mañana
+   */
+  async sendDeadlineInscripciones(
+    to: string,
+    nombre: string,
+    torneoNombre: string,
+    cuando: string, // 'hoy' | 'mañana'
+    fechaLimite: string,
+    confirmadas: number,
+    pendientes: number,
+    categoriasAbiertas: number,
+  ): Promise<void> {
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #df2531;">⏰ Las inscripciones cierran ${cuando}</h2>
+        <p>Hola ${nombre},</p>
+        <p>Las inscripciones de tu torneo <strong>${torneoNombre}</strong> cierran <strong>${cuando}</strong> (fecha límite: ${fechaLimite}).</p>
+
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p><strong>Estado actual:</strong></p>
+          <ul>
+            <li><strong>Inscripciones confirmadas:</strong> ${confirmadas}</li>
+            <li><strong>Pendientes de confirmar/pagar:</strong> ${pendientes}</li>
+            <li><strong>Categorías abiertas:</strong> ${categoriasAbiertas}</li>
+          </ul>
+        </div>
+
+        <p><strong>Próximos pasos:</strong></p>
+        <p>Revisá las inscripciones pendientes y prepará el cierre de categorías para poder sortear.</p>
+
+        <p style="margin-top: 30px; color: #666; font-size: 12px;">
+          FairPadel - Plataforma de torneos de pádel
+        </p>
+      </div>
+    `;
+
+    try {
+      if (!this.resend) {
+        this.logger.warn(`[MODO DESARROLLO] Deadline de inscripciones para ${to}`);
+        return;
+      }
+
+      const { data, error } = await this.resend.emails.send({
+        from: this.getFromEmail(),
+        to: [to],
+        subject: `⏰ Inscripciones cierran ${cuando} - ${torneoNombre}`,
+        html,
+      });
+
+      if (error) {
+        this.logger.error('Error enviando email:', error);
+        throw new Error(`Error enviando email: ${error.message}`);
+      }
+
+      this.logger.log(`Deadline de inscripciones enviado a ${to}, ID: ${data?.id}`);
+    } catch (error) {
+      this.logger.error(`Error enviando deadline de inscripciones a ${to}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Template HTML para invitación a jugador 2
    */
   private getInvitacionJugadorTemplate(
