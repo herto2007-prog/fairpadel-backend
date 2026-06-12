@@ -2,6 +2,7 @@ import { Controller, Post, Body, Get, Delete, Put, Param, UseGuards, Query } fro
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 import { CanchasSorteoService } from './canchas-sorteo.service';
 import { FixtureAuditoriaService } from './fixture-auditoria.service';
 import { PartidoSlotsService } from './partido-slots.service';
@@ -12,7 +13,7 @@ import {
 } from './dto/canchas-sorteo.dto';
 
 @Controller('admin/canchas-sorteo')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TorneoGestionGuard)
 @Roles('organizador', 'admin')
 export class CanchasSorteoController {
   constructor(

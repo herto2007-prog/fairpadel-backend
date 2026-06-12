@@ -14,6 +14,7 @@ import { ProgramacionService, ResultadoProgramacion, PartidoAsignado } from './p
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 
 interface CalcularProgramacionDto {
   categoriasSorteadas: string[];
@@ -28,7 +29,7 @@ interface AplicarProgramacionDto {
 }
 
 @Controller('programacion')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TorneoGestionGuard)
 @Roles('admin', 'organizador')
 export class ProgramacionController {
   constructor(private readonly programacionService: ProgramacionService) {}
