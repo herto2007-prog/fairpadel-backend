@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -36,6 +37,9 @@ import { AmericanoModule } from './modules/americano/americano.module';
     // Antes cada módulo importaba ConfigModule "pelado" y dependía de que
     // process.env ya estuviera poblado; esto lo hace explícito y robusto.
     ConfigModule.forRoot({ isGlobal: true }),
+    // Rate limiting por IP. NO se registra como guard global: solo los
+    // endpoints que usan @UseGuards(ThrottlerGuard) (hoy: auth) lo aplican.
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 30 }]),
     CommonModule, // Servicios globales como DateService
     PrismaModule,
     AdminModule, // Setup temporal - quitar después

@@ -7,6 +7,10 @@ async function bootstrap() {
   console.log('📝 Cambio: Módulo Social/Comunidad activado');
   const app = await NestFactory.create(AppModule);
   console.log('✅ AppModule creado');
+
+  // Railway corre detrás de un proxy: sin esto, req.ip sería la IP del proxy
+  // y el rate limiting agruparía a TODOS los usuarios en un solo contador.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   
   // CORS: orígenes permitidos.
   // Configurable vía env CORS_ORIGINS (lista separada por comas).
