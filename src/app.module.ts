@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -31,6 +32,10 @@ import { AmericanoModule } from './modules/americano/americano.module';
 
 @Module({
   imports: [
+    // Carga las variables de entorno y expone ConfigService globalmente.
+    // Antes cada módulo importaba ConfigModule "pelado" y dependía de que
+    // process.env ya estuviera poblado; esto lo hace explícito y robusto.
+    ConfigModule.forRoot({ isGlobal: true }),
     CommonModule, // Servicios globales como DateService
     PrismaModule,
     AdminModule, // Setup temporal - quitar después
@@ -43,7 +48,6 @@ import { AmericanoModule } from './modules/americano/americano.module';
     NotificacionesModule,
     FixtureModule,
     MatchesModule,
-    RankingsModule,
     SedesModule,
     AlquileresModule,
     InstructoresModule,
