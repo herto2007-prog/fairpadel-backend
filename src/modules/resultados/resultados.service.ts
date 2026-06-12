@@ -1002,12 +1002,12 @@ export class ResultadosService {
     const setsGanadosP1 = 
       (dto.set1Pareja1 > dto.set1Pareja2 ? 1 : 0) +
       (dto.set2Pareja1 > dto.set2Pareja2 ? 1 : 0) +
-      ((dto.set3Pareja1 && dto.set3Pareja2 && dto.set3Pareja1 > dto.set3Pareja2) ? 1 : 0);
+      ((dto.set3Pareja1 !== undefined && dto.set3Pareja2 !== undefined && dto.set3Pareja1 > dto.set3Pareja2) ? 1 : 0);
 
     const setsGanadosP2 = 
       (dto.set1Pareja1 < dto.set1Pareja2 ? 1 : 0) +
       (dto.set2Pareja1 < dto.set2Pareja2 ? 1 : 0) +
-      ((dto.set3Pareja1 && dto.set3Pareja2 && dto.set3Pareja1 < dto.set3Pareja2) ? 1 : 0);
+      ((dto.set3Pareja1 !== undefined && dto.set3Pareja2 !== undefined && dto.set3Pareja1 < dto.set3Pareja2) ? 1 : 0);
 
     if (setsGanadosP1 === setsGanadosP2) {
       throw new BadRequestException('El partido no puede terminar empatado');

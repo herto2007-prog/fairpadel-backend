@@ -123,18 +123,17 @@ describe('ResultadosService.calcularGanador', () => {
 });
 
 /**
- * BUG CONOCIDO (documentado, NO corregido en esta fase de tests).
- * En calcularGanador, el tercer set se cuenta con `set3Pareja1 && set3Pareja2`,
- * por lo que un set decisivo que termina X-0 (ej. 6-0) NO se cuenta porque el
- * 0 es "falsy". Un 3er set 6-0 legítimo hace que el partido se marque como 1-1
- * y lance "no puede terminar empatado". Debería usar `!== undefined`.
- * Cuando se corrija, quitar el .skip — el test debe pasar.
+ * Regresión del bug corregido: en calcularGanador el tercer set se contaba
+ * con `set3Pareja1 && set3Pareja2`, por lo que un set decisivo que termina
+ * X-0 (ej. 6-0) NO se contaba porque el 0 es "falsy", marcando el partido
+ * como 1-1 y lanzando "no puede terminar empatado". Se corrigió usando
+ * `!== undefined`. Este test evita que el bug reaparezca.
  */
-describe('ResultadosService.calcularGanador (bug conocido)', () => {
+describe('ResultadosService.calcularGanador (regresión: 3er set X-0)', () => {
   const service = buildService();
   const match = { inscripcion1Id: 'A', inscripcion2Id: 'B' };
 
-  it.skip('debería contar un tercer set 6-0 como victoria de la pareja 1', () => {
+  it('cuenta un tercer set 6-0 como victoria de la pareja 1', () => {
     const r = service.calcularGanador(
       match,
       dto({ set1Pareja1: 6, set1Pareja2: 3, set2Pareja1: 3, set2Pareja2: 6, set3Pareja1: 6, set3Pareja2: 0 }),
