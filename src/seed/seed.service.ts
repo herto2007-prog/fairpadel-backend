@@ -31,7 +31,13 @@ export class SeedService implements OnModuleInit {
       await this.seedCategories();
       await this.seedRoles();
       await this.seedModalidades();
-      await this.seedJugadoresDemo(); // NUEVO: Crear jugadores demo automáticamente
+      // Jugadores demo: solo si se activa explícitamente (no en producción por defecto).
+      // No borra los demo existentes; solo evita sembrar nuevos.
+      if (process.env.SEED_DEMO_PLAYERS === 'true') {
+        await this.seedJugadoresDemo();
+      } else {
+        this.logger.log('⏭️ Seed de jugadores demo desactivado (SEED_DEMO_PLAYERS != true)');
+      }
       await this.seedWhatsAppTemplates(); // NUEVO: Crear templates de WhatsApp
       this.logger.log('✅ Seed completado');
     } catch (error) {
