@@ -14,6 +14,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { User } from '@prisma/client';
 
 class UpdateConfigDto {
   @IsString()
@@ -323,7 +325,7 @@ export class FairpadelAdminController {
   async liberarTorneo(
     @Param('id') tournamentId: string,
     @Body() dto: LiberarTorneoDto,
-    @Body('user') user: any,
+    @GetUser() user: User,
   ) {
     const comision = await this.prisma.torneoComision.update({
       where: { tournamentId },
@@ -333,6 +335,7 @@ export class FairpadelAdminController {
         bloqueoActivo: false,
         pagadoAt: new Date(),
         revisadoPor: user.id,
+        ...(dto.notas ? { comprobanteNotas: dto.notas } : {}),
       },
     });
 
@@ -350,6 +353,7 @@ export class FairpadelAdminController {
   async exonerarTorneo(
     @Param('id') tournamentId: string,
     @Body() dto: ExonerarTorneoDto,
+    @GetUser() user: User,
   ) {
     const comision = await this.prisma.torneoComision.update({
       where: { tournamentId },
@@ -358,6 +362,7 @@ export class FairpadelAdminController {
         bloqueoActivo: false,
         montoPagado: 0,
         comprobanteNotas: dto.motivo || 'Exonerado por admin',
+        revisadoPor: user.id,
       },
     });
 
@@ -374,7 +379,7 @@ export class FairpadelAdminController {
   @Post('torneos/:id/bloquear')
   async bloquearTorneo(
     @Param('id') tournamentId: string,
-    @Body() user: any,
+    @GetUser() user: User,
   ) {
     const configRonda = await this.prisma.fairpadelConfig.findUnique({
       where: { clave: 'RONDA_BLOQUEO_PAGO' },
@@ -386,6 +391,7 @@ export class FairpadelAdminController {
         estado: 'PENDIENTE',
         bloqueoActivo: true,
         rondaBloqueo: configRonda?.valor || 'CUARTOS',
+        revisadoPor: user.id,
       },
     });
 
