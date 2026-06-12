@@ -78,6 +78,19 @@ export class ResultadosService {
       throw new BadRequestException('El partido no tiene ambas parejas asignadas');
     }
 
+    // Si el partido YA tiene un resultado, aplicar la misma protección que la
+    // edición: no permitir re-registrar si un partido posterior ya se definió
+    // (evita corromper un bracket que ya avanzó).
+    const estadosConResultado: MatchStatus[] = [
+      MatchStatus.FINALIZADO,
+      MatchStatus.WO,
+      MatchStatus.RETIRADO,
+      MatchStatus.DESCALIFICADO,
+    ];
+    if (estadosConResultado.includes(match.estado)) {
+      await this.validarPuedeEditar(matchId);
+    }
+
     // Validar que el partido esté programado
     this.validarPartidoProgramado(match);
 
@@ -172,6 +185,18 @@ export class ResultadosService {
     // Validar que haya inscripciones
     if (!match.esBye && (!match.inscripcion1Id || !match.inscripcion2Id)) {
       throw new BadRequestException('El partido no tiene ambas parejas asignadas');
+    }
+
+    // Si el partido YA tiene un resultado, aplicar la misma protección que la
+    // edición: no permitir re-registrar si un partido posterior ya se definió.
+    const estadosConResultado: MatchStatus[] = [
+      MatchStatus.FINALIZADO,
+      MatchStatus.WO,
+      MatchStatus.RETIRADO,
+      MatchStatus.DESCALIFICADO,
+    ];
+    if (estadosConResultado.includes(match.estado)) {
+      await this.validarPuedeEditar(matchId);
     }
 
     // Validar que el partido esté programado
