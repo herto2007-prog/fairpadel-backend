@@ -19,13 +19,18 @@
  * que crea quedan etiquetados con el prefijo "[PRUEBA]" y son borrables con
  * el modo "limpiar".
  */
+import 'dotenv/config';
 import { PrismaClient, Gender } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
-const prisma = new PrismaClient();
+// Fijar la conexión explícitamente: con el env var "pelado" Prisma puede
+// terminar apuntando a la base equivocada en este proyecto.
+const prisma = new PrismaClient({
+  datasources: { db: { url: process.env.DATABASE_URL } },
+});
 
 const PREFIJO = '[PRUEBA]';
-const ORGANIZADOR_DEFAULT = 'hector.velazquez@caltechagro.com';
+const ORGANIZADOR_DEFAULT = '3439737'; // documento del organizador (Héctor)
 const CATEGORIA_DEFAULT = '8ª Categoría';
 
 function fmtFecha(d: Date): string {
@@ -240,10 +245,30 @@ async function crear(idOrEmail: string, numParejas: number) {
   console.log('═══════════════════════════════════════════════════════');
 }
 
+async function verificar(idOrEmail: string) {
+  const organizador = await buscarOrganizador(idOrEmail);
+  console.log(`✅ Organizador encontrado: ${organizador.nombre} ${organizador.apellido} (${organizador.email}, doc ${organizador.documento})`);
+
+  const totalCategorias = await prisma.category.count();
+  const cat = await prisma.category.findFirst({ where: { nombre: CATEGORIA_DEFAULT } });
+  console.log(`✅ Categorías en la base: ${totalCategorias}. "${CATEGORIA_DEFAULT}": ${cat ? 'existe' : 'NO (se usará otra)'}`);
+
+  const torneosPrueba = await prisma.tournament.count({
+    where: { organizadorId: organizador.id, nombre: { startsWith: PREFIJO } },
+  });
+  console.log(`ℹ️  Torneos de prueba existentes de este organizador: ${torneosPrueba}`);
+  console.log('\n✅ Verificación OK: conexión y datos listos. No se escribió nada.');
+}
+
 async function main() {
   console.log(`🔌 Base de datos: ${dbHost()}\n`);
 
   const args = process.argv.slice(2);
+
+  if (args[0] === 'verificar') {
+    await verificar(args[1] || ORGANIZADOR_DEFAULT);
+    return;
+  }
 
   if (args[0] === 'limpiar') {
     await limpiar(args[1] || ORGANIZADOR_DEFAULT);
