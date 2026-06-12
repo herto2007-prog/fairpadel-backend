@@ -10,6 +10,7 @@ import { AdminSedesController } from './admin-sedes.controller';
 import { AdminSuscripcionesController } from './admin-suscripciones.controller';
 import { WhatsAppAdminController } from './whatsapp-admin.controller';
 import { SedesAdminService } from '../sedes/sedes-admin.service';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { BracketModule } from '../bracket';
 import { ProgramacionModule } from '../programacion';
@@ -33,7 +34,7 @@ import { TournamentsModule } from '../tournaments/tournaments.module';
     AdminAuditoriaController,
     AdminController, // Este va al final porque tiene rutas más genéricas
   ],
-  providers: [SedesAdminService],
+  providers: [SedesAdminService, TorneoGestionGuard],
   exports: [SedesAdminService],
 })
 export class AdminModule {}

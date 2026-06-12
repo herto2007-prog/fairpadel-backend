@@ -14,10 +14,18 @@ const ctx = (user: any, params: any = {}, body: any = {}) =>
     }),
   }) as any;
 
-const buildPrisma = ({ torneo = TORNEO as any, match = null as any, dia = null as any } = {}) => ({
+const buildPrisma = ({
+  torneo = TORNEO as any,
+  match = null as any,
+  dia = null as any,
+  categoria = null as any,
+  fixture = null as any,
+} = {}) => ({
   tournament: { findUnique: jest.fn().mockResolvedValue(torneo) },
   match: { findUnique: jest.fn().mockResolvedValue(match) },
   torneoDisponibilidadDia: { findUnique: jest.fn().mockResolvedValue(dia) },
+  tournamentCategory: { findUnique: jest.fn().mockResolvedValue(categoria) },
+  fixtureVersion: { findUnique: jest.fn().mockResolvedValue(fixture) },
 });
 
 describe('TorneoGestionGuard - autorización', () => {
@@ -97,6 +105,28 @@ describe('TorneoGestionGuard - resolución del torneo', () => {
     const prisma = buildPrisma({ dia: { tournamentId: 't1' } });
     const guard = new TorneoGestionGuard(prisma as any);
     await expect(guard.canActivate(ctx(user, { diaId: 'd1' }))).resolves.toBe(true);
+  });
+
+  it('desde params.tournamentCategoryId via lookup de la categoría', async () => {
+    const prisma = buildPrisma({ categoria: { tournamentId: 't1' } });
+    const guard = new TorneoGestionGuard(prisma as any);
+    await expect(guard.canActivate(ctx(user, { tournamentCategoryId: 'tc1' }))).resolves.toBe(true);
+    expect(prisma.tournamentCategory.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'tc1' } }),
+    );
+  });
+
+  it('desde params.fixtureVersionId via lookup del fixture', async () => {
+    const prisma = buildPrisma({ fixture: { tournamentId: 't1' } });
+    const guard = new TorneoGestionGuard(prisma as any);
+    await expect(guard.canActivate(ctx(user, { fixtureVersionId: 'fv1' }))).resolves.toBe(true);
+  });
+
+  it('404 si la categoría referenciada no existe', async () => {
+    const guard = new TorneoGestionGuard(buildPrisma({ categoria: null }) as any);
+    await expect(
+      guard.canActivate(ctx(user, { tournamentCategoryId: 'nope' })),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('fail-closed: niega si no puede resolver el torneo', async () => {

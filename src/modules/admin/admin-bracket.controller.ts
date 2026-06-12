@@ -14,9 +14,13 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BracketService } from '../bracket/bracket.service';
 import { CanchasSorteoService } from '../bracket/canchas-sorteo.service';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 
+// TorneoGestionGuard a nivel controller: cada ruta identifica su torneo
+// (params.id, tournamentCategoryId o fixtureVersionId) y solo el dueño,
+// coorganizadores o admin pueden operar (antes bastaba el rol global).
 @Controller('admin')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TorneoGestionGuard)
 @Roles('admin', 'organizador')
 export class AdminBracketController {
   constructor(
@@ -96,8 +100,8 @@ export class AdminBracketController {
    * POST /admin/categorias/:id/cerrar-inscripciones
    * Cierra las inscripciones para una categoría específica
    */
-  @Post('categorias/:id/cerrar-inscripciones')
-  async cerrarInscripciones(@Param('id') tournamentCategoryId: string) {
+  @Post('categorias/:tournamentCategoryId/cerrar-inscripciones')
+  async cerrarInscripciones(@Param('tournamentCategoryId') tournamentCategoryId: string) {
     try {
       // Usar transacción para asegurar consistencia
       const result = await this.prisma.$transaction(async (tx) => {
@@ -164,8 +168,8 @@ export class AdminBracketController {
    * POST /admin/categorias/:id/abrir-inscripciones
    * Reabre las inscripciones para una categoría (solo si no hay sorteo aún)
    */
-  @Post('categorias/:id/abrir-inscripciones')
-  async abrirInscripciones(@Param('id') tournamentCategoryId: string) {
+  @Post('categorias/:tournamentCategoryId/abrir-inscripciones')
+  async abrirInscripciones(@Param('tournamentCategoryId') tournamentCategoryId: string) {
     try {
       // Usar transacción para asegurar consistencia
       const result = await this.prisma.$transaction(async (tx) => {
@@ -213,11 +217,91 @@ export class AdminBracketController {
   }
 
   /**
+   * POST /admin/torneos/:tournamentId/categorias/cerrar-lote
+   * Cierra las inscripciones de varias categorías del torneo en UNA sola
+   * transacción. Las categorías que no estén abiertas (o no pertenezcan al
+   * torneo) se omiten con su motivo en la respuesta; el resto se cierra.
+   */
+  @Post('torneos/:tournamentId/categorias/cerrar-lote')
+  async cerrarInscripcionesLote(
+    @Param('tournamentId') tournamentId: string,
+    @Body() body: { categoriaIds: string[] },
+  ) {
+    const categoriaIds = Array.isArray(body?.categoriaIds) ? body.categoriaIds : [];
+    if (categoriaIds.length === 0) {
+      throw new BadRequestException('categoriaIds es requerido (lista de categorías a cerrar)');
+    }
+
+    const MINIMO_PARA_SORTEAR = 8;
+
+    return this.prisma.$transaction(async (tx) => {
+      const categorias = await tx.tournamentCategory.findMany({
+        where: { id: { in: categoriaIds }, tournamentId },
+        include: { category: true },
+      });
+
+      const encontradas = new Set(categorias.map(c => c.id));
+      const omitidas: { categoriaId: string; nombre?: string; motivo: string }[] = [];
+      for (const id of categoriaIds) {
+        if (!encontradas.has(id)) {
+          omitidas.push({ categoriaId: id, motivo: 'No pertenece a este torneo' });
+        }
+      }
+
+      const cerradas: {
+        categoriaId: string;
+        nombre: string;
+        totalInscripciones: number;
+        puedeSortear: boolean;
+      }[] = [];
+
+      for (const categoria of categorias) {
+        if (categoria.estado !== 'INSCRIPCIONES_ABIERTAS') {
+          omitidas.push({
+            categoriaId: categoria.id,
+            nombre: categoria.category.nombre,
+            motivo: `Estado actual: ${categoria.estado}`,
+          });
+          continue;
+        }
+
+        const inscripcionesCount = await tx.inscripcion.count({
+          where: {
+            tournamentId: categoria.tournamentId,
+            categoryId: categoria.categoryId,
+            estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO'] },
+          },
+        });
+
+        await tx.tournamentCategory.update({
+          where: { id: categoria.id },
+          data: { estado: 'INSCRIPCIONES_CERRADAS', inscripcionAbierta: false },
+        });
+
+        cerradas.push({
+          categoriaId: categoria.id,
+          nombre: categoria.category.nombre,
+          totalInscripciones: inscripcionesCount,
+          puedeSortear: inscripcionesCount >= MINIMO_PARA_SORTEAR,
+        });
+      }
+
+      return {
+        success: true,
+        message: `${cerradas.length} categoría(s) cerradas${omitidas.length ? `, ${omitidas.length} omitida(s)` : ''}`,
+        cerradas,
+        omitidas,
+        minimoRequerido: MINIMO_PARA_SORTEAR,
+      };
+    });
+  }
+
+  /**
    * GET /admin/categorias/:id/bracket/config
    * Obtiene la configuración del bracket para una categoría (sistema paraguayo)
    */
-  @Get('categorias/:id/bracket/config')
-  async getBracketConfig(@Param('id') tournamentCategoryId: string) {
+  @Get('categorias/:tournamentCategoryId/bracket/config')
+  async getBracketConfig(@Param('tournamentCategoryId') tournamentCategoryId: string) {
     try {
       // Obtener la categoría
       const categoria = await this.prisma.tournamentCategory.findUnique({
@@ -311,9 +395,9 @@ export class AdminBracketController {
    * POST /admin/categorias/:id/bracket/sortear
    * Realiza el sorteo aleatorio de las parejas (sistema paraguayo: Zona → Repechaje → Bracket)
    */
-  @Post('categorias/:id/bracket/sortear')
+  @Post('categorias/:tournamentCategoryId/bracket/sortear')
   async sortearBracket(
-    @Param('id') tournamentCategoryId: string,
+    @Param('tournamentCategoryId') tournamentCategoryId: string,
     @Body() body?: { guardar?: boolean; ordenInscripciones?: string[]; usarSemillas?: boolean },
   ) {
     try {
@@ -484,8 +568,8 @@ export class AdminBracketController {
    * POST /admin/categorias/:id/bracket/generar
    * Genera bracket para una categoría (alias de sortear con guardar=true)
    */
-  @Post('categorias/:id/bracket/generar')
-  async generarBracket(@Param('id') tournamentCategoryId: string) {
+  @Post('categorias/:tournamentCategoryId/bracket/generar')
+  async generarBracket(@Param('tournamentCategoryId') tournamentCategoryId: string) {
     return this.sortearBracket(tournamentCategoryId, { guardar: true });
   }
 

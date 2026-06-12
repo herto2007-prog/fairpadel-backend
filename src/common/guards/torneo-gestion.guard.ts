@@ -19,6 +19,8 @@ import { PrismaService } from '../../prisma/prisma.service';
  *  - body.tournamentId
  *  - params.matchId / params.partidoId  (busca el partido y usa su torneo)
  *  - params.diaId         (busca el día de disponibilidad y usa su torneo)
+ *  - params.tournamentCategoryId        (categoría del torneo -> torneo)
+ *  - params.fixtureVersionId            (versión de fixture -> torneo)
  *
  * Si no puede resolver un torneo, NIEGA el acceso (fail-closed): toda ruta
  * protegida por este guard debe tener el torneo identificable.
@@ -98,6 +100,28 @@ export class TorneoGestionGuard implements CanActivate {
         throw new NotFoundException('Día de juego no encontrado');
       }
       return dia.tournamentId;
+    }
+
+    if (params.tournamentCategoryId) {
+      const categoria = await this.prisma.tournamentCategory.findUnique({
+        where: { id: params.tournamentCategoryId },
+        select: { tournamentId: true },
+      });
+      if (!categoria) {
+        throw new NotFoundException('Categoría no encontrada');
+      }
+      return categoria.tournamentId;
+    }
+
+    if (params.fixtureVersionId) {
+      const fixture = await this.prisma.fixtureVersion.findUnique({
+        where: { id: params.fixtureVersionId },
+        select: { tournamentId: true },
+      });
+      if (!fixture) {
+        throw new NotFoundException('Fixture no encontrado');
+      }
+      return fixture.tournamentId;
     }
 
     return null;
