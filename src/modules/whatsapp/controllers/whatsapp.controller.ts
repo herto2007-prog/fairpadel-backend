@@ -1,15 +1,20 @@
 import { Controller, Post, Get, Body, Param, UseGuards, ValidationPipe } from '@nestjs/common';
 import { WhatsAppService } from '../services/whatsapp.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { RequestConsentDto } from '../dto/request-consent.dto';
 
 /**
- * Controlador interno para operaciones de WhatsApp
- * Protegido por JWT - solo usuarios autenticados
+ * Controlador interno para operaciones de WhatsApp.
+ * Solo admin: enviar mensajes usa la cuenta Meta de la plataforma y el estado
+ * de consentimiento es dato privado de cada usuario. El flujo self-service de
+ * consentimiento vive en perfil (/users/profile/whatsapp/*).
  */
 @Controller('whatsapp')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin')
 export class WhatsAppController {
   constructor(private whatsAppService: WhatsAppService) {}
 
