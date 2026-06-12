@@ -8,19 +8,28 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   console.log('✅ AppModule creado');
   
-  // CORS: Configuración para dominios custom de producción
-  const allowedOrigins = [
+  // CORS: orígenes permitidos.
+  // Configurable vía env CORS_ORIGINS (lista separada por comas).
+  // Si no está definida, se usa la lista por defecto (mismo comportamiento previo).
+  const defaultOrigins = [
     // Desarrollo local
     'http://localhost:5173',
     'http://localhost:3000',
-    
+
     // Producción - Dominios custom (oficial)
     'https://fairpadel.com',
     'https://www.fairpadel.com',
-    
+
     // Fallback - Railway (mientras se configura el dominio)
     'https://fairpadel-frontend-production.up.railway.app',
   ];
+
+  const envOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  const allowedOrigins = envOrigins.length > 0 ? envOrigins : defaultOrigins;
 
   app.enableCors({
     origin: (origin, callback) => {
