@@ -5,9 +5,10 @@ import { ResultadoEspecialDto } from './dto/resultado-especial.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { MatchTournamentGuard } from './guards/match-tournament.guard';
 
 @Controller('admin/resultados')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, MatchTournamentGuard)
 @Roles('organizador', 'admin', 'ayudante')
 export class ResultadosController {
   constructor(private readonly resultadosService: ResultadosService) {}
