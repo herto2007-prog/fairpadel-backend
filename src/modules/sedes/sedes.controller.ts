@@ -6,6 +6,9 @@ import { CreateCanchaDto } from './dto/create-cancha.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { SedeGestionGuard } from '../../common/guards/sede-gestion.guard';
+import { User } from '@prisma/client';
 
 @Controller('sedes')
 export class SedesController {
@@ -23,22 +26,20 @@ export class SedesController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador')
-  create(@Body() createSedeDto: CreateSedeDto) {
-    return this.sedesService.create(createSedeDto);
+  @Roles('admin', 'organizador', 'dueño')
+  create(@Body() createSedeDto: CreateSedeDto, @GetUser() user: User) {
+    return this.sedesService.create(createSedeDto, user.id);
   }
 
-  @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador')
-  update(@Param('id') id: string, @Body() updateSedeDto: UpdateSedeDto) {
+  @Patch(':sedeId')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
+  update(@Param('sedeId') id: string, @Body() updateSedeDto: UpdateSedeDto) {
     return this.sedesService.update(id, updateSedeDto);
   }
 
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador')
-  remove(@Param('id') id: string) {
+  @Delete(':sedeId')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
+  remove(@Param('sedeId') id: string) {
     return this.sedesService.remove(id);
   }
 
@@ -49,23 +50,20 @@ export class SedesController {
     return this.sedesService.findCanchasBySede(sedeId);
   }
 
-  @Post(':id/canchas')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
-  createCancha(@Param('id') sedeId: string, @Body() createCanchaDto: CreateCanchaDto) {
+  @Post(':sedeId/canchas')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
+  createCancha(@Param('sedeId') sedeId: string, @Body() createCanchaDto: CreateCanchaDto) {
     return this.sedesService.createCancha(sedeId, createCanchaDto);
   }
 
   @Patch('canchas/:canchaId')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   updateCancha(@Param('canchaId') canchaId: string, @Body() updateCanchaDto: Partial<CreateCanchaDto>) {
     return this.sedesService.updateCancha(canchaId, updateCanchaDto);
   }
 
   @Delete('canchas/:canchaId')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   removeCancha(@Param('canchaId') canchaId: string) {
     return this.sedesService.removeCancha(canchaId);
   }

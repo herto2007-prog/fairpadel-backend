@@ -10,9 +10,11 @@ export class SedesService {
 
   // ============ SEDES ============
   
-  async create(createSedeDto: CreateSedeDto) {
+  async create(createSedeDto: CreateSedeDto, duenoId?: string) {
+    // El creador queda como dueño: sin esto, el guard de gestión de sedes
+    // (dueño/encargado/admin) lo dejaría afuera de su propia sede.
     return this.prisma.sede.create({
-      data: createSedeDto,
+      data: { ...createSedeDto, ...(duenoId ? { duenoId } : {}) },
     });
   }
 

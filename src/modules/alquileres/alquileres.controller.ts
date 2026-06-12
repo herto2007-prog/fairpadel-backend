@@ -5,9 +5,12 @@ import { CreateReservaDto, ConfirmarReservaDto, CancelarReservaDto } from './dto
 import { CreateDisponibilidadDto, UpdateDisponibilidadDto } from './dto/create-disponibilidad.dto';
 import { CreateBloqueoDto, UpdateBloqueoDto } from './dto/create-bloqueo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { SedeGestionGuard } from '../../common/guards/sede-gestion.guard';
 
+// Gestión de sede (config, disponibilidades, bloqueos, aprobar/rechazar
+// reservas, estadísticas): SedeGestionGuard = dueño/encargado de ESA sede o
+// admin. Antes solo se exigía rol global (admin/organizador/encargado), lo
+// que permitía operar sobre sedes ajenas (IDOR).
 @Controller('alquileres')
 export class AlquileresController {
   constructor(private readonly alquileresService: AlquileresService) {}
@@ -15,8 +18,7 @@ export class AlquileresController {
   // ============ CONFIGURACIÓN ============
 
   @Post('config')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   crearConfig(@Body() createDto: CreateAlquilerConfigDto) {
     return this.alquileresService.crearConfig(createDto);
   }
@@ -36,9 +38,9 @@ export class AlquileresController {
     @Query('duracionMinutos') duracionMinutos?: string,
   ) {
     return this.alquileresService.consultarDisponibilidad(
-      sedeId, 
-      fecha, 
-      canchaId, 
+      sedeId,
+      fecha,
+      canchaId,
       duracionMinutos ? parseInt(duracionMinutos, 10) : undefined
     );
   }
@@ -68,44 +70,39 @@ export class AlquileresController {
     });
   }
 
-  // ============ GESTIÓN DE DISPONIBILIDADES (ENCARGADO) ============
+  // ============ GESTIÓN DE DISPONIBILIDADES (DUEÑO/ENCARGADO) ============
 
   @Get('sede/:sedeId/disponibilidades')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   obtenerDisponibilidadesSede(@Param('sedeId') sedeId: string) {
     return this.alquileresService.obtenerDisponibilidadesSede(sedeId);
   }
 
   @Post('disponibilidades')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   crearDisponibilidad(@Body() createDto: CreateDisponibilidadDto) {
     return this.alquileresService.crearDisponibilidad(createDto);
   }
 
-  @Put('disponibilidades/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @Put('disponibilidades/:disponibilidadId')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   actualizarDisponibilidad(
-    @Param('id') id: string,
+    @Param('disponibilidadId') id: string,
     @Body() updateDto: UpdateDisponibilidadDto,
   ) {
     return this.alquileresService.actualizarDisponibilidad(id, updateDto);
   }
 
-  @Delete('disponibilidades/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
-  eliminarDisponibilidad(@Param('id') id: string) {
+  @Delete('disponibilidades/:disponibilidadId')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
+  eliminarDisponibilidad(@Param('disponibilidadId') id: string) {
     return this.alquileresService.eliminarDisponibilidad(id);
   }
 
-  // ============ GESTIÓN DE BLOQUEOS (ENCARGADO) ============
+  // ============ GESTIÓN DE BLOQUEOS (DUEÑO/ENCARGADO) ============
 
   @Get('sede/:sedeId/bloqueos')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   obtenerBloqueosSede(
     @Param('sedeId') sedeId: string,
     @Query('fechaDesde') fechaDesde?: string,
@@ -115,26 +112,23 @@ export class AlquileresController {
   }
 
   @Post('bloqueos')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   crearBloqueo(@Body() createDto: CreateBloqueoDto) {
     return this.alquileresService.crearBloqueo(createDto);
   }
 
-  @Put('bloqueos/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @Put('bloqueos/:bloqueoId')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   actualizarBloqueo(
-    @Param('id') id: string,
+    @Param('bloqueoId') id: string,
     @Body() updateDto: UpdateBloqueoDto,
   ) {
     return this.alquileresService.actualizarBloqueo(id, updateDto);
   }
 
-  @Delete('bloqueos/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
-  eliminarBloqueo(@Param('id') id: string) {
+  @Delete('bloqueos/:bloqueoId')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
+  eliminarBloqueo(@Param('bloqueoId') id: string) {
     return this.alquileresService.eliminarBloqueo(id);
   }
 
@@ -177,11 +171,10 @@ export class AlquileresController {
     return this.alquileresService.cancelarReserva(reservaId, cancelarDto, req.user.id);
   }
 
-  // ============ GESTIÓN ENCARGADO ============
+  // ============ GESTIÓN DUEÑO/ENCARGADO ============
 
   @Get('sede/:sedeId/reservas')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   obtenerReservasSede(
     @Param('sedeId') sedeId: string,
     @Query('fecha') fecha?: string,
@@ -189,18 +182,16 @@ export class AlquileresController {
     return this.alquileresService.obtenerReservasSede(sedeId, fecha);
   }
 
-  @Post('reservas/:id/aprobar')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
-  aprobarReserva(@Param('id') reservaId: string) {
+  @Post('reservas/:reservaId/aprobar')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
+  aprobarReserva(@Param('reservaId') reservaId: string) {
     return this.alquileresService.aprobarReserva(reservaId);
   }
 
-  @Post('reservas/:id/rechazar')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @Post('reservas/:reservaId/rechazar')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   rechazarReserva(
-    @Param('id') reservaId: string,
+    @Param('reservaId') reservaId: string,
     @Body('motivo') motivo?: string,
   ) {
     return this.alquileresService.rechazarReserva(reservaId, motivo);
@@ -209,8 +200,7 @@ export class AlquileresController {
   // ============ ESTADÍSTICAS ============
 
   @Get('sede/:sedeId/estadisticas')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'organizador', 'encargado')
+  @UseGuards(JwtAuthGuard, SedeGestionGuard)
   obtenerEstadisticas(
     @Param('sedeId') sedeId: string,
     @Query('mes') mes?: string, // Formato: YYYY-MM
