@@ -221,7 +221,7 @@ describe('AmericanoService', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
       prisma.inscripcion.findFirst.mockResolvedValue({ id: 'insc1' }); // ya existe
 
-      await expect(inscripciones.inscribirJugador('t1', { jugadorId: 'u1' })).rejects.toThrow(BadRequestException);
+      await expect(inscripciones.inscribirJugador('t1', { jugadorId: 'u1' }, 'u1')).rejects.toThrow(BadRequestException);
     });
 
     it('debe rechazar inscripción duplicada como jugador2 en parejas fijas', async () => {
@@ -240,7 +240,7 @@ describe('AmericanoService', () => {
         .mockResolvedValueOnce(null) // jugador principal no está
         .mockResolvedValueOnce(null); // compañero no está
 
-      await inscripciones.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u2' });
+      await inscripciones.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u2' }, 'u1');
       expect(prisma.inscripcion.create).toHaveBeenCalled();
     });
 
@@ -253,7 +253,7 @@ describe('AmericanoService', () => {
       prisma.tournament.findUnique.mockResolvedValue(torneo);
       prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
 
-      await expect(inscripciones.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u1' })).rejects.toThrow(BadRequestException);
+      await expect(inscripciones.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u1' }, 'u1')).rejects.toThrow(BadRequestException);
     });
   });
 

@@ -15,7 +15,7 @@ export class AmericanoInscripcionesService {
   // INSCRIPCIONES
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  async inscribirJugador(torneoId: string, dto: InscribirJugadorAmericanoDto) {
+  async inscribirJugador(torneoId: string, dto: InscribirJugadorAmericanoDto, solicitanteId: string) {
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: torneoId },
     });
@@ -26,6 +26,12 @@ export class AmericanoInscripcionesService {
 
     if (torneo.formato !== 'americano') {
       throw new BadRequestException('Este torneo no es de formato americano');
+    }
+
+    // Solo podés inscribirte a vos mismo; inscribir a OTRO requiere ser
+    // gestor del torneo (organizador/coorganizador o admin).
+    if (dto.jugadorId !== solicitanteId) {
+      await this.comun.verificarPermiso(torneoId, solicitanteId);
     }
 
     const configRaw = torneo.configAmericano as unknown as ConfigAmericano | null;

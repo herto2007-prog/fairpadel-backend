@@ -127,8 +127,9 @@ export class AmericanoController {
   inscribirJugador(
     @Param('id') torneoId: string,
     @Body() dto: InscribirJugadorAmericanoDto,
+    @GetUser() user: User,
   ) {
-    return this.americanoInscripciones.inscribirJugador(torneoId, dto);
+    return this.americanoInscripciones.inscribirJugador(torneoId, dto, user.id);
   }
 
   @Post('torneos/:id/desinscribir')
