@@ -4,6 +4,7 @@ import { AmericanoService, ConfigAmericano, ModoJuegoConfig } from './americano.
 import { AmericanoComunService } from './americano-comun.service';
 import { AmericanoResultadosService } from './americano-resultados.service';
 import { AmericanoRondasService } from './americano-rondas.service';
+import { AmericanoInscripcionesService } from './americano-inscripciones.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
 
@@ -66,6 +67,7 @@ describe('AmericanoService', () => {
   let service: AmericanoService;
   let resultados: AmericanoResultadosService;
   let rondas: AmericanoRondasService;
+  let inscripciones: AmericanoInscripcionesService;
   let prisma: ReturnType<typeof createMockPrisma>;
 
   beforeEach(async () => {
@@ -78,6 +80,7 @@ describe('AmericanoService', () => {
         AmericanoComunService,
         AmericanoResultadosService,
         AmericanoRondasService,
+        AmericanoInscripcionesService,
         { provide: PrismaService, useValue: prisma },
         { provide: TournamentsService, useValue: { findOne: jest.fn(), agregarCoorganizador: jest.fn(), eliminarCoorganizador: jest.fn(), puedeGestionarTorneo: jest.fn().mockResolvedValue(true) } },
       ],
@@ -86,6 +89,7 @@ describe('AmericanoService', () => {
     service = module.get<AmericanoService>(AmericanoService);
     resultados = module.get<AmericanoResultadosService>(AmericanoResultadosService);
     rondas = module.get<AmericanoRondasService>(AmericanoRondasService);
+    inscripciones = module.get<AmericanoInscripcionesService>(AmericanoInscripcionesService);
   });
 
   afterEach(() => {
@@ -217,7 +221,7 @@ describe('AmericanoService', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
       prisma.inscripcion.findFirst.mockResolvedValue({ id: 'insc1' }); // ya existe
 
-      await expect(service.inscribirJugador('t1', { jugadorId: 'u1' })).rejects.toThrow(BadRequestException);
+      await expect(inscripciones.inscribirJugador('t1', { jugadorId: 'u1' })).rejects.toThrow(BadRequestException);
     });
 
     it('debe rechazar inscripción duplicada como jugador2 en parejas fijas', async () => {
@@ -236,7 +240,7 @@ describe('AmericanoService', () => {
         .mockResolvedValueOnce(null) // jugador principal no está
         .mockResolvedValueOnce(null); // compañero no está
 
-      await service.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u2' });
+      await inscripciones.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u2' });
       expect(prisma.inscripcion.create).toHaveBeenCalled();
     });
 
@@ -249,7 +253,7 @@ describe('AmericanoService', () => {
       prisma.tournament.findUnique.mockResolvedValue(torneo);
       prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
 
-      await expect(service.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u1' })).rejects.toThrow(BadRequestException);
+      await expect(inscripciones.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u1' })).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -795,7 +799,7 @@ describe('AmericanoService', () => {
       prisma.tournament.findUnique.mockResolvedValue(torneo);
       prisma.user.findUnique.mockResolvedValue({ id: 'org1', roles: [] });
 
-      await expect(service.eliminarInscripcion('t1', 'u1', 'org1')).rejects.toThrow(BadRequestException);
+      await expect(inscripciones.eliminarInscripcion('t1', 'u1', 'org1')).rejects.toThrow(BadRequestException);
     });
 
     it('debe eliminar inscripción buscando por jugador2', async () => {
@@ -809,7 +813,7 @@ describe('AmericanoService', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'org1', roles: [] });
       prisma.inscripcion.findFirst.mockResolvedValue({ id: 'insc1', jugador1Id: 'a', jugador2Id: 'b' });
 
-      const result = await service.eliminarInscripcion('t1', 'b', 'org1');
+      const result = await inscripciones.eliminarInscripcion('t1', 'b', 'org1');
 
       expect(prisma.inscripcion.delete).toHaveBeenCalledWith({ where: { id: 'insc1' } });
       expect(result.message).toBe('Inscripción eliminada');
@@ -826,7 +830,7 @@ describe('AmericanoService', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'admin1', roles: [{ role: { nombre: 'admin' } }] });
       prisma.inscripcion.findFirst.mockResolvedValue({ id: 'insc1', jugador1Id: 'a' });
 
-      const result = await service.eliminarInscripcion('t1', 'a', 'admin1');
+      const result = await inscripciones.eliminarInscripcion('t1', 'a', 'admin1');
 
       expect(result.message).toBe('Inscripción eliminada');
     });

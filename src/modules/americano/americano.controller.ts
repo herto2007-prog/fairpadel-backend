@@ -12,6 +12,7 @@ import {
 import { AmericanoService } from './americano.service';
 import { AmericanoResultadosService } from './americano-resultados.service';
 import { AmericanoRondasService } from './americano-rondas.service';
+import { AmericanoInscripcionesService } from './americano-inscripciones.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -25,6 +26,7 @@ export class AmericanoController {
     private americanoService: AmericanoService,
     private americanoResultados: AmericanoResultadosService,
     private americanoRondas: AmericanoRondasService,
+    private americanoInscripciones: AmericanoInscripcionesService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -107,7 +109,7 @@ export class AmericanoController {
 
   @Get('torneos/:id/inscripciones')
   listarInscripciones(@Param('id') torneoId: string) {
-    return this.americanoService.listarInscripciones(torneoId);
+    return this.americanoInscripciones.listarInscripciones(torneoId);
   }
 
   @Get('torneos/:id/categorias-habilitadas')
@@ -117,7 +119,7 @@ export class AmericanoController {
     @Request() req: any,
   ) {
     const userId = req.user?.id;
-    return this.americanoService.getCategoriasHabilitadas(torneoId, userId);
+    return this.americanoInscripciones.getCategoriasHabilitadas(torneoId, userId);
   }
 
   @Post('torneos/:id/inscribir')
@@ -126,7 +128,7 @@ export class AmericanoController {
     @Param('id') torneoId: string,
     @Body() dto: InscribirJugadorAmericanoDto,
   ) {
-    return this.americanoService.inscribirJugador(torneoId, dto);
+    return this.americanoInscripciones.inscribirJugador(torneoId, dto);
   }
 
   @Post('torneos/:id/desinscribir')
@@ -136,7 +138,7 @@ export class AmericanoController {
     @Body('jugadorId') jugadorId: string,
     @GetUser() user: User,
   ) {
-    return this.americanoService.eliminarInscripcion(torneoId, jugadorId, user.id);
+    return this.americanoInscripciones.eliminarInscripcion(torneoId, jugadorId, user.id);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
