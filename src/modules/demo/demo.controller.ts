@@ -12,6 +12,7 @@ import { DemoService } from './demo.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 
 class LlenarTorneoDto {
   @IsNumber()
@@ -36,6 +37,7 @@ export class DemoController {
    * Llena un torneo con inscripciones de jugadores demo
    */
   @Post('torneos/:id/llenar')
+  @UseGuards(TorneoGestionGuard)
   async llenarTorneo(
     @Param('id') tournamentId: string,
     @Body() dto: LlenarTorneoDto,
@@ -48,6 +50,7 @@ export class DemoController {
    * Elimina todas las inscripciones demo de un torneo
    */
   @Delete('torneos/:id/limpiar')
+  @UseGuards(TorneoGestionGuard)
   async limpiarTorneo(@Param('id') tournamentId: string) {
     return this.demoService.limpiarTorneo(tournamentId);
   }
