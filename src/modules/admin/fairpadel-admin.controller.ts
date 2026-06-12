@@ -16,6 +16,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '@prisma/client';
+import { AuditoriaAccionesService } from '../../common/services/auditoria-acciones.service';
 
 class UpdateConfigDto {
   @IsString()
@@ -41,7 +42,10 @@ class ExonerarTorneoDto {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class FairpadelAdminController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditoria: AuditoriaAccionesService,
+  ) {}
 
   /**
    * Dashboard de FairPadel (solo para dueño/admin)
@@ -339,6 +343,11 @@ export class FairpadelAdminController {
       },
     });
 
+    await this.auditoria.registrar(user.id, 'LIBERAR_COMISION', 'tournament', tournamentId, {
+      montoPagado: dto.montoPagado,
+      notas: dto.notas,
+    });
+
     return {
       success: true,
       message: 'Torneo liberado correctamente',
@@ -364,6 +373,10 @@ export class FairpadelAdminController {
         comprobanteNotas: dto.motivo || 'Exonerado por admin',
         revisadoPor: user.id,
       },
+    });
+
+    await this.auditoria.registrar(user.id, 'EXONERAR_COMISION', 'tournament', tournamentId, {
+      motivo: dto.motivo,
     });
 
     return {
@@ -395,11 +408,30 @@ export class FairpadelAdminController {
       },
     });
 
+    await this.auditoria.registrar(user.id, 'BLOQUEAR_TORNEO', 'tournament', tournamentId);
+
     return {
       success: true,
       message: 'Torneo bloqueado',
       comision,
     };
+  }
+
+  /**
+   * Historial de acciones sensibles (auditoría)
+   */
+  @Get('auditoria-acciones')
+  async listarAuditoria(
+    @Query('limit') limit?: string,
+    @Query('entidadId') entidadId?: string,
+    @Query('accion') accion?: string,
+  ) {
+    const acciones = await this.auditoria.listar({
+      limit: limit ? parseInt(limit, 10) : undefined,
+      entidadId,
+      accion,
+    });
+    return { success: true, acciones };
   }
 
   /**

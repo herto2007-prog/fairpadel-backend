@@ -12,13 +12,17 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { AuditoriaAccionesService } from '../../common/services/auditoria-acciones.service';
 
 @Controller('admin/suscripciones')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminSuscripcionesController {
   private readonly logger = new Logger(AdminSuscripcionesController.name);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditoria: AuditoriaAccionesService,
+  ) {}
 
   /**
    * GET /admin/suscripciones/sedes
@@ -377,6 +381,16 @@ export class AdminSuscripcionesController {
         habilitado: true,
       },
     });
+
+    if (req.user?.userId || req.user?.id) {
+      await this.auditoria.registrar(
+        req.user.userId ?? req.user.id,
+        'ACTIVAR_SUSCRIPCION_MANUAL',
+        'sede',
+        sedeId,
+        { tipo, montoGs, venceEn: fechaVencimientoStr, nota },
+      );
+    }
 
     return {
       success: true,

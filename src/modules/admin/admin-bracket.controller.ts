@@ -15,6 +15,9 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { BracketService } from '../bracket/bracket.service';
 import { CanchasSorteoService } from '../bracket/canchas-sorteo.service';
 import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
+import { AuditoriaAccionesService } from '../../common/services/auditoria-acciones.service';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { User } from '@prisma/client';
 
 // TorneoGestionGuard a nivel controller: cada ruta identifica su torneo
 // (params.id, tournamentCategoryId o fixtureVersionId) y solo el dueño,
@@ -27,6 +30,7 @@ export class AdminBracketController {
     private prisma: PrismaService,
     private bracketService: BracketService,
     private canchasSorteoService: CanchasSorteoService,
+    private auditoria: AuditoriaAccionesService,
   ) {}
 
   /**
@@ -101,7 +105,10 @@ export class AdminBracketController {
    * Cierra las inscripciones para una categoría específica
    */
   @Post('categorias/:tournamentCategoryId/cerrar-inscripciones')
-  async cerrarInscripciones(@Param('tournamentCategoryId') tournamentCategoryId: string) {
+  async cerrarInscripciones(
+    @Param('tournamentCategoryId') tournamentCategoryId: string,
+    @GetUser() user?: User,
+  ) {
     try {
       // Usar transacción para asegurar consistencia
       const result = await this.prisma.$transaction(async (tx) => {
@@ -154,6 +161,10 @@ export class AdminBracketController {
         };
       });
 
+      if (result.success && user) {
+        await this.auditoria.registrar(user.id, 'CERRAR_CATEGORIA', 'tournamentCategory', tournamentCategoryId);
+      }
+
       return result;
     } catch (error: any) {
       console.error('[cerrarInscripciones] Error:', error);
@@ -169,7 +180,10 @@ export class AdminBracketController {
    * Reabre las inscripciones para una categoría (solo si no hay sorteo aún)
    */
   @Post('categorias/:tournamentCategoryId/abrir-inscripciones')
-  async abrirInscripciones(@Param('tournamentCategoryId') tournamentCategoryId: string) {
+  async abrirInscripciones(
+    @Param('tournamentCategoryId') tournamentCategoryId: string,
+    @GetUser() user?: User,
+  ) {
     try {
       // Usar transacción para asegurar consistencia
       const result = await this.prisma.$transaction(async (tx) => {
@@ -206,6 +220,10 @@ export class AdminBracketController {
         };
       });
 
+      if (result.success && user) {
+        await this.auditoria.registrar(user.id, 'ABRIR_CATEGORIA', 'tournamentCategory', tournamentCategoryId);
+      }
+
       return result;
     } catch (error: any) {
       console.error('[abrirInscripciones] Error:', error);
@@ -226,6 +244,7 @@ export class AdminBracketController {
   async cerrarInscripcionesLote(
     @Param('tournamentId') tournamentId: string,
     @Body() body: { categoriaIds: string[] },
+    @GetUser() user?: User,
   ) {
     const categoriaIds = Array.isArray(body?.categoriaIds) ? body.categoriaIds : [];
     if (categoriaIds.length === 0) {
@@ -234,7 +253,7 @@ export class AdminBracketController {
 
     const MINIMO_PARA_SORTEAR = 8;
 
-    return this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const categorias = await tx.tournamentCategory.findMany({
         where: { id: { in: categoriaIds }, tournamentId },
         include: { category: true },
@@ -294,6 +313,15 @@ export class AdminBracketController {
         minimoRequerido: MINIMO_PARA_SORTEAR,
       };
     });
+
+    if (user && resultado.cerradas.length > 0) {
+      await this.auditoria.registrar(user.id, 'CERRAR_CATEGORIAS_LOTE', 'tournament', tournamentId, {
+        cerradas: resultado.cerradas.map(c => c.categoriaId),
+        omitidas: resultado.omitidas.length,
+      });
+    }
+
+    return resultado;
   }
 
   /**

@@ -2526,3 +2526,23 @@ model AmericanoPuntaje {
   @@index([grupoId])
   @@map("americano_puntajes")
 }
+
+// ═══════════════════════════════════════════════════════════════
+// AUDITORÍA DE ACCIONES SENSIBLES (admin/organizador)
+// Sin relación a User a propósito: el log debe sobrevivir aunque
+// el usuario se borre (no cascade).
+// ═══════════════════════════════════════════════════════════════
+model AuditoriaAccion {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  accion    String   // LIBERAR_COMISION, EXONERAR_COMISION, BLOQUEAR_TORNEO, CERRAR_CATEGORIA, ABRIR_CATEGORIA, CERRAR_CATEGORIAS_LOTE, ACTIVAR_SUSCRIPCION_MANUAL
+  entidad   String   // tournament | tournamentCategory | sede
+  entidadId String   @map("entidad_id")
+  detalle   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([entidadId])
+  @@index([accion])
+  @@map("auditoria_acciones")
+}
