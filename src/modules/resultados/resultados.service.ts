@@ -102,10 +102,11 @@ export class ResultadosService {
 
     this.validarGanadorDeterminado(ganadorId, perdedorId);
 
-    // Actualizar partido
-    const matchActualizado = await this.prisma.match.update({
-      where: { id: matchId },
-      data: {
+    // Actualizar partido y avanzar al ganador de forma atómica (transacción).
+    // matchCompleto tiene los IDs de navegación del bracket cargados.
+    const matchActualizado = await this.finalizarYAvanzar(
+      matchId,
+      {
         estado: MatchStatus.FINALIZADO,
         set1Pareja1: dto.set1Pareja1,
         set1Pareja2: dto.set1Pareja2,
@@ -120,18 +121,9 @@ export class ResultadosService {
         duracionMinutos: dto.duracionMinutos,
         horaFinReal: this.dateService.now(),
       },
-      include: {
-        inscripcion1: true,
-        inscripcion2: true,
-        inscripcionGanadora: true,
-      },
-    });
-
-    // Avanzar ganador al siguiente partido si existe
-    // Usar matchCompleto que tiene los IDs de navegación cargados
-    if (matchCompleto) {
-      await this.avanzarGanador(matchCompleto, ganadorId);
-    }
+      matchCompleto,
+      ganadorId,
+    );
 
     return {
       success: true,
@@ -229,10 +221,10 @@ export class ResultadosService {
         throw new BadRequestException('Tipo de resultado especial inválido');
     }
 
-    // Actualizar partido
-    const matchActualizado = await this.prisma.match.update({
-      where: { id: matchId },
-      data: {
+    // Actualizar partido y avanzar al ganador de forma atómica (transacción)
+    const matchActualizado = await this.finalizarYAvanzar(
+      matchId,
+      {
         estado,
         inscripcionGanadoraId: ganadorId,
         inscripcionPerdedoraId: perdedorId,
@@ -249,17 +241,9 @@ export class ResultadosService {
         set3Pareja1: null,
         set3Pareja2: null,
       },
-      include: {
-        inscripcion1: true,
-        inscripcion2: true,
-        inscripcionGanadora: true,
-      },
-    });
-
-    // Avanzar ganador al siguiente partido si existe
-    if (matchCompleto) {
-      await this.avanzarGanador(matchCompleto, ganadorId);
-    }
+      matchCompleto,
+      ganadorId,
+    );
 
     // Mensaje según tipo
     const mensajes = {
@@ -334,9 +318,9 @@ export class ResultadosService {
       },
     });
 
-    const matchActualizado = await this.prisma.match.update({
-      where: { id: matchId },
-      data: {
+    const matchActualizado = await this.finalizarYAvanzar(
+      matchId,
+      {
         estado: MatchStatus.FINALIZADO,
         set1Pareja1: dto.set1Pareja1,
         set1Pareja2: dto.set1Pareja2,
@@ -352,16 +336,9 @@ export class ResultadosService {
         parejaRetirada: null,
         razonResultado: null,
       },
-      include: {
-        inscripcion1: true,
-        inscripcion2: true,
-        inscripcionGanadora: true,
-      },
-    });
-
-    if (matchCompleto) {
-      await this.avanzarGanador(matchCompleto, ganadorId);
-    }
+      matchCompleto,
+      ganadorId,
+    );
 
     return {
       success: true,
@@ -439,9 +416,9 @@ export class ResultadosService {
       },
     });
 
-    const matchActualizado = await this.prisma.match.update({
-      where: { id: matchId },
-      data: {
+    const matchActualizado = await this.finalizarYAvanzar(
+      matchId,
+      {
         estado,
         inscripcionGanadoraId: ganadorId,
         inscripcionPerdedoraId: perdedorId,
@@ -456,16 +433,9 @@ export class ResultadosService {
         set3Pareja1: null,
         set3Pareja2: null,
       },
-      include: {
-        inscripcion1: true,
-        inscripcion2: true,
-        inscripcionGanadora: true,
-      },
-    });
-
-    if (matchCompleto) {
-      await this.avanzarGanador(matchCompleto, ganadorId);
-    }
+      matchCompleto,
+      ganadorId,
+    );
 
     const mensajes = {
       [TipoResultadoEspecial.RETIRO_LESION]: 'Retiro por lesión actualizado',
@@ -924,10 +894,10 @@ export class ResultadosService {
 
     this.validarGanadorDeterminado(ganadorId, perdedorId);
 
-    // Actualizar partido
-    const matchActualizado = await this.prisma.match.update({
-      where: { id: matchId },
-      data: {
+    // Actualizar partido y avanzar al ganador de forma atómica (transacción)
+    const matchActualizado = await this.finalizarYAvanzar(
+      matchId,
+      {
         estado: MatchStatus.FINALIZADO,
         set1Pareja1: set1?.gamesP1 ?? 0,
         set1Pareja2: set1?.gamesP2 ?? 0,
@@ -941,12 +911,9 @@ export class ResultadosService {
         duracionMinutos: dto.duracionMinutos || this.calcularDuracion(liveScore.iniciadoAt),
         horaFinReal: this.dateService.now(),
       },
-    });
-
-    // Avanzar ganador
-    if (matchCompleto) {
-      await this.avanzarGanador(matchCompleto, ganadorId);
-    }
+      matchCompleto,
+      ganadorId,
+    );
 
     console.log('[finalizarPartido] Partido actualizado:', {
       id: matchActualizado.id,
@@ -1044,92 +1011,100 @@ export class ResultadosService {
     return { ganadorId, perdedorId, setsGanadosP1, setsGanadosP2 };
   }
 
-  private async avanzarGanador(match: any, ganadorId: string) {
-    // CASO ESPECIAL: BYE - el ganador ya está asignado pero necesitamos avanzarlo
-    if (match.esBye && match.inscripcionGanadoraId && !match.partidoSiguienteId) {
-      console.log(`[avanzarGanador] Partido ${match.id} es BYE, buscando conexión manual...`);
-      // Para BYE, buscamos el partido destino basado en la definición del bracket
-      // Esto es un workaround temporal - el BYE debería tener partidoSiguienteId configurado
+  /**
+   * Marca el partido como finalizado y avanza al ganador (y perdedor) de forma
+   * ATÓMICA: el update del partido y la escritura de los casilleros del bracket
+   * ocurren en una sola transacción. Si algo falla, no queda el partido
+   * finalizado sin el ganador avanzado (se revierte todo).
+   *
+   * Los efectos secundarios best-effort (programación automática y recálculo de
+   * clasificación) se ejecutan DESPUÉS del commit: nunca deben revertir el
+   * resultado ni bloquear el flujo (ya tragan sus propios errores), y mantienen
+   * la transacción corta.
+   */
+  private async finalizarYAvanzar(
+    matchId: string,
+    data: Prisma.MatchUncheckedUpdateInput,
+    matchCompleto: any,
+    ganadorId: string,
+  ) {
+    const matchActualizado = await this.prisma.$transaction(async (tx) => {
+      const actualizado = await tx.match.update({
+        where: { id: matchId },
+        data,
+        include: {
+          inscripcion1: true,
+          inscripcion2: true,
+          inscripcionGanadora: true,
+        },
+      });
+
+      if (matchCompleto) {
+        await this.avanzarGanadorEnTx(tx, matchCompleto, ganadorId);
+      }
+
+      return actualizado;
+    });
+
+    if (matchCompleto) {
+      await this.ejecutarEfectosPostAvance(matchCompleto);
     }
 
-    // Si hay partido siguiente para el ganador
+    return matchActualizado;
+  }
+
+  /**
+   * Escribe los casilleros del bracket dentro de la transacción recibida:
+   * el ganador al partido siguiente y el perdedor al repechaje / bracket por
+   * suerte. Solo escrituras críticas; nada best-effort acá.
+   */
+  private async avanzarGanadorEnTx(
+    tx: Prisma.TransactionClient,
+    match: any,
+    ganadorId: string,
+  ) {
     if (match.partidoSiguienteId) {
       const posicion = match.posicionEnSiguiente || 1;
-      
-      await this.prisma.match.update({
+      await tx.match.update({
         where: { id: match.partidoSiguienteId },
-        data: posicion === 1 
+        data: posicion === 1
           ? { inscripcion1Id: ganadorId, tipoEntrada1: 'GANADOR_PARTIDO' }
           : { inscripcion2Id: ganadorId, tipoEntrada2: 'GANADOR_PARTIDO' },
       });
-
-      // Verificar si el partido siguiente ahora está completo y programarlo automáticamente
-      await this.programarPartidoSiCompleto(match.partidoSiguienteId, match.tournamentId);
     }
 
-    // Si hay partido de perdedores (repechaje o bracket por suerte)
     if (match.partidoPerdedorSiguienteId) {
       const perdedorId = match.inscripcion1Id === ganadorId ? match.inscripcion2Id : match.inscripcion1Id;
       const posicion = match.posicionEnPerdedor || 1;
 
-      // Verificar estado actual del partido destino
-      const partidoDestinoActual = await this.prisma.match.findUnique({
-        where: { id: match.partidoPerdedorSiguienteId },
-        select: { 
-          ronda: true,
-          inscripcion1Id: true,
-          inscripcion2Id: true,
-        },
-      });
-
-      console.log('[avanzarGanador] DEBUG avance perdedor:', {
-        matchId: match.id,
-        matchRonda: match.ronda,
-        ganadorId,
-        perdedorId,
-        inscripcion1Id: match.inscripcion1Id,
-        inscripcion2Id: match.inscripcion2Id,
-        partidoPerdedorSiguienteId: match.partidoPerdedorSiguienteId,
-        posicionEnPerdedor: match.posicionEnPerdedor,
-        posicionUsada: posicion,
-        destinoActual: {
-          inscripcion1Id: partidoDestinoActual?.inscripcion1Id,
-          inscripcion2Id: partidoDestinoActual?.inscripcion2Id,
-        },
-        vaASobreescribir: posicion === 1 
-          ? !!partidoDestinoActual?.inscripcion1Id 
-          : !!partidoDestinoActual?.inscripcion2Id,
-      });
-
-      // Verificar a qué fase va el perdedor
-      const partidoDestino = await this.prisma.match.findUnique({
+      // Si el destino es REPECHAJE es un perdedor normal; si no, perdedor por suerte
+      const partidoDestino = await tx.match.findUnique({
         where: { id: match.partidoPerdedorSiguienteId },
         select: { ronda: true },
       });
-
-      // Si va a REPECHAJE, es un perdedor normal
-      // Si va a OCTAVOS/CUARTOS/etc, es un perdedor por suerte al bracket
       const esRepechaje = partidoDestino?.ronda === 'REPECHAJE';
 
-      await this.prisma.match.update({
+      await tx.match.update({
         where: { id: match.partidoPerdedorSiguienteId },
         data: posicion === 1
-          ? { 
-              inscripcion1Id: perdedorId, 
-              tipoEntrada1: esRepechaje ? 'PERDEDOR_PARTIDO' : 'PERDEDOR_ZONA_SUERTE' 
-            }
-          : { 
-              inscripcion2Id: perdedorId, 
-              tipoEntrada2: esRepechaje ? 'PERDEDOR_PARTIDO' : 'PERDEDOR_ZONA_SUERTE' 
-            },
+          ? { inscripcion1Id: perdedorId, tipoEntrada1: esRepechaje ? 'PERDEDOR_PARTIDO' : 'PERDEDOR_ZONA_SUERTE' }
+          : { inscripcion2Id: perdedorId, tipoEntrada2: esRepechaje ? 'PERDEDOR_PARTIDO' : 'PERDEDOR_ZONA_SUERTE' },
       });
+    }
+  }
 
-      // Verificar si el partido destino ahora está completo y programarlo automáticamente
+  /**
+   * Efectos secundarios best-effort tras avanzar, FUERA de la transacción:
+   * programación automática de los partidos que quedaron completos y recálculo
+   * de clasificación. Nunca interrumpen ni revierten el resultado.
+   */
+  private async ejecutarEfectosPostAvance(match: any) {
+    if (match.partidoSiguienteId) {
+      await this.programarPartidoSiCompleto(match.partidoSiguienteId, match.tournamentId);
+    }
+    if (match.partidoPerdedorSiguienteId) {
       await this.programarPartidoSiCompleto(match.partidoPerdedorSiguienteId, match.tournamentId);
     }
-
-    // IMPORTANTE: Recalcular estados de clasificación después de cada resultado
-    // Esto actualiza en tiempo real quién va directo, quién a repechaje, quién está eliminado
     await this.recalcularClasificacion(match.tournamentId, match.categoryId);
   }
 
