@@ -18,6 +18,14 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { InscripcionEstado, MatchStatus } from '@prisma/client';
+import {
+  mapInscripcionAuditoria,
+  filtrarInscripcionesAuditoria,
+  mapPartidoAuditoria,
+  filtrarPartidosAuditoria,
+  mapSlotAuditoria,
+  calcularStatsSlots,
+} from './admin-auditoria.mappers';
 
 // Enums para filtros
 enum PartidoFase {
@@ -259,68 +267,9 @@ export class AdminAuditoriaController {
     });
 
     // Transformar datos para mostrar nombres en lugar de IDs
-    let resultado = inscripciones.map((insc) => {
-      const partidos = [...insc.partidosComoP1, ...insc.partidosComoP2];
-      
-      return {
-        id: insc.id,
-        estado: insc.estado,
-        modoPago: insc.modoPago,
-        notas: insc.notas,
-        createdAt: insc.createdAt,
-        estadoClasificacion: insc.estadoClasificacion,
-        rondaClasificacion: insc.rondaClasificacion,
-        pareja: {
-          jugador1: insc.jugador1
-            ? `${insc.jugador1.nombre} ${insc.jugador1.apellido}`
-            : 'N/A',
-          jugador1Categoria: insc.jugador1?.categoriaActual?.nombre || 'N/A',
-          jugador2: insc.jugador2
-            ? `${insc.jugador2.nombre} ${insc.jugador2.apellido}`
-            : '(Pendiente)',
-          jugador2Categoria: insc.jugador2?.categoriaActual?.nombre || 'N/A',
-          telefonoJ1: insc.jugador1?.telefono,
-          telefonoJ2: insc.jugador2?.telefono,
-          completa: !!insc.jugador2,
-        },
-        categoria: {
-          id: insc.category.id,
-          nombre: insc.category.nombre,
-          genero: insc.category.tipo,
-        },
-        pagos: insc.pagos.map((p) => ({
-          id: p.id,
-          estado: p.estado,
-          monto: p.monto,
-          metodo: p.metodoPago,
-          fecha: p.fechaPago,
-        })),
-        programacion: partidos.map((p) => ({
-          fase: p.ronda,
-          fecha: p.fechaProgramada,
-          hora: p.horaProgramada,
-          cancha: p.torneoCancha?.sedeCancha?.nombre,
-          sede: p.torneoCancha?.sedeCancha?.sede?.nombre,
-        })),
-        tieneSlotAsignado: partidos.length > 0,
-      };
-    });
+    let resultado = inscripciones.map(mapInscripcionAuditoria);
 
-    // Filtro de búsqueda por nombre
-    if (filtros.busqueda) {
-      const busqueda = filtros.busqueda.toLowerCase();
-      resultado = resultado.filter(
-        (r) =>
-          r.pareja.jugador1.toLowerCase().includes(busqueda) ||
-          r.pareja.jugador2.toLowerCase().includes(busqueda) ||
-          r.categoria.nombre.toLowerCase().includes(busqueda),
-      );
-    }
-
-    // Filtro de sin slot
-    if (filtros.sinSlot) {
-      resultado = resultado.filter((r) => !r.tieneSlotAsignado);
-    }
+    resultado = filtrarInscripcionesAuditoria(resultado, filtros);
 
     return {
       success: true,
@@ -449,77 +398,9 @@ export class AdminAuditoriaController {
     });
 
     // Transformar datos
-    let resultado = partidos.map((p) => {
-      const pareja1 = p.inscripcion1
-        ? `${p.inscripcion1.jugador1?.nombre || ''} ${
-            p.inscripcion1.jugador1?.apellido || ''
-          } / ${p.inscripcion1.jugador2?.nombre || ''} ${
-            p.inscripcion1.jugador2?.apellido || ''
-          }`
-        : 'Por definir';
+    let resultado = partidos.map(mapPartidoAuditoria);
 
-      const pareja2 = p.inscripcion2
-        ? `${p.inscripcion2.jugador1?.nombre || ''} ${
-            p.inscripcion2.jugador1?.apellido || ''
-          } / ${p.inscripcion2.jugador2?.nombre || ''} ${
-            p.inscripcion2.jugador2?.apellido || ''
-          }`
-        : 'Por definir';
-
-      const parejaGanadora = p.inscripcionGanadora
-        ? `${p.inscripcionGanadora.jugador1?.nombre || ''} ${
-            p.inscripcionGanadora.jugador1?.apellido || ''
-          } / ${p.inscripcionGanadora.jugador2?.nombre || ''} ${
-            p.inscripcionGanadora.jugador2?.apellido || ''
-          }`
-        : null;
-
-      return {
-        id: p.id,
-        fase: p.ronda,
-        numeroRonda: p.numeroRonda,
-        estado: p.estado,
-        categoria: {
-          id: p.category.id,
-          nombre: p.category.nombre,
-          genero: p.category.tipo,
-        },
-        pareja1,
-        pareja2,
-        parejaGanadora,
-        programacion: p.torneoCancha
-          ? {
-              fecha: p.fechaProgramada,
-              hora: p.horaProgramada,
-              cancha: p.torneoCancha.sedeCancha?.nombre,
-              sede: p.torneoCancha.sedeCancha?.sede?.nombre,
-            }
-          : null,
-        estaProgramado: !!p.torneoCanchaId,
-        resultado: p.set1Pareja1 !== null
-          ? {
-              set1: `${p.set1Pareja1}-${p.set1Pareja2}`,
-              set2: p.set2Pareja1 !== null ? `${p.set2Pareja1}-${p.set2Pareja2}` : null,
-              set3: p.set3Pareja1 !== null ? `${p.set3Pareja1}-${p.set3Pareja2}` : null,
-              ganador: parejaGanadora,
-            }
-          : null,
-        esBye: p.esBye,
-        tipoEntrada1: p.tipoEntrada1,
-        tipoEntrada2: p.tipoEntrada2,
-        createdAt: p.createdAt,
-      };
-    });
-
-    // Filtro de búsqueda
-    if (filtros.busqueda) {
-      const busqueda = filtros.busqueda.toLowerCase();
-      resultado = resultado.filter(
-        (r) =>
-          r.pareja1.toLowerCase().includes(busqueda) ||
-          r.pareja2.toLowerCase().includes(busqueda),
-      );
-    }
+    resultado = filtrarPartidosAuditoria(resultado, filtros);
 
     return {
       success: true,
@@ -641,41 +522,7 @@ export class AdminAuditoriaController {
           horaFin: dia.horaFin,
           minutosSlot: dia.minutosSlot,
           fasesPermitidas: dia.fasesPermitidas,
-          slots: slots.map((slot) => ({
-            id: slot.id,
-            horaInicio: slot.horaInicio,
-            horaFin: slot.horaFin,
-            estado: slot.estado,
-            fase: slot.fase,
-            cancha: slot.torneoCancha
-              ? {
-                  id: slot.torneoCancha.id,
-                  nombre: slot.torneoCancha.sedeCancha?.nombre || 'Cancha',
-                  sede: slot.torneoCancha.sedeCancha?.sede?.nombre,
-                }
-              : null,
-            ocupadoPor: slot.match
-              ? {
-                  partidoId: slot.match.id,
-                  fase: slot.match.ronda,
-                  categoria: slot.match.category?.nombre,
-                  pareja1: slot.match.inscripcion1
-                    ? `${slot.match.inscripcion1.jugador1?.nombre || ''} ${
-                        slot.match.inscripcion1.jugador1?.apellido || ''
-                      } / ${slot.match.inscripcion1.jugador2?.nombre || ''} ${
-                        slot.match.inscripcion1.jugador2?.apellido || ''
-                      }`
-                    : 'Por definir',
-                  pareja2: slot.match.inscripcion2
-                    ? `${slot.match.inscripcion2.jugador1?.nombre || ''} ${
-                        slot.match.inscripcion2.jugador1?.apellido || ''
-                      } / ${slot.match.inscripcion2.jugador2?.nombre || ''} ${
-                        slot.match.inscripcion2.jugador2?.apellido || ''
-                      }`
-                    : 'Por definir',
-                }
-              : null,
-          })),
+          slots: slots.map(mapSlotAuditoria),
         };
       }),
     );
@@ -687,22 +534,12 @@ export class AdminAuditoriaController {
     }
 
     // Calcular estadísticas
-    const totalSlots = data.reduce((acc, dia) => acc + dia.slots.length, 0);
-    const ocupados = data.reduce(
-      (acc, dia) => acc + dia.slots.filter((s) => s.estado === 'OCUPADO').length,
-      0,
-    );
-    const libres = totalSlots - ocupados;
+    const stats = calcularStatsSlots(data);
 
     return {
       success: true,
       data,
-      stats: {
-        total: totalSlots,
-        ocupados,
-        libres,
-        porcentajeOcupacion: totalSlots > 0 ? Math.round((ocupados / totalSlots) * 100) : 0,
-      },
+      stats,
     };
   }
 
