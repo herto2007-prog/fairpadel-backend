@@ -2,6 +2,15 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { DescansoCalculatorService, SlotInfo } from './descanso-calculator.service';
+import {
+  parseHora,
+  formatHora,
+  calcularHoraFin,
+  getDiaSemana,
+  agruparSlotsPorFecha,
+  agruparAsignacionesPorFecha,
+  validarConflictos,
+} from './scheduling-utils';
 
 export interface SlotDisponible {
   id: string;
@@ -308,7 +317,7 @@ export class ProgramacionService {
     );
 
     // 9. Validar conflictos adicionales
-    const conflictosAdicionales = this.validarConflictos(distribucion, partidos);
+    const conflictosAdicionales = validarConflictos(distribucion, partidos);
 
     // Agregar info sobre partidos por definir como advertencia informativa
     const conflictosFinales = [...conflictos, ...conflictosAdicionales];
@@ -542,8 +551,8 @@ export class ProgramacionService {
     
     // Calcular horas disponibles
     const horasDisponibles = slots.reduce((total, slot) => {
-      const inicio = this.parseHora(slot.horaInicio);
-      const fin = this.parseHora(slot.horaFin);
+      const inicio = parseHora(slot.horaInicio);
+      const fin = parseHora(slot.horaFin);
       return total + (fin - inicio);
     }, 0);
 
@@ -590,7 +599,7 @@ export class ProgramacionService {
     logs?: LogAsignacion[],
   ): Promise<DistribucionDia[]> {
     // 1. Agrupar slots por fecha
-    const slotsPorFecha = this.agruparSlotsPorFecha(slots);
+    const slotsPorFecha = agruparSlotsPorFecha(slots);
     let fechasOrdenadas = Object.keys(slotsPorFecha).sort();
 
     // Filtrar desde fechaInicio si se especifica
@@ -1192,7 +1201,7 @@ export class ProgramacionService {
     slotsPorFecha: Record<string, SlotDisponible[]>,
     fechasOrdenadas: string[],
   ): DistribucionDia[] {
-    const asignacionesPorFecha = this.agruparAsignacionesPorFecha(asignaciones);
+    const asignacionesPorFecha = agruparAsignacionesPorFecha(asignaciones);
     const distribucion: DistribucionDia[] = [];
 
     for (const fecha of fechasOrdenadas) {
@@ -1205,7 +1214,7 @@ export class ProgramacionService {
 
       distribucion.push({
         fecha,
-        diaSemana: this.getDiaSemana(fecha),
+        diaSemana: getDiaSemana(fecha),
         horarioInicio: horasInicio[0] || '18:00',
         horarioFin: horasFin[horasFin.length - 1] || '23:00',
         slotsDisponibles: diaSlots.length,
@@ -1220,53 +1229,6 @@ export class ProgramacionService {
   /**
    * Valida conflictos y advertencias en la distribución
    */
-  private validarConflictos(
-    distribucion: DistribucionDia[],
-    partidosOriginales?: PartidoProgramar[],
-  ): Conflicto[] {
-    const conflictos: Conflicto[] = [];
-    const totalAsignados = distribucion.reduce((sum, d) => sum + d.partidos.length, 0);
-    const totalEsperados = partidosOriginales?.length || 0;
-
-    // Verificar si faltan partidos por asignar
-    if (totalEsperados > 0 && totalAsignados < totalEsperados) {
-      conflictos.push({
-        tipo: 'SIN_DISPONIBILIDAD',
-        severidad: 'BLOQUEANTE',
-        partidoId: '',
-        mensaje: `Solo se pudieron asignar ${totalAsignados} de ${totalEsperados} partidos`,
-        sugerencia: 'Agrega más días o extiende los horarios en el tab Canchas',
-        accion: 'AGREGAR_DIAS',
-      });
-    }
-
-    // Revisar días saturados
-    for (const dia of distribucion) {
-      const porcentajeOcupado = (dia.slotsAsignados / dia.slotsDisponibles) * 100;
-      
-      if (porcentajeOcupado >= 100) {
-        conflictos.push({
-          tipo: 'ADVERTENCIA',
-          severidad: 'ADVERTENCIA',
-          partidoId: '',
-          mensaje: `El día ${dia.fecha} está completamente saturado (${dia.slotsAsignados}/${dia.slotsDisponibles} slots)`,
-          sugerencia: 'Considera agregar otro día de disponibilidad',
-          accion: 'AGREGAR_DIAS',
-        });
-      } else if (porcentajeOcupado >= 90) {
-        conflictos.push({
-          tipo: 'ADVERTENCIA',
-          severidad: 'ADVERTENCIA',
-          partidoId: '',
-          mensaje: `El día ${dia.fecha} está casi saturado (${Math.round(porcentajeOcupado)}%)`,
-          sugerencia: 'El día tiene poco margen para retrasos o cambios',
-          accion: 'ACEPTAR_RIESGO',
-        });
-      }
-    }
-
-    return conflictos;
-  }
 
   /**
    * Aplica la programación a los partidos
@@ -1505,7 +1467,7 @@ export class ProgramacionService {
         partidoId: matchId,
         fecha: slot.fecha,
         horaInicio: slot.horaInicio,
-        horaFin: this.calcularHoraFin(slot.horaInicio),
+        horaFin: calcularHoraFin(slot.horaInicio),
         torneoCanchaId: slot.torneoCanchaId,
         sedeNombre: slot.sedeNombre,
         canchaNombre: slot.canchaNombre,
@@ -1521,13 +1483,6 @@ export class ProgramacionService {
     return { success: false, message: 'No se encontró slot disponible sin conflictos' };
   }
 
-  private calcularHoraFin(horaInicio: string): string {
-    const [h, m] = horaInicio.split(':').map(Number);
-    const totalMinutos = h * 60 + m + 70; // 90 min = 1.5h
-    const horaFin = Math.floor(totalMinutos / 60);
-    const minutosFin = totalMinutos % 60;
-    return `${horaFin.toString().padStart(2, '0')}:${minutosFin.toString().padStart(2, '0')}`;
-  }
 
   /**
    * Obtiene las canchas disponibles para un torneo
@@ -1558,48 +1513,10 @@ export class ProgramacionService {
   // MÉTODOS AUXILIARES
   // ═══════════════════════════════════════════════════════════
 
-  private agruparSlotsPorFecha(slots: SlotDisponible[]): Record<string, SlotDisponible[]> {
-    const agrupado: Record<string, SlotDisponible[]> = {};
-    for (const slot of slots) {
-      if (!agrupado[slot.fecha]) {
-        agrupado[slot.fecha] = [];
-      }
-      agrupado[slot.fecha].push(slot);
-    }
-    // Ordenar slots dentro de cada fecha por hora
-    for (const fecha of Object.keys(agrupado)) {
-      agrupado[fecha].sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
-    }
-    return agrupado;
-  }
 
-  private agruparAsignacionesPorFecha(asignaciones: PartidoAsignado[]): Record<string, PartidoAsignado[]> {
-    const agrupado: Record<string, PartidoAsignado[]> = {};
-    for (const a of asignaciones) {
-      if (!agrupado[a.fecha]) {
-        agrupado[a.fecha] = [];
-      }
-      agrupado[a.fecha].push(a);
-    }
-    return agrupado;
-  }
 
-  private parseHora(hora: string): number {
-    const [h, m] = hora.split(':').map(Number);
-    return h + m / 60;
-  }
 
-  private formatHora(decimal: number): string {
-    const h = Math.floor(decimal);
-    const m = Math.round((decimal - h) * 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  }
 
-  private getDiaSemana(fecha: string): string {
-    const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const date = new Date(fecha + 'T12:00:00-03:00'); // Mediodía Paraguay
-    return dias[date.getDay()];
-  }
 
   private async liberarSlot(
     torneoCanchaId: string,
@@ -1639,7 +1556,7 @@ export class ProgramacionService {
       // FIX: fechaProgramada es String YYYY-MM-DD
       fecha: p.fechaProgramada as string,
       horaInicio: p.horaProgramada as string,
-      horaFin: this.calcularHoraFin(p.horaProgramada as string),
+      horaFin: calcularHoraFin(p.horaProgramada as string),
       torneoCanchaId: p.torneoCanchaId as string,
       sedeNombre: '',
       canchaNombre: '',
