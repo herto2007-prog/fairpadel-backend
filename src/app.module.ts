@@ -30,6 +30,7 @@ import { SocialModule } from './modules/social/social.module';
 import { WhatsAppModule } from './modules/whatsapp/whatsapp.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { AmericanoModule } from './modules/americano/americano.module';
+import { ReportesModule } from './modules/reportes/reportes.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { AmericanoModule } from './modules/americano/americano.module';
     WhatsAppModule,   // WhatsApp Business API (con feature flag WHATSAPP_ENABLED)
     StatsModule,      // Estadísticas globales públicas
     AmericanoModule,  // Torneos Americano (formato round-robin rotativo)
+    ReportesModule,   // Reportes descargables (Excel) de torneos
   ],
   controllers: [AppController],
 })
