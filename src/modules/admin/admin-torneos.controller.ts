@@ -23,6 +23,7 @@ import { TournamentsService } from '../tournaments/tournaments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 
 // Validador custom para fechas futuras
 @ValidatorConstraint({ name: 'isFutureDate', async: false })
@@ -282,6 +283,7 @@ export class AdminTorneosController {
     };
   }
 
+  @UseGuards(TorneoGestionGuard)
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const torneo = await this.prisma.tournament.findUnique({
@@ -463,6 +465,7 @@ export class AdminTorneosController {
     }
   }
 
+  @UseGuards(TorneoGestionGuard)
   @Put(':id')
   async update(
     @Param('id') torneoId: string,
@@ -611,6 +614,7 @@ export class AdminTorneosController {
     }
   }
 
+  @UseGuards(TorneoGestionGuard)
   @Delete(':id')
   async remove(@Param('id') torneoId: string) {
     try {
@@ -640,6 +644,7 @@ export class AdminTorneosController {
    * Finaliza una categoría de torneo y calcula automáticamente los puntos de ranking.
    * Solo disponible para torneos con circuito aprobado.
    */
+  @UseGuards(TorneoGestionGuard)
   @Post(':tournamentId/categorias/:categoryId/finalizar')
   async finalizarCategoria(
     @Param('tournamentId') tournamentId: string,

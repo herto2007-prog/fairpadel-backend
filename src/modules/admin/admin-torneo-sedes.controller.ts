@@ -14,14 +14,17 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 
 // GESTIÓN DE SEDES DEL TORNEO (extraido verbatim de admin-torneos.controller).
 // Asignar/quitar/cambiar/reordenar sedes de un torneo y sincronizar sus canchas
 // (TorneoCancha) en consecuencia. Distinto de AdminSedesController (admin/sedes),
 // que administra el catálogo global de sedes.
 // Mismo base path admin/torneos + guards + @Roles → URLs sin cambios.
+// TorneoGestionGuard a nivel controller: toda ruta tiene :id (el torneo),
+// así solo admin / dueño / coorganizador pueden operar (evita IDOR entre organizadores).
 @Controller('admin/torneos')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TorneoGestionGuard)
 @Roles('admin', 'organizador')
 export class AdminTorneoSedesController {
   constructor(private prisma: PrismaService) {}

@@ -12,6 +12,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 
 class AsignarModalidadesDto {
   @IsArray()
@@ -42,6 +43,9 @@ class ConfigurarRecordatorioDto {
 // admin-torneos.controller). Datos auxiliares del wizard, asignación de
 // modalidades/categorías, publicación, y gestión del checklist.
 // Mismo base path admin/torneos + guards + @Roles → URLs sin cambios.
+// TorneoGestionGuard se aplica POR MÉTODO (no a nivel controller) porque
+// GET datos/wizard no opera sobre un torneo (es catálogo global) y quedaría
+// bloqueado por el fail-closed del guard. El resto de rutas tienen :id.
 @Controller('admin/torneos')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin', 'organizador')
@@ -89,6 +93,7 @@ export class AdminTorneoWizardController {
   // MODALIDADES Y CATEGORÍAS
   // ═══════════════════════════════════════════════════════════
 
+  @UseGuards(TorneoGestionGuard)
   @Post(':id/modalidades')
   async asignarModalidades(
     @Param('id') torneoId: string,
@@ -127,6 +132,7 @@ export class AdminTorneoWizardController {
     }
   }
 
+  @UseGuards(TorneoGestionGuard)
   @Post(':id/categorias')
   async asignarCategorias(
     @Param('id') torneoId: string,
@@ -165,6 +171,7 @@ export class AdminTorneoWizardController {
     }
   }
 
+  @UseGuards(TorneoGestionGuard)
   @Put(':id/publicar')
   async publicar(@Param('id') torneoId: string) {
     try {
@@ -191,6 +198,7 @@ export class AdminTorneoWizardController {
   // CHECKLIST
   // ═══════════════════════════════════════════════════════════
 
+  @UseGuards(TorneoGestionGuard)
   @Get(':id/checklist')
   async getChecklist(@Param('id') tournamentId: string) {
     const items = await this.prisma.checklistItem.findMany({
@@ -209,6 +217,7 @@ export class AdminTorneoWizardController {
     };
   }
 
+  @UseGuards(TorneoGestionGuard)
   @Put(':id/checklist/:itemId')
   async completarChecklistItem(
     @Param('id') tournamentId: string,
@@ -232,6 +241,7 @@ export class AdminTorneoWizardController {
     };
   }
 
+  @UseGuards(TorneoGestionGuard)
   @Put(':id/checklist/:itemId/recordatorio')
   async configurarRecordatorio(
     @Param('id') tournamentId: string,

@@ -17,12 +17,15 @@ import { TournamentsService } from '../tournaments/tournaments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 
 // CONTROL DE PAGOS DEL ORGANIZADOR (extraido verbatim de admin-torneos.controller).
 // Sistema paralelo de registro manual de pagos (efectivo/transferencia),
 // no relacionado con pagos premium ni Bancard.
+// TorneoGestionGuard a nivel controller unifica el chequeo de propiedad que los
+// handlers ya hacían a mano con puedeGestionarTorneo (evita IDOR entre organizadores).
 @Controller('admin/torneos')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TorneoGestionGuard)
 @Roles('admin', 'organizador')
 export class AdminControlPagosController {
   constructor(
