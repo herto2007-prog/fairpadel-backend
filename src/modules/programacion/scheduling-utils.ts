@@ -5,6 +5,7 @@ import type {
   PartidoProgramar,
   Conflicto,
   LogAsignacion,
+  PrediccionRecursos,
 } from './programacion.service';
 import type { DescansoCalculatorService, SlotInfo } from './descanso-calculator.service';
 
@@ -12,6 +13,26 @@ import type { DescansoCalculatorService, SlotInfo } from './descanso-calculator.
 // Sin dependencias inyectadas ni acceso a BD: parseo/formato de horas,
 // agrupación por fecha, día de la semana y validación de conflictos de
 // saturación. El servicio orquesta BD y delega aquí estos cálculos.
+
+/**
+ * Orden de fases para programación cronológica
+ * Las fases más tempranas van primero (índice menor)
+ */
+export const ORDEN_FASES: string[] = [
+  'ZONA',
+  'REPECHAJE',
+  'TREINTAYDOSAVOS',
+  'DIECISEISAVOS',
+  'OCTAVOS',
+  'CUARTOS',
+  'SEMIS',
+  'FINAL',
+];
+
+/**
+ * Fases que deben ir obligatoriamente en fechaFinales
+ */
+export const FASES_FINALES: string[] = ['SEMIS', 'FINAL'];
 
 export function parseHora(hora: string): number {
     const [h, m] = hora.split(':').map(Number);
@@ -495,4 +516,230 @@ export function asignarPartidosBalanceado(
         });
       }
     }
+  }
+
+export function calcularPrediccion(
+    partidos: PartidoProgramar[],
+    slots: SlotDisponible[],
+  ): PrediccionRecursos {
+    // Horas necesarias (1.5h por partido promedio)
+    const horasNecesarias = partidos.length * 1.5;
+    
+    // Calcular horas disponibles
+    const horasDisponibles = slots.reduce((total, slot) => {
+      const inicio = parseHora(slot.horaInicio);
+      const fin = parseHora(slot.horaFin);
+      return total + (fin - inicio);
+    }, 0);
+
+    const deficit = Math.max(0, horasNecesarias - horasDisponibles);
+    const suficiente = deficit <= 0;
+
+    const sugerencias: string[] = [];
+    if (!suficiente) {
+      const slotsFaltantes = Math.ceil((horasNecesarias - horasDisponibles) / 1.5);
+      sugerencias.push(`Necesitas ${slotsFaltantes} slots más (${Math.round(deficit)}h adicionales)`);
+      sugerencias.push('Agrega más días o extiende los horarios en el tab Canchas');
+    }
+
+    return {
+      totalPartidos: partidos.length,
+      horasNecesarias,
+      slotsDisponibles: horasDisponibles,
+      deficit,
+      suficiente,
+      sugerencias,
+    };
+  }
+
+export function distribuirPartidosCronologicamente(
+    descansoCalculator: DescansoCalculatorService,
+    ordenCategorias: Map<string, number>,
+    partidos: PartidoProgramar[],
+    slots: SlotDisponible[],
+    fechaInicio?: string,
+    fechaFinales?: string,
+    canchasFinales?: string[],
+    horaInicioFinales?: string,
+    horaFinFinales?: string,
+    logs?: LogAsignacion[],
+  ): DistribucionDia[] {
+    // 1. Agrupar slots por fecha
+    const slotsPorFecha = agruparSlotsPorFecha(slots);
+    let fechasOrdenadas = Object.keys(slotsPorFecha).sort();
+
+    // Filtrar desde fechaInicio si se especifica
+    if (fechaInicio) {
+      fechasOrdenadas = fechasOrdenadas.filter(f => f >= fechaInicio);
+    }
+
+    if (fechasOrdenadas.length === 0) {
+      return [];
+    }
+
+    // 2. Separar fechas: finales vs otras
+    const fechaFinalesReal = fechaFinales || fechasOrdenadas[fechasOrdenadas.length - 1];
+    const fechasNoFinales = fechasOrdenadas.filter(f => f !== fechaFinalesReal);
+
+    // 3. (El orden de categorías para finales lo provee el servicio por parámetro)
+
+    // 4. Separar partidos por fases (lógica simple y clara)
+    // FASES INICIALES: ZONA + REPECHAJE → primeros días (distribución balanceada)
+    // FASES INTERMEDIAS: TREINTAYDOSAVOS + DIECISEISAVOS + OCTAVOS + CUARTOS → penúltimo día
+    // FASES FINALES: SEMIS + FINAL → último día (fechaFinales)
+    
+    const partidosFinales = partidos.filter(p => FASES_FINALES.includes(p.fase));
+    const partidosPreFinales = partidos.filter(p => 
+      ['CUARTOS', 'OCTAVOS', 'DIECISEISAVOS', 'TREINTAYDOSAVOS'].includes(p.fase)
+    );
+    const partidosIniciales = partidos.filter(p => 
+      ['ZONA', 'REPECHAJE'].includes(p.fase)
+    );
+
+    // 5. Asignar fechas
+    // - Primeros días (todos excepto los últimos 2): ZONA + REPECHAJE
+    // - Penúltimo día: OCTAVOS + CUARTOS (y 16avos/32avos si existen)
+    // - Último día: SEMIS + FINAL
+    
+    const totalDiasNoFinales = fechasNoFinales.length;
+    
+    // Si tenemos 3+ días: ZONA ocupa todos menos los últimos 2
+    // Si tenemos 2 días: ZONA ocupa el primero, OCTAVOS/CUARTOS el segundo
+    // Si tenemos 1 día: todo va junto (caso edge)
+    
+    let fechasZona: string[] = [];
+    let fechaIntermedia: string | null = null;
+    
+    if (totalDiasNoFinales >= 3) {
+      // Caso ideal: Jueves/Viernes = ZONA, Sábado = OCTAVOS/CUARTOS, Domingo = FINALES
+      fechasZona = fechasNoFinales.slice(0, totalDiasNoFinales - 1); // Todos menos el penúltimo
+      fechaIntermedia = fechasNoFinales[totalDiasNoFinales - 1]; // Penúltimo día
+    } else if (totalDiasNoFinales === 2) {
+      // Caso justo: Primer día = ZONA, Segundo día = OCTAVOS/CUARTOS
+      fechasZona = [fechasNoFinales[0]];
+      fechaIntermedia = fechasNoFinales[1];
+    } else if (totalDiasNoFinales === 1) {
+      // Caso mínimo: Todo junto
+      fechasZona = [fechasNoFinales[0]];
+      fechaIntermedia = fechasNoFinales[0];
+    }
+
+    if (logs) {
+      logs.push({
+        tipo: 'INFO' as any,
+        partidoId: '',
+        categoriaNombre: '',
+        fase: '',
+        fecha: '',
+        hora: '',
+        mensaje: `Estrategia: ZONA/REPECHAJE=${fechasZona.length}d, OCTAVOS-CUARTOS=1d (${fechaIntermedia}), FINALES=1d (${fechaFinalesReal})`,
+      });
+    }
+
+    // 6. Ordenar partidos
+    const ordenarPorFase = (a: PartidoProgramar, b: PartidoProgramar) => {
+      const ordenA = ORDEN_FASES.indexOf(a.fase);
+      const ordenB = ORDEN_FASES.indexOf(b.fase);
+      if (ordenA !== ordenB) return ordenA - ordenB;
+      return a.orden - b.orden;
+    };
+
+    const partidosInicialesOrdenados = [...partidosIniciales].sort(ordenarPorFase);
+    const partidosPreFinalesOrdenados = [...partidosPreFinales].sort(ordenarPorFase);
+
+    // Ordenar finales: SEMIS primero, luego FINAL, categorías bajas primero
+    const partidosFinalesOrdenados = [...partidosFinales].sort((a, b) => {
+      const ordenFaseA = ORDEN_FASES.indexOf(a.fase);
+      const ordenFaseB = ORDEN_FASES.indexOf(b.fase);
+      if (ordenFaseA !== ordenFaseB) return ordenFaseA - ordenFaseB;
+      const ordenCatA = ordenCategorias.get(a.categoriaId) || 999;
+      const ordenCatB = ordenCategorias.get(b.categoriaId) || 999;
+      return ordenCatA - ordenCatB;
+    });
+
+    // 7. Asignar partidos
+    const asignaciones: PartidoAsignado[] = [];
+    const slotsAsignados = new Set<string>();
+
+    // 7.1 ZONA + REPECHAJE en primeros días (con distribución balanceada)
+    if (partidosInicialesOrdenados.length > 0 && fechasZona.length > 0) {
+      if (logs) {
+        logs.push({
+          tipo: 'INFO' as any,
+          partidoId: '',
+          categoriaNombre: '',
+          fase: '',
+          fecha: fechasZona[0],
+          hora: '',
+          mensaje: `Fase 1: Asignando ${partidosInicialesOrdenados.length} partidos ZONA/REPECHAJE a ${fechasZona.length} días`,
+        });
+      }
+      asignarPartidosBalanceado(descansoCalculator,
+        partidosInicialesOrdenados,
+        fechasZona,
+        slotsPorFecha,
+        slotsAsignados,
+        asignaciones,
+        logs,
+      );
+    }
+
+    // 7.2 OCTAVOS + CUARTOS (y 16avos/32avos) en el día intermedio
+    if (partidosPreFinalesOrdenados.length > 0 && fechaIntermedia) {
+      if (logs) {
+        logs.push({
+          tipo: 'INFO' as any,
+          partidoId: '',
+          categoriaNombre: '',
+          fase: '',
+          fecha: fechaIntermedia,
+          hora: '',
+          mensaje: `Fase 2: Asignando ${partidosPreFinalesOrdenados.length} partidos OCTAVOS/CUARTOS al día ${fechaIntermedia}`,
+        });
+      }
+      // Para fases de eliminación directa, usamos asignación simple (todos caben en un día)
+      for (const partido of partidosPreFinalesOrdenados) {
+        const asignacion = encontrarSlotOptimo(descansoCalculator,
+          partido,
+          [fechaIntermedia],
+          slotsPorFecha,
+          slotsAsignados,
+          asignaciones,
+          undefined,
+          undefined,
+          undefined,
+          logs,
+        );
+
+        if (asignacion) {
+          asignaciones.push(asignacion);
+          slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+        }
+      }
+    }
+
+    // 7.4 Finales en fechaFinales
+    if (partidosFinalesOrdenados.length > 0) {
+      for (const partido of partidosFinalesOrdenados) {
+        const asignacion = encontrarSlotOptimo(descansoCalculator,
+          partido,
+          [fechaFinalesReal],
+          slotsPorFecha,
+          slotsAsignados,
+          asignaciones,
+          canchasFinales,
+          horaInicioFinales,
+          horaFinFinales,
+          logs,
+        );
+
+        if (asignacion) {
+          asignaciones.push(asignacion);
+          slotsAsignados.add(`${asignacion.fecha}-${asignacion.torneoCanchaId}-${asignacion.horaInicio}`);
+        }
+      }
+    }
+
+    // 8. Construir distribución final
+    return construirDistribucion(asignaciones, slotsPorFecha, fechasOrdenadas);
   }
