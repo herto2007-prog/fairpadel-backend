@@ -47,4 +47,30 @@ export class ReportesController {
 
     return new StreamableFile(buffer);
   }
+
+  /**
+   * GET /reportes/torneos/:id/partidos
+   * Descarga el Excel del fixture/partidos del torneo.
+   * Solo quien puede gestionar el torneo (organizador/dueño/coorg/admin).
+   */
+  @Get('torneos/:id/partidos')
+  async partidosExcel(
+    @Param('id') torneoId: string,
+    @GetUser() user: User,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const puede = await this.tournamentsService.puedeGestionarTorneo(torneoId, user.id);
+    if (!puede) {
+      throw new ForbiddenException('No tenés permiso para descargar este reporte');
+    }
+
+    const { buffer, filename } = await this.reportesService.generarPartidosExcel(torneoId);
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return new StreamableFile(buffer);
+  }
 }
