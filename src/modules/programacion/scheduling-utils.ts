@@ -4,6 +4,7 @@ import type {
   DistribucionDia,
   PartidoProgramar,
   Conflicto,
+  LogAsignacion,
 } from './programacion.service';
 import type { DescansoCalculatorService, SlotInfo } from './descanso-calculator.service';
 
@@ -226,4 +227,272 @@ export function tieneConflictoPareja(
       asignacionesExistentes,
     );
     return resultado.conflicto;
+  }
+
+export function encontrarSlotOptimo(
+    descansoCalculator: DescansoCalculatorService,
+    partido: PartidoProgramar,
+    fechasPermitidas: string[],
+    slotsPorFecha: Record<string, SlotDisponible[]>,
+    slotsAsignados: Set<string>,
+    asignacionesExistentes: PartidoAsignado[],
+    canchasPermitidas?: string[],
+    horaMinima?: string,
+    horaMaxima?: string,
+    logs?: LogAsignacion[],
+  ): PartidoAsignado | null {
+    // Recopilar info de parejas para este partido
+    const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
+
+    for (const fecha of fechasPermitidas) {
+      let slotsDelDia = slotsPorFecha[fecha] || [];
+
+      // Filtrar por canchas permitidas (para finales)
+      if (canchasPermitidas?.length) {
+        slotsDelDia = slotsDelDia.filter(s => canchasPermitidas.includes(s.torneoCanchaId));
+      }
+
+      // Filtrar por hora mínima (para finales)
+      if (horaMinima) {
+        slotsDelDia = slotsDelDia.filter(s => s.horaInicio >= horaMinima);
+      }
+
+      // Filtrar por hora máxima (para finales)
+      if (horaMaxima) {
+        slotsDelDia = slotsDelDia.filter(s => s.horaInicio <= horaMaxima);
+      }
+
+      for (const slot of slotsDelDia) {
+        const slotKey = `${fecha}-${slot.torneoCanchaId}-${slot.horaInicio}`;
+
+        // Verificar si el slot ya está asignado
+        if (slotsAsignados.has(slotKey)) continue;
+
+        // Verificar conflictos de pareja con mensaje informativo
+        const verificacion = verificarConflictoPareja(descansoCalculator,
+          partido,
+          fecha,
+          slot.horaInicio,
+          asignacionesExistentes,
+        );
+
+        if (verificacion.conflicto) {
+          // Log informativo sobre por qué se saltó este slot
+          console.log(
+            `[Programacion] Slot ${slot.horaInicio} en ${fecha} saltado para partido ${partido.id}: ${verificacion.razon}`
+          );
+          
+          // Agregar al array de logs para el frontend
+          if (logs) {
+            logs.push({
+              tipo: 'SALTADO',
+              partidoId: partido.id,
+              categoriaNombre: partido.categoriaNombre,
+              fase: partido.fase,
+              fecha,
+              hora: slot.horaInicio,
+              mensaje: verificacion.razon || 'Conflicto de horario',
+            });
+          }
+          
+          continue;
+        }
+
+        // Slot válido encontrado - agregar log
+        if (logs) {
+          logs.push({
+            tipo: 'ASIGNADO',
+            partidoId: partido.id,
+            categoriaNombre: partido.categoriaNombre,
+            fase: partido.fase,
+            fecha,
+            hora: slot.horaInicio,
+            mensaje: `${partido.categoriaNombre} - ${partido.fase} asignado a las ${slot.horaInicio} en ${fecha}`,
+          });
+        }
+
+        return {
+          partidoId: partido.id,
+          fecha,
+          horaInicio: slot.horaInicio,
+          horaFin: slot.horaFin,
+          torneoCanchaId: slot.torneoCanchaId,
+          sedeNombre: slot.sedeNombre,
+          canchaNombre: slot.canchaNombre,
+          fase: partido.fase,
+          categoriaNombre: partido.categoriaNombre,
+          pareja1: partido.pareja1 ? 
+            `${partido.pareja1.jugador1.nombre}/${partido.pareja1.jugador2?.nombre || '?'}` : 
+            undefined,
+          pareja2: partido.pareja2 ? 
+            `${partido.pareja2.jugador1.nombre}/${partido.pareja2.jugador2?.nombre || '?'}` : 
+            undefined,
+        };
+      }
+    }
+
+    return null;
+  }
+
+export function asignarPartidosBalanceado(
+    descansoCalculator: DescansoCalculatorService,
+    partidos: PartidoProgramar[],
+    fechas: string[],
+    slotsPorFecha: Record<string, SlotDisponible[]>,
+    slotsAsignados: Set<string>,
+    asignaciones: PartidoAsignado[],
+    logs?: LogAsignacion[],
+  ): void {
+    // DISTRIBUCIÓN BALANCEADA + OPTIMIZACIÓN DE ADELANTAR
+    // 
+    // 1. Calcular cuántos partidos debería tener cada día proporcionalmente
+    // 2. Por cada partido, encontrar el día con más "espacio proporcional disponible"
+    // 3. Dentro de ese día, usar la lógica de adelantar para minimizar huecos
+    
+    // PASO 1: Calcular capacidad y objetivo de cada día
+    const capacidadPorDia = new Map<string, number>();
+    const asignadosPorDia = new Map<string, number>();
+    let capacidadTotal = 0;
+    
+    for (const fecha of fechas) {
+      const slots = slotsPorFecha[fecha] || [];
+      const capacidad = slots.length;
+      capacidadPorDia.set(fecha, capacidad);
+      asignadosPorDia.set(fecha, 0);
+      capacidadTotal += capacidad;
+    }
+    
+    if (capacidadTotal === 0) return;
+    
+    // Calcular objetivo de partidos por día (proporcional)
+    const objetivoPorDia = new Map<string, number>();
+    for (const fecha of fechas) {
+      const capacidad = capacidadPorDia.get(fecha) || 0;
+      const proporcion = capacidad / capacidadTotal;
+      objetivoPorDia.set(fecha, Math.round(partidos.length * proporcion));
+    }
+    
+    // Ajustar por redondeo
+    let totalObjetivo = 0;
+    for (const cantidad of objetivoPorDia.values()) {
+      totalObjetivo += cantidad;
+    }
+    if (totalObjetivo !== partidos.length && fechas.length > 0) {
+      const ultimaFecha = fechas[fechas.length - 1];
+      objetivoPorDia.set(ultimaFecha, (objetivoPorDia.get(ultimaFecha) || 0) + (partidos.length - totalObjetivo));
+    }
+    
+    // PASO 2: Asignar partidos manteniendo el balance
+    const partidosPendientes = [...partidos];
+    
+    while (partidosPendientes.length > 0) {
+      // Encontrar el día con más "margen proporcional" (más lejos de su objetivo)
+      let mejorFecha: string | null = null;
+      let mejorMargen = -Infinity;
+      
+      for (const fecha of fechas) {
+        const asignados = asignadosPorDia.get(fecha) || 0;
+        const objetivo = objetivoPorDia.get(fecha) || 0;
+        const margen = objetivo - asignados; // Cuántos más puede recibir
+        
+        // Solo considerar días que aún necesitan partidos y tienen slots libres
+        const slotsLibres = (slotsPorFecha[fecha] || []).filter(s => {
+          const key = `${fecha}-${s.torneoCanchaId}-${s.horaInicio}`;
+          return !slotsAsignados.has(key);
+        }).length;
+        
+        if (margen > mejorMargen && slotsLibres > 0) {
+          mejorMargen = margen;
+          mejorFecha = fecha;
+        }
+      }
+      
+      if (!mejorFecha) break; // No hay más días disponibles
+      
+      // Intentar asignar un partido al día seleccionado
+      const slotsDelDia = slotsPorFecha[mejorFecha] || [];
+      let partidoAsignado = false;
+      
+      for (const slot of slotsDelDia) {
+        const slotKey = `${mejorFecha}-${slot.torneoCanchaId}-${slot.horaInicio}`;
+        if (slotsAsignados.has(slotKey)) continue;
+        
+        // Buscar el primer partido pendiente que pueda usar este slot
+        for (let i = 0; i < partidosPendientes.length; i++) {
+          const partido = partidosPendientes[i];
+          
+          const verificacion = verificarConflictoPareja(descansoCalculator,
+            partido,
+            mejorFecha,
+            slot.horaInicio,
+            asignaciones,
+          );
+          
+          if (!verificacion.conflicto) {
+            // Asignar partido
+            const asignacion: PartidoAsignado = {
+              partidoId: partido.id,
+              fecha: mejorFecha,
+              horaInicio: slot.horaInicio,
+              horaFin: slot.horaFin,
+              torneoCanchaId: slot.torneoCanchaId,
+              sedeNombre: slot.sedeNombre,
+              canchaNombre: slot.canchaNombre,
+              fase: partido.fase,
+              categoriaNombre: partido.categoriaNombre,
+              pareja1: partido.pareja1 ? 
+                `${partido.pareja1.jugador1.nombre}/${partido.pareja1.jugador2?.nombre || '?'}` : 
+                undefined,
+              pareja2: partido.pareja2 ? 
+                `${partido.pareja2.jugador1.nombre}/${partido.pareja2.jugador2?.nombre || '?'}` : 
+                undefined,
+            };
+            
+            asignaciones.push(asignacion);
+            slotsAsignados.add(slotKey);
+            asignadosPorDia.set(mejorFecha, (asignadosPorDia.get(mejorFecha) || 0) + 1);
+            
+            if (logs) {
+              logs.push({
+                tipo: i > 0 ? 'ADELANTADO' : 'ASIGNADO',
+                partidoId: partido.id,
+                categoriaNombre: partido.categoriaNombre,
+                fase: partido.fase,
+                fecha: mejorFecha,
+                hora: slot.horaInicio,
+                mensaje: i > 0 
+                  ? `${partido.categoriaNombre} - ${partido.fase} ADELANTADO a ${mejorFecha} ${slot.horaInicio} (balance: ${asignadosPorDia.get(mejorFecha)}/${objetivoPorDia.get(mejorFecha)})`
+                  : `${partido.categoriaNombre} - ${partido.fase} asignado a ${mejorFecha} ${slot.horaInicio} (balance: ${asignadosPorDia.get(mejorFecha)}/${objetivoPorDia.get(mejorFecha)})`,
+              });
+            }
+            
+            partidosPendientes.splice(i, 1);
+            partidoAsignado = true;
+            break;
+          }
+        }
+        
+        if (partidoAsignado) break;
+      }
+      
+      // Si no se pudo asignar a este día, marcarlo como lleno para esta iteración
+      if (!partidoAsignado) {
+        asignadosPorDia.set(mejorFecha, 999999); // Forzar a buscar otro día
+      }
+    }
+    
+    // Si quedaron partidos sin asignar (no cabían en los días disponibles)
+    if (partidosPendientes.length > 0 && logs) {
+      for (const partido of partidosPendientes) {
+        logs.push({
+          tipo: 'SALTADO',
+          partidoId: partido.id,
+          categoriaNombre: partido.categoriaNombre,
+          fase: partido.fase,
+          fecha: '',
+          hora: '',
+          mensaje: `⚠️ ${partido.categoriaNombre} - ${partido.fase} NO SE PUDO ASIGNAR (sin slots disponibles)`,
+        });
+      }
+    }
   }
