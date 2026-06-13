@@ -18,6 +18,7 @@ import { ComisionService } from '../../common/services/comision.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User, InscripcionEstado, TournamentStatus, Gender } from '@prisma/client';
+import { validarReglasCategoria } from './inscripciones-validacion';
 import { IsString, IsOptional, IsUUID, IsEmail, IsEnum, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -227,7 +228,7 @@ export class PublicInscripcionesController {
     }
 
     // Validar reglas
-    const validacion = this.validarReglasCategoria(
+    const validacion = validarReglasCategoria(
       jugadorGenero,
       categoriaJugador,
       categoriaTarget,
@@ -319,7 +320,7 @@ export class PublicInscripcionesController {
         throw new BadRequestException('Tu categoría asignada no es válida. Contacta al administrador.');
       }
 
-      const validacion = this.validarReglasCategoria(
+      const validacion = validarReglasCategoria(
         user.genero,
         categoriaJugador,
         categoriaTorneo,
@@ -692,75 +693,6 @@ export class PublicInscripcionesController {
   // MÉTODOS PRIVADOS
   // ═══════════════════════════════════════════════════════════
 
-  /**
-   * Valida las reglas de categoría según género y nivel
-   */
-  private validarReglasCategoria(
-    jugadorGenero: Gender,
-    categoriaJugador: any,
-    categoriaTarget: any,
-    todasCategorias: any[],
-  ): { permitido: boolean; mensaje: string; esCategoriaInferior?: boolean; advertencia?: string } {
-    const ordenJugador = categoriaJugador.orden;
-    const ordenTarget = categoriaTarget.orden;
-    const esTargetDamas = categoriaTarget.tipo === 'FEMENINO';
-    const esTargetCaballeros = categoriaTarget.tipo === 'MASCULINO';
-
-    // REGLA 1: Hombres NO pueden en categorías Damas
-    if (jugadorGenero === 'MASCULINO' && esTargetDamas) {
-      return {
-        permitido: false,
-        mensaje: 'Los jugadores masculinos no pueden inscribirse en categorías femeninas',
-      };
-    }
-
-    // REGLA 2: Categoría igual o superior - permitida para todos
-    if (ordenTarget <= ordenJugador) {
-      return {
-        permitido: true,
-        mensaje: ordenTarget === ordenJugador
-          ? 'Categoría de tu nivel'
-          : 'Categoría superior - ¡Desafío aceptado!',
-        esCategoriaInferior: false,
-      };
-    }
-
-    // REGLA 3: Categorías INFERIORES (ordenTarget > ordenJugador)
-    // Hombres: NO pueden bajar a inferiores (bajo ninguna circunstancia)
-    if (jugadorGenero === 'MASCULINO') {
-      return {
-        permitido: false,
-        mensaje: `No puedes inscribirte en ${categoriaTarget.nombre} siendo ${categoriaJugador.nombre}`,
-        esCategoriaInferior: true,
-      };
-    }
-
-    // Mujeres en categorías Damas (su género): NO pueden bajar
-    if (esTargetDamas) {
-      return {
-        permitido: false,
-        mensaje: `No puedes inscribirte en ${categoriaTarget.nombre} siendo ${categoriaJugador.nombre}`,
-        esCategoriaInferior: true,
-      };
-    }
-
-    // Mujeres en categorías Caballeros: SÍ pueden bajar UNA como excepción
-    const diferencia = ordenTarget - ordenJugador;
-    if (diferencia > 1) {
-      return {
-        permitido: false,
-        mensaje: `Solo puedes bajar UNA categoría como máximo. ${categoriaTarget.nombre} es muy inferior a tu categoría actual.`,
-        esCategoriaInferior: true,
-      };
-    }
-
-    return {
-      permitido: true,
-      mensaje: 'Categoría permitida (excepción de una categoría inferior)',
-      esCategoriaInferior: true,
-      advertencia: 'Estás usando tu excepción de bajar una categoría en caballeros. Esta acción solo puede realizarse una vez.',
-    };
-  }
 
   private async notificarInscripcionPareja(inscripcion: any, jugador1: User, jugador2: User) {
     // Crear notificación en sistema para jugador2
