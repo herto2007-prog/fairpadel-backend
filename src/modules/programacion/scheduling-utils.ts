@@ -5,6 +5,7 @@ import type {
   PartidoProgramar,
   Conflicto,
 } from './programacion.service';
+import type { DescansoCalculatorService, SlotInfo } from './descanso-calculator.service';
 
 // Utilidades PURAS de programación, extraídas verbatim de programacion.service.
 // Sin dependencias inyectadas ni acceso a BD: parseo/formato de horas,
@@ -110,3 +111,119 @@ export function validarConflictos(
     return conflictos;
   }
 
+
+export function construirDistribucion(
+    asignaciones: PartidoAsignado[],
+    slotsPorFecha: Record<string, SlotDisponible[]>,
+    fechasOrdenadas: string[],
+  ): DistribucionDia[] {
+    const asignacionesPorFecha = agruparAsignacionesPorFecha(asignaciones);
+    const distribucion: DistribucionDia[] = [];
+
+    for (const fecha of fechasOrdenadas) {
+      const partidosDelDia = asignacionesPorFecha[fecha];
+      if (!partidosDelDia?.length) continue;
+
+      const diaSlots = slotsPorFecha[fecha] || [];
+      const horasInicio = diaSlots.map(s => s.horaInicio).sort();
+      const horasFin = diaSlots.map(s => s.horaFin).sort();
+
+      distribucion.push({
+        fecha,
+        diaSemana: getDiaSemana(fecha),
+        horarioInicio: horasInicio[0] || '18:00',
+        horarioFin: horasFin[horasFin.length - 1] || '23:00',
+        slotsDisponibles: diaSlots.length,
+        slotsAsignados: partidosDelDia.length,
+        partidos: partidosDelDia.sort((a, b) => a.horaInicio.localeCompare(b.horaInicio)),
+      });
+    }
+
+    return distribucion;
+  }
+
+export function verificarConflictoPareja(
+    descansoCalculator: DescansoCalculatorService,
+    partido: PartidoProgramar,
+    fecha: string,
+    horaInicio: string,
+    asignacionesExistentes: PartidoAsignado[],
+  ): { conflicto: boolean; razon?: string } {
+    const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
+    const slotPropuesto: SlotInfo = { fecha, horaInicio, horaFin: horaInicio };
+
+    for (const parejaId of parejaIds) {
+      if (!parejaId) continue;
+
+      // Partidos de esta pareja en la misma fecha (para validar máximo 2)
+      const partidosMismaFecha = asignacionesExistentes.filter(a => 
+        a.fecha === fecha && (a.pareja1?.includes(parejaId) || a.pareja2?.includes(parejaId))
+      );
+
+      // Máximo 2 partidos por día por pareja
+      if (partidosMismaFecha.length >= 2) {
+        return {
+          conflicto: true,
+          razon: `Máximo 2 partidos por día (${partidosMismaFecha.length} ya asignados)`,
+        };
+      }
+
+      // Verificar 2h de descanso usando el servicio centralizado (todos los partidos de la pareja)
+      const todosLosPartidos = asignacionesExistentes.filter(a => 
+        a.pareja1?.includes(parejaId) || a.pareja2?.includes(parejaId)
+      );
+
+      for (const p of todosLosPartidos) {
+        const slotAnterior: SlotInfo = { 
+          fecha: p.fecha, 
+          horaInicio: p.horaInicio, 
+          horaFin: p.horaFin 
+        };
+        
+        const validacion = descansoCalculator.validarSlotConDescanso(
+          slotPropuesto,
+          slotAnterior,
+          120 // 2 horas de descanso
+        );
+        
+        if (!validacion.valido) {
+          const horaMinima = descansoCalculator.calcularHoraMinimaDescanso(
+            p.fecha,
+            p.horaFin,
+            120
+          );
+          return {
+            conflicto: true,
+            razon: `Descanso reglamentario: jugó a las ${p.horaInicio}, puede jugar desde las ${horaMinima.hora} (2h de descanso)`,
+          };
+        }
+      }
+    }
+
+    return { conflicto: false };
+  }
+
+export function tieneConflictoPareja(
+    descansoCalculator: DescansoCalculatorService,
+    parejaIds: (string | undefined)[],
+    fecha: string,
+    horaInicio: string,
+    asignacionesExistentes: PartidoAsignado[],
+  ): boolean {
+    const resultado = verificarConflictoPareja(
+      descansoCalculator,
+      { 
+        id: '', 
+        fase: '', 
+        orden: 0, 
+        categoriaId: '', 
+        categoriaNombre: '',
+        inscripcion1Id: parejaIds[0],
+        inscripcion2Id: parejaIds[1],
+      } as PartidoProgramar,
+      fecha,
+      horaInicio,
+      asignacionesExistentes,
+    );
+    return resultado.conflicto;
+  }
