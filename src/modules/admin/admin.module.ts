@@ -3,6 +3,7 @@ import { AdminController } from './admin.controller';
 import { AdminCategoriasController } from './admin-categorias.controller';
 import { AdminModalidadesController } from './admin-modalidades.controller';
 import { AdminTorneosController } from './admin-torneos.controller';
+import { AdminControlPagosController } from './admin-control-pagos.controller';
 import { FairpadelAdminController } from './fairpadel-admin.controller';
 import { AdminBracketController } from './admin-bracket.controller';
 import { AdminAuditoriaController } from './admin-auditoria.controller';
@@ -29,6 +30,7 @@ import { TournamentsModule } from '../tournaments/tournaments.module';
     AdminCategoriasController,
     AdminModalidadesController,
     AdminTorneosController,
+    AdminControlPagosController,
     FairpadelAdminController,
     AdminBracketController,
     AdminAuditoriaController,
