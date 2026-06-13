@@ -4,6 +4,14 @@ import { CreateAlquilerConfigDto } from './dto/create-alquiler-config.dto';
 import { CreateReservaDto, ConfirmarReservaDto, CancelarReservaDto } from './dto/create-reserva.dto';
 import { ReservaCanchaEstado } from '@prisma/client';
 import { NotificacionesWhatsAppService } from '../notificaciones/notificaciones-whatsapp.service';
+import {
+  parseTimeToMinutes,
+  formatTimeFromMinutes,
+  generarSlots,
+  getDiaSemanaFromString,
+  diasEntre,
+  hashStringToInt64,
+} from './alquileres-utils';
 
 @Injectable()
 export class AlquileresService {
@@ -41,7 +49,7 @@ export class AlquileresService {
 
   async consultarDisponibilidad(sedeId: string, fecha: string, sedeCanchaId?: string, duracionMinutos?: number) {
     // FIX: fecha es String YYYY-MM-DD, calcular día de semana local
-    const diaSemana = this.getDiaSemanaFromString(fecha);
+    const diaSemana = getDiaSemanaFromString(fecha);
     const duracion = duracionMinutos || 90; // Default 90 minutos
 
     // Obtener canchas de la sede
@@ -104,7 +112,7 @@ export class AlquileresService {
       const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
 
       const horariosTorneoCancha = horariosTorneo.filter(h => h.sedeCanchaId === cancha.id);
-      const slots = this.generarSlots(disponibilidadCancha, reservasCancha, horariosTorneoCancha, cancha.id, duracion);
+      const slots = generarSlots(disponibilidadCancha, reservasCancha, horariosTorneoCancha, cancha.id, duracion);
 
       return {
         cancha: {
@@ -244,65 +252,6 @@ export class AlquileresService {
     return horariosOcupados;
   }
 
-  private generarSlots(
-    disponibilidades: any[],
-    reservas: any[],
-    horariosTorneo: { sedeCanchaId: string; horaInicio: string; horaFin: string }[],
-    canchaId: string,
-    duracionMinutos: number = 90,
-  ): any[] {
-    const slots: any[] = [];
-
-    for (const disp of disponibilidades) {
-      // Usar minutos desde medianoche (evita Date objects)
-      let minutosActual = this.parseTimeToMinutes(disp.horaInicio);
-      let minutosFin = this.parseTimeToMinutes(disp.horaFin);
-      
-      // Si horaFin es 00:00, interpretar como 24:00 (medianoche del día siguiente)
-      // Esto permite franjas como 22:00-00:00
-      if (minutosFin === 0 && disp.horaFin === '00:00') {
-        minutosFin = 24 * 60; // 1440 minutos
-      }
-
-      while (minutosActual < minutosFin) {
-        const slotInicioStr = this.formatTimeFromMinutes(minutosActual);
-        const minutosSlotFin = minutosActual + duracionMinutos;
-        const slotFinStr = this.formatTimeFromMinutes(minutosSlotFin);
-
-        // Si el slot excede el horario de cierre, no agregar
-        if (minutosSlotFin > minutosFin) break;
-
-        // Verificar si hay conflicto con reservas existentes
-        const ocupadoPorReserva = reservas.some(r => {
-          const reservaInicio = this.parseTimeToMinutes(r.horaInicio);
-          const reservaFin = this.parseTimeToMinutes(r.horaFin);
-          return minutosActual < reservaFin && minutosSlotFin > reservaInicio;
-        });
-
-        // Verificar si hay conflicto con torneo
-        const ocupadoPorTorneo = horariosTorneo.some(h => {
-          const torneoInicio = this.parseTimeToMinutes(h.horaInicio);
-          const torneoFin = this.parseTimeToMinutes(h.horaFin);
-          return minutosActual < torneoFin && minutosSlotFin > torneoInicio;
-        });
-
-        const ocupado = ocupadoPorReserva || ocupadoPorTorneo;
-
-        if (!ocupado) {
-          slots.push({
-            horaInicio: slotInicioStr,
-            horaFin: slotFinStr,
-            disponible: true,
-          });
-        }
-
-        minutosActual = minutosSlotFin;
-      }
-    }
-
-    return slots;
-  }
-
   /**
    * Consulta disponibilidad de TODAS las sedes con alquileres habilitados
    * Similar a deportes42 - vista unificada
@@ -314,7 +263,7 @@ export class AlquileresService {
     horaHasta?: string;
   }) {
     const { fecha, duracionMinutos, horaDesde, horaHasta } = params;
-    const diaSemana = this.getDiaSemanaFromString(fecha);
+    const diaSemana = getDiaSemanaFromString(fecha);
 
     // Obtener todas las sedes con suscripción activa (pagada)
     const sedes = await this.prisma.sede.findMany({
@@ -388,7 +337,7 @@ export class AlquileresService {
           const reservasCancha = reservasExistentes.filter(r => r.sedeCanchaId === cancha.id);
 
           const horariosTorneoCancha = horariosTorneo.filter(h => h.sedeCanchaId === cancha.id);
-          let slots = this.generarSlots(disponibilidadCancha, reservasCancha, horariosTorneoCancha, cancha.id, duracionMinutos);
+          let slots = generarSlots(disponibilidadCancha, reservasCancha, horariosTorneoCancha, cancha.id, duracionMinutos);
 
           // Filtrar por rango horario si se especificó
           if (horaDesde) {
@@ -444,33 +393,6 @@ export class AlquileresService {
     };
   }
 
-  /**
-   * Convierte string HH:MM a minutos desde medianoche
-   * Sin usar Date (evita bugs de timezone en servidor)
-   */
-  private parseTimeToMinutes(timeStr: string): number {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    return hours * 60 + minutes;
-  }
-
-  /**
-   * Convierte minutos desde medianoche a string HH:MM
-   */
-  private formatTimeFromMinutes(minutes: number): string {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-  }
-
-  // Métodos legacy mantenidos para compatibilidad (deprecados)
-  private parseTime(timeStr: string): Date {
-    return new Date(`1970-01-01T${timeStr}:00`);
-  }
-
-  private formatTime(date: Date): string {
-    return date.toTimeString().slice(0, 5);
-  }
-
   // ============ RESERVAS ============
 
   async crearReserva(userId: string | null, createDto: CreateReservaDto) {
@@ -492,7 +414,7 @@ export class AlquileresService {
 
       // Validar anticipacionMaxDias
       const hoyStr = new Date().toISOString().split('T')[0];
-      const diasDiff = this.diasEntre(hoyStr, createDto.fecha);
+      const diasDiff = diasEntre(hoyStr, createDto.fecha);
       const anticipacionMaxDias = config.anticipacionMaxDias ?? 14;
       if (diasDiff > anticipacionMaxDias) {
         throw new BadRequestException(
@@ -501,7 +423,7 @@ export class AlquileresService {
       }
 
       // Advisory lock para evitar race conditions en reservas concurrentes
-      const lockKey = this.hashStringToInt64(`${createDto.sedeCanchaId}:${createDto.fecha}`);
+      const lockKey = hashStringToInt64(`${createDto.sedeCanchaId}:${createDto.fecha}`);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
 
       // Verificar bloqueos para esta cancha/fecha
@@ -519,7 +441,7 @@ export class AlquileresService {
       }
 
       // FIX: fecha es String YYYY-MM-DD
-      const diaSemana = this.getDiaSemanaFromString(createDto.fecha);
+      const diaSemana = getDiaSemanaFromString(createDto.fecha);
 
       // Buscar disponibilidad que cubra el horario solicitado
       const disponibilidades = await tx.alquilerDisponibilidad.findMany({
@@ -551,13 +473,13 @@ export class AlquileresService {
         },
       });
 
-      const inicioMin = this.parseTimeToMinutes(createDto.horaInicio);
-      const finMin = this.parseTimeToMinutes(createDto.horaFin);
+      const inicioMin = parseTimeToMinutes(createDto.horaInicio);
+      const finMin = parseTimeToMinutes(createDto.horaFin);
       const finMinAjustado = finMin === 0 && createDto.horaFin === '00:00' ? 24 * 60 : finMin;
 
       const conflicto = reservasExistentes.find(r => {
-        const rInicio = this.parseTimeToMinutes(r.horaInicio);
-        let rFin = this.parseTimeToMinutes(r.horaFin);
+        const rInicio = parseTimeToMinutes(r.horaInicio);
+        let rFin = parseTimeToMinutes(r.horaFin);
         if (rFin === 0 && r.horaFin === '00:00') rFin = 24 * 60;
         return inicioMin < rFin && finMinAjustado > rInicio;
       });
@@ -579,8 +501,8 @@ export class AlquileresService {
           estado,
           duracionMinutos:
             createDto.duracionMinutos ??
-            (this.parseTimeToMinutes(createDto.horaFin) -
-              this.parseTimeToMinutes(createDto.horaInicio)),
+            (parseTimeToMinutes(createDto.horaFin) -
+              parseTimeToMinutes(createDto.horaInicio)),
           creadoPorEncargado,
         },
         include: {
@@ -1055,7 +977,7 @@ export class AlquileresService {
     reservasMes
       .filter(r => r.estado === 'CONFIRMADA' || r.estado === 'PENDIENTE')
       .forEach(r => {
-        const dia = this.getDiaSemanaFromString(r.fecha);
+        const dia = getDiaSemanaFromString(r.fecha);
         diasCount[dia] = (diasCount[dia] || 0) + 1;
       });
     
@@ -1116,37 +1038,4 @@ export class AlquileresService {
     };
   }
 
-  /**
-   * Helper: Obtiene el día de la semana (0-6) desde un string YYYY-MM-DD
-   * Usa mediodía Paraguay para evitar problemas de timezone
-   */
-  private getDiaSemanaFromString(fecha: string): number {
-    const [year, month, day] = fecha.split('-').map(Number);
-    // Crear fecha en hora local de Paraguay (UTC-3)
-    const date = new Date(year, month - 1, day, 12, 0, 0);
-    return date.getDay();
-  }
-
-  /**
-   * Calcula la diferencia en días entre dos fechas YYYY-MM-DD
-   */
-  private diasEntre(fechaInicio: string, fechaFin: string): number {
-    const d1 = new Date(`${fechaInicio}T00:00:00`);
-    const d2 = new Date(`${fechaFin}T00:00:00`);
-    return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
-  }
-
-  /**
-   * Convierte un string en un entero de 64 bits consistente
-   * para usar con pg_advisory_xact_lock
-   */
-  private hashStringToInt64(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash) % Number.MAX_SAFE_INTEGER;
-  }
 }
