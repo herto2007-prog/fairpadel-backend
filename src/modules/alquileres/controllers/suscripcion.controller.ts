@@ -559,7 +559,8 @@ export class SuscripcionController {
    * Usa los clientes de prueba de Bancard para completar el flujo
    */
   @Post('simular-pago/:pagoId')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   async simularPago(
     @Param('pagoId') pagoId: string,
     @Request() req,
@@ -610,7 +611,8 @@ export class SuscripcionController {
    * Requiere autenticación porque es una operación interna de test.
    */
   @Get('test/consulta-bancard/:shopProcessId')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @HttpCode(HttpStatus.OK)
   async testConsultaBancard(
     @Param('shopProcessId') shopProcessId: string,
@@ -646,7 +648,8 @@ export class SuscripcionController {
    * Permite verificar que nuestro endpoint de webhook funciona correctamente
    */
   @Post('test/webhook')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   async testWebhook(
     @Body() payload: {
       shopProcessId: string;
@@ -719,7 +722,8 @@ export class SuscripcionController {
    * Útil para troubleshooting en Railway
    */
   @Get(':sedeId/debug')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   async debugSuscripcion(
     @Param('sedeId') sedeId: string,
     @Request() req,
@@ -776,7 +780,8 @@ export class SuscripcionController {
    * pendientes para comparar con lo que envía Bancard en los webhooks.
    */
   @Get('debug/pagos-pendientes')
-  @Public()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @HttpCode(HttpStatus.OK)
   async debugPagosPendientes() {
     this.logger.log('========================================');
