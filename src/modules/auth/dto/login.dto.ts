@@ -1,9 +1,11 @@
-import { IsString, IsNotEmpty, Matches } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 export class LoginDto {
-  @IsString({ message: 'El documento debe ser texto' })
-  @IsNotEmpty({ message: 'El documento es requerido' })
-  @Matches(/^[0-9]+$/, { message: 'El documento debe contener solo números' })
+  // Acepta email O documento (cédula). Se mantiene el nombre del campo
+  // `documento` por compatibilidad con el frontend actual, pero el valor
+  // puede ser un email. La resolución se hace en auth.service.login.
+  @IsString({ message: 'El identificador debe ser texto' })
+  @IsNotEmpty({ message: 'Ingresá tu email o documento' })
   documento: string;
 
   @IsString({ message: 'La contraseña debe ser texto' })

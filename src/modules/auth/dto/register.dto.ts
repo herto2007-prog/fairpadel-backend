@@ -32,30 +32,33 @@ export class RegisterDto {
   @MinLength(2, { message: 'El apellido debe tener al menos 2 caracteres' })
   apellido: string;
 
+  // Datos opcionales en el registro: se piden "just-in-time" al inscribirse
+  // a un torneo. El registro mínimo solo exige email, contraseña, nombre y
+  // apellido. Los validadores de formato siguen aplicando SI el valor se envía.
   @IsString({ message: 'El documento debe ser texto' })
-  @IsNotEmpty({ message: 'El documento es requerido' })
   @Matches(/^[0-9]+$/, { message: 'El documento debe contener solo números' })
-  documento: string;
+  @IsOptional()
+  documento?: string;
 
   @IsString({ message: 'El teléfono debe ser texto' })
-  @IsNotEmpty({ message: 'El teléfono es requerido' })
-  telefono: string;
+  @IsOptional()
+  telefono?: string;
 
   @IsDateString({}, { message: 'La fecha de nacimiento no es válida' })
-  @IsNotEmpty({ message: 'La fecha de nacimiento es requerida' })
-  fechaNacimiento: string;
+  @IsOptional()
+  fechaNacimiento?: string;
 
   @IsEnum(Gender, { message: 'El género debe ser MASCULINO o FEMENINO' })
-  @IsNotEmpty({ message: 'El género es requerido' })
-  genero: Gender;
+  @IsOptional()
+  genero?: Gender;
 
   @IsString({ message: 'La ciudad debe ser texto' })
-  @IsNotEmpty({ message: 'La ciudad es requerida' })
-  ciudad: string;
+  @IsOptional()
+  ciudad?: string;
 
   @IsString({ message: 'La categoría debe ser texto' })
-  @IsNotEmpty({ message: 'La categoría es requerida' })
-  categoria: string;
+  @IsOptional()
+  categoria?: string;
 
   @IsString({ message: 'La URL de foto debe ser texto' })
   @IsOptional()

@@ -44,25 +44,34 @@ export class AuthService {
       throw new ConflictException('El email ya está registrado');
     }
 
-    // Check if documento exists
-    const existingDocumento = await this.prisma.user.findUnique({
-      where: { documento: dto.documento },
-    });
+    // Si se envió documento, verificar que no esté en uso (en el registro
+    // mínimo el documento es opcional: se pide al inscribirse a un torneo)
+    if (dto.documento) {
+      const existingDocumento = await this.prisma.user.findUnique({
+        where: { documento: dto.documento },
+      });
 
-    if (existingDocumento) {
-      throw new ConflictException('El documento ya está registrado');
+      if (existingDocumento) {
+        throw new ConflictException('El documento ya está registrado');
+      }
     }
 
     // Hash password
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
-    // Buscar la categoría por nombre
-    const categoria = await this.prisma.category.findFirst({
-      where: { nombre: dto.categoria },
-    });
+    // Buscar la categoría por nombre (opcional: en el registro mínimo no se
+    // envía; se asignará al completar los datos para inscribirse)
+    let categoriaActualId: string | null = null;
+    if (dto.categoria) {
+      const categoria = await this.prisma.category.findFirst({
+        where: { nombre: dto.categoria },
+      });
 
-    if (!categoria) {
-      throw new ConflictException('La categoría seleccionada no existe');
+      if (!categoria) {
+        throw new ConflictException('La categoría seleccionada no existe');
+      }
+
+      categoriaActualId = categoria.id;
     }
 
     // Preparar datos de consentimiento de WhatsApp
@@ -88,7 +97,7 @@ export class AuthService {
         genero: dto.genero,
         ciudad: dto.ciudad,
         fotoUrl: dto.fotoUrl,
-        categoriaActualId: categoria.id,
+        categoriaActualId,
         estado: UserStatus.NO_VERIFICADO,
         ...consentData,
         roles: {
@@ -144,9 +153,14 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResponseDto> {
-    // Find user by documento (C.I. Paraguaya)
-    const user = await this.prisma.user.findUnique({
-      where: { documento: dto.documento },
+    // El identificador puede ser email O documento (cédula). Permite que los
+    // usuarios actuales sigan entrando con su cédula y los nuevos (registro
+    // mínimo, sin cédula) entren con su email.
+    const identificador = dto.documento;
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ email: identificador }, { documento: identificador }],
+      },
       include: {
         roles: {
           include: {
@@ -386,18 +400,24 @@ export class AuthService {
   private async vincularInscripcionesPendientes(user: {
     id: string;
     email: string;
-    documento: string;
+    documento: string | null;
     nombre: string;
     apellido: string;
   }): Promise<void> {
+    // Coincidir por email siempre; por documento solo si el usuario tiene uno
+    // (evita matchear inscripciones con documento nulo).
+    const orMatch: { jugador2Documento?: string; jugador2Email?: string }[] = [
+      { jugador2Email: user.email },
+    ];
+    if (user.documento) {
+      orMatch.push({ jugador2Documento: user.documento });
+    }
+
     const inscripcionesPendientes = await this.prisma.inscripcion.findMany({
       where: {
         estado: InscripcionEstado.PENDIENTE_CONFIRMACION,
         jugador2Id: null,
-        OR: [
-          { jugador2Documento: user.documento },
-          { jugador2Email: user.email },
-        ],
+        OR: orMatch,
       },
       include: {
         jugador1: { select: { id: true, nombre: true, apellido: true } },
@@ -472,7 +492,7 @@ export class AuthService {
     );
   }
 
-  private generateToken(userId: string, documento: string): string {
+  private generateToken(userId: string, documento: string | null): string {
     const payload = { sub: userId, documento };
     return this.jwtService.sign(payload, {
       secret: this.configService.get('JWT_SECRET'),

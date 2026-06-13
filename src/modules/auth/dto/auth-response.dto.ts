@@ -7,7 +7,7 @@ export class AuthResponseDto {
     email: string;
     nombre: string;
     apellido: string;
-    documento: string;
+    documento: string | null;
     estado: UserStatus;
     fotoUrl?: string;
     roles: string[];

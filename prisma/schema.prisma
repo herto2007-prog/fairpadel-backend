@@ -320,10 +320,10 @@ model User {
   password                String       @map("password")
   nombre                  String
   apellido                String
-  documento               String       @unique
+  documento               String?      @unique
   telefono                String?
   fechaNacimiento         String?      @map("fecha_nacimiento") // YYYY-MM-DD
-  genero                  Gender
+  genero                  Gender?
   ciudad                  String?
   pais                    String       @default("Paraguay")
   fotoUrl                 String?      @map("foto_url")
