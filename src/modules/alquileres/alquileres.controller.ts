@@ -139,7 +139,6 @@ export class AlquileresController {
   crearReserva(@Body() createDto: CreateReservaDto, @Request() req) {
     // El JWT guarda el userId como 'sub' o 'userId', no como 'id'
     const userId = req.user?.userId || req.user?.sub || null;
-    console.log(`[DEBUG Controller] crearReserva - userId: ${userId}`);
     return this.alquileresService.crearReserva(userId, createDto);
   }
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAlquilerConfigDto } from './dto/create-alquiler-config.dto';
 import { CreateReservaDto, ConfirmarReservaDto, CancelarReservaDto } from './dto/create-reserva.dto';
@@ -474,15 +474,6 @@ export class AlquileresService {
   // ============ RESERVAS ============
 
   async crearReserva(userId: string | null, createDto: CreateReservaDto) {
-    console.log(`[DEBUG crearReserva] Iniciando reserva:`, {
-      userId,
-      sedeCanchaId: createDto.sedeCanchaId,
-      fecha: createDto.fecha,
-      horaInicio: createDto.horaInicio,
-      horaFin: createDto.horaFin,
-      duracionMinutos: createDto.duracionMinutos,
-    });
-
     const reserva = await this.prisma.$transaction(async (tx) => {
       // Verificar que la cancha existe
       const cancha = await tx.sedeCancha.findUnique({
@@ -490,21 +481,12 @@ export class AlquileresService {
         include: { sede: { include: { alquilerConfig: true } } },
       });
 
-      console.log(`[DEBUG crearReserva] Cancha encontrada:`, {
-        canchaId: cancha?.id,
-        activa: cancha?.activa,
-        alquilerConfig: cancha?.sede?.alquilerConfig ? 'existe' : 'no existe',
-        habilitado: cancha?.sede?.alquilerConfig?.habilitado,
-      });
-
       if (!cancha || !cancha.activa) {
-        console.log(`[DEBUG crearReserva] ERROR: Cancha no encontrada o inactiva`);
         throw new NotFoundException('Cancha no encontrada');
       }
 
       const config = cancha.sede.alquilerConfig;
       if (!config || !config.habilitado) {
-        console.log(`[DEBUG crearReserva] ERROR: Alquileres no habilitados`);
         throw new BadRequestException('Los alquileres no están habilitados para esta sede');
       }
 
@@ -533,13 +515,11 @@ export class AlquileresService {
         b.sedeId === cancha.sedeId && (!b.sedeCanchaId || b.sedeCanchaId === createDto.sedeCanchaId)
       );
       if (bloqueada) {
-        console.log(`[DEBUG crearReserva] ERROR: Cancha bloqueada para esta fecha`);
         throw new BadRequestException('La cancha no está disponible para esta fecha');
       }
 
       // FIX: fecha es String YYYY-MM-DD
       const diaSemana = this.getDiaSemanaFromString(createDto.fecha);
-      console.log(`[DEBUG crearReserva] DiaSemana calculado: ${diaSemana}`);
 
       // Buscar disponibilidad que cubra el horario solicitado
       const disponibilidades = await tx.alquilerDisponibilidad.findMany({
@@ -558,16 +538,7 @@ export class AlquileresService {
         return d.horaFin >= createDto.horaFin;
       });
 
-      console.log(`[DEBUG crearReserva] Disponibilidad encontrada:`, disponibilidad ? {
-        id: disponibilidad.id,
-        horaInicio: disponibilidad.horaInicio,
-        horaFin: disponibilidad.horaFin,
-        activo: disponibilidad.activo,
-      } : 'NO ENCONTRADA');
-      console.log(`[DEBUG crearReserva] Total disponibilidades revisadas: ${disponibilidades.length}`);
-
       if (!disponibilidad) {
-        console.log(`[DEBUG crearReserva] ERROR: No hay disponibilidad para el horario solicitado`);
         throw new BadRequestException('Horario no disponible');
       }
 
@@ -591,23 +562,12 @@ export class AlquileresService {
         return inicioMin < rFin && finMinAjustado > rInicio;
       });
 
-      console.log(`[DEBUG crearReserva] Conflicto encontrado:`, conflicto ? {
-        reservaId: conflicto.id,
-        horaInicio: conflicto.horaInicio,
-        horaFin: conflicto.horaFin,
-        estado: conflicto.estado,
-      } : 'NINGUNO');
-      console.log(`[DEBUG crearReserva] Reservas existentes revisadas: ${reservasExistentes.length}`);
-
       if (conflicto) {
-        console.log(`[DEBUG crearReserva] ERROR: Horario ya reservado`);
         throw new BadRequestException('El horario ya está reservado');
       }
 
       // Crear reserva - SIEMPRE CONFIRMADA
       const estado = ReservaCanchaEstado.CONFIRMADA;
-
-      console.log(`[DEBUG crearReserva] Creando reserva CONFIRMADA automaticamente`);
 
       // Determinar si fue creado por encargado: si tiene datos externos es manual
       const creadoPorEncargado = !!createDto.nombreExterno || !!createDto.telefonoExterno;
@@ -629,7 +589,6 @@ export class AlquileresService {
         },
       });
 
-      console.log(`[DEBUG crearReserva] Reserva creada exitosamente: ${reserva.id}`);
       return reserva;
     });
 
@@ -682,6 +641,12 @@ export class AlquileresService {
       throw new NotFoundException('Reserva no encontrada');
     }
 
+    // Solo el dueño de la reserva puede confirmarla (evita IDOR: cualquier
+    // usuario autenticado podía confirmar reservas ajenas con solo el ID).
+    if (reserva.userId !== userId) {
+      throw new ForbiddenException('No tenés permiso para confirmar esta reserva');
+    }
+
     if (reserva.estado !== ReservaCanchaEstado.PENDIENTE) {
       throw new BadRequestException('La reserva no está pendiente');
     }
@@ -716,6 +681,13 @@ export class AlquileresService {
 
     if (!reserva) {
       throw new NotFoundException('Reserva no encontrada');
+    }
+
+    // Solo el dueño de la reserva puede cancelarla (evita IDOR: cualquier
+    // usuario autenticado podía cancelar reservas ajenas con solo el ID).
+    // El dueño/encargado de la sede usa rechazarReserva (SedeGestionGuard).
+    if (reserva.userId !== userId) {
+      throw new ForbiddenException('No tenés permiso para cancelar esta reserva');
     }
 
     if (reserva.estado === ReservaCanchaEstado.CANCELADA) {
