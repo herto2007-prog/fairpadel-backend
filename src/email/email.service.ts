@@ -477,6 +477,57 @@ export class EmailService {
     }
   }
 
+  /**
+   * Avisa al admin que un organizador envió un torneo a aprobación, para que
+   * lo apruebe sin demora. El link arma el panel admin con FRONTEND_URL.
+   */
+  async sendTorneoPorAprobar(
+    to: string,
+    adminNombre: string,
+    torneoNombre: string,
+    organizadorNombre: string,
+    ciudad: string,
+  ): Promise<void> {
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'https://fairpadel.com';
+    const link = `${frontendUrl}/admin`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #df2531;">🎾 Nuevo torneo por aprobar</h2>
+        <p>Hola ${adminNombre || ''},</p>
+        <p><strong>${organizadorNombre}</strong> envió el torneo <strong>${torneoNombre}</strong> (${ciudad}) para aprobación.</p>
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${link}" style="background: #df2531; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Revisar y aprobar</a>
+        </div>
+        <p style="color: #666; font-size: 13px;">Aprobalo cuanto antes para que el organizador pueda abrir las inscripciones.</p>
+        <p style="margin-top: 30px; color: #666; font-size: 12px;">FairPadel - Plataforma de torneos de pádel</p>
+      </div>
+    `;
+
+    try {
+      if (!this.resend) {
+        this.logger.warn(`[MODO DESARROLLO] Torneo por aprobar (${torneoNombre}) para ${to}`);
+        return;
+      }
+
+      const { data, error } = await this.resend.emails.send({
+        from: this.getFromEmail(),
+        to: [to],
+        subject: `Nuevo torneo por aprobar: ${torneoNombre}`,
+        html,
+      });
+
+      if (error) {
+        this.logger.error('Error enviando email:', error);
+        throw new Error(`Error enviando email: ${error.message}`);
+      }
+
+      this.logger.log(`Aviso de torneo por aprobar enviado a ${to}, ID: ${data?.id}`);
+    } catch (error) {
+      this.logger.error(`Error enviando aviso de aprobación a ${to}:`, error);
+      throw error;
+    }
+  }
+
   // ============================================================
   // EMAILS DE CONFIRMACIÓN DE PAGO (Bancard)
   // ============================================================

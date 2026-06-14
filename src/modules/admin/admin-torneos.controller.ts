@@ -331,7 +331,13 @@ export class AdminTorneosController {
   async enviarAAprobacion(@Param('id') id: string) {
     const torneo = await this.prisma.tournament.findUnique({
       where: { id },
-      select: { id: true, estado: true, nombre: true },
+      select: {
+        id: true,
+        estado: true,
+        nombre: true,
+        ciudad: true,
+        organizador: { select: { nombre: true, apellido: true } },
+      },
     });
     if (!torneo) {
       throw new NotFoundException('Torneo no encontrado');
@@ -345,6 +351,38 @@ export class AdminTorneosController {
       where: { id },
       data: { estado: 'PENDIENTE_APROBACION' },
     });
+
+    // Avisar a los admins (in-app + email) para que aprueben sin demora.
+    const orgNombre =
+      [torneo.organizador?.nombre, torneo.organizador?.apellido].filter(Boolean).join(' ') ||
+      'Un organizador';
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { some: { role: { nombre: 'admin' } } } },
+      select: { id: true, email: true, nombre: true },
+    });
+
+    await Promise.all(
+      admins.map((admin) =>
+        this.prisma.notificacion.create({
+          data: {
+            userId: admin.id,
+            tipo: 'TORNEO',
+            titulo: 'Nuevo torneo por aprobar',
+            contenido: `${orgNombre} envió "${torneo.nombre}" (${torneo.ciudad}) para aprobación.`,
+            enlace: '/admin',
+          },
+        }),
+      ),
+    );
+
+    // Emails best-effort: no romper la respuesta si Resend falla.
+    for (const admin of admins) {
+      if (!admin.email) continue;
+      this.emailService
+        .sendTorneoPorAprobar(admin.email, admin.nombre, torneo.nombre, orgNombre, torneo.ciudad)
+        .catch((e) => console.error('Email de aprobación al admin falló:', e?.message));
+    }
+
     return {
       success: true,
       message: 'Torneo enviado a aprobación de FairPadel',
