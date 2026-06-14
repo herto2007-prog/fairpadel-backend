@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../email/email.service';
 import { WhatsAppService } from '../whatsapp/services/whatsapp.service';
@@ -187,6 +188,80 @@ export class AuthService {
     }
 
     // Generate token (using documento as identifier)
+    const token = this.generateToken(user.id, user.documento);
+
+    return {
+      access_token: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        nombre: user.nombre,
+        apellido: user.apellido,
+        documento: user.documento,
+        estado: user.estado,
+        fotoUrl: user.fotoUrl,
+        roles: user.roles.map((ur) => ur.role.nombre),
+      },
+    };
+  }
+
+  /**
+   * Login / registro con Google. Recibe el ID token que devuelve el botón de
+   * Google en el frontend, lo verifica, y busca al usuario por email: si existe
+   * lo loguea; si no, crea una cuenta mínima (email ya verificado por Google).
+   * Los datos de competidor (documento/categoría/género) se piden just-in-time.
+   */
+  async loginConGoogle(idToken: string): Promise<AuthResponseDto> {
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    if (!clientId) {
+      throw new BadRequestException('El login con Google no está configurado');
+    }
+
+    let payload: any;
+    try {
+      const client = new OAuth2Client(clientId);
+      const ticket = await client.verifyIdToken({ idToken, audience: clientId });
+      payload = ticket.getPayload();
+    } catch {
+      throw new UnauthorizedException('Token de Google inválido');
+    }
+
+    if (!payload?.email) {
+      throw new UnauthorizedException('No se pudo obtener el email de Google');
+    }
+
+    const email = payload.email.toLowerCase();
+
+    let user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { roles: { include: { role: true } } },
+    });
+
+    if (!user) {
+      // Crear cuenta mínima. Google ya verificó el email -> estado ACTIVO.
+      const randomPassword = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          password: randomPassword,
+          nombre: payload.given_name || 'Jugador',
+          apellido: payload.family_name || '',
+          fotoUrl: payload.picture || null,
+          estado: UserStatus.ACTIVO,
+          roles: { create: { role: { connect: { nombre: 'jugador' } } } },
+        },
+        include: { roles: { include: { role: true } } },
+      });
+
+      this.vincularInscripcionesPendientes(user).catch((err) => {
+        this.logger.error('Error vinculando inscripciones pendientes (google):', err);
+      });
+    }
+
+    if (user.estado === UserStatus.INACTIVO || user.estado === UserStatus.SUSPENDIDO) {
+      throw new UnauthorizedException('Usuario inactivo o suspendido');
+    }
+
     const token = this.generateToken(user.id, user.documento);
 
     return {
