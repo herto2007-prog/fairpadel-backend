@@ -4,7 +4,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EmailService } from '../../email/email.service';
 import { TipoAlertaPersonalizada } from '@prisma/client';
 import { CreateAlertaDto } from './dto/create-alerta.dto';
 
@@ -19,7 +21,11 @@ import { CreateAlertaDto } from './dto/create-alerta.dto';
 export class AlertasService {
   private readonly logger = new Logger(AlertasService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private emailService: EmailService,
+    private configService: ConfigService,
+  ) {}
 
   /** Normaliza una ciudad para comparar: sin acentos, minúsculas, recortada. */
   private normalizarCiudad(ciudad: string): string {
@@ -101,9 +107,16 @@ export class AlertasService {
       // config es JSON → filtramos la ciudad en memoria (case-insensitive).
       const alertas = await this.prisma.alertaPersonalizada.findMany({
         where: { tipo: 'TORNEO_EN_MI_CIUDAD', activa: true },
-        select: { userId: true, config: true },
+        select: {
+          userId: true,
+          config: true,
+          user: { select: { email: true, nombre: true } },
+        },
       });
 
+      const frontendUrl =
+        this.configService.get<string>('FRONTEND_URL') || 'https://www.fairpadel.com';
+      const urlTorneo = `${frontendUrl}${enlace}`;
       let avisados = 0;
 
       for (const alerta of alertas) {
@@ -129,6 +142,25 @@ export class AlertasService {
             enlace,
           },
         });
+
+        // Email best-effort: si falla, el aviso in-app ya quedó creado.
+        if (alerta.user?.email) {
+          try {
+            await this.emailService.sendNuevoTorneoCiudad(
+              alerta.user.email,
+              alerta.user.nombre || 'jugador',
+              torneo.nombre,
+              torneo.ciudad,
+              urlTorneo,
+            );
+          } catch (error) {
+            this.logger.error(
+              `Email de nuevo torneo falló para usuario ${alerta.userId}:`,
+              error,
+            );
+          }
+        }
+
         avisados++;
       }
 

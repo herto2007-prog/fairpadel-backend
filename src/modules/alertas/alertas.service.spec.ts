@@ -34,13 +34,24 @@ const buildPrisma = ({
   },
 });
 
+const buildEmail = () =>
+  ({ sendNuevoTorneoCiudad: jest.fn().mockResolvedValue(undefined) }) as any;
+
+const buildConfig = () =>
+  ({ get: jest.fn().mockReturnValue('https://www.fairpadel.com') }) as any;
+
+const buildSvc = (prisma: any, email: any = buildEmail()) =>
+  new AlertasService(prisma, email, buildConfig());
+
 describe('AlertasService.notificarNuevoTorneo', () => {
-  it('avisa al suscrito de la misma ciudad (case-insensitive) y deduplica por enlace', async () => {
+  it('avisa al suscrito de la misma ciudad (case-insensitive), crea in-app y envía email', async () => {
     const prisma = buildPrisma({
-      alertas: [{ userId: 'u1', config: { ciudad: 'asuncion' } }], // sin tilde / minúsculas
+      // ciudad sin tilde/minúsculas + usuario con email
+      alertas: [{ userId: 'u1', config: { ciudad: 'asuncion' }, user: { email: 'u1@test.com', nombre: 'Ana' } }],
       torneo: torneoBase({ ciudad: 'Asunción' }),
     });
-    const svc = new AlertasService(prisma as any);
+    const email = buildEmail();
+    const svc = buildSvc(prisma, email);
 
     const res = await svc.notificarNuevoTorneo('t1');
 
@@ -54,13 +65,20 @@ describe('AlertasService.notificarNuevoTorneo', () => {
         }),
       }),
     );
+    expect(email.sendNuevoTorneoCiudad).toHaveBeenCalledWith(
+      'u1@test.com',
+      'Ana',
+      'Copa Test',
+      'Asunción',
+      'https://www.fairpadel.com/t/copa-test-abc',
+    );
   });
 
   it('no avisa al organizador del torneo', async () => {
     const prisma = buildPrisma({
       alertas: [{ userId: 'org1', config: { ciudad: 'Asunción' } }],
     });
-    const svc = new AlertasService(prisma as any);
+    const svc = buildSvc(prisma);
 
     const res = await svc.notificarNuevoTorneo('t1');
 
@@ -72,7 +90,7 @@ describe('AlertasService.notificarNuevoTorneo', () => {
     const prisma = buildPrisma({
       alertas: [{ userId: 'u1', config: { ciudad: 'Encarnación' } }],
     });
-    const svc = new AlertasService(prisma as any);
+    const svc = buildSvc(prisma);
 
     const res = await svc.notificarNuevoTorneo('t1');
 
@@ -85,7 +103,7 @@ describe('AlertasService.notificarNuevoTorneo', () => {
       alertas: [{ userId: 'u1', config: { ciudad: 'Asunción' } }],
       notificacionExistente: { id: 'ya-existe' },
     });
-    const svc = new AlertasService(prisma as any);
+    const svc = buildSvc(prisma);
 
     const res = await svc.notificarNuevoTorneo('t1');
 
@@ -95,7 +113,7 @@ describe('AlertasService.notificarNuevoTorneo', () => {
 
   it('no hace nada si el torneo no está PUBLICADO', async () => {
     const prisma = buildPrisma({ torneo: torneoBase({ estado: 'BORRADOR' }) });
-    const svc = new AlertasService(prisma as any);
+    const svc = buildSvc(prisma);
 
     const res = await svc.notificarNuevoTorneo('t1');
 
@@ -107,7 +125,7 @@ describe('AlertasService.notificarNuevoTorneo', () => {
 describe('AlertasService.crearOActualizar', () => {
   it('rechaza una alerta de ciudad sin ciudad', async () => {
     const prisma = buildPrisma();
-    const svc = new AlertasService(prisma as any);
+    const svc = buildSvc(prisma);
 
     await expect(
       svc.crearOActualizar('u1', { tipo: 'TORNEO_EN_MI_CIUDAD' } as any),
@@ -117,7 +135,7 @@ describe('AlertasService.crearOActualizar', () => {
 
   it('upserta la alerta de ciudad con la ciudad recortada', async () => {
     const prisma = buildPrisma();
-    const svc = new AlertasService(prisma as any);
+    const svc = buildSvc(prisma);
 
     await svc.crearOActualizar('u1', {
       tipo: 'TORNEO_EN_MI_CIUDAD',

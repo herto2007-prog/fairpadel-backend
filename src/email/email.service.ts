@@ -339,6 +339,64 @@ export class EmailService {
     }
   }
 
+  /**
+   * Avisa a un jugador suscrito que se abrió un torneo en su ciudad.
+   */
+  async sendNuevoTorneoCiudad(
+    to: string,
+    nombre: string,
+    torneoNombre: string,
+    ciudad: string,
+    urlTorneo: string,
+  ): Promise<void> {
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #df2531;">🎾 Nuevo torneo en ${ciudad}</h2>
+        <p>Hola ${nombre},</p>
+        <p>Se abrió un torneo en <strong>${ciudad}</strong>, la ciudad que estás siguiendo:</p>
+
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p style="margin: 0; font-size: 18px;"><strong>${torneoNombre}</strong></p>
+        </div>
+
+        <p style="text-align: center; margin: 30px 0;">
+          <a href="${urlTorneo}" style="background: #df2531; color: #fff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+            Ver torneo e inscribirme
+          </a>
+        </p>
+
+        <p style="margin-top: 30px; color: #666; font-size: 12px;">
+          Recibís este aviso porque activaste la alerta de torneos en ${ciudad}. Podés desactivarla desde la página de Torneos en la app.<br/>
+          FairPadel - Plataforma de torneos de pádel
+        </p>
+      </div>
+    `;
+
+    try {
+      if (!this.resend) {
+        this.logger.warn(`[MODO DESARROLLO] Nuevo torneo en ${ciudad} para ${to}`);
+        return;
+      }
+
+      const { data, error } = await this.resend.emails.send({
+        from: this.getFromEmail(),
+        to: [to],
+        subject: `🎾 Nuevo torneo en ${ciudad} - ${torneoNombre}`,
+        html,
+      });
+
+      if (error) {
+        this.logger.error('Error enviando email:', error);
+        throw new Error(`Error enviando email: ${error.message}`);
+      }
+
+      this.logger.log(`Aviso de nuevo torneo enviado a ${to}, ID: ${data?.id}`);
+    } catch (error) {
+      this.logger.error(`Error enviando aviso de nuevo torneo a ${to}:`, error);
+      throw error;
+    }
+  }
+
   // ============================================================
   // EMAILS DE CONFIRMACIÓN DE PAGO (Bancard)
   // ============================================================
