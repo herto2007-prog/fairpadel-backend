@@ -713,6 +713,82 @@ export class AdminTorneosController {
     };
   }
 
+  /**
+   * POST /admin/torneos/:id/finalizar
+   * Marca el torneo como TERMINADO. Fija la comisión a cobrar según los
+   * jugadores que REALMENTE jugaron (calcularComisionReal) y avisa al
+   * organizador. NO bloquea nada en vivo: el torneo ya corrió libre y ahora
+   * queda "por cobrar" (modelo acordado con Héctor, ver modelo-comision).
+   */
+  @UseGuards(TorneoGestionGuard)
+  @Post(':id/finalizar')
+  async finalizarTorneo(
+    @Param('id') tournamentId: string,
+    @Request() req: any,
+  ) {
+    const user = req.user;
+
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, nombre: true, estado: true, organizadorId: true },
+    });
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    const puede = await this.tournamentsService.puedeGestionarTorneo(tournamentId, user.userId, user.roles);
+    if (!puede) {
+      throw new ForbiddenException('No tienes permiso para finalizar este torneo');
+    }
+
+    if (!['PUBLICADO', 'EN_CURSO'].includes(torneo.estado)) {
+      throw new BadRequestException('Solo se puede finalizar un torneo publicado o en curso');
+    }
+
+    // Marcar terminado.
+    await this.prisma.tournament.update({
+      where: { id: tournamentId },
+      data: { estado: 'FINALIZADO' },
+    });
+
+    // Fijar la comisión real: jugadores que jugaron × tarifa. Al estar el
+    // torneo finalizado, este número queda firme.
+    const comision = await this.comisionService.calcularComisionReal(tournamentId);
+
+    // Solo los torneos con comisión (>0) generan cuenta por cobrar; el
+    // americano da 0 y no avisa.
+    if (comision.monto > 0) {
+      await this.prisma.torneoComision.upsert({
+        where: { tournamentId },
+        create: {
+          tournamentId,
+          montoEstimado: comision.monto,
+          montoPagado: 0,
+          estado: 'POR_COBRAR',
+          bloqueoActivo: false,
+        },
+        update: { montoEstimado: comision.monto, estado: 'POR_COBRAR' },
+      });
+
+      const fmt = (n: number) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      await this.prisma.notificacion.create({
+        data: {
+          userId: torneo.organizadorId,
+          tipo: 'TORNEO',
+          titulo: `Comisión a abonar — ${torneo.nombre}`,
+          contenido: `Tu torneo terminó 🎾. Jugaron ${comision.jugaronCount} jugadores → comisión de FairPadel: Gs ${fmt(comision.monto)}. Coordiná el pago desde la gestión del torneo.`,
+          enlace: `/mis-torneos/${tournamentId}/gestionar`,
+        },
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Torneo finalizado',
+      comision,
+    };
+  }
+
   // ═══════════════════════════════════════════════════════════
   // HELPERS
   // ═══════════════════════════════════════════════════════════
