@@ -1,4 +1,5 @@
 import { IsString, IsOptional, IsNumber, IsBoolean, IsArray } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class ConfigurarModoJuegoDto {
   // Tipo de inscripción
@@ -29,7 +30,12 @@ export class ConfigurarModoJuegoDto {
   @IsString()
   categorias: 'sin' | 'con';
 
-  // Cantidad de rondas: número o 'automatico'
+  // Cantidad de rondas: número (3-6) o 'automatico'. El frontend lo manda como
+  // number; lo normalizamos a string para aceptarlo igual (el servicio luego
+  // hace parseInt). Así no rompe ni el wizard ni el modal de editar modo.
+  @Transform(({ value }) =>
+    value === undefined || value === null ? value : String(value),
+  )
   @IsString()
   numRondas: string;
 
