@@ -55,7 +55,7 @@ export class FairpadelAdminController {
     const [
       totalTorneos,
       torneosActivos,
-      torneosBloqueados,
+      torneosPorCobrar,
       totalJugadores,
       comisionesPendientes,
       configComision,
@@ -64,12 +64,14 @@ export class FairpadelAdminController {
       this.prisma.tournament.count({
         where: { estado: { in: ['PUBLICADO', 'EN_CURSO'] } },
       }),
+      // Torneos terminados con comisión aún sin cobrar (incluye los que ya
+      // subieron comprobante y esperan verificación).
       this.prisma.torneoComision.count({
-        where: { bloqueoActivo: true },
+        where: { estado: { in: ['POR_COBRAR', 'PENDIENTE_VERIFICACION'] } },
       }),
       this.prisma.user.count(),
       this.prisma.torneoComision.aggregate({
-        where: { estado: { in: ['PENDIENTE', 'PENDIENTE_VERIFICACION'] } },
+        where: { estado: { in: ['PENDIENTE', 'PENDIENTE_PAGO', 'PENDIENTE_VERIFICACION', 'POR_COBRAR'] } },
         _sum: { montoEstimado: true },
       }),
       this.prisma.fairpadelConfig.findUnique({
@@ -94,7 +96,7 @@ export class FairpadelAdminController {
       stats: {
         totalTorneos,
         torneosActivos,
-        torneosBloqueados,
+        torneosPorCobrar,
         totalJugadores,
         comisionPendienteTotal: comisionesPendientes._sum.montoEstimado || 0,
         ingresosMes: comisionesMes._sum.montoPagado || 0,
@@ -190,17 +192,17 @@ export class FairpadelAdminController {
    */
   @Get('torneos/comisiones')
   async getTorneosComisiones(
-    @Query('estado') estado?: string, // todos | pendientes | bloqueados | pagados
+    @Query('estado') estado?: string, // todos | por_cobrar | verificar | pagados | exonerados
     @Query('busqueda') busqueda?: string,
   ) {
     const whereComision: any = {};
 
-    if (estado === 'pendientes') {
-      whereComision.estado = { in: ['PENDIENTE', 'PENDIENTE_VERIFICACION'] };
-    } else if (estado === 'bloqueados') {
-      whereComision.bloqueoActivo = true;
+    if (estado === 'por_cobrar') {
+      whereComision.estado = 'POR_COBRAR';
+    } else if (estado === 'verificar') {
+      whereComision.estado = 'PENDIENTE_VERIFICACION';
     } else if (estado === 'pagados') {
-      whereComision.estado = { in: ['PAGADO', 'EXONERADO'] };
+      whereComision.estado = 'PAGADO';
     } else if (estado === 'exonerados') {
       whereComision.estado = 'EXONERADO';
     }
