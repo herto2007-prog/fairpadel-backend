@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
 import { AmericanoComunService } from './americano-comun.service';
+import { AlertasService } from '../alertas/alertas.service';
 import { CreateAmericanoTorneoDto } from './dto/create-americano-torneo.dto';
 
 export interface ModoJuegoConfig {
@@ -44,6 +45,7 @@ export class AmericanoService {
     private prisma: PrismaService,
     private tournamentsService: TournamentsService,
     private comun: AmericanoComunService,
+    private alertasService: AlertasService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -78,6 +80,11 @@ export class AmericanoService {
     };
 
     const torneo = await this.prisma.tournament.create({ data });
+
+    // Avisar a los suscritos a "torneos en mi ciudad", salvo americanos privados (best-effort)
+    if (config.visibilidad !== 'privado') {
+      await this.alertasService.notificarNuevoTorneo(torneo.id);
+    }
 
     return torneo;
   }

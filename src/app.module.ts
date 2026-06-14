@@ -31,6 +31,7 @@ import { WhatsAppModule } from './modules/whatsapp/whatsapp.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { AmericanoModule } from './modules/americano/americano.module';
 import { ReportesModule } from './modules/reportes/reportes.module';
+import { AlertasModule } from './modules/alertas/alertas.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { ReportesModule } from './modules/reportes/reportes.module';
     StatsModule,      // Estadísticas globales públicas
     AmericanoModule,  // Torneos Americano (formato round-robin rotativo)
     ReportesModule,   // Reportes descargables (Excel) de torneos
+    AlertasModule,    // Alertas personalizadas (torneos en mi ciudad)
   ],
   controllers: [AppController],
 })

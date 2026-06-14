@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { IsString, IsOptional, IsNumber, IsArray, IsDateString } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AlertasService } from '../alertas/alertas.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -50,7 +51,10 @@ class ConfigurarRecordatorioDto {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin', 'organizador')
 export class AdminTorneoWizardController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private alertasService: AlertasService,
+  ) {}
 
   // ═══════════════════════════════════════════════════════════
   // DATOS AUXILIARES
@@ -179,6 +183,9 @@ export class AdminTorneoWizardController {
         where: { id: torneoId },
         data: { estado: 'PUBLICADO' },
       });
+
+      // Avisar a los suscritos a "torneos en mi ciudad" (best-effort)
+      await this.alertasService.notificarNuevoTorneo(torneo.id);
 
       return {
         success: true,

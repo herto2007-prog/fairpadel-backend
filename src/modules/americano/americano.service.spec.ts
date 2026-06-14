@@ -7,6 +7,7 @@ import { AmericanoRondasService } from './americano-rondas.service';
 import { AmericanoInscripcionesService } from './americano-inscripciones.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
+import { AlertasService } from '../alertas/alertas.service';
 
 function createMockPrisma() {
   return {
@@ -83,6 +84,7 @@ describe('AmericanoService', () => {
         AmericanoInscripcionesService,
         { provide: PrismaService, useValue: prisma },
         { provide: TournamentsService, useValue: { findOne: jest.fn(), agregarCoorganizador: jest.fn(), eliminarCoorganizador: jest.fn(), puedeGestionarTorneo: jest.fn().mockResolvedValue(true) } },
+        { provide: AlertasService, useValue: { notificarNuevoTorneo: jest.fn().mockResolvedValue({ avisados: 0 }) } },
       ],
     }).compile();
 

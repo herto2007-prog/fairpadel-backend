@@ -20,6 +20,7 @@ import { DateService } from '../../common/services/date.service';
 import { ComisionService } from '../../common/services/comision.service';
 import { RankingsService } from '../rankings/rankings.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
+import { AlertasService } from '../alertas/alertas.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -129,6 +130,7 @@ export class AdminTorneosController {
     private comisionService: ComisionService,
     private rankingsService: RankingsService,
     private tournamentsService: TournamentsService,
+    private alertasService: AlertasService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -235,6 +237,9 @@ export class AdminTorneosController {
         enlace: `/mis-torneos/${torneo.id}/gestionar`,
       },
     });
+
+    // Avisar a los suscritos a "torneos en mi ciudad" (best-effort)
+    await this.alertasService.notificarNuevoTorneo(torneo.id);
 
     return {
       success: true,
