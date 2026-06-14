@@ -56,6 +56,7 @@ export class FairpadelAdminController {
       totalTorneos,
       torneosActivos,
       torneosPorCobrar,
+      torneosPorAprobar,
       totalJugadores,
       comisionesPendientes,
       configComision,
@@ -68,6 +69,10 @@ export class FairpadelAdminController {
       // subieron comprobante y esperan verificación).
       this.prisma.torneoComision.count({
         where: { estado: { in: ['POR_COBRAR', 'PENDIENTE_VERIFICACION'] } },
+      }),
+      // Torneos esperando que el admin los apruebe.
+      this.prisma.tournament.count({
+        where: { estado: { in: ['BORRADOR', 'PENDIENTE_APROBACION'] } },
       }),
       this.prisma.user.count(),
       this.prisma.torneoComision.aggregate({
@@ -97,6 +102,7 @@ export class FairpadelAdminController {
         totalTorneos,
         torneosActivos,
         torneosPorCobrar,
+        torneosPorAprobar,
         totalJugadores,
         comisionPendienteTotal: comisionesPendientes._sum.montoEstimado || 0,
         ingresosMes: comisionesMes._sum.montoPagado || 0,
