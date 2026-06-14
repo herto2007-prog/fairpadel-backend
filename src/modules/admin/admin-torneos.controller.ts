@@ -204,9 +204,37 @@ export class AdminTorneosController {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Palanca blanda: marcar si el organizador adeuda comisión de torneos
+    // anteriores (por cobrar o con comprobante sin verificar), para decidir
+    // la aprobación con info. Ver modelo-comision.
+    const orgIds = [...new Set(torneos.map((t) => t.organizador?.id).filter(Boolean))] as string[];
+    const comisionesAdeudadas = orgIds.length
+      ? await this.prisma.torneoComision.findMany({
+          where: {
+            estado: { in: ['POR_COBRAR', 'PENDIENTE_VERIFICACION'] },
+            tournament: { organizadorId: { in: orgIds } },
+          },
+          select: { montoEstimado: true, tournament: { select: { organizadorId: true } } },
+        })
+      : [];
+
+    const deudaPorOrg = new Map<string, { torneos: number; monto: number }>();
+    for (const c of comisionesAdeudadas) {
+      const oid = c.tournament.organizadorId;
+      const d = deudaPorOrg.get(oid) ?? { torneos: 0, monto: 0 };
+      d.torneos += 1;
+      d.monto += c.montoEstimado || 0;
+      deudaPorOrg.set(oid, d);
+    }
+
+    const torneosConDeuda = torneos.map((t) => ({
+      ...t,
+      deudaOrganizador: deudaPorOrg.get(t.organizador?.id ?? '') ?? { torneos: 0, monto: 0 },
+    }));
+
     return {
       success: true,
-      torneos,
+      torneos: torneosConDeuda,
     };
   }
 
