@@ -49,6 +49,17 @@ export class AmericanoInscripcionesService {
       throw new BadRequestException('Las inscripciones para este torneo están cerradas');
     }
 
+    // Respetar el límite de inscripciones si fue configurado (cuenta parejas o
+    // jugadores según el formato: 1 registro de inscripción por cupo).
+    if (typeof config.limiteInscripciones === 'number' && config.limiteInscripciones > 0) {
+      const inscritosActuales = await this.prisma.inscripcion.count({
+        where: { tournamentId: torneoId },
+      });
+      if (inscritosActuales >= config.limiteInscripciones) {
+        throw new BadRequestException('El torneo alcanzó el límite de inscripciones');
+      }
+    }
+
     // Buscar jugador principal (con categoría para validaciones)
     const jugador = await this.prisma.user.findUnique({
       where: { id: dto.jugadorId },

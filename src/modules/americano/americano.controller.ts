@@ -35,10 +35,13 @@ export class AmericanoController {
 
   @Get('torneos')
   @UseGuards(OptionalJwtAuthGuard)
-  listarTorneos(@Request() req: any) {
+  listarTorneos(
+    @Request() req: any,
+    @Query('finalizados') finalizados?: string,
+  ) {
     // Si hay token, extraer userId para mostrar también privados propios
     const userId = req.user?.id;
-    return this.americanoService.listarTorneosActivos(userId);
+    return this.americanoService.listarTorneosActivos(userId, finalizados === '1');
   }
 
   @Get('torneos/:id')

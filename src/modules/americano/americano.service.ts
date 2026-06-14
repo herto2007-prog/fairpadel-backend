@@ -338,10 +338,12 @@ export class AmericanoService {
     return { ...torneo, puedeGestionar };
   }
 
-  async listarTorneosActivos(userId?: string) {
+  async listarTorneosActivos(userId?: string, soloFinalizados = false) {
     const where: any = {
       formato: 'americano',
-      estado: { in: ['BORRADOR', 'PUBLICADO', 'EN_CURSO'] },
+      estado: soloFinalizados
+        ? { equals: 'FINALIZADO' }
+        : { in: ['BORRADOR', 'PUBLICADO', 'EN_CURSO'] },
     };
 
     // Si no hay usuario autenticado, solo mostrar públicos
@@ -363,6 +365,7 @@ export class AmericanoService {
         _count: { select: { inscripciones: true } },
       },
       orderBy: { createdAt: 'desc' },
+      ...(soloFinalizados ? { take: 20 } : {}),
     });
   }
 

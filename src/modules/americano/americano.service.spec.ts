@@ -23,6 +23,7 @@ function createMockPrisma() {
       findMany: jest.fn(),
       create: jest.fn(),
       delete: jest.fn(),
+      count: jest.fn(),
     },
     user: {
       findUnique: jest.fn(),
@@ -244,6 +245,25 @@ describe('AmericanoService', () => {
 
       await inscripciones.inscribirJugador('t1', { jugadorId: 'u1', jugador2Id: 'u2' }, 'u1');
       expect(prisma.inscripcion.create).toHaveBeenCalled();
+    });
+
+    it('debe rechazar inscripción cuando se alcanzó el límite de inscripciones', async () => {
+      const torneo = {
+        id: 't1',
+        formato: 'americano',
+        configAmericano: {
+          tipoInscripcion: 'individual',
+          inscripcionesAbiertas: true,
+          limiteInscripciones: 8,
+        } as unknown as ConfigAmericano,
+      };
+      prisma.tournament.findUnique.mockResolvedValue(torneo);
+      prisma.inscripcion.count.mockResolvedValue(8); // ya hay 8 (lleno)
+
+      await expect(
+        inscripciones.inscribirJugador('t1', { jugadorId: 'u1' }, 'u1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.inscripcion.create).not.toHaveBeenCalled();
     });
 
     it('debe rechazar auto-compañero', async () => {
