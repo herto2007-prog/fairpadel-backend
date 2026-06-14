@@ -273,6 +273,18 @@ export class AdminTorneosController {
     // Avisar a los suscritos a "torneos en mi ciudad" (best-effort)
     await this.alertasService.notificarNuevoTorneo(torneo.id);
 
+    // Email inmediato al organizador (best-effort, no rompe la respuesta).
+    if (torneo.organizador?.email) {
+      this.emailService
+        .sendTorneoAprobado(
+          torneo.organizador.email,
+          torneo.organizador.nombre,
+          torneo.nombre,
+          torneo.id,
+        )
+        .catch((e) => console.error('Email de torneo aprobado falló:', e?.message));
+    }
+
     return {
       success: true,
       message: 'Torneo aprobado y publicado exitosamente',

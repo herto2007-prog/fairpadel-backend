@@ -528,6 +528,55 @@ export class EmailService {
     }
   }
 
+  /**
+   * Avisa al organizador que su torneo fue APROBADO y ya está público.
+   */
+  async sendTorneoAprobado(
+    to: string,
+    nombre: string,
+    torneoNombre: string,
+    tournamentId: string,
+  ): Promise<void> {
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'https://fairpadel.com';
+    const link = `${frontendUrl}/mis-torneos/${tournamentId}/gestionar`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #df2531;">🎾 ¡Tu torneo fue aprobado!</h2>
+        <p>Hola ${nombre || ''},</p>
+        <p>Tu torneo <strong>${torneoNombre}</strong> ya está público y abierto a inscripciones.</p>
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${link}" style="background: #df2531; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Gestionar mi torneo</a>
+        </div>
+        <p style="color: #666; font-size: 13px;">Compartí el link de inscripción para empezar a juntar parejas.</p>
+        <p style="margin-top: 30px; color: #666; font-size: 12px;">FairPadel - Plataforma de torneos de pádel</p>
+      </div>
+    `;
+
+    try {
+      if (!this.resend) {
+        this.logger.warn(`[MODO DESARROLLO] Torneo aprobado (${torneoNombre}) para ${to}`);
+        return;
+      }
+
+      const { data, error } = await this.resend.emails.send({
+        from: this.getFromEmail(),
+        to: [to],
+        subject: `¡Tu torneo ${torneoNombre} fue aprobado!`,
+        html,
+      });
+
+      if (error) {
+        this.logger.error('Error enviando email:', error);
+        throw new Error(`Error enviando email: ${error.message}`);
+      }
+
+      this.logger.log(`Aviso de torneo aprobado enviado a ${to}, ID: ${data?.id}`);
+    } catch (error) {
+      this.logger.error(`Error enviando aviso de aprobación a ${to}:`, error);
+      throw error;
+    }
+  }
+
   // ============================================================
   // EMAILS DE CONFIRMACIÓN DE PAGO (Bancard)
   // ============================================================
