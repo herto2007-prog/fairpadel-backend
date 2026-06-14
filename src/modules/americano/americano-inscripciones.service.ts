@@ -152,7 +152,10 @@ export class AmericanoInscripcionesService {
         categoryId,
         jugador1Id: dto.jugadorId,
         jugador2Id: dto.jugador2Id ?? undefined,
-        jugador2Documento: jugador.documento,
+        // Con el registro mínimo el jugador puede no tener cédula. Este campo
+        // es obligatorio y se usa solo como discriminador del índice único, así
+        // que caemos al id interno (siempre presente) para no romper la inscripción.
+        jugador2Documento: jugador.documento ?? jugador.id,
         estado: 'CONFIRMADA',
         estadoClasificacion: 'PENDIENTE',
         grupoId: grupo.id,
