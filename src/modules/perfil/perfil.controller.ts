@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { PerfilService } from './perfil.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Public } from '../auth/decorators/public.decorator';
-import { UpdatePerfilDto, UpdatePasswordDto, UpdatePreferenciasDto } from './dto/update-perfil.dto';
+import { UpdatePerfilDto, UpdatePasswordDto, UpdatePreferenciasDto, CompletarDatosCompetidorDto } from './dto/update-perfil.dto';
 import { UploadsService } from '../../uploads/uploads.service';
 
 @Controller('users')
@@ -46,6 +46,17 @@ export class PerfilController {
   @UseGuards(JwtAuthGuard)
   async updatePerfil(@Request() req: any, @Body() dto: UpdatePerfilDto) {
     return this.perfilService.updatePerfil(req.user.userId, dto);
+  }
+
+  /**
+   * PUT /users/profile/completar-datos
+   * Completa los datos de competidor (documento, categoría, género, etc.) que
+   * se piden just-in-time al inscribirse a un torneo (registro mínimo).
+   */
+  @Put('profile/completar-datos')
+  @UseGuards(JwtAuthGuard)
+  async completarDatosCompetidor(@Request() req: any, @Body() dto: CompletarDatosCompetidorDto) {
+    return this.perfilService.completarDatosCompetidor(req.user.userId, dto);
   }
 
   /**

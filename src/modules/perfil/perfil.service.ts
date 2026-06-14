@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificacionPreferencia } from '@prisma/client';
 import { WhatsAppService } from '../whatsapp/services/whatsapp.service';
+import { CompletarDatosCompetidorDto } from './dto/update-perfil.dto';
 
 @Injectable()
 export class PerfilService {
@@ -483,6 +484,81 @@ export class PerfilService {
   /**
    * Actualiza los datos del perfil del usuario
    */
+  /**
+   * Completa los "datos de competidor" que faltan para inscribirse a un torneo
+   * (documento, categoría, género), más ciudad/teléfono/fecha. Los tres primeros
+   * solo se setean si el usuario AÚN no los tiene (aditivo: no cambia identidad
+   * ni una categoría ya asignada, para no saltear las reglas de cambio de categoría).
+   */
+  async completarDatosCompetidor(userId: string, dto: CompletarDatosCompetidorDto) {
+    const usuario = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, documento: true, genero: true, categoriaActualId: true },
+    });
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const updateData: any = {};
+
+    // documento: solo si no tiene; verificar unicidad
+    if (dto.documento && !usuario.documento) {
+      const existente = await this.prisma.user.findUnique({
+        where: { documento: dto.documento },
+      });
+      if (existente && existente.id !== userId) {
+        throw new BadRequestException('Ese documento ya está registrado por otro usuario');
+      }
+      updateData.documento = dto.documento;
+    }
+
+    // género: solo si no tiene
+    if (dto.genero && !usuario.genero) {
+      updateData.genero = dto.genero;
+    }
+
+    // categoría: solo si no tiene; buscar por nombre
+    if (dto.categoria && !usuario.categoriaActualId) {
+      const categoria = await this.prisma.category.findFirst({
+        where: { nombre: dto.categoria },
+      });
+      if (!categoria) {
+        throw new BadRequestException('La categoría seleccionada no existe');
+      }
+      updateData.categoriaActualId = categoria.id;
+    }
+
+    // datos libres (se pueden actualizar siempre)
+    if (dto.ciudad !== undefined) updateData.ciudad = dto.ciudad;
+    if (dto.telefono !== undefined) updateData.telefono = dto.telefono;
+    if (dto.fechaNacimiento !== undefined) updateData.fechaNacimiento = dto.fechaNacimiento;
+
+    const actualizado = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        nombre: true,
+        apellido: true,
+        documento: true,
+        genero: true,
+        ciudad: true,
+        telefono: true,
+        fechaNacimiento: true,
+        categoriaActualId: true,
+        categoriaActual: { select: { id: true, nombre: true } },
+      },
+    });
+
+    const datosCompletos = !!(
+      actualizado.documento &&
+      actualizado.genero &&
+      actualizado.categoriaActualId
+    );
+
+    return { success: true, datosCompletos, usuario: actualizado };
+  }
+
   async updatePerfil(userId: string, dto: any) {
     const updateData: any = {};
 
