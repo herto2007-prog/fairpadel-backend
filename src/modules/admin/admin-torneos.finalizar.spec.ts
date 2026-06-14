@@ -23,6 +23,8 @@ describe('AdminTorneosController.finalizarTorneo', () => {
       },
       torneoComision: { upsert: jest.fn().mockResolvedValue({}) },
       notificacion: { create: jest.fn().mockResolvedValue({}) },
+      user: { findUnique: jest.fn().mockResolvedValue({ email: 'org@test.com', nombre: 'Org' }) },
+      fairpadelConfig: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const comisionService = {
       calcularComisionReal: jest
@@ -32,6 +34,9 @@ describe('AdminTorneosController.finalizarTorneo', () => {
     const tournamentsService = {
       puedeGestionarTorneo: jest.fn().mockResolvedValue(opts.puede ?? true),
     };
+    const emailService = {
+      sendComisionPorCobrar: jest.fn().mockResolvedValue(undefined),
+    };
     const controller = new AdminTorneosController(
       prisma as any,
       {} as any, // dateService
@@ -39,13 +44,14 @@ describe('AdminTorneosController.finalizarTorneo', () => {
       {} as any, // rankingsService
       tournamentsService as any,
       {} as any, // alertasService
+      emailService as any,
     );
     const req = { user: { userId: 'u1', roles: ['organizador'] } };
-    return { controller, prisma, comisionService, tournamentsService, req };
+    return { controller, prisma, comisionService, tournamentsService, emailService, req };
   };
 
-  it('finaliza un torneo PUBLICADO: marca FINALIZADO, fija comisión POR_COBRAR y avisa', async () => {
-    const { controller, prisma, req } = build({});
+  it('finaliza un torneo PUBLICADO: marca FINALIZADO, fija comisión POR_COBRAR y avisa (in-app + email)', async () => {
+    const { controller, prisma, emailService, req } = build({});
 
     const res = await controller.finalizarTorneo('t1', req);
 
@@ -60,11 +66,12 @@ describe('AdminTorneosController.finalizarTorneo', () => {
       }),
     );
     expect(prisma.notificacion.create).toHaveBeenCalledTimes(1);
+    expect(emailService.sendComisionPorCobrar).toHaveBeenCalledTimes(1);
     expect(res.comision.monto).toBe(60000);
   });
 
   it('si la comisión es 0 (americano), marca terminado pero NO crea cuenta ni avisa', async () => {
-    const { controller, prisma } = build({
+    const { controller, prisma, emailService } = build({
       comision: { jugaronCount: 0, tarifa: 0, monto: 0 },
     });
 
@@ -73,6 +80,7 @@ describe('AdminTorneosController.finalizarTorneo', () => {
     expect(prisma.tournament.update).toHaveBeenCalled();
     expect(prisma.torneoComision.upsert).not.toHaveBeenCalled();
     expect(prisma.notificacion.create).not.toHaveBeenCalled();
+    expect(emailService.sendComisionPorCobrar).not.toHaveBeenCalled();
   });
 
   it('rechaza finalizar un torneo que no está publicado ni en curso', async () => {

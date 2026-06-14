@@ -397,6 +397,86 @@ export class EmailService {
     }
   }
 
+  /**
+   * Avisa al organizador que su torneo terminó y que debe abonar la comisión
+   * de FairPadel (monto = jugadores que jugaron × tarifa). Best-effort.
+   */
+  async sendComisionPorCobrar(
+    to: string,
+    nombre: string,
+    torneoNombre: string,
+    jugaronCount: number,
+    monto: number,
+    datosBancarios: {
+      banco?: string;
+      numeroCuenta?: string;
+      alias?: string;
+      titular?: string;
+      whatsapp?: string;
+    },
+  ): Promise<void> {
+    const fmt = (n: number) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const filaBanco = (label: string, valor?: string) =>
+      valor
+        ? `<tr><td style="padding: 4px 12px 4px 0; color: #666;">${label}</td><td style="padding: 4px 0; font-weight: bold;">${valor}</td></tr>`
+        : '';
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #df2531;">🎾 Tu torneo terminó</h2>
+        <p>Hola ${nombre},</p>
+        <p>Tu torneo <strong>${torneoNombre}</strong> finalizó. Jugaron <strong>${jugaronCount}</strong> jugadores.</p>
+
+        <div style="background: #f5f5f5; padding: 18px; border-radius: 8px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0; color: #666;">Comisión de FairPadel a abonar</p>
+          <p style="margin: 6px 0 0; font-size: 28px; font-weight: bold; color: #df2531;">Gs ${fmt(monto)}</p>
+        </div>
+
+        <p style="margin-bottom: 6px;"><strong>Datos para la transferencia:</strong></p>
+        <table style="border-collapse: collapse; font-size: 14px; margin-bottom: 16px;">
+          ${filaBanco('Banco', datosBancarios.banco)}
+          ${filaBanco('Nro. de cuenta', datosBancarios.numeroCuenta)}
+          ${filaBanco('Alias', datosBancarios.alias)}
+          ${filaBanco('Titular', datosBancarios.titular)}
+        </table>
+
+        ${
+          datosBancarios.whatsapp
+            ? `<p>Enviá el comprobante por WhatsApp al <strong>${datosBancarios.whatsapp}</strong> o subilo desde la gestión de tu torneo.</p>`
+            : `<p>Subí el comprobante desde la gestión de tu torneo.</p>`
+        }
+
+        <p style="margin-top: 30px; color: #666; font-size: 12px;">
+          FairPadel - Plataforma de torneos de pádel
+        </p>
+      </div>
+    `;
+
+    try {
+      if (!this.resend) {
+        this.logger.warn(`[MODO DESARROLLO] Comisión por cobrar (${torneoNombre}) para ${to}`);
+        return;
+      }
+
+      const { data, error } = await this.resend.emails.send({
+        from: this.getFromEmail(),
+        to: [to],
+        subject: `Comisión de tu torneo ${torneoNombre} - Gs ${fmt(monto)}`,
+        html,
+      });
+
+      if (error) {
+        this.logger.error('Error enviando email:', error);
+        throw new Error(`Error enviando email: ${error.message}`);
+      }
+
+      this.logger.log(`Aviso de comisión por cobrar enviado a ${to}, ID: ${data?.id}`);
+    } catch (error) {
+      this.logger.error(`Error enviando aviso de comisión a ${to}:`, error);
+      throw error;
+    }
+  }
+
   // ============================================================
   // EMAILS DE CONFIRMACIÓN DE PAGO (Bancard)
   // ============================================================

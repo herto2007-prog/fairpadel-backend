@@ -21,6 +21,7 @@ import { ComisionService } from '../../common/services/comision.service';
 import { RankingsService } from '../rankings/rankings.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
 import { AlertasService } from '../alertas/alertas.service';
+import { EmailService } from '../../email/email.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -131,6 +132,7 @@ export class AdminTorneosController {
     private rankingsService: RankingsService,
     private tournamentsService: TournamentsService,
     private alertasService: AlertasService,
+    private emailService: EmailService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -780,6 +782,42 @@ export class AdminTorneosController {
           enlace: `/mis-torneos/${tournamentId}/gestionar`,
         },
       });
+
+      // Aviso por email best-effort (el aviso in-app ya quedó creado).
+      try {
+        const [organizador, bancoConfigs] = await Promise.all([
+          this.prisma.user.findUnique({
+            where: { id: torneo.organizadorId },
+            select: { email: true, nombre: true },
+          }),
+          this.prisma.fairpadelConfig.findMany({
+            where: {
+              clave: {
+                in: ['BANCO_CUENTA', 'BANCO_NUMERO_CUENTA', 'BANCO_ALIAS', 'BANCO_TITULAR', 'WHATSAPP_ADMIN'],
+              },
+            },
+          }),
+        ]);
+        if (organizador?.email) {
+          const cfg = (k: string) => bancoConfigs.find((c) => c.clave === k)?.valor || '';
+          await this.emailService.sendComisionPorCobrar(
+            organizador.email,
+            organizador.nombre || 'organizador',
+            torneo.nombre,
+            comision.jugaronCount,
+            comision.monto,
+            {
+              banco: cfg('BANCO_CUENTA'),
+              numeroCuenta: cfg('BANCO_NUMERO_CUENTA'),
+              alias: cfg('BANCO_ALIAS'),
+              titular: cfg('BANCO_TITULAR'),
+              whatsapp: cfg('WHATSAPP_ADMIN'),
+            },
+          );
+        }
+      } catch {
+        // best-effort: no romper la finalización si el email falla.
+      }
     }
 
     return {

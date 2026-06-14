@@ -24,9 +24,10 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { RankingsModule } from '../rankings/rankings.module';
 import { TournamentsModule } from '../tournaments/tournaments.module';
 import { AlertasModule } from '../alertas/alertas.module';
+import { EmailModule } from '../../email/email.module';
 
 @Module({
-  imports: [PrismaModule, BracketModule, DemoModule, ProgramacionModule, WhatsAppModule, RankingsModule, TournamentsModule, AlertasModule],
+  imports: [PrismaModule, BracketModule, DemoModule, ProgramacionModule, WhatsAppModule, RankingsModule, TournamentsModule, AlertasModule, EmailModule],
   controllers: [
     // Orden importante: rutas más específicas primero
     WhatsAppAdminController,
