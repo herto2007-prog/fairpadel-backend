@@ -176,7 +176,11 @@ export class AdminTorneoWizardController {
   }
 
   @UseGuards(TorneoGestionGuard)
+  // Publicar directo = solo admin (vía aprobación). El organizador NO autopublica:
+  // manda a aprobación con POST /admin/torneos/:id/enviar-aprobacion y el admin
+  // aprueba. Esto sostiene la palanca del modelo de comisión (el flujo pasa por el dueño).
   @Put(':id/publicar')
+  @Roles('admin')
   async publicar(@Param('id') torneoId: string) {
     try {
       const torneo = await this.prisma.tournament.update({

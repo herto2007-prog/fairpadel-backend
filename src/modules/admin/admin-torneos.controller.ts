@@ -186,8 +186,10 @@ export class AdminTorneosController {
   async getPendientesAprobacion() {
     const torneos = await this.prisma.tournament.findMany({
       where: {
+        // Solo los que el organizador ENVIÓ a revisión. Los BORRADOR son
+        // torneos que todavía se están armando: no ensucian la cola del admin.
         estado: {
-          in: ['BORRADOR', 'PENDIENTE_APROBACION'],
+          in: ['PENDIENTE_APROBACION'],
         },
       },
       include: {
@@ -315,6 +317,38 @@ export class AdminTorneosController {
       success: true,
       message: 'Torneo rechazado',
       torneo,
+    };
+  }
+
+  /**
+   * POST /admin/torneos/:id/enviar-aprobacion
+   * El organizador manda su torneo (BORRADOR o RECHAZADO) a revisión del admin.
+   * NO publica: lo deja en PENDIENTE_APROBACION. Recién el admin lo aprueba
+   * (ver POST :id/aprobar). Es la palanca del modelo: el flujo pasa por el dueño.
+   */
+  @UseGuards(TorneoGestionGuard)
+  @Post(':id/enviar-aprobacion')
+  async enviarAAprobacion(@Param('id') id: string) {
+    const torneo = await this.prisma.tournament.findUnique({
+      where: { id },
+      select: { id: true, estado: true, nombre: true },
+    });
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+    if (!['BORRADOR', 'RECHAZADO'].includes(torneo.estado)) {
+      throw new BadRequestException(
+        'Solo se pueden enviar a aprobación torneos en borrador o rechazados',
+      );
+    }
+    const actualizado = await this.prisma.tournament.update({
+      where: { id },
+      data: { estado: 'PENDIENTE_APROBACION' },
+    });
+    return {
+      success: true,
+      message: 'Torneo enviado a aprobación de FairPadel',
+      torneo: actualizado,
     };
   }
 
