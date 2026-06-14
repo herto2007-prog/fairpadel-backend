@@ -387,37 +387,6 @@ export class FairpadelAdminController {
   }
 
   /**
-   * Soft cancel (volver a bloquear si fue liberado por error)
-   */
-  @Post('torneos/:id/bloquear')
-  async bloquearTorneo(
-    @Param('id') tournamentId: string,
-    @GetUser() user: User,
-  ) {
-    const configRonda = await this.prisma.fairpadelConfig.findUnique({
-      where: { clave: 'RONDA_BLOQUEO_PAGO' },
-    });
-
-    const comision = await this.prisma.torneoComision.update({
-      where: { tournamentId },
-      data: {
-        estado: 'PENDIENTE',
-        bloqueoActivo: true,
-        rondaBloqueo: configRonda?.valor || 'CUARTOS',
-        revisadoPor: user.id,
-      },
-    });
-
-    await this.auditoria.registrar(user.id, 'BLOQUEAR_TORNEO', 'tournament', tournamentId);
-
-    return {
-      success: true,
-      message: 'Torneo bloqueado',
-      comision,
-    };
-  }
-
-  /**
    * Historial de acciones sensibles (auditoría)
    */
   @Get('auditoria-acciones')
