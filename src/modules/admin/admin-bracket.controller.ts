@@ -761,6 +761,102 @@ export class AdminBracketController {
   }
 
   /**
+   * GET /admin/torneos/:id/centro-partidos
+   * TODOS los partidos del torneo (todas las categorías, fixtures actuales) en
+   * una sola lista para operar la jornada (cargar resultados) sin drill-down.
+   * Mismo formato que getPartidosBracket + datos de categoría.
+   */
+  @Get('torneos/:id/centro-partidos')
+  async getCentroPartidos(@Param('id') tournamentId: string) {
+    try {
+      const cats = await this.prisma.tournamentCategory.findMany({
+        where: { tournamentId, fixtureVersionId: { not: null } },
+        select: { fixtureVersionId: true },
+      });
+      const fixtureIds = cats
+        .map((c) => c.fixtureVersionId)
+        .filter((id): id is string => !!id);
+
+      if (fixtureIds.length === 0) {
+        return { success: true, partidos: [] };
+      }
+
+      const jugadorSelect = {
+        select: { id: true, nombre: true, apellido: true, fotoUrl: true },
+      };
+
+      const partidos = await this.prisma.match.findMany({
+        where: { tournamentId, fixtureVersionId: { in: fixtureIds } },
+        include: {
+          inscripcion1: { include: { jugador1: jugadorSelect, jugador2: jugadorSelect } },
+          inscripcion2: { include: { jugador1: jugadorSelect, jugador2: jugadorSelect } },
+          inscripcionGanadora: { include: { jugador1: jugadorSelect, jugador2: jugadorSelect } },
+          category: { select: { id: true, nombre: true, tipo: true } },
+          torneoCancha: {
+            include: { sedeCancha: { include: { sede: { select: { nombre: true } } } } },
+          },
+        },
+        orderBy: [
+          { fechaProgramada: 'asc' },
+          { horaProgramada: 'asc' },
+          { numeroRonda: 'asc' },
+        ],
+      });
+
+      return {
+        success: true,
+        partidos: (partidos as any[]).map((p) => ({
+          id: p.id,
+          fase: p.ronda,
+          orden: p.numeroRonda,
+          esBye: p.esBye,
+          categoriaId: p.categoryId,
+          categoria: p.category
+            ? { id: p.category.id, nombre: p.category.nombre, tipo: p.category.tipo }
+            : null,
+          inscripcion1: p.inscripcion1,
+          inscripcion2: p.inscripcion2,
+          ganador: p.inscripcionGanadora,
+          resultado:
+            p.set1Pareja1 !== null
+              ? {
+                  set1: [p.set1Pareja1, p.set1Pareja2],
+                  set2: [p.set2Pareja1, p.set2Pareja2],
+                  set3: p.set3Pareja1 !== null ? [p.set3Pareja1, p.set3Pareja2] : undefined,
+                }
+              : undefined,
+          formatoSet3: p.formatoSet3,
+          estado: p.estado,
+          parejaRetirada: p.parejaRetirada,
+          razonResultado: p.razonResultado,
+          observaciones: p.observaciones,
+          duracionMinutos: p.duracionMinutos,
+          torneoCanchaId: p.torneoCanchaId,
+          fechaProgramada: p.fechaProgramada,
+          horaProgramada: p.horaProgramada,
+          fecha: p.fechaProgramada,
+          hora: p.horaProgramada,
+          navegacion: {
+            partidoSiguienteId: p.partidoSiguienteId,
+            partidoPerdedorSiguienteId: p.partidoPerdedorSiguienteId,
+            posicionEnSiguiente: p.posicionEnSiguiente,
+            posicionEnPerdedor: p.posicionEnPerdedor,
+          },
+          cancha: p.torneoCancha
+            ? `${p.torneoCancha.sedeCancha.sede.nombre} - ${p.torneoCancha.sedeCancha.nombre}`
+            : undefined,
+        })),
+      };
+    } catch (error: any) {
+      console.error('[getCentroPartidos] Error:', error);
+      throw new BadRequestException({
+        success: false,
+        message: 'Error cargando los partidos del torneo',
+      });
+    }
+  }
+
+  /**
    * POST /admin/bracket/:fixtureVersionId/publicar
    * Publicar bracket (cambiar de BORRADOR a PUBLICADO)
    */
