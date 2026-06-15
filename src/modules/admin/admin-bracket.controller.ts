@@ -791,7 +791,7 @@ export class AdminBracketController {
           inscripcion1: { include: { jugador1: jugadorSelect, jugador2: jugadorSelect } },
           inscripcion2: { include: { jugador1: jugadorSelect, jugador2: jugadorSelect } },
           inscripcionGanadora: { include: { jugador1: jugadorSelect, jugador2: jugadorSelect } },
-          category: { select: { id: true, nombre: true, tipo: true } },
+          category: { select: { id: true, nombre: true, tipo: true, tipoCategoria: true } },
           torneoCancha: {
             include: { sedeCancha: { include: { sede: { select: { nombre: true } } } } },
           },
@@ -812,7 +812,12 @@ export class AdminBracketController {
           esBye: p.esBye,
           categoriaId: p.categoryId,
           categoria: p.category
-            ? { id: p.category.id, nombre: p.category.nombre, tipo: p.category.tipo }
+            ? {
+                id: p.category.id,
+                nombre: p.category.nombre,
+                tipo: p.category.tipo,
+                tipoCategoria: p.category.tipoCategoria,
+              }
             : null,
           inscripcion1: p.inscripcion1,
           inscripcion2: p.inscripcion2,
