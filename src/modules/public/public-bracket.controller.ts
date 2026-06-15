@@ -32,15 +32,27 @@ export class PublicBracketController {
   async getCategoriasPublico(@Param('id') tournamentId: string) {
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
-      select: { bracketPublicado: true },
+      select: { id: true },
     });
 
     if (!torneo) {
       return { success: false, message: 'Torneo no encontrado' };
     }
 
+    // Publicación POR CATEGORÍA: solo mostramos las que tienen su cuadro
+    // (fixtureVersion) PUBLICADO. Las que están en borrador no aparecen.
+    const publicados = await this.prisma.fixtureVersion.findMany({
+      where: { tournamentId, estado: 'PUBLICADO' },
+      select: { categoryId: true },
+    });
+    const categoryIdsPublicados = [...new Set(publicados.map(f => f.categoryId))];
+
+    if (categoryIdsPublicados.length === 0) {
+      return { success: true, categorias: [] };
+    }
+
     const categorias = await this.prisma.tournamentCategory.findMany({
-      where: { tournamentId },
+      where: { tournamentId, categoryId: { in: categoryIdsPublicados } },
       include: {
         category: {
           select: { id: true, nombre: true, tipo: true },
@@ -80,16 +92,27 @@ export class PublicBracketController {
       return { success: false, message: 'Torneo no encontrado' };
     }
 
-    if (!torneo.bracketPublicado) {
+    // Publicación POR CATEGORÍA: solo se ven los cuadros cuya fixtureVersion
+    // está PUBLICADO. Si la categoría pedida no está publicada, se oculta.
+    const publicados = await this.prisma.fixtureVersion.findMany({
+      where: { tournamentId, estado: 'PUBLICADO' },
+      select: { id: true, categoryId: true },
+    });
+
+    if (publicados.length === 0) {
       return { success: false, message: 'El bracket no está publicado' };
     }
 
-    // Obtener partidos del torneo (filtrar por categoría si se especifica)
-    const whereClause: any = { 
+    if (categoriaId && !publicados.some(f => f.categoryId === categoriaId)) {
+      return { success: false, message: 'Esta categoría no está publicada' };
+    }
+
+    // Solo partidos de cuadros publicados (filtrar por categoría si se especifica)
+    const whereClause: any = {
       tournamentId,
-      fixtureVersionId: { not: null }
+      fixtureVersionId: { in: publicados.map(f => f.id) },
     };
-    
+
     if (categoriaId) {
       whereClause.categoryId = categoriaId;
     }

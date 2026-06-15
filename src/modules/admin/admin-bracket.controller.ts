@@ -813,6 +813,13 @@ export class AdminBracketController {
         },
       });
 
+      // Mantener sincronizado el flag global del torneo: "hay al menos un
+      // cuadro público". Lo usan el roadmap y la página pública del torneo.
+      await this.prisma.tournament.update({
+        where: { id: fixture.tournamentId },
+        data: { bracketPublicado: true },
+      });
+
       return {
         success: true,
         message: 'Bracket publicado exitosamente',
@@ -822,6 +829,64 @@ export class AdminBracketController {
       throw new BadRequestException({
         success: false,
         message: error.message || 'Error publicando bracket',
+      });
+    }
+  }
+
+  /**
+   * POST /admin/bracket/:fixtureVersionId/despublicar
+   * Ocultar del público el cuadro de UNA categoría (PUBLICADO -> BORRADOR).
+   * No borra nada: vuelve a borrador. Recalcula el flag global del torneo.
+   */
+  @Post('bracket/:fixtureVersionId/despublicar')
+  async despublicarBracket(@Param('fixtureVersionId') fixtureVersionId: string) {
+    try {
+      const fixture = await this.prisma.fixtureVersion.findUnique({
+        where: { id: fixtureVersionId },
+        select: { tournamentId: true, categoryId: true, estado: true },
+      });
+
+      if (!fixture) {
+        throw new NotFoundException('Fixture no encontrado');
+      }
+
+      if (fixture.estado !== 'PUBLICADO') {
+        throw new BadRequestException(
+          `Solo se puede despublicar un cuadro publicado (estado actual: ${fixture.estado})`,
+        );
+      }
+
+      await this.prisma.fixtureVersion.update({
+        where: { id: fixtureVersionId },
+        data: { estado: 'BORRADOR', publicadoAt: null },
+      });
+
+      await this.prisma.tournamentCategory.updateMany({
+        where: {
+          tournamentId: fixture.tournamentId,
+          categoryId: fixture.categoryId,
+        },
+        data: { estado: 'FIXTURE_BORRADOR' },
+      });
+
+      // Recalcular el flag global: queda público solo si aún hay otro cuadro publicado.
+      const quedanPublicados = await this.prisma.fixtureVersion.count({
+        where: { tournamentId: fixture.tournamentId, estado: 'PUBLICADO' },
+      });
+      await this.prisma.tournament.update({
+        where: { id: fixture.tournamentId },
+        data: { bracketPublicado: quedanPublicados > 0 },
+      });
+
+      return {
+        success: true,
+        message: 'Cuadro despublicado (vuelto a borrador)',
+      };
+    } catch (error: any) {
+      console.error('[despublicarBracket] Error:', error);
+      throw new BadRequestException({
+        success: false,
+        message: error.message || 'Error despublicando bracket',
       });
     }
   }
