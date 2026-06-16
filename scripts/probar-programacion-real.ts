@@ -93,7 +93,17 @@ async function api(metodo: string, ruta: string, token: string, body?: any) {
   return json;
 }
 
-async function correr() {
+interface CtxTorneo {
+  torneoId: string;
+  tcId: string;
+  token: string;
+  dispIds: string[];
+  totalPartidos: number;
+  fechaInicio: string;
+}
+
+// Crea org + jugadores + torneo + sede/canchas/slots, loguea y sortea (auto-programa).
+async function crearTorneoSorteado(): Promise<CtxTorneo> {
   const { id: orgId, password } = await asegurarOrg();
   const categoria = await prisma.category.findFirst({ where: { nombre: CATEGORIA_DEFAULT } });
   if (!categoria) throw new Error(`No existe la categoría ${CATEGORIA_DEFAULT}`);
@@ -180,12 +190,24 @@ async function correr() {
   const totalPartidos = await prisma.match.count({ where: { tournamentId: torneo.id } });
   console.log(`🎲 Sorteo OK — ${totalPartidos} partidos en el cuadro`);
 
+  const dispsCtx = await prisma.torneoDisponibilidadDia.findMany({
+    where: { tournamentId: torneo.id }, select: { id: true },
+  });
+  return { torneoId: torneo.id, tcId: tc.id, token: access_token, dispIds: dispsCtx.map(d => d.id), totalPartidos, fechaInicio: dias[0] };
+}
+
+async function correr() {
+  const { torneoId, tcId, token, dispIds, totalPartidos, fechaInicio } = await crearTorneoSorteado();
+  const torneo = { id: torneoId };
+  const tc = { id: tcId };
+  const access_token = token;
+  const disps = dispIds.map(id => ({ id }));
+
   // RESET: desprogramar todo + liberar slots (para ejercitar calcular/aplicar limpio)
   await prisma.match.updateMany({
     where: { tournamentId: torneo.id },
     data: { fechaProgramada: null, horaProgramada: null, torneoCanchaId: null },
   });
-  const disps = await prisma.torneoDisponibilidadDia.findMany({ where: { tournamentId: torneo.id }, select: { id: true } });
   await prisma.torneoSlot.updateMany({
     where: { disponibilidadId: { in: disps.map(d => d.id) } },
     data: { estado: 'LIBRE' },
@@ -195,7 +217,7 @@ async function correr() {
   // CALCULAR programación inteligente
   const calc = await api('POST', `/programacion/torneos/${torneo.id}/calcular`, access_token, {
     categoriasSorteadas: [tc.id],
-    fechaInicio: dias[0],
+    fechaInicio,
   });
   const asignaciones = (calc.distribucion || []).flatMap((d: any) => d.partidos || []);
   const bloqueantes = (calc.conflictos || []).filter((c: any) => c.severidad === 'BLOQUEANTE');
@@ -252,6 +274,92 @@ async function correr() {
     : '\n⚠️ RESULTADO: revisar métricas arriba (puede ser baseline esperado en la 1ª corrida).');
 }
 
+// Verifica el flujo "Reprogramar agenda general": sortea (auto-programa),
+// luego dispara preview + reprogramar-general y revisa consistencia en BD.
+async function reprogramar() {
+  const { torneoId, token, dispIds, totalPartidos } = await crearTorneoSorteado();
+
+  // Estado tras el sorteo (ya viene auto-programado)
+  const programadosAntes = await prisma.match.count({
+    where: { tournamentId: torneoId, fechaProgramada: { not: null } },
+  });
+  console.log(`📌 Tras sorteo: ${programadosAntes}/${totalPartidos} partidos con franja`);
+
+  // PREVIEW (no debe tocar la BD)
+  const preview = await api('GET', `/programacion/torneos/${torneoId}/reprogramar-general/preview`, token);
+  const r = preview.resumen || {};
+  console.log(`🔎 Preview: jugables=${r.totalJugables} asignados=${r.asignados} sinFranja=${r.sinFranja}`);
+  const programadosPostPreview = await prisma.match.count({
+    where: { tournamentId: torneoId, fechaProgramada: { not: null } },
+  });
+  const previewNoTocaBD = programadosPostPreview === programadosAntes;
+
+  // APLICAR reprogramación general
+  const aplicado = await api('POST', `/programacion/torneos/${torneoId}/reprogramar-general`, token);
+  const ra = aplicado.resumen || {};
+  console.log(`🔁 Aplicado: jugables=${ra.totalJugables} asignados=${ra.asignados} sinFranja=${ra.sinFranja}`);
+
+  // BASELINE post-reprogramación desde BD
+  const programadosDespues = await prisma.match.count({
+    where: { tournamentId: torneoId, fechaProgramada: { not: null } },
+  });
+
+  // Conflictos de pareja: mismo jugador en 2 partidos a la misma fecha+hora
+  const progs = await prisma.match.findMany({
+    where: { tournamentId: torneoId, fechaProgramada: { not: null } },
+    include: {
+      inscripcion1: { select: { jugador1Id: true, jugador2Id: true } },
+      inscripcion2: { select: { jugador1Id: true, jugador2Id: true } },
+    },
+  });
+  const ocupacion = new Map<string, number>();
+  let conflictosPareja = 0;
+  for (const m of progs) {
+    const slotKey = `${m.fechaProgramada}|${m.horaProgramada}`;
+    const jugadores = [
+      m.inscripcion1?.jugador1Id, m.inscripcion1?.jugador2Id,
+      m.inscripcion2?.jugador1Id, m.inscripcion2?.jugador2Id,
+    ].filter(Boolean) as string[];
+    for (const j of jugadores) {
+      const k = `${slotKey}|${j}`;
+      const prev = ocupacion.get(k) || 0;
+      if (prev > 0) conflictosPareja++;
+      ocupacion.set(k, prev + 1);
+    }
+  }
+
+  // Doble reserva de cancha: 2 partidos misma fecha+hora+cancha
+  const ocupacionCancha = new Map<string, number>();
+  let doblesReserva = 0;
+  for (const m of progs) {
+    const k = `${m.fechaProgramada}|${m.horaProgramada}|${m.torneoCanchaId}`;
+    const prev = ocupacionCancha.get(k) || 0;
+    if (prev > 0) doblesReserva++;
+    ocupacionCancha.set(k, prev + 1);
+  }
+
+  const slotsOcupados = await prisma.torneoSlot.count({
+    where: { disponibilidadId: { in: dispIds }, estado: { not: 'LIBRE' } },
+  });
+
+  console.log('\n═══════════════ BASELINE REPROGRAMACIÓN ═══════════════');
+  console.log(`   Partidos totales:        ${totalPartidos}`);
+  console.log(`   Programados (antes):     ${programadosAntes}`);
+  console.log(`   Preview NO tocó BD:      ${previewNoTocaBD}`);
+  console.log(`   Programados (después):   ${programadosDespues}`);
+  console.log(`   resumen.asignados:       ${ra.asignados}`);
+  console.log(`   Slots ocupados:          ${slotsOcupados}`);
+  console.log(`   Conflictos de pareja:    ${conflictosPareja}`);
+  console.log(`   Dobles reservas cancha:  ${doblesReserva}`);
+  console.log('════════════════════════════════════════════════════════');
+
+  const ok = previewNoTocaBD && programadosDespues === ra.asignados &&
+    conflictosPareja === 0 && doblesReserva === 0 && programadosDespues > 0;
+  console.log(ok
+    ? '\n✅ RESULTADO: reprogramación general consistente (preview limpio, sin conflictos ni dobles reservas).'
+    : '\n⚠️ RESULTADO: revisar métricas arriba.');
+}
+
 async function limpiar() {
   const torneos = await prisma.tournament.findMany({
     where: { nombre: { startsWith: PREFIJO } }, select: { id: true, nombre: true },
@@ -268,8 +376,9 @@ async function main() {
   const modo = process.argv[2] || 'correr';
   console.log(`🔌 DB: ${(process.env.DATABASE_URL || '').replace(/\/\/.*@/, '//***@')}\n`);
   if (modo === 'correr') return correr();
+  if (modo === 'reprogramar') return reprogramar();
   if (modo === 'limpiar') return limpiar();
-  throw new Error(`Modo desconocido: ${modo}. Usar: correr | limpiar`);
+  throw new Error(`Modo desconocido: ${modo}. Usar: correr | reprogramar | limpiar`);
 }
 
 main()
