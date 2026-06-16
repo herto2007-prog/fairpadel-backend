@@ -462,8 +462,9 @@ export class AdminTorneosController {
           // FIX: fechas ahora son String YYYY-MM-DD directamente
           fechaInicio: dto.fechaInicio,
           fechaFin: dto.fechaFin,
-          fechaFinales: dto.fechaFinales,
-          fechaLimiteInscr: dto.fechaLimiteInscripcion || dto.fechaInicio || dto.fechaFinales,
+          // Fecha de finales = último día del torneo (derivada, no es un dato aparte).
+          fechaFinales: dto.fechaFinales || dto.fechaFin,
+          fechaLimiteInscr: dto.fechaLimiteInscripcion || dto.fechaInicio || dto.fechaFin,
           ciudad: dto.ciudad,
           costoInscripcion: dto.costoInscripcion, // Prisma maneja Decimal desde number
           organizador: { connect: { id: user.userId } },
@@ -616,7 +617,8 @@ export class AdminTorneosController {
           ...(dto.nombre && { nombre: dto.nombre }),
           ...(dto.descripcion !== undefined && { descripcion: dto.descripcion }),
           ...(dto.fechaInicio && { fechaInicio: dto.fechaInicio }),
-          ...(dto.fechaFin && { fechaFin: dto.fechaFin }),
+          // Al mover la fecha fin, la fecha de finales la sigue (= último día).
+          ...(dto.fechaFin && { fechaFin: dto.fechaFin, fechaFinales: dto.fechaFin }),
           ...(dto.fechaLimiteInscripcion && { fechaLimiteInscr: dto.fechaLimiteInscripcion }),
           ...(dto.ciudad && { ciudad: dto.ciudad, region: dto.ciudad }),
           ...(dto.costoInscripcion !== undefined && { costoInscripcion: dto.costoInscripcion }),

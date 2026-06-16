@@ -203,12 +203,12 @@ export class ProgramacionService {
       return { success: false, message: 'No hay slots disponibles' };
     }
 
-    // Determinar restricciones según la fase
+    // Determinar restricciones según la fase.
+    // Día de finales = el del torneo si está, si no el ÚLTIMO día configurado
+    // (mismo criterio que el motor predictivo asignarSlots).
     const esFaseFinal = ['SEMIS', 'FINAL'].includes(partido.ronda);
-    const fechaFinales = torneo?.fechaFinales
-      // FIX: fechaFinales es String YYYY-MM-DD
-      ? torneo.fechaFinales
-      : null;
+    const ultimaFecha = [...new Set(slots.map(s => s.fecha))].sort().pop() || null;
+    const fechaFinales = torneo?.fechaFinales || ultimaFecha;
 
     // Filtrar slots según la fase
     let slotsCandidatos = slots;
