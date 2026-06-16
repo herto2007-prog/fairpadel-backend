@@ -40,6 +40,18 @@ export class ClasificacionController {
   }
 
   /**
+   * GET /jugador/mi-agenda
+   * Agenda proyectada del jugador logueado (próximo partido + camino si gana + repechaje).
+   */
+  @Get('jugador/mi-agenda')
+  @UseGuards(JwtAuthGuard)
+  async getMiAgenda(@Req() req: Request) {
+    const userId = (req as any).user?.userId;
+    const agendas = await this.clasificacionService.obtenerAgendaJugador(userId);
+    return { success: true, data: agendas };
+  }
+
+  /**
    * GET /jugador/inscripcion/:id/clasificacion
    * Obtiene el estado de clasificación de una inscripción específica
    */

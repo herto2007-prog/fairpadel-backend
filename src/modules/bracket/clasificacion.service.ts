@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProgramacionService } from '../programacion/programacion.service';
+import { construirOrigenLabels, FASE_LEGIBLE } from './bracket-labels';
 
 export type EstadoClasificacion = 
   | 'PENDIENTE' 
@@ -369,6 +370,118 @@ export class ClasificacionService {
       ronda: i.rondaClasificacion,
       mensaje: this.generarMensajeEstado(i.estadoClasificacion as EstadoClasificacion),
     }));
+  }
+
+  /**
+   * AGENDA PROYECTADA del jugador logueado.
+   * Para cada inscripción activa en torneos con cuadro, traza:
+   *  - próximo partido (real),
+   *  - camino "si ganás" siguiendo partidoSiguienteId hasta la final,
+   *  - bifurcación "si perdés" (repechaje) vía partidoPerdedorSiguienteId.
+   * Los horarios futuros son PREVISTOS (el cuadro es determinístico).
+   */
+  async obtenerAgendaJugador(userId: string) {
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: {
+        OR: [{ jugador1Id: userId }, { jugador2Id: userId }],
+        estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO'] },
+      },
+      include: {
+        category: { select: { nombre: true } },
+        tournament: { select: { id: true, nombre: true } },
+      },
+    });
+
+    const cancha = {
+      include: { sedeCancha: { include: { sede: { select: { nombre: true } } } } },
+    };
+    const apellidoSel = { select: { apellido: true } };
+    const inscSel = {
+      select: { id: true, jugador1: apellidoSel, jugador2: apellidoSel },
+    };
+
+    const agendas: any[] = [];
+
+    for (const insc of inscripciones) {
+      const matches = await this.prisma.match.findMany({
+        where: { fixtureVersion: { tournamentId: insc.tournamentId, categoryId: insc.categoryId } },
+        include: { torneoCancha: cancha, inscripcion1: inscSel, inscripcion2: inscSel },
+      });
+      if (matches.length === 0) continue;
+
+      const byId = new Map<string, any>(matches.map((m) => [m.id, m]));
+      const origenLabels = construirOrigenLabels(matches as any);
+
+      const FINALIZADOS = ['FINALIZADO', 'WO', 'RETIRADO', 'DESCALIFICADO'];
+      const sus = (matches as any[]).filter(
+        (m) => m.inscripcion1Id === insc.id || m.inscripcion2Id === insc.id,
+      );
+
+      // Rival de un partido visto desde el lado del jugador (1 o 2).
+      const rivalDe = (m: any, ladoJugador: number | null): string | null => {
+        if (!ladoJugador) return null;
+        const otro = ladoJugador === 1 ? 2 : 1;
+        const inscOtro = otro === 1 ? m.inscripcion1 : m.inscripcion2;
+        if (inscOtro) {
+          return `${inscOtro.jugador1.apellido}/${inscOtro.jugador2?.apellido ?? ''}`.replace(/\/$/, '');
+        }
+        const lab = origenLabels.get(m.id);
+        return otro === 1 ? lab?.origen1 ?? null : lab?.origen2 ?? null;
+      };
+
+      const nodo = (m: any, ladoJugador: number | null) => ({
+        fase: FASE_LEGIBLE[m.ronda] || m.ronda,
+        fecha: m.fechaProgramada,
+        hora: m.horaProgramada,
+        cancha: m.torneoCancha?.sedeCancha?.nombre ?? null,
+        sede: m.torneoCancha?.sedeCancha?.sede?.nombre ?? null,
+        rival: rivalDe(m, ladoJugador),
+        programado: !!(m.fechaProgramada && m.horaProgramada),
+      });
+
+      const ladoEn = (m: any) => (m.inscripcion1Id === insc.id ? 1 : m.inscripcion2Id === insc.id ? 2 : null);
+
+      // Próximo partido = el primero NO finalizado del jugador (por fecha/hora).
+      const pendientes = sus
+        .filter((m) => !FINALIZADOS.includes(m.estado))
+        .sort((a, b) =>
+          (a.fechaProgramada || '9').localeCompare(b.fechaProgramada || '9') ||
+          (a.horaProgramada || '9').localeCompare(b.horaProgramada || '9'),
+        );
+      const actual = pendientes[0] || null;
+
+      // Camino "si ganás": seguir partidoSiguienteId desde el actual.
+      const siGanas: any[] = [];
+      let cur = actual;
+      const visto = new Set<string>();
+      while (cur?.partidoSiguienteId && !visto.has(cur.partidoSiguienteId)) {
+        visto.add(cur.partidoSiguienteId);
+        const next = byId.get(cur.partidoSiguienteId);
+        if (!next) break;
+        siGanas.push(nodo(next, cur.posicionEnSiguiente ?? null));
+        cur = next;
+      }
+
+      // Bifurcación "si perdés": repechaje (partidoPerdedorSiguienteId del actual).
+      let siPerdes: any = null;
+      if (actual?.partidoPerdedorSiguienteId) {
+        const rep = byId.get(actual.partidoPerdedorSiguienteId);
+        if (rep) siPerdes = nodo(rep, actual.posicionEnPerdedor ?? null);
+      }
+
+      agendas.push({
+        torneo: { id: insc.tournament.id, nombre: insc.tournament.nombre },
+        categoria: insc.category?.nombre ?? null,
+        inscripcionId: insc.id,
+        estado: insc.estadoClasificacion || 'PENDIENTE',
+        mensaje: this.generarMensajeEstado(insc.estadoClasificacion as EstadoClasificacion),
+        proximoPartido: actual ? nodo(actual, ladoEn(actual)) : null,
+        siGanas,
+        siPerdes,
+      });
+    }
+
+    return agendas;
   }
 
   private generarMensajeEstado(estado: EstadoClasificacion | null): string {

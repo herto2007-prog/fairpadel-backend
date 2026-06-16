@@ -114,10 +114,10 @@ async function crearTorneoSorteado(): Promise<CtxTorneo> {
   for (let i = 1; i <= NUM_PAREJAS * 2; i++) {
     jugadores.push(await prisma.user.upsert({
       where: { documento: `PRUEBA-J${i}` },
-      update: {},
+      update: { password: hash, estado: 'ACTIVO' },
       create: {
         documento: `PRUEBA-J${i}`, email: `prueba.j${i}@fairpadel.test`, password: hash,
-        nombre: 'Jugador', apellido: `Prueba ${i}`, genero: Gender.MASCULINO,
+        nombre: 'Jugador', apellido: `Prueba ${i}`, genero: Gender.MASCULINO, estado: 'ACTIVO',
       },
     }));
   }
@@ -378,6 +378,33 @@ async function labels() {
   console.log(`   (torneo de prueba ${torneoId} — corré "limpiar" al terminar)`);
 }
 
+// Verifica la AGENDA DEL JUGADOR: loguea como un jugador de prueba y revisa que
+// /jugador/mi-agenda traiga próximo partido + camino "si ganás" + repechaje.
+async function agenda() {
+  const { torneoId } = await crearTorneoSorteado();
+  const login = await api('POST', '/auth/login', '', { documento: 'PRUEBA-J1', password: 'test123' });
+  const resp = await api('GET', '/jugador/mi-agenda', login.access_token);
+  const data: any[] = resp.data || [];
+  const ag = data.find((a) => a.torneo?.id === torneoId) || data[0];
+
+  console.log('\n🗓️  AGENDA DE PRUEBA-J1');
+  if (!ag) {
+    console.log('   (sin agenda)');
+  } else {
+    console.log(`   Torneo: ${ag.torneo.nombre} · ${ag.categoria}`);
+    const f = (n: any) => (n ? `${n.fase} ${n.programado ? `${n.fecha} ${n.hora}` : '(por confirmar)'}${n.rival ? ` vs ${n.rival}` : ''}` : '-');
+    console.log(`   Próximo:   ${f(ag.proximoPartido)}`);
+    ag.siGanas.forEach((n: any, i: number) => console.log(`   Si ganás ${i + 1}: ${f(n)}`));
+    console.log(`   Si perdés: ${f(ag.siPerdes)}`);
+  }
+
+  const ok = !!ag && !!ag.proximoPartido && Array.isArray(ag.siGanas) && ag.siGanas.length >= 1;
+  console.log(ok
+    ? '\n✅ RESULTADO: la agenda del jugador trae próximo + camino si gana.'
+    : '\n⚠️ RESULTADO: revisar (sin próximo o sin camino proyectado).');
+  console.log(`   (torneo de prueba ${torneoId} — corré "limpiar" al terminar)`);
+}
+
 async function limpiar() {
   const torneos = await prisma.tournament.findMany({
     where: { nombre: { startsWith: PREFIJO } }, select: { id: true, nombre: true },
@@ -396,8 +423,9 @@ async function main() {
   if (modo === 'correr') return correr();
   if (modo === 'reprogramar') return reprogramar();
   if (modo === 'labels') return labels();
+  if (modo === 'agenda') return agenda();
   if (modo === 'limpiar') return limpiar();
-  throw new Error(`Modo desconocido: ${modo}. Usar: correr | reprogramar | labels | limpiar`);
+  throw new Error(`Modo desconocido: ${modo}. Usar: correr | reprogramar | labels | agenda | limpiar`);
 }
 
 main()
