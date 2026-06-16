@@ -8,6 +8,7 @@ import {
   SorteoMasivoResponse,
 } from './dto/canchas-sorteo.dto';
 import { Prisma, CategoriaEstado, FixtureVersionEstado, MatchStatus } from '@prisma/client';
+import { ESTADOS_TERMINALES, esTerminal } from './match-estados';
 
 @Injectable()
 export class CanchasSorteoService {
@@ -410,19 +411,26 @@ export class CanchasSorteoService {
       },
     });
 
-    const partidosConResultado = partidos.filter(p => p.estado === 'FINALIZADO');
-    const partidosSinResultado = partidos.filter(p => p.estado !== 'FINALIZADO');
+    const partidosConResultado = partidos.filter(p => esTerminal(p.estado));
+    const partidosSinResultado = partidos.filter(p => !esTerminal(p.estado));
 
     if (partidosSinResultado.length === 0) {
       throw new BadRequestException('No hay partidos pendientes para re-sortear');
     }
 
-    // Liberar slots de partidos sin resultado
+    // Liberar slots de partidos sin resultado (por tupla cancha+fecha+hora:
+    // robusto haya o no matchId en el slot —los auto-programados no lo tienen).
     for (const partido of partidosSinResultado) {
-      await this.prisma.torneoSlot.updateMany({
-        where: { matchId: partido.id },
-        data: { estado: 'LIBRE', matchId: null },
-      });
+      if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
+        await this.prisma.torneoSlot.updateMany({
+          where: {
+            torneoCanchaId: partido.torneoCanchaId,
+            horaInicio: partido.horaProgramada,
+            disponibilidad: { fecha: partido.fechaProgramada },
+          },
+          data: { estado: 'LIBRE', matchId: null },
+        });
+      }
     }
 
     // Eliminar partidos sin resultado
@@ -500,7 +508,7 @@ export class CanchasSorteoService {
     const pendientes = await this.prisma.match.findMany({
       where: {
         tournamentId,
-        estado: { not: MatchStatus.FINALIZADO },
+        estado: { notIn: [...ESTADOS_TERMINALES] },
         torneoCanchaId: { not: null },
         fechaProgramada: { not: null },
         horaProgramada: { not: null },

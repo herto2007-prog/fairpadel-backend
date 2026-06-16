@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { horaAMinutos } from '../../common/utils/time-helpers';
+import { esTerminal } from './match-estados';
 
 /**
  * MOTOR DE AGENDA (reescrito 2026-06-15 — "agenda predictiva honesta")
@@ -114,7 +115,7 @@ export class AsignacionSlotsService {
     // y su hora real alimenta las dependencias/descanso de los que vienen después.
     // (Para el sorteo inicial no hay jugados → fijos vacío → comportamiento idéntico.)
     const estaJugado = (p: PartidoSorteo) =>
-      p.estado === 'FINALIZADO' && !!p.fechaProgramada && !!p.horaProgramada;
+      esTerminal(p.estado) && !!p.fechaProgramada && !!p.horaProgramada;
     const fijos = partidos.filter(estaJugado);
     const aProgramar = partidos.filter((p) => !estaJugado(p));
 
