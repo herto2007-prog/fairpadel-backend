@@ -350,6 +350,34 @@ async function reprogramar() {
     : '\n⚠️ RESULTADO: revisar métricas arriba.');
 }
 
+// Verifica "Ganador de X": tras sortear, los lados sin pareja del cuadro deben
+// traer un label de procedencia ("Ganador Zona 3", etc.).
+async function labels() {
+  const { torneoId, tcId, token } = await crearTorneoSorteado();
+  const tc = await prisma.tournamentCategory.findUnique({
+    where: { id: tcId }, select: { fixtureVersionId: true },
+  });
+  const resp = await api('GET', `/admin/bracket/${tc!.fixtureVersionId}/partidos`, token);
+  const partidos: any[] = resp.partidos || [];
+
+  // Lados vacíos (no bye) que deberían tener "Ganador de X"
+  const conLadoVacio = partidos.filter(
+    (p) => !p.esBye && (!p.inscripcion1 || !p.inscripcion2),
+  );
+  const conLabel = conLadoVacio.filter((p) => p.origen1 || p.origen2);
+
+  console.log(`\n🏷️  Partidos con lado vacío: ${conLadoVacio.length}, con label: ${conLabel.length}`);
+  conLabel.slice(0, 6).forEach((p) =>
+    console.log(`   ${p.fase} ${p.orden}:  o1="${p.origen1 || '-'}"  o2="${p.origen2 || '-'}"`),
+  );
+
+  const ok = conLadoVacio.length > 0 && conLabel.length === conLadoVacio.length;
+  console.log(ok
+    ? '\n✅ RESULTADO: todos los lados vacíos muestran "Ganador de X".'
+    : '\n⚠️ RESULTADO: hay lados vacíos sin label (revisar partidoOrigen).');
+  console.log(`   (torneo de prueba ${torneoId} — corré "limpiar" al terminar)`);
+}
+
 async function limpiar() {
   const torneos = await prisma.tournament.findMany({
     where: { nombre: { startsWith: PREFIJO } }, select: { id: true, nombre: true },
@@ -367,8 +395,9 @@ async function main() {
   console.log(`🔌 DB: ${(process.env.DATABASE_URL || '').replace(/\/\/.*@/, '//***@')}\n`);
   if (modo === 'correr') return correr();
   if (modo === 'reprogramar') return reprogramar();
+  if (modo === 'labels') return labels();
   if (modo === 'limpiar') return limpiar();
-  throw new Error(`Modo desconocido: ${modo}. Usar: correr | reprogramar | limpiar`);
+  throw new Error(`Modo desconocido: ${modo}. Usar: correr | reprogramar | labels | limpiar`);
 }
 
 main()

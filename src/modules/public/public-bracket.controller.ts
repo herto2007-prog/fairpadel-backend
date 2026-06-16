@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { construirOrigenLabels } from '../bracket/bracket-labels';
 
 @Controller('public/torneos')
 export class PublicBracketController {
@@ -156,6 +157,9 @@ export class PublicBracketController {
       orderBy: { numeroRonda: 'asc' },
     });
 
+    // Procedencia de cada lado vacío ("Ganador Zona 3", etc.)
+    const origenLabels = construirOrigenLabels(partidosRaw as any);
+
     // Transformar partidos al formato esperado
     const partidos = partidosRaw.map(p => ({
       id: p.id,
@@ -164,6 +168,8 @@ export class PublicBracketController {
       esBye: !!p.inscripcion1Id && !p.inscripcion2Id,
       inscripcion1: p.inscripcion1,
       inscripcion2: p.inscripcion2,
+      origen1: origenLabels.get(p.id)?.origen1 ?? null,
+      origen2: origenLabels.get(p.id)?.origen2 ?? null,
       ganador: p.inscripcionGanadora,
       resultado: p.set1Pareja1 !== null ? {
         set1: [p.set1Pareja1, p.set1Pareja2],

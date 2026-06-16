@@ -14,6 +14,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BracketService } from '../bracket/bracket.service';
 import { CanchasSorteoService } from '../bracket/canchas-sorteo.service';
+import { construirOrigenLabels } from '../bracket/bracket-labels';
 import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 import { AuditoriaAccionesService } from '../../common/services/auditoria-acciones.service';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -703,6 +704,9 @@ export class AdminBracketController {
         select: { definicion: true, estado: true },
       });
 
+      // Procedencia de cada lado vacío ("Ganador Zona 3", etc.)
+      const origenLabels = construirOrigenLabels(partidos as any);
+
       return {
         success: true,
         fixtureEstado: fixtureVersion?.estado,
@@ -714,6 +718,8 @@ export class AdminBracketController {
           esBye: p.esBye,
           inscripcion1: p.inscripcion1,
           inscripcion2: p.inscripcion2,
+          origen1: origenLabels.get(p.id)?.origen1 ?? null,
+          origen2: origenLabels.get(p.id)?.origen2 ?? null,
           ganador: p.inscripcionGanadora,
           resultado:
             p.set1Pareja1 !== null
