@@ -150,4 +150,17 @@ export interface SorteoMasivoResponse {
     slotsReservados: number;
     categorias: string[];
   }[];
+  // Partidos que NO entraron por falta de franjas/canchas. El sorteo NO falla:
+  // guarda los que entran y reporta esto como aviso (con cuántas franjas/horas
+  // faltan y en qué día). Ausente o total=0 = todo programado.
+  sinProgramar?: {
+    total: number;
+    porFase: Record<string, number>;
+    slotsFaltantes: number;
+    horasFaltantes: number;
+    hayFinales: boolean;
+    diaFinales: string | null;
+    mensaje: string;
+    solucion: string;
+  };
 }

@@ -130,16 +130,73 @@ export class CanchasSorteoService {
     // Asignar slots a partidos (usando días filtrados por fechaDesde si aplica)
     const asignaciones = await this.asignacionSlots.asignarSlots(tournamentId, categoriasData, diasFiltrados);
 
-    // Validar que todos los partidos tienen fecha asignada (permitir sin cancha)
+    // Validar (NO falla si faltan slots: el sorteo guarda lo que entra y avisa)
     const validacion = await this.validarTodosLosPartidosAsignados(tournamentId, categoriasData);
 
-    // Construir mensaje incluyendo advertencia de partidos sin cancha
     let mensaje = `Sorteo completado. ${asignaciones.totalPartidosAsignados} partidos asignados a slots.`;
+
+    // Aviso cuantificado: cuántas franjas/horas faltan y en qué día.
+    let sinProgramar: SorteoMasivoResponse['sinProgramar'];
+    if (validacion.partidosSinFecha > 0) {
+      const torneo = await this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        // @ts-ignore - minutosPorPartido existe en el schema
+        select: { minutosPorPartido: true },
+      });
+      const slotMin = ((torneo as any)?.minutosPorPartido as number) || 120;
+      const total = validacion.partidosSinFecha;
+      const horasFaltantes = Math.round(((total * slotMin) / 60) * 10) / 10;
+      const hayFinales = !!(validacion.porFaseSinFecha['FINAL'] || validacion.porFaseSinFecha['SEMIS']);
+      const diaFinales = diasFiltrados.length ? diasFiltrados[diasFiltrados.length - 1].fecha : null;
+
+      // Canchas del día de finales (para sugerir horas extra concretas)
+      let canchasUltimoDia = 1;
+      if (diasFiltrados.length) {
+        const slotsUltimo = await this.prisma.torneoSlot.findMany({
+          where: { disponibilidadId: diasFiltrados[diasFiltrados.length - 1].id },
+          select: { torneoCanchaId: true },
+        });
+        canchasUltimoDia = new Set(slotsUltimo.map(s => s.torneoCanchaId)).size || 1;
+      }
+
+      const fmtHoras = (h: number) => {
+        const hh = Math.floor(h); const mm = Math.round((h - hh) * 60);
+        return mm ? `${hh}h${String(mm).padStart(2, '0')}` : `${hh}h`;
+      };
+      const fmtFecha = (f: string | null) => (f ? f.split('-').reverse().join('/') : '');
+      const detalle = Object.entries(validacion.porFaseSinFecha)
+        .map(([fase, c]) => `${c} ${fase}`)
+        .join(', ');
+
+      const franjasPorCancha = Math.ceil(total / canchasUltimoDia);
+      const horasExtra = (franjasPorCancha * slotMin) / 60;
+
+      const mensajeSP = `${total} partido(s) quedaron sin horario: ${detalle}.`;
+      let solucion =
+        `Te faltan ${total} franja(s) (≈ ${fmtHoras(horasFaltantes)} de cancha en total). ` +
+        `Con ${canchasUltimoDia} cancha(s), alcanza con extender ~${fmtHoras(horasExtra)} el horario (o sumar canchas) en el Paso 2.`;
+      if (hayFinales && diaFinales) {
+        solucion += ` Como son semis/finales, agregá esas franjas el último día (${fmtFecha(diaFinales)}).`;
+      }
+
+      sinProgramar = {
+        total,
+        porFase: validacion.porFaseSinFecha,
+        slotsFaltantes: total,
+        horasFaltantes,
+        hayFinales,
+        diaFinales,
+        mensaje: mensajeSP,
+        solucion,
+      };
+      mensaje += ` ${mensajeSP}`;
+    }
+
     if (validacion.partidosSinCancha > 0) {
       const detalleSinCancha = Object.entries(validacion.porFase)
         .map(([fase, cantidad]) => `${cantidad} ${fase}`)
         .join(', ');
-      mensaje += ` ${validacion.partidosSinCancha} partidos pendientes de asignar cancha: ${detalleSinCancha}. Use el módulo Auditoría para asignar canchas.`;
+      mensaje += ` ${validacion.partidosSinCancha} partidos con fecha pero sin cancha: ${detalleSinCancha}.`;
     }
 
     const response: SorteoMasivoResponse = {
@@ -158,6 +215,7 @@ export class CanchasSorteoService {
         slotsReservados: slots as number,
         categorias: categoriasData.map(c => c.nombre),
       })),
+      sinProgramar,
     };
 
     return response;
@@ -233,43 +291,32 @@ export class CanchasSorteoService {
   private async validarTodosLosPartidosAsignados(
     tournamentId: string,
     categoriasData: Array<{ categoria: any; nombre: string; inscripciones: any[] }>,
-  ): Promise<{ partidosSinCancha: number; porFase: Record<string, number> }> {
+  ): Promise<{
+    partidosSinFecha: number;
+    porFaseSinFecha: Record<string, number>;
+    partidosSinCancha: number;
+    porFase: Record<string, number>;
+  }> {
     const fixtureVersionIds = categoriasData
       .map(c => c.categoria.fixtureVersionId)
       .filter(Boolean);
 
-    if (fixtureVersionIds.length === 0) return { partidosSinCancha: 0, porFase: {} };
-
-    // Buscar partidos SIN FECHA (estos sí son error crítico)
-    const partidosSinFecha = await this.prisma.match.findMany({
-      where: {
-        fixtureVersionId: { in: fixtureVersionIds },
-        esBye: false,
-        fechaProgramada: null,
-      },
-      select: {
-        id: true,
-        ronda: true,
-      },
-    });
-
-    if (partidosSinFecha.length > 0) {
-      const porFase: Record<string, number> = {};
-      for (const p of partidosSinFecha) {
-        porFase[p.ronda] = (porFase[p.ronda] || 0) + 1;
-      }
-      
-      const detalleFases = Object.entries(porFase)
-        .map(([fase, cantidad]) => `${cantidad} ${fase}`)
-        .join(', ');
-
-      throw new BadRequestException({
-        message: `${partidosSinFecha.length} partidos sin programar: ${detalleFases}`,
-        detalle: { totalPartidosSinSlot: partidosSinFecha.length, porFase }
-      });
+    if (fixtureVersionIds.length === 0) {
+      return { partidosSinFecha: 0, porFaseSinFecha: {}, partidosSinCancha: 0, porFase: {} };
     }
 
-    // Buscar partidos CON FECHA pero SIN CANCHA (para advertencia)
+    // Partidos SIN FECHA (no entraron por falta de franjas). YA NO es error:
+    // el motor honesto deja sin horario lo que no cabe; se reporta como aviso.
+    const partidosSinFecha = await this.prisma.match.findMany({
+      where: { fixtureVersionId: { in: fixtureVersionIds }, esBye: false, fechaProgramada: null },
+      select: { id: true, ronda: true },
+    });
+    const porFaseSinFecha: Record<string, number> = {};
+    for (const p of partidosSinFecha) {
+      porFaseSinFecha[p.ronda] = (porFaseSinFecha[p.ronda] || 0) + 1;
+    }
+
+    // Partidos CON FECHA pero SIN CANCHA (advertencia menor)
     const partidosSinCancha = await this.prisma.match.findMany({
       where: {
         fixtureVersionId: { in: fixtureVersionIds },
@@ -277,26 +324,19 @@ export class CanchasSorteoService {
         fechaProgramada: { not: null },
         torneoCanchaId: null,
       },
-      select: {
-        id: true,
-        ronda: true,
-      },
+      select: { id: true, ronda: true },
     });
-
     const porFaseSinCancha: Record<string, number> = {};
     for (const p of partidosSinCancha) {
       porFaseSinCancha[p.ronda] = (porFaseSinCancha[p.ronda] || 0) + 1;
     }
 
-    // Log de advertencia pero NO falla
-    if (partidosSinCancha.length > 0) {
-      const detalle = Object.entries(porFaseSinCancha)
-        .map(([fase, cantidad]) => `${cantidad} ${fase}`)
-        .join(', ');
-      // console.log(`[Sorteo] Advertencia: ${partidosSinCancha.length} partidos sin cancha asignada: ${detalle}`);
-    }
-
-    return { partidosSinCancha: partidosSinCancha.length, porFase: porFaseSinCancha };
+    return {
+      partidosSinFecha: partidosSinFecha.length,
+      porFaseSinFecha,
+      partidosSinCancha: partidosSinCancha.length,
+      porFase: porFaseSinCancha,
+    };
   }
 
   /**
