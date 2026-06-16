@@ -1,19 +1,15 @@
 /**
- * Red de seguridad para el refactor de programacion.service (1670 líneas).
- * Ejercita el flujo de PROGRAMACIÓN INTELIGENTE vía la API de producción:
- * crea un torneo, lo sortea (arma el cuadro), RESETEA la programación
- * automática del sorteo (desprograma + libera slots), y luego dispara
- * calcular -> aplicar, reportando un baseline estructural desde la BD.
- *
- * Por qué el reset: cerrar-y-sortear ya auto-programa los partidos y ocupa
- * slots; calcularProgramacion necesita partidos SIN programar y slots LIBRES.
+ * Red de seguridad del motor de agenda/cuadro, vía la API de producción.
+ * Crea un torneo de prueba, lo sortea (arma el cuadro + auto-programa) y verifica.
  *
  * Uso:
- *   npx ts-node scripts/probar-programacion-real.ts correr    # flujo completo + baseline
- *   npx ts-node scripts/probar-programacion-real.ts limpiar   # borra los torneos de esta prueba
+ *   npx ts-node scripts/probar-programacion-real.ts reprogramar  # reprogramar agenda (predictivo)
+ *   npx ts-node scripts/probar-programacion-real.ts labels       # "Ganador/Mejor perdedor de X" en el cuadro
+ *   npx ts-node scripts/probar-programacion-real.ts agenda       # agenda proyectada del jugador
+ *   npx ts-node scripts/probar-programacion-real.ts limpiar      # borra los torneos de esta prueba
  *
  * Organizador de PRUEBA (doc 99999001, password aleatoria por corrida).
- * Prefijo "[PRUEBA-PROG]". Correr ANTES y DESPUÉS de tocar el core de programación.
+ * Prefijo "[PRUEBA-PROG]". Correr ANTES y DESPUÉS de tocar el core de agenda.
  */
 import 'dotenv/config';
 import { PrismaClient, Gender } from '@prisma/client';
@@ -196,84 +192,6 @@ async function crearTorneoSorteado(): Promise<CtxTorneo> {
   return { torneoId: torneo.id, tcId: tc.id, token: access_token, dispIds: dispsCtx.map(d => d.id), totalPartidos, fechaInicio: dias[0] };
 }
 
-async function correr() {
-  const { torneoId, tcId, token, dispIds, totalPartidos, fechaInicio } = await crearTorneoSorteado();
-  const torneo = { id: torneoId };
-  const tc = { id: tcId };
-  const access_token = token;
-  const disps = dispIds.map(id => ({ id }));
-
-  // RESET: desprogramar todo + liberar slots (para ejercitar calcular/aplicar limpio)
-  await prisma.match.updateMany({
-    where: { tournamentId: torneo.id },
-    data: { fechaProgramada: null, horaProgramada: null, torneoCanchaId: null },
-  });
-  await prisma.torneoSlot.updateMany({
-    where: { disponibilidadId: { in: disps.map(d => d.id) } },
-    data: { estado: 'LIBRE' },
-  });
-  console.log('🧹 Reset: partidos desprogramados y slots liberados');
-
-  // CALCULAR programación inteligente
-  const calc = await api('POST', `/programacion/torneos/${torneo.id}/calcular`, access_token, {
-    categoriasSorteadas: [tc.id],
-    fechaInicio,
-  });
-  const asignaciones = (calc.distribucion || []).flatMap((d: any) => d.partidos || []);
-  const bloqueantes = (calc.conflictos || []).filter((c: any) => c.severidad === 'BLOQUEANTE');
-  console.log(`🧠 Calcular: ${asignaciones.length} asignaciones propuestas, ${bloqueantes.length} conflictos bloqueantes`);
-
-  // APLICAR
-  const aplicar = await api('POST', `/programacion/torneos/${torneo.id}/aplicar`, access_token, { asignaciones });
-
-  // BASELINE desde BD
-  const programados = await prisma.match.count({ where: { tournamentId: torneo.id, fechaProgramada: { not: null } } });
-  const slotsOcupados = await prisma.torneoSlot.count({
-    where: { disponibilidadId: { in: disps.map(d => d.id) }, estado: { not: 'LIBRE' } },
-  });
-
-  // Conflictos de pareja: mismo jugador en 2 partidos con misma fecha+hora
-  const progs = await prisma.match.findMany({
-    where: { tournamentId: torneo.id, fechaProgramada: { not: null } },
-    include: {
-      inscripcion1: { select: { jugador1Id: true, jugador2Id: true } },
-      inscripcion2: { select: { jugador1Id: true, jugador2Id: true } },
-    },
-  });
-  const ocupacion = new Map<string, number>();
-  let conflictosPareja = 0;
-  for (const m of progs) {
-    const slotKey = `${m.fechaProgramada}|${m.horaProgramada}`;
-    const jugadores = [
-      m.inscripcion1?.jugador1Id, m.inscripcion1?.jugador2Id,
-      m.inscripcion2?.jugador1Id, m.inscripcion2?.jugador2Id,
-    ].filter(Boolean) as string[];
-    for (const j of jugadores) {
-      const k = `${slotKey}|${j}`;
-      const prev = ocupacion.get(k) || 0;
-      if (prev > 0) conflictosPareja++;
-      ocupacion.set(k, prev + 1);
-    }
-  }
-
-  console.log('\n═══════════════ BASELINE PROGRAMACIÓN ═══════════════');
-  console.log(`   Partidos totales:        ${totalPartidos}`);
-  console.log(`   Asignaciones propuestas: ${asignaciones.length}`);
-  console.log(`   Partidos programados:    ${programados}`);
-  console.log(`   Slots ocupados:          ${slotsOcupados}`);
-  console.log(`   Conflictos bloqueantes:  ${bloqueantes.length}`);
-  console.log(`   Conflictos de pareja:    ${conflictosPareja}`);
-  console.log(`   Predicción suficiente:   ${calc.prediccion?.suficiente}`);
-  console.log(`   aplicar.totalAsignados:  ${aplicar?.totalAsignados}`);
-  console.log('══════════════════════════════════════════════════════');
-
-  const ok = asignaciones.length > 0 && programados === asignaciones.length &&
-    conflictosPareja === 0 && bloqueantes.length === 0;
-  console.log(ok
-    ? '\n✅ RESULTADO: calcular→aplicar consistente, sin conflictos de pareja ni bloqueantes.'
-    : '\n⚠️ RESULTADO: revisar métricas arriba (puede ser baseline esperado en la 1ª corrida).');
-}
-
 // Verifica "Reprogramar agenda general" (motor predictivo): sortea, luego dispara
 // reprogramar-general y revisa que se reacomode TODO el cuadro sin conflictos.
 async function reprogramar() {
@@ -418,14 +336,13 @@ async function limpiar() {
 }
 
 async function main() {
-  const modo = process.argv[2] || 'correr';
+  const modo = process.argv[2] || 'reprogramar';
   console.log(`🔌 DB: ${(process.env.DATABASE_URL || '').replace(/\/\/.*@/, '//***@')}\n`);
-  if (modo === 'correr') return correr();
   if (modo === 'reprogramar') return reprogramar();
   if (modo === 'labels') return labels();
   if (modo === 'agenda') return agenda();
   if (modo === 'limpiar') return limpiar();
-  throw new Error(`Modo desconocido: ${modo}. Usar: correr | reprogramar | labels | agenda | limpiar`);
+  throw new Error(`Modo desconocido: ${modo}. Usar: reprogramar | labels | agenda | limpiar`);
 }
 
 main()

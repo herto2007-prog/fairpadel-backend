@@ -1,24 +1,8 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
-import { DescansoCalculatorService, SlotInfo } from './descanso-calculator.service';
-import {
-  parseHora,
-  formatHora,
-  calcularHoraFin,
-  getDiaSemana,
-  agruparSlotsPorFecha,
-  agruparAsignacionesPorFecha,
-  validarConflictos,
-  construirDistribucion,
-  verificarConflictoPareja,
-  tieneConflictoPareja,
-  encontrarSlotOptimo,
-  asignarPartidosBalanceado,
-  calcularPrediccion,
-  distribuirPartidosCronologicamente,
-  FASES_FINALES,
-} from './scheduling-utils';
+import { DescansoCalculatorService } from './descanso-calculator.service';
+import { calcularHoraFin, tieneConflictoPareja } from './scheduling-utils';
 
 export interface SlotDisponible {
   id: string;
@@ -30,6 +14,9 @@ export interface SlotDisponible {
   canchaNombre: string;
 }
 
+// NOTA: estas interfaces las consume scheduling-utils.ts (tipos del motor de
+// cálculo). El cálculo masivo (calcular/aplicar) se retiró: hoy la programación
+// la hace el motor predictivo (AsignacionSlotsService) + programarPartidoAutomatico.
 export interface PartidoProgramar {
   id: string;
   fase: string;
@@ -40,16 +27,6 @@ export interface PartidoProgramar {
   pareja2?: { id: string; jugador1: { nombre: string }; jugador2?: { nombre: string } };
   inscripcion1Id?: string;
   inscripcion2Id?: string;
-}
-
-export interface DistribucionDia {
-  fecha: string;
-  diaSemana: string;
-  horarioInicio: string;
-  horarioFin: string;
-  slotsDisponibles: number;
-  slotsAsignados: number;
-  partidos: PartidoAsignado[];
 }
 
 export interface PartidoAsignado {
@@ -66,6 +43,16 @@ export interface PartidoAsignado {
   pareja2?: string;
 }
 
+export interface DistribucionDia {
+  fecha: string;
+  diaSemana: string;
+  horarioInicio: string;
+  horarioFin: string;
+  slotsDisponibles: number;
+  slotsAsignados: number;
+  partidos: PartidoAsignado[];
+}
+
 export interface PrediccionRecursos {
   totalPartidos: number;
   horasNecesarias: number;
@@ -73,22 +60,6 @@ export interface PrediccionRecursos {
   deficit: number;
   suficiente: boolean;
   sugerencias: string[];
-}
-
-export interface ResultadoProgramacion {
-  prediccion: PrediccionRecursos;
-  distribucion: DistribucionDia[];
-  conflictos: Conflicto[];
-  logs?: LogAsignacion[];
-}
-
-export interface Conflicto {
-  tipo: 'MISMA_PAREJA' | 'CANCHA_OCUPADA' | 'SIN_DISPONIBILIDAD' | 'SIN_FECHA_FINALES' | 'ADVERTENCIA' | 'INFO';
-  severidad: 'BLOQUEANTE' | 'ADVERTENCIA' | 'INFO';
-  partidoId: string;
-  mensaje: string;
-  sugerencia?: string;
-  accion?: 'AGREGAR_DIAS' | 'EXTENDER_HORARIOS' | 'CONFIGURAR_FINALES' | 'ACEPTAR_RIESGO';
 }
 
 export interface LogAsignacion {
@@ -101,6 +72,15 @@ export interface LogAsignacion {
   mensaje: string;
 }
 
+export interface Conflicto {
+  tipo: 'MISMA_PAREJA' | 'CANCHA_OCUPADA' | 'SIN_DISPONIBILIDAD' | 'SIN_FECHA_FINALES' | 'ADVERTENCIA' | 'INFO';
+  severidad: 'BLOQUEANTE' | 'ADVERTENCIA' | 'INFO';
+  partidoId: string;
+  mensaje: string;
+  sugerencia?: string;
+  accion?: 'AGREGAR_DIAS' | 'EXTENDER_HORARIOS' | 'CONFIGURAR_FINALES' | 'ACEPTAR_RIESGO';
+}
+
 @Injectable()
 export class ProgramacionService {
   constructor(
@@ -110,358 +90,9 @@ export class ProgramacionService {
   ) {}
 
   /**
-   * Calcula la programación inteligente para un torneo
-   * 
-   * REGLAS:
-   * 1. Solo usa slots pre-configurados en tab Canchas
-   * 2. SEMIS y FINAL SIEMPRE van en fechaFinales
-   * 3. Distribución cronológica: ZONA → REPECHAJE → ... → SEMIS → FINAL
-   * 4. Las categorías se mezclan (slots compartidos entre categorías)
-   * 5. No se crean días nuevos, solo se usan los existentes
-   */
-  async calcularProgramacion(
-    tournamentId: string,
-    categoriasSorteadas: string[],
-    fechaInicio?: string,
-    canchasFinales?: string[],
-    horaInicioFinales?: string,
-    horaFinFinales?: string,
-  ): Promise<ResultadoProgramacion> {
-    console.log('[Programacion] ===== INICIAR CÁLCULO =====');
-    console.log('[Programacion] tournamentId:', tournamentId);
-    console.log('[Programacion] categoriasSorteadas:', categoriasSorteadas);
-    
-    // 1. Validar categorías sorteadas
-    if (!categoriasSorteadas?.length) {
-      return {
-        prediccion: {
-          totalPartidos: 0,
-          horasNecesarias: 0,
-          slotsDisponibles: 0,
-          deficit: 0,
-          suficiente: false,
-          sugerencias: ['No hay categorías sorteadas seleccionadas'],
-        },
-        distribucion: [],
-        conflictos: [{
-          tipo: 'SIN_DISPONIBILIDAD',
-          severidad: 'BLOQUEANTE',
-          partidoId: '',
-          mensaje: 'No hay categorías sorteadas para programar',
-          sugerencia: 'Primero sortea las categorías en el tab Fixture',
-          accion: 'AGREGAR_DIAS',
-        }],
-      };
-    }
-
-    // 2. Obtener partidos de las categorías sorteadas
-    const todosLosPartidos = await this.obtenerPartidos(tournamentId, categoriasSorteadas);
-    
-    // FILTRAR: Solo programar partidos con AMBAS parejas definidas
-    // Los partidos "Por definir" vs "Por definir" no se pueden jugar todavía
-    const partidos = todosLosPartidos.filter(p => {
-      const tienePareja1 = p.inscripcion1Id && p.pareja1;
-      const tienePareja2 = p.inscripcion2Id && p.pareja2;
-      return tienePareja1 && tienePareja2;
-    });
-    
-    const partidosPorDefinir = todosLosPartidos.length - partidos.length;
-    if (partidosPorDefinir > 0) {
-      console.log(`[Programacion] ${partidosPorDefinir} partidos excluidos (Por definir vs Por definir)`);
-    }
-    
-    if (partidos.length === 0) {
-      const mensaje = partidosPorDefinir > 0 
-        ? `Hay ${partidosPorDefinir} partidos "Por definir" (pendientes de resultados previos)`
-        : 'Las categorías seleccionadas no tienen partidos';
-      
-      return {
-        prediccion: {
-          totalPartidos: 0,
-          horasNecesarias: 0,
-          slotsDisponibles: 0,
-          deficit: 0,
-          suficiente: false,
-          sugerencias: partidosPorDefinir > 0 
-            ? [`${partidosPorDefinir} partidos esperan resultados de rondas previas`]
-            : ['Las categorías seleccionadas no tienen partidos'],
-        },
-        distribucion: [],
-        conflictos: [{
-          tipo: 'SIN_DISPONIBILIDAD',
-          severidad: 'BLOQUEANTE',
-          partidoId: '',
-          mensaje,
-          sugerencia: partidosPorDefinir > 0 
-            ? 'Juega las rondas previas primero para definir las parejas'
-            : 'Verifica que las categorías tengan fixture generado',
-          accion: 'AGREGAR_DIAS',
-        }],
-      };
-    }
-
-    // 3. Obtener slots disponibles (pre-configurados en Canchas)
-    const slots = await this.obtenerSlotsDisponibles(tournamentId);
-    
-    if (slots.length === 0) {
-      return {
-        prediccion: {
-          totalPartidos: partidos.length,
-          horasNecesarias: partidos.length * 1.5,
-          slotsDisponibles: 0,
-          deficit: partidos.length * 1.5,
-          suficiente: false,
-          sugerencias: ['Configura los días y horarios en el tab Canchas'],
-        },
-        distribucion: [],
-        conflictos: [{
-          tipo: 'SIN_DISPONIBILIDAD',
-          severidad: 'BLOQUEANTE',
-          partidoId: '',
-          mensaje: 'No hay slots disponibles configurados',
-          sugerencia: 'Ve al tab Canchas y configura los días/horarios del torneo',
-          accion: 'AGREGAR_DIAS',
-        }],
-      };
-    }
-
-    // 4. Obtener fechaFinales del torneo
-    const torneo = await this.prisma.tournament.findUnique({
-      where: { id: tournamentId },
-      select: { 
-        fechaFinales: true,
-        canchasFinales: true,
-        horaInicioFinales: true,
-        // @ts-ignore - campo nuevo pendiente de migración
-        horaFinFinales: true,
-      }
-    });
-    
-    // FIX: fechaFinales es String YYYY-MM-DD directamente
-    const fechaFinales = torneo?.fechaFinales || undefined;
-    
-    // Usar canchasFinales del torneo si no se pasaron
-    const canchasFinalesFinal = canchasFinales?.length ? canchasFinales : 
-      (torneo?.canchasFinales as string[] || []);
-    
-    const horaInicioFinalesFinal = horaInicioFinales || torneo?.horaInicioFinales;
-    // @ts-ignore - campo nuevo pendiente de migración
-    const horaFinFinalesFinal = horaFinFinales || torneo?.horaFinFinales || '23:00';
-
-    // 5. Calcular predicción de recursos
-    const prediccion = calcularPrediccion(partidos, slots);
-
-    // 6. Validar que fechaFinales existe en slots disponibles (si tiene finales)
-    const conflictos: Conflicto[] = [];
-    const tieneFinales = partidos.some(p => FASES_FINALES.includes(p.fase));
-    
-    if (tieneFinales && fechaFinales) {
-      const fechasDisponibles = [...new Set(slots.map(s => s.fecha))];
-      if (!fechasDisponibles.includes(fechaFinales)) {
-        conflictos.push({
-          tipo: 'SIN_FECHA_FINALES',
-          severidad: 'BLOQUEANTE',
-          partidoId: '',
-          mensaje: `La fecha de finales (${fechaFinales}) no está configurada en el tab Canchas`,
-          sugerencia: `Configura disponibilidad para el ${fechaFinales} en el tab Canchas o cambia la fecha de finales`,
-          accion: 'CONFIGURAR_FINALES',
-        });
-      }
-    }
-
-    // 7. Si hay conflictos bloqueantes, retornar temprano
-    if (conflictos.some(c => c.severidad === 'BLOQUEANTE')) {
-      return {
-        prediccion,
-        distribucion: [],
-        conflictos,
-      };
-    }
-
-    // Obtener tournamentCategories para ordenar finales por categoría
-    const categoriasUnicas = [...new Set(categoriasSorteadas)];
-    const tournamentCategories = await this.prisma.tournamentCategory.findMany({
-      where: {
-        id: { in: categoriasUnicas },
-        tournamentId,
-      },
-      select: { id: true, categoryId: true },
-    });
-
-    // Array para logs de asignación
-    const logs: LogAsignacion[] = [];
-
-    // 8. Distribuir partidos cronológicamente
-    // El orden de categorías (para las finales) se carga acá (BD) y se pasa al cálculo puro.
-    const ordenCategorias = await this.obtenerOrdenCategorias(tournamentCategories);
-    const distribucion = distribuirPartidosCronologicamente(
-      this.descansoCalculator,
-      ordenCategorias,
-      partidos,
-      slots,
-      fechaInicio,
-      fechaFinales,
-      canchasFinalesFinal,
-      horaInicioFinalesFinal,
-      horaFinFinalesFinal,
-      logs,
-    );
-
-    // 9. Validar conflictos adicionales
-    const conflictosAdicionales = validarConflictos(distribucion, partidos);
-
-    // Agregar info sobre partidos por definir como advertencia informativa
-    const conflictosFinales = [...conflictos, ...conflictosAdicionales];
-    if (partidosPorDefinir > 0) {
-      conflictosFinales.push({
-        tipo: 'INFO',
-        severidad: 'ADVERTENCIA',
-        partidoId: '',
-        mensaje: `${partidosPorDefinir} partidos "Por definir" no programados (pendientes de resultados)`,
-        sugerencia: 'Estos partidos se programarán automáticamente cuando las parejas estén definidas',
-      });
-    }
-    
-    const resultado: ResultadoProgramacion = {
-      prediccion,
-      distribucion,
-      conflictos: conflictosFinales,
-      logs: logs.length > 0 ? logs : undefined,
-    };
-    
-    console.log('[Programacion] ===== CÁLCULO COMPLETADO =====');
-    console.log('[Programacion] Total partidos:', resultado.prediccion.totalPartidos);
-    console.log('[Programacion] Distribución días:', resultado.distribucion.length);
-    console.log('[Programacion] Logs generados:', logs.length);
-    
-    return resultado;
-  }
-
-  /**
-   * Obtiene los partidos de las categorías sorteadas
-   */
-  private async obtenerPartidos(
-    tournamentId: string,
-    categoriasSorteadas: string[],
-  ): Promise<PartidoProgramar[]> {
-    console.log('[Programacion] Buscando partidos para tournamentId:', tournamentId);
-    console.log('[Programacion] categoriasSorteadas:', categoriasSorteadas);
-
-    // Eliminar duplicados
-    const categoriasUnicas = [...new Set(categoriasSorteadas)];
-    console.log('[Programacion] categoriasUnicas (TournamentCategory IDs):', categoriasUnicas);
-
-    // PASO 1: Obtener los categoryId reales de los TournamentCategory
-    const tournamentCategories = await this.prisma.tournamentCategory.findMany({
-      where: {
-        id: { in: categoriasUnicas },
-        tournamentId,
-      },
-      select: { id: true, categoryId: true },
-    });
-
-    console.log('[Programacion] tournamentCategories encontradas:', tournamentCategories);
-
-    const categoryIdsReales = tournamentCategories.map(tc => tc.categoryId);
-    console.log('[Programacion] categoryIdsReales:', categoryIdsReales);
-
-    if (categoryIdsReales.length === 0) {
-      return [];
-    }
-
-    // PASO 2: Obtener fixtureVersions por los categoryId reales
-    const fixtureVersions = await this.prisma.fixtureVersion.findMany({
-      where: {
-        tournamentId,
-        categoryId: { in: categoryIdsReales },
-      },
-    });
-
-    console.log('[Programacion] fixtureVersions encontrados:', fixtureVersions.length);
-    
-    // DEBUG: Ver todos los fixtureVersions del torneo
-    const todosLosFixtureVersions = await this.prisma.fixtureVersion.findMany({
-      where: { tournamentId },
-      select: { id: true, categoryId: true, version: true },
-    });
-    console.log('[Programacion] TODOS los fixtureVersions del torneo:', todosLosFixtureVersions);
-    if (fixtureVersions.length > 0) {
-      console.log('[Programacion] IDs de fixtureVersions:', fixtureVersions.map(fv => fv.id));
-    }
-
-    if (fixtureVersions.length === 0) {
-      return [];
-    }
-
-    const fixtureVersionIds = fixtureVersions.map(fv => fv.id);
-    
-    // Map de categoryId para obtener nombres
-    // Crear map de categoryId -> nombre
-    const categoryIdToNombre = new Map<string, string>();
-    for (const tc of tournamentCategories) {
-      const categoria = await this.prisma.category.findUnique({
-        where: { id: tc.categoryId },
-        select: { nombre: true },
-      });
-      if (categoria) {
-        categoryIdToNombre.set(tc.categoryId, categoria.nombre);
-      }
-    }
-    const fixtureVersionMap = new Map(fixtureVersions.map(fv => [fv.id, fv]));
-
-    // Obtener partidos de esos fixtureVersions
-    const partidos = await this.prisma.match.findMany({
-      where: {
-        tournamentId,
-        fixtureVersionId: { in: fixtureVersionIds },
-      },
-      include: {
-        inscripcion1: {
-          select: {
-            id: true,
-            jugador1: { select: { nombre: true } },
-            jugador2: { select: { nombre: true } },
-          },
-        },
-        inscripcion2: {
-          select: {
-            id: true,
-            jugador1: { select: { nombre: true } },
-            jugador2: { select: { nombre: true } },
-          },
-        },
-      },
-      orderBy: [
-        { ronda: 'asc' },
-        { numeroRonda: 'asc' },
-      ],
-    });
-
-    console.log('[Programacion] Partidos encontrados:', partidos.length);
-
-    return partidos.map(p => {
-      const fv = fixtureVersionMap.get(p.fixtureVersionId);
-      const categoryId = fv?.categoryId || '';
-      return {
-        id: p.id,
-        fase: p.ronda,
-        orden: p.numeroRonda,
-        categoriaId: categoryId,
-        categoriaNombre: categoryIdToNombre.get(categoryId) || 'Sin categoría',
-        pareja1: p.inscripcion1 || undefined,
-        pareja2: p.inscripcion2 || undefined,
-        inscripcion1Id: p.inscripcion1Id || undefined,
-        inscripcion2Id: p.inscripcion2Id || undefined,
-      };
-    });
-  }
-
-  /**
-   * Obtiene los slots disponibles configurados en el tab Canchas
-   * Solo retorna slots que realmente existen en la BD
+   * Obtiene los slots disponibles (LIBRES) configurados en el tab Canchas.
    */
   private async obtenerSlotsDisponibles(tournamentId: string): Promise<SlotDisponible[]> {
-    // Obtener disponibilidades del torneo
     const disponibilidades = await this.prisma.torneoDisponibilidadDia.findMany({
       where: {
         tournamentId,
@@ -476,7 +107,6 @@ export class ProgramacionService {
     const disponibilidadIds = disponibilidades.map(d => d.id);
     const dispMap = new Map(disponibilidades.map(d => [d.id, d]));
 
-    // Obtener slots LIBRES de esas disponibilidades
     const slots = await this.prisma.torneoSlot.findMany({
       where: {
         disponibilidadId: { in: disponibilidadIds },
@@ -491,7 +121,6 @@ export class ProgramacionService {
       return [];
     }
 
-    // Obtener canchas
     const canchaIds = [...new Set(slots.map(s => s.torneoCanchaId).filter(Boolean))];
     const canchas = await this.prisma.torneoCancha.findMany({
       where: {
@@ -524,173 +153,15 @@ export class ProgramacionService {
         };
       })
       .sort((a, b) => {
-        // Ordenar por fecha, luego por hora
         if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
         return a.horaInicio.localeCompare(b.horaInicio);
       });
   }
 
   /**
-   * Obtiene el orden de categorías para ordenar finales
-   * Categorías bajas primero (8ª → 1ª), dejando lo mejor para el final
-   * Retorna Map<categoryId, orden> donde menor orden = va primero
-   */
-  private async obtenerOrdenCategorias(
-    tournamentCategories?: { id: string; categoryId: string }[],
-  ): Promise<Map<string, number>> {
-    const ordenMap = new Map<string, number>();
-    
-    if (!tournamentCategories || tournamentCategories.length === 0) {
-      return ordenMap;
-    }
-
-    // Obtener nombres de categorías
-    const categoryIds = tournamentCategories.map(tc => tc.categoryId);
-    const categorias = await this.prisma.category.findMany({
-      where: { id: { in: categoryIds } },
-      select: { id: true, nombre: true },
-    });
-
-    // Mapa de palabras clave a orden numérico (menor = más baja = va primero)
-    const extractOrder = (nombre: string): number => {
-      const lower = nombre.toLowerCase();
-      // 8ª (octava) más baja = orden 1 (va primero)
-      // 1ª (primera) más alta = orden 8 (va último)
-      if (lower.includes('8') || lower.includes('octava')) return 1;
-      if (lower.includes('7') || lower.includes('septima')) return 2;
-      if (lower.includes('6') || lower.includes('sexta')) return 3;
-      if (lower.includes('5') || lower.includes('quinta')) return 4;
-      if (lower.includes('4') || lower.includes('cuarta')) return 5;
-      if (lower.includes('3') || lower.includes('tercera')) return 6;
-      if (lower.includes('2') || lower.includes('segunda')) return 7;
-      if (lower.includes('1') || lower.includes('primera')) return 8;
-      return 999; // Sin orden definido = al final
-    };
-
-    // Asignar orden basado en el nombre de la categoría
-    for (const cat of categorias) {
-      ordenMap.set(cat.id, extractOrder(cat.nombre));
-    }
-
-    return ordenMap;
-  }
-
-  /**
-   * Aplica la programación a los partidos
-   */
-  async aplicarProgramacion(
-    tournamentId: string,
-    asignaciones: PartidoAsignado[],
-  ): Promise<void> {
-    for (const asignacion of asignaciones) {
-      // Actualizar el partido
-      await this.prisma.match.update({
-        where: { id: asignacion.partidoId },
-        data: {
-          // FIX: fechaProgramada es String YYYY-MM-DD
-          fechaProgramada: asignacion.fecha,
-          horaProgramada: asignacion.horaInicio,
-          torneoCanchaId: asignacion.torneoCanchaId,
-          estado: 'PROGRAMADO',
-        },
-      });
-
-      // Marcar slot como ocupado
-      await this.prisma.torneoSlot.updateMany({
-        where: {
-          torneoCanchaId: asignacion.torneoCanchaId,
-          disponibilidad: {
-            // FIX: fecha es String YYYY-MM-DD
-            fecha: asignacion.fecha,
-          },
-          horaInicio: asignacion.horaInicio,
-        },
-        data: { estado: 'OCUPADO' },
-      });
-    }
-  }
-
-  /**
-   * Actualiza la programación de un partido específico (modo híbrido)
-   */
-  async actualizarProgramacionPartido(
-    partidoId: string,
-    fecha: string,
-    horaInicio: string,
-    torneoCanchaId: string,
-  ): Promise<void> {
-    // Verificar que el partido existe
-    const partido = await this.prisma.match.findUnique({
-      where: { id: partidoId },
-    });
-
-    if (!partido) {
-      throw new BadRequestException('Partido no encontrado');
-    }
-
-    // Si el partido ya estaba programado, liberar el slot anterior
-    if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
-      await this.liberarSlot(
-        partido.torneoCanchaId,
-        // FIX: fechaProgramada es String YYYY-MM-DD
-        partido.fechaProgramada,
-        partido.horaProgramada,
-      );
-    }
-
-    // Actualizar el partido
-    await this.prisma.match.update({
-      where: { id: partidoId },
-      data: {
-        // FIX: fechaProgramada es String YYYY-MM-DD
-        fechaProgramada: fecha,
-        horaProgramada: horaInicio,
-        torneoCanchaId: torneoCanchaId,
-        estado: 'PROGRAMADO',
-      },
-    });
-
-    // Marcar nuevo slot como ocupado
-    await this.ocuparSlot(torneoCanchaId, fecha, horaInicio);
-  }
-
-  /**
-   * Desprograma un partido (limpia fecha, hora y cancha)
-   */
-  async desprogramarPartido(partidoId: string): Promise<void> {
-    const partido = await this.prisma.match.findUnique({
-      where: { id: partidoId },
-    });
-
-    if (!partido) {
-      throw new BadRequestException('Partido no encontrado');
-    }
-
-    // Liberar el slot si estaba programado
-    if (partido.torneoCanchaId && partido.fechaProgramada && partido.horaProgramada) {
-      await this.liberarSlot(
-        partido.torneoCanchaId,
-        // FIX: fechaProgramada es String YYYY-MM-DD
-        partido.fechaProgramada,
-        partido.horaProgramada,
-      );
-    }
-
-    // Limpiar la programación del partido
-    await this.prisma.match.update({
-      where: { id: partidoId },
-      data: {
-        fechaProgramada: null,
-        horaProgramada: null,
-        torneoCanchaId: null,
-        estado: 'PROGRAMADO',
-      },
-    });
-  }
-
-  /**
-   * Programa automáticamente un partido específico buscando el mejor slot disponible
-   * Usado cuando un partido de fase siguiente se completa (tiene ambas parejas)
+   * Programa automáticamente un partido específico buscando el mejor slot disponible.
+   * Se usa cuando un partido de fase siguiente queda con ambas parejas definidas
+   * (lo llaman resultados.service y clasificacion.service al cargar un resultado).
    */
   async programarPartidoAutomatico(
     tournamentId: string,
@@ -734,18 +205,18 @@ export class ProgramacionService {
 
     // Determinar restricciones según la fase
     const esFaseFinal = ['SEMIS', 'FINAL'].includes(partido.ronda);
-    const fechaFinales = torneo?.fechaFinales 
+    const fechaFinales = torneo?.fechaFinales
       // FIX: fechaFinales es String YYYY-MM-DD
       ? torneo.fechaFinales
       : null;
-    
+
     // Filtrar slots según la fase
     let slotsCandidatos = slots;
-    
+
     if (esFaseFinal && fechaFinales) {
       // Finales solo en fechaFinales
       slotsCandidatos = slots.filter(s => s.fecha === fechaFinales);
-      
+
       // Aplicar restricciones de horario si existen
       if (torneo?.horaInicioFinales) {
         slotsCandidatos = slotsCandidatos.filter(s => s.horaInicio >= torneo.horaInicioFinales!);
@@ -753,7 +224,7 @@ export class ProgramacionService {
       if (torneo?.horaFinFinales) {
         slotsCandidatos = slotsCandidatos.filter(s => s.horaInicio <= torneo.horaFinFinales!);
       }
-      
+
       // Filtrar por canchas designadas si existen
       const canchasFinales = torneo?.canchasFinales as string[];
       if (canchasFinales?.length > 0) {
@@ -772,27 +243,27 @@ export class ProgramacionService {
 
     // Obtener partidos ya programados para verificar conflictos
     const partidosProgramados = await this.obtenerPartidosProgramados(tournamentId);
-    
+
     // Buscar el mejor slot (el primero disponible sin conflicto de pareja)
     for (const slot of slotsCandidatos) {
       // Verificar si el slot está ocupado
-      const slotOcupado = partidosProgramados.some(p => 
+      const slotOcupado = partidosProgramados.some(p =>
         p.fecha === slot.fecha &&
         p.horaInicio === slot.horaInicio &&
         p.torneoCanchaId === slot.torneoCanchaId,
       );
-      
+
       if (slotOcupado) continue;
 
       // Verificar conflicto de pareja (2h de descanso)
       const parejaIds = [partido.inscripcion1Id, partido.inscripcion2Id].filter(Boolean);
-      const hayConflicto = tieneConflictoPareja(this.descansoCalculator, 
+      const hayConflicto = tieneConflictoPareja(this.descansoCalculator,
         parejaIds,
         slot.fecha,
         slot.horaInicio,
         partidosProgramados,
       );
-      
+
       if (hayConflicto) continue;
 
       // ¡Slot ideal encontrado! Asignarlo
@@ -828,61 +299,8 @@ export class ProgramacionService {
     return { success: false, message: 'No se encontró slot disponible sin conflictos' };
   }
 
-
   /**
-   * Obtiene las canchas disponibles para un torneo
-   */
-  async getCanchasDisponibles(tournamentId: string) {
-    const canchas = await this.prisma.torneoCancha.findMany({
-      where: { tournamentId },
-      include: {
-        sedeCancha: {
-          include: {
-            sede: { select: { nombre: true } },
-          },
-        },
-      },
-    });
-
-    return {
-      success: true,
-      canchas: canchas.map(c => ({
-        id: c.id,
-        nombre: c.sedeCancha.nombre,
-        sede: c.sedeCancha.sede.nombre,
-      })),
-    };
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // MÉTODOS AUXILIARES
-  // ═══════════════════════════════════════════════════════════
-
-
-
-
-
-
-  private async liberarSlot(
-    torneoCanchaId: string,
-    fecha: string,
-    horaInicio: string,
-  ): Promise<void> {
-    await this.prisma.torneoSlot.updateMany({
-      where: {
-        torneoCanchaId,
-        disponibilidad: {
-          // FIX: fecha es String YYYY-MM-DD
-          fecha: fecha,
-        },
-        horaInicio,
-      },
-      data: { estado: 'LIBRE' },
-    });
-  }
-
-  /**
-   * Obtiene todos los partidos programados de un torneo
+   * Obtiene todos los partidos ya programados de un torneo (para detectar choques).
    */
   private async obtenerPartidosProgramados(tournamentId: string): Promise<PartidoAsignado[]> {
     const partidos = await this.prisma.match.findMany({
