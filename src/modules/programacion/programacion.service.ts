@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { MatchStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { DescansoCalculatorService, SlotInfo } from './descanso-calculator.service';
@@ -82,6 +83,12 @@ export interface ResultadoProgramacion {
   logs?: LogAsignacion[];
 }
 
+export interface ResumenReprogramacion {
+  totalJugables: number; // partidos con ambas parejas definidas
+  asignados: number; // los que entraron en una franja
+  sinFranja: number; // jugables que no entraron por falta de franjas
+}
+
 export interface Conflicto {
   tipo: 'MISMA_PAREJA' | 'CANCHA_OCUPADA' | 'SIN_DISPONIBILIDAD' | 'SIN_FECHA_FINALES' | 'ADVERTENCIA' | 'INFO';
   severidad: 'BLOQUEANTE' | 'ADVERTENCIA' | 'INFO';
@@ -126,6 +133,7 @@ export class ProgramacionService {
     canchasFinales?: string[],
     horaInicioFinales?: string,
     horaFinFinales?: string,
+    incluirOcupadosPorPendientes = false,
   ): Promise<ResultadoProgramacion> {
     console.log('[Programacion] ===== INICIAR CÁLCULO =====');
     console.log('[Programacion] tournamentId:', tournamentId);
@@ -201,7 +209,7 @@ export class ProgramacionService {
     }
 
     // 3. Obtener slots disponibles (pre-configurados en Canchas)
-    const slots = await this.obtenerSlotsDisponibles(tournamentId);
+    const slots = await this.obtenerSlotsDisponibles(tournamentId, incluirOcupadosPorPendientes);
     
     if (slots.length === 0) {
       return {
@@ -410,10 +418,12 @@ export class ProgramacionService {
     const fixtureVersionMap = new Map(fixtureVersions.map(fv => [fv.id, fv]));
 
     // Obtener partidos de esos fixtureVersions
+    // Excluir FINALIZADO: un partido ya jugado no se (re)programa nunca.
     const partidos = await this.prisma.match.findMany({
       where: {
         tournamentId,
         fixtureVersionId: { in: fixtureVersionIds },
+        estado: { not: MatchStatus.FINALIZADO },
       },
       include: {
         inscripcion1: {
@@ -460,7 +470,10 @@ export class ProgramacionService {
    * Obtiene los slots disponibles configurados en el tab Canchas
    * Solo retorna slots que realmente existen en la BD
    */
-  private async obtenerSlotsDisponibles(tournamentId: string): Promise<SlotDisponible[]> {
+  private async obtenerSlotsDisponibles(
+    tournamentId: string,
+    incluirOcupadosPorPendientes = false,
+  ): Promise<SlotDisponible[]> {
     // Obtener disponibilidades del torneo
     const disponibilidades = await this.prisma.torneoDisponibilidadDia.findMany({
       where: {
@@ -477,7 +490,7 @@ export class ProgramacionService {
     const dispMap = new Map(disponibilidades.map(d => [d.id, d]));
 
     // Obtener slots LIBRES de esas disponibilidades
-    const slots = await this.prisma.torneoSlot.findMany({
+    const slotsLibres = await this.prisma.torneoSlot.findMany({
       where: {
         disponibilidadId: { in: disponibilidadIds },
         estado: 'LIBRE',
@@ -486,6 +499,43 @@ export class ProgramacionService {
         { horaInicio: 'asc' },
       ],
     });
+
+    let slots = slotsLibres;
+
+    // REPROGRAMACIÓN GENERAL: tratar también como disponibles las franjas que
+    // hoy ocupan partidos PENDIENTES (no finalizados), porque se van a liberar.
+    // Las franjas de partidos ya jugados quedan intactas.
+    if (incluirOcupadosPorPendientes) {
+      const pendientes = await this.prisma.match.findMany({
+        where: {
+          tournamentId,
+          estado: { not: MatchStatus.FINALIZADO },
+          torneoCanchaId: { not: null },
+          fechaProgramada: { not: null },
+          horaProgramada: { not: null },
+        },
+        select: { torneoCanchaId: true, fechaProgramada: true, horaProgramada: true },
+      });
+
+      if (pendientes.length > 0) {
+        const tuplasPendientes = new Set(
+          pendientes.map(p => `${p.torneoCanchaId}|${p.fechaProgramada}|${p.horaProgramada}`),
+        );
+        const slotsOcupados = await this.prisma.torneoSlot.findMany({
+          where: {
+            disponibilidadId: { in: disponibilidadIds },
+            estado: 'OCUPADO',
+          },
+          orderBy: [{ horaInicio: 'asc' }],
+        });
+        const liberables = slotsOcupados.filter(s => {
+          const disp = dispMap.get(s.disponibilidadId);
+          if (!disp) return false;
+          return tuplasPendientes.has(`${s.torneoCanchaId}|${disp.fecha}|${s.horaInicio}`);
+        });
+        slots = [...slotsLibres, ...liberables];
+      }
+    }
 
     if (slots.length === 0) {
       return [];
@@ -608,6 +658,86 @@ export class ProgramacionService {
         data: { estado: 'OCUPADO' },
       });
     }
+  }
+
+  /**
+   * REPROGRAMACIÓN GENERAL — Vista previa (NO toca la BD).
+   * Simula reacomodar TODOS los partidos pendientes desde cero, contando como
+   * disponibles las franjas que hoy ocupan esos pendientes. Los partidos ya
+   * jugados (FINALIZADO) no se tocan.
+   */
+  async reprogramarGeneralPreview(
+    tournamentId: string,
+  ): Promise<ResultadoProgramacion & { resumen: ResumenReprogramacion }> {
+    const categorias = await this.obtenerCategoriasSorteadas(tournamentId);
+    const resultado = await this.calcularProgramacion(
+      tournamentId,
+      categorias,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true, // incluir franjas ocupadas por pendientes (se van a liberar)
+    );
+    return { ...resultado, resumen: this.calcularResumen(resultado) };
+  }
+
+  /**
+   * REPROGRAMACIÓN GENERAL — Aplicar.
+   * 1) Libera las franjas de todos los partidos pendientes y limpia su programación.
+   * 2) Recalcula la agenda desde cero (los partidos jugados quedan intactos).
+   * 3) Aplica la nueva distribución.
+   */
+  async reprogramarGeneralAplicar(
+    tournamentId: string,
+  ): Promise<{ resumen: ResumenReprogramacion; conflictos: Conflicto[] }> {
+    // 1. Liberar franjas de los partidos pendientes (no finalizados) y limpiar su programación
+    const pendientes = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        estado: { not: MatchStatus.FINALIZADO },
+        torneoCanchaId: { not: null },
+        fechaProgramada: { not: null },
+        horaProgramada: { not: null },
+      },
+    });
+
+    for (const p of pendientes) {
+      await this.liberarSlot(p.torneoCanchaId!, p.fechaProgramada!, p.horaProgramada!);
+    }
+
+    if (pendientes.length > 0) {
+      await this.prisma.match.updateMany({
+        where: { id: { in: pendientes.map(p => p.id) } },
+        data: { fechaProgramada: null, horaProgramada: null, torneoCanchaId: null },
+      });
+    }
+
+    // 2. Recalcular desde cero (las franjas liberadas ya figuran como LIBRE)
+    const categorias = await this.obtenerCategoriasSorteadas(tournamentId);
+    const resultado = await this.calcularProgramacion(tournamentId, categorias);
+
+    // 3. Aplicar la nueva distribución
+    const asignaciones = resultado.distribucion.flatMap(d => d.partidos);
+    await this.aplicarProgramacion(tournamentId, asignaciones);
+
+    return { resumen: this.calcularResumen(resultado), conflictos: resultado.conflictos };
+  }
+
+  /** Cuenta jugables / asignados / sin franja de un resultado de programación. */
+  private calcularResumen(resultado: ResultadoProgramacion): ResumenReprogramacion {
+    const asignados = resultado.distribucion.reduce((acc, d) => acc + d.partidos.length, 0);
+    const totalJugables = resultado.prediccion.totalPartidos;
+    return { totalJugables, asignados, sinFranja: Math.max(0, totalJugables - asignados) };
+  }
+
+  /** IDs de TournamentCategory que ya tienen fixture sorteado. */
+  private async obtenerCategoriasSorteadas(tournamentId: string): Promise<string[]> {
+    const cats = await this.prisma.tournamentCategory.findMany({
+      where: { tournamentId, fixtureVersionId: { not: null } },
+      select: { id: true },
+    });
+    return cats.map(c => c.id);
   }
 
   /**
