@@ -7,7 +7,7 @@ import {
   CerrarInscripcionesSortearDto,
   SorteoMasivoResponse,
 } from './dto/canchas-sorteo.dto';
-import { Prisma, CategoriaEstado, FixtureVersionEstado } from '@prisma/client';
+import { Prisma, CategoriaEstado, FixtureVersionEstado, MatchStatus } from '@prisma/client';
 
 @Injectable()
 export class CanchasSorteoService {
@@ -485,6 +485,79 @@ export class CanchasSorteoService {
         partidosMantenidos: partidosConResultado.length,
         partidosReasignados: asignaciones.totalPartidosAsignados,
       },
+    };
+  }
+
+  /**
+   * REPROGRAMACIÓN GENERAL — reacomoda toda la agenda desde cero con el motor
+   * predictivo (incluye las rondas futuras, cuyo slot es determinístico aunque
+   * no se sepa el ocupante). Los partidos ya jugados son anclas: no se mueven y
+   * su hora real alimenta la predicción de los que vienen después.
+   */
+  async reprogramarGeneral(tournamentId: string) {
+    // 1. Liberar las franjas de los partidos NO jugados ya programados y limpiar
+    //    su programación (por tupla cancha+fecha+hora, robusto haya o no matchId).
+    const pendientes = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        estado: { not: MatchStatus.FINALIZADO },
+        torneoCanchaId: { not: null },
+        fechaProgramada: { not: null },
+        horaProgramada: { not: null },
+      },
+      select: { id: true, torneoCanchaId: true, fechaProgramada: true, horaProgramada: true },
+    });
+
+    for (const m of pendientes) {
+      await this.prisma.torneoSlot.updateMany({
+        where: {
+          torneoCanchaId: m.torneoCanchaId!,
+          horaInicio: m.horaProgramada!,
+          disponibilidad: { fecha: m.fechaProgramada! },
+        },
+        data: { estado: 'LIBRE', matchId: null },
+      });
+    }
+
+    if (pendientes.length > 0) {
+      await this.prisma.match.updateMany({
+        where: { id: { in: pendientes.map((p) => p.id) } },
+        data: { fechaProgramada: null, horaProgramada: null, torneoCanchaId: null },
+      });
+    }
+
+    // 2. Categorías sorteadas (con fixture) → datos para el motor predictivo.
+    const tcs = await this.prisma.tournamentCategory.findMany({
+      where: { tournamentId, fixtureVersionId: { not: null } },
+    });
+    if (tcs.length === 0) {
+      throw new BadRequestException('No hay categorías sorteadas para reprogramar');
+    }
+    const categoriasData = tcs.map((tc) => ({
+      categoria: tc,
+      nombre: '',
+      inscripciones: [] as any[],
+    }));
+
+    const diasConfig = await this.prisma.torneoDisponibilidadDia.findMany({
+      where: { tournamentId },
+      orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }],
+    });
+
+    // 3. Motor predictivo: asigna todas las posiciones (incluidas las futuras),
+    //    respeta dependencias/descanso y deja sin horario lo que no entra.
+    const resultado = await this.asignacionSlots.asignarSlots(
+      tournamentId,
+      categoriasData,
+      diasConfig,
+    );
+
+    return {
+      success: true,
+      message: 'Agenda reprogramada correctamente',
+      asignados: resultado.totalPartidosAsignados,
+      sinFranja: resultado.partidosSinSlot,
+      distribucionPorDia: resultado.distribucionPorDia,
     };
   }
 

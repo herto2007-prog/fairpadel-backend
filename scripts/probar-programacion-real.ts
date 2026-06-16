@@ -274,30 +274,21 @@ async function correr() {
     : '\n⚠️ RESULTADO: revisar métricas arriba (puede ser baseline esperado en la 1ª corrida).');
 }
 
-// Verifica el flujo "Reprogramar agenda general": sortea (auto-programa),
-// luego dispara preview + reprogramar-general y revisa consistencia en BD.
+// Verifica "Reprogramar agenda general" (motor predictivo): sortea, luego dispara
+// reprogramar-general y revisa que se reacomode TODO el cuadro sin conflictos.
 async function reprogramar() {
   const { torneoId, token, dispIds, totalPartidos } = await crearTorneoSorteado();
 
-  // Estado tras el sorteo (ya viene auto-programado)
+  // Estado tras el sorteo (ya viene auto-programado por el motor predictivo)
   const programadosAntes = await prisma.match.count({
     where: { tournamentId: torneoId, fechaProgramada: { not: null } },
   });
   console.log(`📌 Tras sorteo: ${programadosAntes}/${totalPartidos} partidos con franja`);
 
-  // PREVIEW (no debe tocar la BD)
-  const preview = await api('GET', `/programacion/torneos/${torneoId}/reprogramar-general/preview`, token);
-  const r = preview.resumen || {};
-  console.log(`🔎 Preview: jugables=${r.totalJugables} asignados=${r.asignados} sinFranja=${r.sinFranja}`);
-  const programadosPostPreview = await prisma.match.count({
-    where: { tournamentId: torneoId, fechaProgramada: { not: null } },
-  });
-  const previewNoTocaBD = programadosPostPreview === programadosAntes;
-
-  // APLICAR reprogramación general
-  const aplicado = await api('POST', `/programacion/torneos/${torneoId}/reprogramar-general`, token);
-  const ra = aplicado.resumen || {};
-  console.log(`🔁 Aplicado: jugables=${ra.totalJugables} asignados=${ra.asignados} sinFranja=${ra.sinFranja}`);
+  // APLICAR reprogramación general (motor predictivo, incluye rondas futuras)
+  const aplicado = await api('POST', `/admin/canchas-sorteo/${torneoId}/reprogramar-general`, token);
+  console.log(`🔁 Aplicado: asignados=${aplicado.asignados} sinFranja=${aplicado.sinFranja}`);
+  const ra = { asignados: aplicado.asignados };
 
   // BASELINE post-reprogramación desde BD
   const programadosDespues = await prisma.match.count({
@@ -345,18 +336,17 @@ async function reprogramar() {
   console.log('\n═══════════════ BASELINE REPROGRAMACIÓN ═══════════════');
   console.log(`   Partidos totales:        ${totalPartidos}`);
   console.log(`   Programados (antes):     ${programadosAntes}`);
-  console.log(`   Preview NO tocó BD:      ${previewNoTocaBD}`);
   console.log(`   Programados (después):   ${programadosDespues}`);
-  console.log(`   resumen.asignados:       ${ra.asignados}`);
+  console.log(`   asignados (API):         ${ra.asignados}`);
   console.log(`   Slots ocupados:          ${slotsOcupados}`);
   console.log(`   Conflictos de pareja:    ${conflictosPareja}`);
   console.log(`   Dobles reservas cancha:  ${doblesReserva}`);
   console.log('════════════════════════════════════════════════════════');
 
-  const ok = previewNoTocaBD && programadosDespues === ra.asignados &&
+  const ok = programadosDespues === ra.asignados && programadosDespues === totalPartidos &&
     conflictosPareja === 0 && doblesReserva === 0 && programadosDespues > 0;
   console.log(ok
-    ? '\n✅ RESULTADO: reprogramación general consistente (preview limpio, sin conflictos ni dobles reservas).'
+    ? '\n✅ RESULTADO: reprogramación predictiva consistente (todo el cuadro reacomodado, sin conflictos ni dobles reservas).'
     : '\n⚠️ RESULTADO: revisar métricas arriba.');
 }
 

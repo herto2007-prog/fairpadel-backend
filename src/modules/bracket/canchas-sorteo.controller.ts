@@ -139,4 +139,14 @@ export class CanchasSorteoController {
   ) {
     return this.partidoSlotsService.intercambiarSlots(tournamentId, matchId1, matchId2);
   }
+
+  /**
+   * Reprograma toda la agenda desde cero con el motor predictivo (incluye rondas
+   * futuras; no toca los partidos ya jugados).
+   * POST /admin/canchas-sorteo/:tournamentId/reprogramar-general
+   */
+  @Post(':tournamentId/reprogramar-general')
+  async reprogramarGeneral(@Param('tournamentId') tournamentId: string) {
+    return this.canchasSorteoService.reprogramarGeneral(tournamentId);
+  }
 }

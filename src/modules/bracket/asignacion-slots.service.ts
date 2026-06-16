@@ -51,6 +51,9 @@ interface PartidoSorteo {
   inscripcion2Id: string | null;
   partidoOrigen1Id: string | null;
   partidoOrigen2Id: string | null;
+  estado: string;
+  fechaProgramada: string | null;
+  horaProgramada: string | null;
 }
 
 @Injectable()
@@ -65,7 +68,7 @@ export class AsignacionSlotsService {
     _tournamentId: string,
     categoriasData: Array<{ categoria: any; nombre: string; inscripciones: any[] }>,
     diasConfig: any[],
-  ): Promise<{ totalPartidosAsignados: number; distribucionPorDia: Record<string, number> }> {
+  ): Promise<{ totalPartidosAsignados: number; distribucionPorDia: Record<string, number>; partidosSinSlot: number }> {
     const distribucionPorDia: Record<string, number> = {};
 
     // 1. Grilla global de slots LIBRES, ordenada cronológicamente (fecha, hora).
@@ -101,10 +104,19 @@ export class AsignacionSlotsService {
         id: true, ronda: true, numeroRonda: true, fixtureVersionId: true,
         inscripcion1Id: true, inscripcion2Id: true,
         partidoOrigen1Id: true, partidoOrigen2Id: true,
+        estado: true, fechaProgramada: true, horaProgramada: true,
       },
     })) as PartidoSorteo[];
 
     const idsNoBye = new Set(partidos.map((p) => p.id));
+
+    // FIJOS = partidos ya jugados: son anclas, no se mueven. Su franja sigue OCUPADA
+    // y su hora real alimenta las dependencias/descanso de los que vienen después.
+    // (Para el sorteo inicial no hay jugados → fijos vacío → comportamiento idéntico.)
+    const estaJugado = (p: PartidoSorteo) =>
+      p.estado === 'FINALIZADO' && !!p.fechaProgramada && !!p.horaProgramada;
+    const fijos = partidos.filter(estaJugado);
+    const aProgramar = partidos.filter((p) => !estaJugado(p));
 
     // 3. Orden topológico: por ronda (temprana primero), luego categoría, luego número.
     const ordenFase = (r: string) => {
@@ -114,7 +126,7 @@ export class AsignacionSlotsService {
     const ordenCat = new Map<string, number>(
       categoriasData.map((c, i) => [c.categoria.fixtureVersionId as string, i]),
     );
-    partidos.sort(
+    aProgramar.sort(
       (a, b) =>
         ordenFase(a.ronda) - ordenFase(b.ronda) ||
         (ordenCat.get(a.fixtureVersionId || '') ?? 99) - (ordenCat.get(b.fixtureVersionId || '') ?? 99) ||
@@ -127,7 +139,31 @@ export class AsignacionSlotsService {
     let total = 0;
     const sinSlot: string[] = [];
 
-    for (const p of partidos) {
+    // Sembrar las anclas (partidos ya jugados): fijan su fin para las dependencias
+    // y la ocupación de sus jugadores para el descanso.
+    if (fijos.length > 0) {
+      const slotsFijos = await this.prisma.torneoSlot.findMany({
+        where: { matchId: { in: fijos.map((f) => f.id) } },
+        select: { matchId: true, horaFin: true },
+      });
+      const finPorMatch = new Map<string, number>(
+        slotsFijos
+          .filter((s) => !!s.matchId)
+          .map((s) => [s.matchId as string, horaAMinutos(s.horaFin)]),
+      );
+      for (const f of fijos) {
+        const finMin = finPorMatch.get(f.id) ?? horaAMinutos(f.horaProgramada!) + DESCANSO_MIN;
+        finPorPartido.set(f.id, { fecha: f.fechaProgramada!, finMin });
+        const jugadores = [f.inscripcion1Id, f.inscripcion2Id].filter((x): x is string => !!x);
+        for (const j of jugadores) {
+          const lst = porJugador.get(j) || [];
+          lst.push({ fecha: f.fechaProgramada!, ini: horaAMinutos(f.horaProgramada!), fin: finMin });
+          porJugador.set(j, lst);
+        }
+      }
+    }
+
+    for (const p of aProgramar) {
       const esFinal = FASES_FINALES.includes(p.ronda);
       const jugadores = [p.inscripcion1Id, p.inscripcion2Id].filter((x): x is string => !!x);
 
@@ -214,6 +250,6 @@ export class AsignacionSlotsService {
       );
     }
 
-    return { totalPartidosAsignados: total, distribucionPorDia };
+    return { totalPartidosAsignados: total, distribucionPorDia, partidosSinSlot: sinSlot.length };
   }
 }

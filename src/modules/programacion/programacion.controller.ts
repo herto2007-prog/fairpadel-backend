@@ -147,31 +147,4 @@ export class ProgramacionController {
   ) {
     return this.programacionService.getCanchasDisponibles(tournamentId);
   }
-
-  /**
-   * GET /programacion/torneos/:id/reprogramar-general/preview
-   * Vista previa de reacomodar TODOS los partidos pendientes desde cero (no toca la BD).
-   */
-  @Get('torneos/:id/reprogramar-general/preview')
-  async reprogramarGeneralPreview(
-    @Param('id') tournamentId: string,
-  ) {
-    return this.programacionService.reprogramarGeneralPreview(tournamentId);
-  }
-
-  /**
-   * POST /programacion/torneos/:id/reprogramar-general
-   * Libera la agenda de los partidos pendientes y la reacomoda desde cero.
-   */
-  @Post('torneos/:id/reprogramar-general')
-  async reprogramarGeneral(
-    @Param('id') tournamentId: string,
-  ) {
-    const resultado = await this.programacionService.reprogramarGeneralAplicar(tournamentId);
-    return {
-      success: true,
-      message: 'Agenda reprogramada correctamente',
-      ...resultado,
-    };
-  }
 }
