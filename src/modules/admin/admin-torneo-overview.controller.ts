@@ -184,6 +184,7 @@ export class AdminTorneoOverviewController {
           fechaFinales: true,
           fechaLimiteInscr: true,
           ciudad: true,
+          costoInscripcion: true,
           flyerUrl: true,
           sedeId: true,
           // @ts-ignore - campos nuevos en schema
@@ -400,6 +401,8 @@ export class AdminTorneoOverviewController {
           // @ts-ignore
           horaFinFinales: torneo.horaFinFinales,
           ciudad: torneo.ciudad,
+          // @ts-ignore
+          costoInscripcion: Number(torneo.costoInscripcion ?? 0),
           flyerUrl: torneo.flyerUrl,
           // @ts-ignore
           sede: torneo.sedePrincipal,

@@ -67,8 +67,11 @@ class CreateTorneoDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fechaLimiteInscripcion debe tener formato YYYY-MM-DD' })
   fechaLimiteInscripcion?: string;
 
+  // Borrador 30s: ciudad/costo son opcionales al crear; se completan luego (roadmap)
+  // y se exigen al "enviar a aprobación".
   @IsString()
-  ciudad: string;
+  @IsOptional()
+  ciudad?: string;
 
   @IsString()
   @IsOptional()
@@ -79,6 +82,7 @@ class CreateTorneoDto {
   pais?: string;
 
   @IsNumber()
+  @IsOptional()
   @Transform(({ value }) => {
     // Convertir string a number si es necesario
     if (typeof value === 'string') {
@@ -86,7 +90,7 @@ class CreateTorneoDto {
     }
     return value;
   })
-  costoInscripcion: number;
+  costoInscripcion?: number;
 
   @IsNumber()
   @IsOptional()
@@ -348,6 +352,9 @@ export class AdminTorneosController {
         estado: true,
         nombre: true,
         ciudad: true,
+        sedeId: true,
+        costoInscripcion: true,
+        flyerUrl: true,
         organizador: { select: { nombre: true, apellido: true } },
       },
     });
@@ -357,6 +364,18 @@ export class AdminTorneosController {
     if (!['BORRADOR', 'RECHAZADO'].includes(torneo.estado)) {
       throw new BadRequestException(
         'Solo se pueden enviar a aprobación torneos en borrador o rechazados',
+      );
+    }
+
+    // Candado: el torneo no sale público hasta tener lo mínimo para mostrarse.
+    const faltan: string[] = [];
+    if (!torneo.ciudad) faltan.push('ciudad');
+    if (!torneo.sedeId) faltan.push('sede');
+    if (!torneo.costoInscripcion || Number(torneo.costoInscripcion) <= 0) faltan.push('costo de inscripción');
+    if (!torneo.flyerUrl) faltan.push('flyer');
+    if (faltan.length > 0) {
+      throw new BadRequestException(
+        `Antes de enviar a aprobación, completá: ${faltan.join(', ')}.`,
       );
     }
     const actualizado = await this.prisma.tournament.update({
@@ -465,12 +484,12 @@ export class AdminTorneosController {
           // Fecha de finales = último día del torneo (derivada, no es un dato aparte).
           fechaFinales: dto.fechaFinales || dto.fechaFin,
           fechaLimiteInscr: dto.fechaLimiteInscripcion || dto.fechaInicio || dto.fechaFin,
-          ciudad: dto.ciudad,
-          costoInscripcion: dto.costoInscripcion, // Prisma maneja Decimal desde number
+          ciudad: dto.ciudad || '',
+          costoInscripcion: dto.costoInscripcion ?? 0, // se define luego (roadmap)
           organizador: { connect: { id: user.userId } },
           estado: 'BORRADOR',
           pais: dto.pais || 'Paraguay',
-          region: dto.region || dto.ciudad,
+          region: dto.region || dto.ciudad || '',
           flyerUrl: dto.flyerUrl || '',
           slug,
           minutosPorPartido: dto.minutosPorPartido || 120,
