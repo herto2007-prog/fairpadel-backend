@@ -323,6 +323,71 @@ async function agenda() {
   console.log(`   (torneo de prueba ${torneoId} — corré "limpiar" al terminar)`);
 }
 
+// BLINDAJE W.O.: carga un walkover en un partido de ZONA y luego reprograma.
+// Verifica que el partido decidido por W.O. NO se mueve, sigue terminal y NO se borra.
+async function wo() {
+  const { torneoId, token } = await crearTorneoSorteado();
+
+  // Tomar un partido de ZONA programado con ambas parejas.
+  const zona = await prisma.match.findFirst({
+    where: {
+      tournamentId: torneoId, ronda: 'ZONA',
+      inscripcion1Id: { not: null }, inscripcion2Id: { not: null },
+      torneoCanchaId: { not: null }, fechaProgramada: { not: null }, horaProgramada: { not: null },
+    },
+  });
+  if (!zona) { console.log('⚠️ No hay partido de ZONA programado'); return; }
+
+  const slotAntes = { fecha: zona.fechaProgramada, hora: zona.horaProgramada, cancha: zona.torneoCanchaId };
+  console.log(`📌 ZONA elegida ${zona.id.slice(0, 6)} en ${slotAntes.fecha} ${slotAntes.hora}`);
+
+  // Cargar W.O. (pareja 2 no se presentó → gana pareja 1).
+  await api('POST', `/admin/resultados/matches/${zona.id}/resultado-especial`, token, {
+    tipo: 'WO', parejaAfectada: 2, razon: '[PRUEBA] walkover',
+  });
+  const trasWO = await prisma.match.findUnique({ where: { id: zona.id } });
+  console.log(`🏳️  Tras W.O.: estado=${trasWO?.estado} ganador=${trasWO?.inscripcionGanadoraId ? 'sí' : 'no'}`);
+
+  // Reprogramar toda la agenda.
+  await api('POST', `/admin/canchas-sorteo/${torneoId}/reprogramar-general`, token);
+
+  // Verificar que el partido W.O. quedó intacto.
+  const despues = await prisma.match.findUnique({ where: { id: zona.id } });
+  const existe = !!despues;
+  const sigueTerminal = ['FINALIZADO', 'WO', 'RETIRADO', 'DESCALIFICADO'].includes(despues?.estado as string);
+  const mismoSlot = !!despues &&
+    despues.fechaProgramada === slotAntes.fecha &&
+    despues.horaProgramada === slotAntes.hora &&
+    despues.torneoCanchaId === slotAntes.cancha;
+
+  // Doble reserva de cancha en todo el torneo tras reprogramar.
+  const progs = await prisma.match.findMany({
+    where: { tournamentId: torneoId, fechaProgramada: { not: null } },
+    select: { fechaProgramada: true, horaProgramada: true, torneoCanchaId: true },
+  });
+  const ocup = new Map<string, number>();
+  let dobles = 0;
+  for (const m of progs) {
+    const k = `${m.fechaProgramada}|${m.horaProgramada}|${m.torneoCanchaId}`;
+    const prev = ocup.get(k) || 0;
+    if (prev > 0) dobles++;
+    ocup.set(k, prev + 1);
+  }
+
+  console.log('\n═══════════════ BLINDAJE W.O. ═══════════════');
+  console.log(`   Partido W.O. existe:     ${existe}`);
+  console.log(`   Sigue terminal:          ${sigueTerminal} (${despues?.estado})`);
+  console.log(`   Conserva su slot:        ${mismoSlot}`);
+  console.log(`   Dobles reservas cancha:  ${dobles}`);
+  console.log('══════════════════════════════════════════════');
+
+  const ok = existe && sigueTerminal && mismoSlot && dobles === 0;
+  console.log(ok
+    ? '\n✅ RESULTADO: el W.O. se respeta como ancla — no se movió, no se borró, sin choques.'
+    : '\n❌ RESULTADO: el W.O. NO se respetó (revisar).');
+  console.log(`   (torneo de prueba ${torneoId} — corré "limpiar" al terminar)`);
+}
+
 async function limpiar() {
   const torneos = await prisma.tournament.findMany({
     where: { nombre: { startsWith: PREFIJO } }, select: { id: true, nombre: true },
@@ -341,8 +406,9 @@ async function main() {
   if (modo === 'reprogramar') return reprogramar();
   if (modo === 'labels') return labels();
   if (modo === 'agenda') return agenda();
+  if (modo === 'wo') return wo();
   if (modo === 'limpiar') return limpiar();
-  throw new Error(`Modo desconocido: ${modo}. Usar: reprogramar | labels | agenda | limpiar`);
+  throw new Error(`Modo desconocido: ${modo}. Usar: reprogramar | labels | agenda | wo | limpiar`);
 }
 
 main()
