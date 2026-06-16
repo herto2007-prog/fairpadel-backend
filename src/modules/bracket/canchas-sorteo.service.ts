@@ -90,16 +90,39 @@ export class CanchasSorteoService {
       // console.log(`[Sorteo] Filtrando desde ${fechaDesde}: ${diasFiltrados.length} d├¡as disponibles (de ${diasConfig.length} total)`);
     }
 
-    // FIX: Liberar slots de sorteos anteriores para permitir nueva asignacion
-    // console.log('[Sorteo] Liberando slots de sorteos anteriores...');
-    await this.prisma.torneoSlot.updateMany({
+    // Liberar slots de sorteos anteriores para permitir nueva asignación.
+    // Libera TODOS los ocupados/reservados (incluidos huérfanos sin matchId, p.ej.
+    // los que dejó programarPartidoAutomatico) EXCEPTO los de partidos ya decididos:
+    // esos quedan como anclas (no se mueven), igual que en reprogramar/re-sortear.
+    const partidosDecididos = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        estado: { in: [...ESTADOS_TERMINALES] },
+        torneoCanchaId: { not: null },
+        fechaProgramada: { not: null },
+        horaProgramada: { not: null },
+      },
+      select: { torneoCanchaId: true, fechaProgramada: true, horaProgramada: true },
+    });
+    const slotsProtegidos = new Set(
+      partidosDecididos.map(p => `${p.torneoCanchaId}|${p.fechaProgramada}|${p.horaProgramada}`),
+    );
+    const slotsOcupados = await this.prisma.torneoSlot.findMany({
       where: {
         disponibilidad: { tournamentId },
         estado: { in: ['RESERVADO', 'OCUPADO'] },
-        matchId: { not: null },
       },
-      data: { estado: 'LIBRE', matchId: null },
+      include: { disponibilidad: { select: { fecha: true } } },
     });
+    const slotsALiberar = slotsOcupados
+      .filter(s => !slotsProtegidos.has(`${s.torneoCanchaId}|${s.disponibilidad.fecha}|${s.horaInicio}`))
+      .map(s => s.id);
+    if (slotsALiberar.length > 0) {
+      await this.prisma.torneoSlot.updateMany({
+        where: { id: { in: slotsALiberar } },
+        data: { estado: 'LIBRE', matchId: null },
+      });
+    }
 
     // Cerrar inscripciones y generar brackets
     await this.cerrarInscripcionesYGenerarBrackets(categoriasData);
