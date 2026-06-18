@@ -12,13 +12,13 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsNumber, IsInt, IsBoolean } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { InscripcionEstado, MatchStatus } from '@prisma/client';
+import { InscripcionEstado, MatchStatus, MetodoPago, PagoEstado } from '@prisma/client';
 import {
   mapInscripcionAuditoria,
   filtrarInscripcionesAuditoria,
@@ -187,6 +187,61 @@ class EditarJugadorDto {
   @IsOptional()
   @IsString()
   documento?: string;
+}
+
+// DTO para crear un pago de inscripción
+class CrearPagoDto {
+  @IsNumber()
+  monto: number;
+
+  @IsEnum(MetodoPago)
+  metodoPago: MetodoPago;
+
+  @IsOptional()
+  @IsEnum(PagoEstado)
+  estado?: PagoEstado;
+
+  @IsOptional()
+  @IsString()
+  fechaPago?: string;
+}
+
+// DTO para editar un pago de inscripción (todo opcional)
+class EditarPagoDto {
+  @IsOptional()
+  @IsNumber()
+  monto?: number;
+
+  @IsOptional()
+  @IsEnum(MetodoPago)
+  metodoPago?: MetodoPago;
+
+  @IsOptional()
+  @IsEnum(PagoEstado)
+  estado?: PagoEstado;
+
+  @IsOptional()
+  @IsString()
+  fechaPago?: string;
+}
+
+// DTO para ajustar la comisión del torneo (todo opcional)
+class AjustarComisionDto {
+  @IsOptional()
+  @IsInt()
+  montoEstimado?: number;
+
+  @IsOptional()
+  @IsInt()
+  montoPagado?: number;
+
+  @IsOptional()
+  @IsString()
+  estado?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  bloqueoActivo?: boolean;
 }
 
 @Controller('admin/auditoria')
@@ -1136,6 +1191,121 @@ export class AdminAuditoriaController {
       throw error;
     }
     return { success: true, message: 'Datos del jugador actualizados' };
+  }
+
+  /**
+   * POST /admin/auditoria/inscripciones/:id/pagos
+   * God-panel C: agrega un pago a una inscripción (efectivo/transferencia/bancard).
+   */
+  @Post('inscripciones/:id/pagos')
+  async agregarPago(
+    @Param('id') inscripcionId: string,
+    @Body() dto: CrearPagoDto,
+  ) {
+    const insc = await this.prisma.inscripcion.findUnique({ where: { id: inscripcionId }, select: { id: true } });
+    if (!insc) {
+      throw new NotFoundException('Inscripción no encontrada');
+    }
+    const pago = await this.prisma.pago.create({
+      data: {
+        inscripcionId,
+        monto: dto.monto,
+        comision: 0,
+        metodoPago: dto.metodoPago,
+        estado: dto.estado || PagoEstado.PENDIENTE,
+        fechaPago: dto.fechaPago || null,
+      },
+    });
+    return { success: true, message: 'Pago agregado', pago };
+  }
+
+  /**
+   * PATCH /admin/auditoria/pagos/:id
+   * God-panel C: edita un pago (marcar confirmado/pendiente, monto, método, fecha).
+   */
+  @Patch('pagos/:id')
+  async editarPago(
+    @Param('id') pagoId: string,
+    @Body() dto: EditarPagoDto,
+  ) {
+    const pago = await this.prisma.pago.findUnique({ where: { id: pagoId }, select: { id: true } });
+    if (!pago) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+    const data: any = {};
+    if (dto.monto !== undefined) data.monto = dto.monto;
+    if (dto.metodoPago !== undefined) data.metodoPago = dto.metodoPago;
+    if (dto.estado !== undefined) data.estado = dto.estado;
+    if (dto.fechaPago !== undefined) data.fechaPago = dto.fechaPago || null;
+    if (Object.keys(data).length === 0) {
+      return { success: true, message: 'Sin cambios' };
+    }
+    await this.prisma.pago.update({ where: { id: pagoId }, data });
+    return { success: true, message: 'Pago actualizado' };
+  }
+
+  /**
+   * DELETE /admin/auditoria/pagos/:id
+   * God-panel C: elimina un pago de una inscripción.
+   */
+  @Delete('pagos/:id')
+  async eliminarPago(@Param('id') pagoId: string) {
+    const pago = await this.prisma.pago.findUnique({ where: { id: pagoId }, select: { id: true } });
+    if (!pago) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+    await this.prisma.pago.delete({ where: { id: pagoId } });
+    return { success: true, message: 'Pago eliminado' };
+  }
+
+  /**
+   * GET /admin/auditoria/torneos/:id/comision
+   * God-panel C: lee la comisión del torneo (devuelve defaults si no existe).
+   */
+  @Get('torneos/:id/comision')
+  async getComision(@Param('id') torneoId: string) {
+    const torneo = await this.prisma.tournament.findUnique({ where: { id: torneoId }, select: { id: true } });
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+    const comision = await this.prisma.torneoComision.findUnique({ where: { tournamentId: torneoId } });
+    return {
+      success: true,
+      comision: comision || { tournamentId: torneoId, montoEstimado: 0, montoPagado: 0, estado: 'PENDIENTE', bloqueoActivo: false },
+    };
+  }
+
+  /**
+   * PATCH /admin/auditoria/torneos/:id/comision
+   * God-panel C: ajusta la comisión del torneo (montos, estado, bloqueo).
+   */
+  @Patch('torneos/:id/comision')
+  async ajustarComision(
+    @Param('id') torneoId: string,
+    @Body() dto: AjustarComisionDto,
+  ) {
+    const torneo = await this.prisma.tournament.findUnique({ where: { id: torneoId }, select: { id: true } });
+    if (!torneo) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+    const data: any = {};
+    if (dto.montoEstimado !== undefined) data.montoEstimado = dto.montoEstimado;
+    if (dto.montoPagado !== undefined) data.montoPagado = dto.montoPagado;
+    if (dto.estado !== undefined) data.estado = dto.estado;
+    if (dto.bloqueoActivo !== undefined) data.bloqueoActivo = dto.bloqueoActivo;
+
+    const comision = await this.prisma.torneoComision.upsert({
+      where: { tournamentId: torneoId },
+      update: data,
+      create: {
+        tournamentId: torneoId,
+        montoEstimado: dto.montoEstimado ?? 0,
+        montoPagado: dto.montoPagado ?? 0,
+        estado: dto.estado ?? 'PENDIENTE',
+        bloqueoActivo: dto.bloqueoActivo ?? false,
+      },
+    });
+    return { success: true, message: 'Comisión actualizada', comision };
   }
 
   /**
