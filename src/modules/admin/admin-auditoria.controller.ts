@@ -18,7 +18,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { InscripcionEstado, MatchStatus, MetodoPago, PagoEstado } from '@prisma/client';
+import { InscripcionEstado, MatchStatus, MetodoPago, PagoEstado, TournamentStatus, CategoriaEstado } from '@prisma/client';
 import {
   mapInscripcionAuditoria,
   filtrarInscripcionesAuditoria,
@@ -223,6 +223,18 @@ class EditarPagoDto {
   @IsOptional()
   @IsString()
   fechaPago?: string;
+}
+
+// DTO para forzar el estado del torneo (god-panel D)
+class ForzarEstadoTorneoDto {
+  @IsEnum(TournamentStatus)
+  estado: TournamentStatus;
+}
+
+// DTO para forzar el estado de una categoría (god-panel D)
+class ForzarEstadoCategoriaDto {
+  @IsEnum(CategoriaEstado)
+  estado: CategoriaEstado;
 }
 
 // DTO para ajustar la comisión del torneo (todo opcional)
@@ -1306,6 +1318,40 @@ export class AdminAuditoriaController {
       },
     });
     return { success: true, message: 'Comisión actualizada', comision };
+  }
+
+  /**
+   * PATCH /admin/auditoria/torneos/:id/estado
+   * God-panel D: fuerza el estado del torneo (reabrir, avanzar, des-finalizar…).
+   */
+  @Patch('torneos/:id/estado')
+  async forzarEstadoTorneo(
+    @Param('id') torneoId: string,
+    @Body() dto: ForzarEstadoTorneoDto,
+  ) {
+    const t = await this.prisma.tournament.findUnique({ where: { id: torneoId }, select: { id: true } });
+    if (!t) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+    await this.prisma.tournament.update({ where: { id: torneoId }, data: { estado: dto.estado } });
+    return { success: true, message: `Torneo en estado ${dto.estado}` };
+  }
+
+  /**
+   * PATCH /admin/auditoria/categorias/:id/estado
+   * God-panel D: fuerza el estado de una categoría (reabrir, des-finalizar…).
+   */
+  @Patch('categorias/:id/estado')
+  async forzarEstadoCategoria(
+    @Param('id') categoriaId: string,
+    @Body() dto: ForzarEstadoCategoriaDto,
+  ) {
+    const c = await this.prisma.tournamentCategory.findUnique({ where: { id: categoriaId }, select: { id: true } });
+    if (!c) {
+      throw new NotFoundException('Categoría no encontrada');
+    }
+    await this.prisma.tournamentCategory.update({ where: { id: categoriaId }, data: { estado: dto.estado } });
+    return { success: true, message: `Categoría en estado ${dto.estado}` };
   }
 
   /**
