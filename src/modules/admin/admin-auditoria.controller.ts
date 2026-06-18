@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Patch,
   Delete,
@@ -866,6 +867,95 @@ export class AdminAuditoriaController {
     });
 
     return { success: true, message: 'Partido reprogramado' };
+  }
+
+  /**
+   * POST /admin/auditoria/partidos/:id/limpiar-resultado
+   * God-panel A2/A3: revierte un partido a SIN resultado. Si rondas posteriores
+   * ya se jugaron usando su ganador/perdedor, las limpia EN CASCADA y vacía los
+   * casilleros que este partido había llenado — dejando el cuadro consistente.
+   * Habilita "forzar editar aunque ya avanzó": limpiar y volver a cargar.
+   */
+  @Post('partidos/:id/limpiar-resultado')
+  async limpiarResultado(@Param('id') partidoId: string) {
+    const partido = await this.prisma.match.findUnique({
+      where: { id: partidoId },
+      select: { id: true, estado: true, inscripcionGanadoraId: true },
+    });
+    if (!partido) {
+      throw new NotFoundException('Partido no encontrado');
+    }
+    if (!this.tieneResultado(partido.estado, partido.inscripcionGanadoraId)) {
+      throw new BadRequestException('El partido no tiene resultado para limpiar.');
+    }
+
+    const partidosAfectados = await this.prisma.$transaction((tx) =>
+      this.limpiarResultadoCascadaTx(tx, partidoId),
+    );
+
+    return { success: true, message: 'Resultado limpiado', partidosAfectados };
+  }
+
+  // ¿El partido tiene un resultado cargado?
+  private tieneResultado(estado: MatchStatus, ganadorId: string | null): boolean {
+    const conResultado: MatchStatus[] = [
+      MatchStatus.FINALIZADO, MatchStatus.WO, MatchStatus.RETIRADO, MatchStatus.DESCALIFICADO,
+    ];
+    return conResultado.includes(estado) || !!ganadorId;
+  }
+
+  // Limpia el resultado de un partido y, recursivamente, el de las rondas que
+  // dependían de él (las que tienen resultado), vaciando los casilleros llenados.
+  // Devuelve cuántos partidos quedaron limpiados (incluye el propio).
+  private async limpiarResultadoCascadaTx(tx: any, matchId: string): Promise<number> {
+    const m = await tx.match.findUnique({
+      where: { id: matchId },
+      select: {
+        id: true, estado: true, inscripcionGanadoraId: true,
+        partidoSiguienteId: true, posicionEnSiguiente: true,
+        partidoPerdedorSiguienteId: true, posicionEnPerdedor: true,
+      },
+    });
+    if (!m || !this.tieneResultado(m.estado, m.inscripcionGanadoraId)) {
+      return 0;
+    }
+
+    let count = 0;
+
+    // Hacia adelante: ganador (y, en su caso, perdedor) — limpiar el destino si ya
+    // tenía resultado y después vaciar SOLO el casillero que este partido había llenado.
+    const adelante: { id: string | null; pos: number | null }[] = [
+      { id: m.partidoSiguienteId, pos: m.posicionEnSiguiente },
+      { id: m.partidoPerdedorSiguienteId, pos: m.posicionEnPerdedor },
+    ];
+    for (const dest of adelante) {
+      if (!dest.id) continue;
+      count += await this.limpiarResultadoCascadaTx(tx, dest.id);
+      const pos = dest.pos || 1;
+      await tx.match.update({
+        where: { id: dest.id },
+        data: pos === 1
+          ? { inscripcion1Id: null, tipoEntrada1: null }
+          : { inscripcion2Id: null, tipoEntrada2: null },
+      });
+    }
+
+    // Limpiar el resultado propio (vuelve a PROGRAMADO, sin sets ni ganador)
+    await tx.match.update({
+      where: { id: matchId },
+      data: {
+        estado: MatchStatus.PROGRAMADO,
+        set1Pareja1: null, set1Pareja2: null,
+        set2Pareja1: null, set2Pareja2: null,
+        set3Pareja1: null, set3Pareja2: null,
+        inscripcionGanadoraId: null, inscripcionPerdedoraId: null,
+        parejaRetirada: null, razonResultado: null,
+        liveScore: null, duracionMinutos: null,
+        horaInicioReal: null, horaFinReal: null,
+      },
+    });
+
+    return count + 1;
   }
 
   /**
