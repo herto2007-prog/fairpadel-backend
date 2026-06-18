@@ -122,6 +122,32 @@ class AsignarCanchaDto {
   hora?: string; // Opcional: si se quiere cambiar la hora
 }
 
+// DTO para corregir las parejas de un partido (god-panel). null = vaciar el lado.
+class CorregirParejasDto {
+  @IsOptional()
+  @IsString()
+  inscripcion1Id?: string | null;
+
+  @IsOptional()
+  @IsString()
+  inscripcion2Id?: string | null;
+}
+
+// DTO para reprogramar un partido puntual (fecha/hora/cancha). Todo opcional.
+class ReprogramarPartidoDto {
+  @IsOptional()
+  @IsString()
+  fecha?: string;
+
+  @IsOptional()
+  @IsString()
+  hora?: string;
+
+  @IsOptional()
+  @IsString()
+  torneoCanchaId?: string | null; // null = sacar la cancha
+}
+
 @Controller('admin/auditoria')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
@@ -740,6 +766,106 @@ export class AdminAuditoriaController {
         },
       },
     };
+  }
+
+  /**
+   * PUT /admin/auditoria/partidos/:id/corregir-parejas
+   * God-panel: corrige QUIÉN juega un partido (cambia las inscripciones de los lados).
+   * SEGURO: solo si el partido no tiene resultado (no finalizado y sin ganador), para
+   * no corromper el cuadro. Cada inscripción debe ser del mismo torneo y categoría.
+   */
+  @Put('partidos/:id/corregir-parejas')
+  async corregirParejas(
+    @Param('id') partidoId: string,
+    @Body() dto: CorregirParejasDto,
+  ) {
+    const partido = await this.prisma.match.findUnique({
+      where: { id: partidoId },
+      select: {
+        id: true, tournamentId: true, categoryId: true, estado: true,
+        inscripcionGanadoraId: true, esBye: true,
+      },
+    });
+    if (!partido) {
+      throw new NotFoundException('Partido no encontrado');
+    }
+
+    const estadosConResultado: MatchStatus[] = [
+      MatchStatus.FINALIZADO, MatchStatus.WO, MatchStatus.RETIRADO, MatchStatus.DESCALIFICADO,
+    ];
+    if (estadosConResultado.includes(partido.estado) || partido.inscripcionGanadoraId) {
+      throw new BadRequestException(
+        'El partido ya tiene resultado. Limpiá el resultado antes de cambiar las parejas (para no corromper el cuadro).',
+      );
+    }
+
+    const ins1 = dto.inscripcion1Id ?? null;
+    const ins2 = dto.inscripcion2Id ?? null;
+
+    if (ins1 && ins2 && ins1 === ins2) {
+      throw new BadRequestException('No podés poner la misma pareja en los dos lados.');
+    }
+
+    // Validar que cada inscripción pertenece a este torneo + categoría
+    for (const insId of [ins1, ins2].filter(Boolean) as string[]) {
+      const insc = await this.prisma.inscripcion.findUnique({
+        where: { id: insId },
+        select: { id: true, tournamentId: true, categoryId: true },
+      });
+      if (!insc) {
+        throw new BadRequestException(`La inscripción ${insId} no existe.`);
+      }
+      if (insc.tournamentId !== partido.tournamentId || insc.categoryId !== partido.categoryId) {
+        throw new BadRequestException('Esa pareja no es de este torneo/categoría.');
+      }
+    }
+
+    await this.prisma.match.update({
+      where: { id: partidoId },
+      data: { inscripcion1Id: ins1, inscripcion2Id: ins2 },
+    });
+
+    return { success: true, message: 'Parejas del partido actualizadas' };
+  }
+
+  /**
+   * PUT /admin/auditoria/partidos/:id/reprogramar
+   * God-panel: cambia fecha/hora/cancha de un partido puntual. Todo opcional;
+   * torneoCanchaId=null saca la cancha. No toca resultados ni el cuadro.
+   */
+  @Put('partidos/:id/reprogramar')
+  async reprogramarPartido(
+    @Param('id') partidoId: string,
+    @Body() dto: ReprogramarPartidoDto,
+  ) {
+    const partido = await this.prisma.match.findUnique({
+      where: { id: partidoId },
+      select: { id: true },
+    });
+    if (!partido) {
+      throw new NotFoundException('Partido no encontrado');
+    }
+
+    if (dto.torneoCanchaId) {
+      const cancha = await this.prisma.torneoCancha.findUnique({
+        where: { id: dto.torneoCanchaId },
+        select: { id: true },
+      });
+      if (!cancha) {
+        throw new NotFoundException('Cancha no encontrada');
+      }
+    }
+
+    await this.prisma.match.update({
+      where: { id: partidoId },
+      data: {
+        ...(dto.fecha !== undefined && { fechaProgramada: dto.fecha || null }),
+        ...(dto.hora !== undefined && { horaProgramada: dto.hora || null }),
+        ...(dto.torneoCanchaId !== undefined && { torneoCanchaId: dto.torneoCanchaId || null }),
+      },
+    });
+
+    return { success: true, message: 'Partido reprogramado' };
   }
 
   /**
