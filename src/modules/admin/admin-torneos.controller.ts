@@ -754,6 +754,94 @@ export class AdminTorneosController {
     }
   }
 
+  /**
+   * PUT /admin/torneos/:id/categorias
+   * Sincroniza las categorías de un torneo de forma SEGURA (editable en cualquier
+   * momento, no solo al crear). A diferencia del POST del wizard (que borra y recrea),
+   * acá: se agregan las nuevas libremente y se quitan SOLO las que no tengan cuadro
+   * sorteado ni inscripciones. Las que no se pueden quitar se reportan en `bloqueadas`.
+   */
+  @UseGuards(TorneoGestionGuard)
+  @Put(':id/categorias')
+  async sincronizarCategorias(
+    @Param('id') torneoId: string,
+    @Body() dto: { categoriaIds?: string[] },
+    @Request() req,
+  ) {
+    try {
+      const user = req.user;
+      const torneo = await this.prisma.tournament.findUnique({
+        where: { id: torneoId },
+        select: { id: true },
+      });
+      if (!torneo) {
+        throw new NotFoundException('Torneo no encontrado');
+      }
+      const puede = await this.tournamentsService.puedeGestionarTorneo(torneoId, user.userId, user.roles);
+      if (!puede) {
+        throw new ForbiddenException('No tienes permiso para editar este torneo');
+      }
+
+      const deseadas = Array.isArray(dto.categoriaIds) ? [...new Set(dto.categoriaIds)] : [];
+
+      const actuales = await this.prisma.tournamentCategory.findMany({
+        where: { tournamentId: torneoId },
+        select: {
+          id: true,
+          categoryId: true,
+          fixtureVersionId: true,
+          category: { select: { nombre: true } },
+        },
+      });
+      const actualesIds = actuales.map((c) => c.categoryId);
+
+      // Agregar las nuevas (siempre seguro)
+      const aAgregar = deseadas.filter((id) => !actualesIds.includes(id));
+      for (const categoryId of aAgregar) {
+        await this.prisma.tournamentCategory.create({
+          data: { tournamentId: torneoId, categoryId },
+        });
+      }
+
+      // Quitar SOLO las seguras: sin cuadro sorteado y sin inscripciones
+      const aQuitar = actuales.filter((c) => !deseadas.includes(c.categoryId));
+      const quitadas: string[] = [];
+      const bloqueadas: { categoryId: string; nombre: string; motivo: string }[] = [];
+      for (const tc of aQuitar) {
+        if (tc.fixtureVersionId) {
+          bloqueadas.push({ categoryId: tc.categoryId, nombre: tc.category?.nombre || '', motivo: 'ya tiene cuadro sorteado' });
+          continue;
+        }
+        const inscCount = await this.prisma.inscripcion.count({
+          where: { tournamentId: torneoId, categoryId: tc.categoryId },
+        });
+        if (inscCount > 0) {
+          bloqueadas.push({ categoryId: tc.categoryId, nombre: tc.category?.nombre || '', motivo: `tiene ${inscCount} inscripción(es)` });
+        } else {
+          await this.prisma.tournamentCategory.delete({ where: { id: tc.id } });
+          quitadas.push(tc.categoryId);
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Categorías actualizadas',
+        agregadas: aAgregar,
+        quitadas,
+        bloqueadas,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      return {
+        success: false,
+        message: 'Error actualizando categorías',
+        error: error.message,
+      };
+    }
+  }
+
   @UseGuards(TorneoGestionGuard)
   @Delete(':id')
   async remove(@Param('id') torneoId: string) {
