@@ -33,6 +33,16 @@ export function mapInscripcionAuditoria(insc: any) {
       telefonoJ1: insc.jugador1?.telefono,
       telefonoJ2: insc.jugador2?.telefono,
       completa: !!insc.jugador2,
+      // IDs + datos editables (god-panel: corregir pareja / editar jugador)
+      jugador1Id: insc.jugador1Id,
+      jugador2Id: insc.jugador2Id || null,
+      jugador2Documento: insc.jugador2Documento,
+      j1: insc.jugador1
+        ? { id: insc.jugador1.id, nombre: insc.jugador1.nombre, apellido: insc.jugador1.apellido, telefono: insc.jugador1.telefono, documento: insc.jugador1.documento }
+        : null,
+      j2: insc.jugador2
+        ? { id: insc.jugador2.id, nombre: insc.jugador2.nombre, apellido: insc.jugador2.apellido, telefono: insc.jugador2.telefono, documento: insc.jugador2.documento }
+        : null,
     },
     categoria: {
       id: insc.category.id,

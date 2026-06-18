@@ -149,6 +149,46 @@ class ReprogramarPartidoDto {
   torneoCanchaId?: string | null; // null = sacar la cancha
 }
 
+// DTO para mover una inscripción a otra categoría del mismo torneo
+class MoverCategoriaDto {
+  @IsString()
+  categoryId: string;
+}
+
+// DTO para corregir/completar la pareja de una inscripción
+class CorregirParejaDto {
+  @IsOptional()
+  @IsString()
+  jugador1Id?: string;
+
+  @IsOptional()
+  @IsString()
+  jugador2Id?: string | null; // null = dejar pendiente (sin pareja)
+
+  @IsOptional()
+  @IsString()
+  jugador2Documento?: string;
+}
+
+// DTO para editar datos de un jugador (afecta al usuario en toda la app)
+class EditarJugadorDto {
+  @IsOptional()
+  @IsString()
+  nombre?: string;
+
+  @IsOptional()
+  @IsString()
+  apellido?: string;
+
+  @IsOptional()
+  @IsString()
+  telefono?: string;
+
+  @IsOptional()
+  @IsString()
+  documento?: string;
+}
+
 @Controller('admin/auditoria')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
@@ -198,6 +238,7 @@ export class AdminAuditoriaController {
             apellido: true,
             email: true,
             telefono: true,
+            documento: true,
             categoriaActual: {
               select: {
                 nombre: true,
@@ -213,6 +254,7 @@ export class AdminAuditoriaController {
             apellido: true,
             email: true,
             telefono: true,
+            documento: true,
             categoriaActual: {
               select: {
                 nombre: true,
@@ -956,6 +998,144 @@ export class AdminAuditoriaController {
     });
 
     return count + 1;
+  }
+
+  /**
+   * PATCH /admin/auditoria/inscripciones/:id/categoria
+   * God-panel B: mueve una inscripción a otra categoría del mismo torneo.
+   * SEGURO: bloquea si la pareja ya está en el cuadro (tiene partidos).
+   */
+  @Patch('inscripciones/:id/categoria')
+  async moverCategoria(
+    @Param('id') inscripcionId: string,
+    @Body() dto: MoverCategoriaDto,
+  ) {
+    const insc = await this.prisma.inscripcion.findUnique({
+      where: { id: inscripcionId },
+      select: { id: true, tournamentId: true, categoryId: true },
+    });
+    if (!insc) {
+      throw new NotFoundException('Inscripción no encontrada');
+    }
+    if (dto.categoryId === insc.categoryId) {
+      return { success: true, message: 'Sin cambios' };
+    }
+
+    const enCuadro = await this.prisma.match.count({
+      where: {
+        tournamentId: insc.tournamentId,
+        OR: [{ inscripcion1Id: inscripcionId }, { inscripcion2Id: inscripcionId }],
+      },
+    });
+    if (enCuadro > 0) {
+      throw new BadRequestException('La pareja ya está en el cuadro. Limpiá sus partidos antes de moverla de categoría.');
+    }
+
+    const tc = await this.prisma.tournamentCategory.findFirst({
+      where: { tournamentId: insc.tournamentId, categoryId: dto.categoryId },
+    });
+    if (!tc) {
+      throw new BadRequestException('Esa categoría no pertenece a este torneo.');
+    }
+
+    try {
+      await this.prisma.inscripcion.update({
+        where: { id: inscripcionId },
+        data: { categoryId: dto.categoryId },
+      });
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        throw new BadRequestException('Ya existe una inscripción igual en esa categoría.');
+      }
+      throw error;
+    }
+    return { success: true, message: 'Inscripción movida de categoría' };
+  }
+
+  /**
+   * PATCH /admin/auditoria/inscripciones/:id/pareja
+   * God-panel B: corrige o completa la pareja (quién la integra). No corrompe el
+   * cuadro: los partidos referencian la inscripción, no a los jugadores.
+   */
+  @Patch('inscripciones/:id/pareja')
+  async corregirPareja(
+    @Param('id') inscripcionId: string,
+    @Body() dto: CorregirParejaDto,
+  ) {
+    const insc = await this.prisma.inscripcion.findUnique({
+      where: { id: inscripcionId },
+      select: { id: true },
+    });
+    if (!insc) {
+      throw new NotFoundException('Inscripción no encontrada');
+    }
+
+    const data: any = {};
+    if (dto.jugador1Id) {
+      const u = await this.prisma.user.findUnique({ where: { id: dto.jugador1Id }, select: { id: true } });
+      if (!u) throw new BadRequestException('El jugador 1 no existe.');
+      data.jugador1Id = dto.jugador1Id;
+    }
+    if (dto.jugador2Id === null) {
+      data.jugador2Id = null;
+    } else if (dto.jugador2Id) {
+      const u = await this.prisma.user.findUnique({ where: { id: dto.jugador2Id }, select: { id: true, documento: true } });
+      if (!u) throw new BadRequestException('El jugador 2 no existe.');
+      data.jugador2Id = dto.jugador2Id;
+      data.jugador2Documento = dto.jugador2Documento || u.documento || '';
+    } else if (dto.jugador2Documento !== undefined) {
+      data.jugador2Documento = dto.jugador2Documento;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return { success: true, message: 'Sin cambios' };
+    }
+
+    try {
+      await this.prisma.inscripcion.update({ where: { id: inscripcionId }, data });
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        throw new BadRequestException('Esa combinación de pareja ya existe en la categoría.');
+      }
+      throw error;
+    }
+    return { success: true, message: 'Pareja actualizada' };
+  }
+
+  /**
+   * PATCH /admin/auditoria/jugadores/:id
+   * God-panel B: edita datos de un jugador (nombre/apellido/teléfono/documento).
+   * OJO: afecta al usuario en TODA la app, no solo en este torneo.
+   */
+  @Patch('jugadores/:id')
+  async editarJugador(
+    @Param('id') userId: string,
+    @Body() dto: EditarJugadorDto,
+  ) {
+    const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!u) {
+      throw new NotFoundException('Jugador no encontrado');
+    }
+
+    const data: any = {};
+    if (dto.nombre !== undefined) data.nombre = dto.nombre;
+    if (dto.apellido !== undefined) data.apellido = dto.apellido;
+    if (dto.telefono !== undefined) data.telefono = dto.telefono;
+    if (dto.documento !== undefined) data.documento = dto.documento || null;
+
+    if (Object.keys(data).length === 0) {
+      return { success: true, message: 'Sin cambios' };
+    }
+
+    try {
+      await this.prisma.user.update({ where: { id: userId }, data });
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        throw new BadRequestException('Ese documento ya está en uso por otro jugador.');
+      }
+      throw error;
+    }
+    return { success: true, message: 'Datos del jugador actualizados' };
   }
 
   /**
