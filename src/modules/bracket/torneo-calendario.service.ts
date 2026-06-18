@@ -377,6 +377,25 @@ export class TorneoCalendarioService {
   }
 
   /**
+   * Estima la capacidad necesaria para una cantidad ESPERADA de parejas por
+   * categoría (planificación antes de tener inscriptos). Reusa el cálculo de
+   * partidos por bracket y lo multiplica por la cantidad de categorías.
+   */
+  async estimarCapacidad(tournamentId: string, parejasPorCategoria: number) {
+    const cats = Math.max(1, await this.prisma.tournamentCategory.count({ where: { tournamentId } }));
+    const n = Math.max(4, Math.floor(parejasPorCategoria) || 0);
+    const porCat = this.bracketService.calcularSlotsNecesarios(n);
+    const partidos = cats * porCat.totalPartidos;
+    return {
+      parejasPorCategoria: n,
+      categorias: cats,
+      partidosPorCategoria: porCat.totalPartidos,
+      partidos,
+      horasNecesarias: Math.ceil(partidos * 1.5),
+    };
+  }
+
+  /**
    * Obtiene las canchas asignadas al torneo
    */
   async obtenerCanchas(tournamentId: string) {

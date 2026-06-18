@@ -76,6 +76,22 @@ export class CanchasSorteoController {
   }
 
   /**
+   * Estima la capacidad para una cantidad ESPERADA de parejas por categoría
+   * (planificar antes de tener inscriptos).
+   * GET /admin/canchas-sorteo/:tournamentId/capacidad-estimada?parejas=16
+   */
+  @Get(':tournamentId/capacidad-estimada')
+  async estimarCapacidad(
+    @Param('tournamentId') tournamentId: string,
+    @Query('parejas') parejas: string,
+  ) {
+    return this.torneoCalendarioService.estimarCapacidad(
+      tournamentId,
+      parseInt(parejas, 10) || 16,
+    );
+  }
+
+  /**
    * PASO 2: Cerrar inscripciones y sortear
    * POST /admin/canchas-sorteo/cerrar-y-sortear
    */
