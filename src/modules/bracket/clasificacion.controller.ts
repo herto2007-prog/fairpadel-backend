@@ -52,6 +52,19 @@ export class ClasificacionController {
   }
 
   /**
+   * GET /jugador/feed
+   * Feed social del jugador: actividad de su mundo de pádel (resultados de su
+   * categoría + torneos nuevos en su ciudad + inscripciones de quienes sigue).
+   */
+  @Get('jugador/feed')
+  @UseGuards(JwtAuthGuard)
+  async getFeed(@Req() req: Request) {
+    const userId = (req as any).user?.userId;
+    const feed = await this.clasificacionService.obtenerFeedJugador(userId);
+    return { success: true, data: feed };
+  }
+
+  /**
    * GET /jugador/inscripcion/:id/clasificacion
    * Obtiene el estado de clasificación de una inscripción específica
    */

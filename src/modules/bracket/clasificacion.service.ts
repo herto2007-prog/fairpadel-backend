@@ -498,4 +498,127 @@ export class ClasificacionService {
         return '⏳ Esperando resultados';
     }
   }
+
+  /**
+   * FEED SOCIAL del jugador (Fase B). Junta la actividad de SU MUNDO de pádel,
+   * ordenada por fecha. Sembrado por categoría/ciudad para que nunca esté vacío
+   * aunque siga a pocos jugadores; los seguidos suman la capa social real.
+   * Fuentes: resultados recientes en su categoría + torneos nuevos en su ciudad +
+   * inscripciones recientes de jugadores que sigue.
+   */
+  async obtenerFeedJugador(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { categoriaActualId: true, ciudad: true },
+    });
+    if (!user) return [];
+
+    const desde = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // últimos 30 días
+
+    const seguidos = await this.prisma.seguimiento.findMany({
+      where: { seguidorId: userId },
+      select: { seguidoId: true },
+    });
+    const seguidoIds = seguidos.map((s) => s.seguidoId);
+
+    const nombrePareja = (insc: any): string => {
+      if (!insc) return 'Una pareja';
+      const j1 = insc.jugador1 ? `${insc.jugador1.nombre} ${insc.jugador1.apellido}` : '';
+      const j2 = insc.jugador2 ? `${insc.jugador2.nombre} ${insc.jugador2.apellido}` : '';
+      return [j1, j2].filter(Boolean).join(' / ') || 'Una pareja';
+    };
+
+    const items: Array<{ id: string; tipo: string; fecha: Date; titulo: string; detalle: string; link: string | null }> = [];
+
+    // 1) Resultados recientes en tu categoría (prueba social / comparación)
+    if (user.categoriaActualId) {
+      const matches = await this.prisma.match.findMany({
+        where: {
+          categoryId: user.categoriaActualId,
+          estado: 'FINALIZADO',
+          inscripcionGanadoraId: { not: null },
+          updatedAt: { gte: desde },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 8,
+        select: {
+          id: true, ronda: true, updatedAt: true,
+          tournament: { select: { nombre: true, slug: true } },
+          inscripcionGanadora: {
+            select: {
+              jugador1: { select: { nombre: true, apellido: true } },
+              jugador2: { select: { nombre: true, apellido: true } },
+            },
+          },
+        },
+      });
+      for (const m of matches) {
+        items.push({
+          id: `r-${m.id}`,
+          tipo: 'resultado',
+          fecha: m.updatedAt,
+          titulo: `${nombrePareja(m.inscripcionGanadora)} ganó en ${m.tournament?.nombre ?? 'un torneo'}`,
+          detalle: `${m.ronda} · tu categoría`,
+          link: m.tournament?.slug ? `/t/${m.tournament.slug}` : null,
+        });
+      }
+    }
+
+    // 2) Torneos nuevos en tu ciudad (descubrir / FOMO)
+    if (user.ciudad) {
+      const torneos = await this.prisma.tournament.findMany({
+        where: { estado: 'PUBLICADO', ciudad: user.ciudad, createdAt: { gte: desde } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, nombre: true, slug: true, ciudad: true, createdAt: true },
+      });
+      for (const t of torneos) {
+        items.push({
+          id: `t-${t.id}`,
+          tipo: 'torneo_nuevo',
+          fecha: t.createdAt,
+          titulo: `Nuevo torneo en ${t.ciudad}: ${t.nombre}`,
+          detalle: 'Inscripciones abiertas',
+          link: `/t/${t.slug}`,
+        });
+      }
+    }
+
+    // 3) Inscripciones recientes de jugadores que seguís (capa social real)
+    if (seguidoIds.length > 0) {
+      const inscripciones = await this.prisma.inscripcion.findMany({
+        where: {
+          OR: [{ jugador1Id: { in: seguidoIds } }, { jugador2Id: { in: seguidoIds } }],
+          estado: { in: ['CONFIRMADA', 'PENDIENTE_PAGO'] },
+          createdAt: { gte: desde },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 6,
+        select: {
+          id: true, createdAt: true, jugador1Id: true, jugador2Id: true,
+          jugador1: { select: { nombre: true, apellido: true } },
+          jugador2: { select: { nombre: true, apellido: true } },
+          tournament: { select: { nombre: true, slug: true } },
+          category: { select: { nombre: true } },
+        },
+      });
+      for (const i of inscripciones) {
+        const seg = seguidoIds.includes(i.jugador1Id) ? i.jugador1 : i.jugador2;
+        const nombre = seg ? `${seg.nombre} ${seg.apellido}` : 'Alguien que seguís';
+        items.push({
+          id: `i-${i.id}`,
+          tipo: 'inscripcion_seguido',
+          fecha: i.createdAt,
+          titulo: `${nombre} se inscribió a ${i.tournament?.nombre ?? 'un torneo'}`,
+          detalle: i.category?.nombre ?? '',
+          link: i.tournament?.slug ? `/t/${i.tournament.slug}` : null,
+        });
+      }
+    }
+
+    return items
+      .sort((a, b) => b.fecha.getTime() - a.fecha.getTime())
+      .slice(0, 15)
+      .map((it) => ({ ...it, fecha: it.fecha.toISOString() }));
+  }
 }
