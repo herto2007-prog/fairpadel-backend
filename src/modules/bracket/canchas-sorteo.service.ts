@@ -9,6 +9,7 @@ import {
 } from './dto/canchas-sorteo.dto';
 import { Prisma, CategoriaEstado, FixtureVersionEstado, MatchStatus } from '@prisma/client';
 import { ESTADOS_TERMINALES, esTerminal } from './match-estados';
+import { MINIMO_PAREJAS_SORTEO } from './bracket.constants';
 
 @Injectable()
 export class CanchasSorteoService {
@@ -63,9 +64,9 @@ export class CanchasSorteoService {
     
     // Validar que todas las categor├¡as tienen inscripciones confirmadas
     for (const catData of categoriasData) {
-      if (catData.inscripciones.length < 8) {
+      if (catData.inscripciones.length < MINIMO_PAREJAS_SORTEO) {
         throw new BadRequestException(
-          `La categor├¡a ${catData.nombre} tiene solo ${catData.inscripciones.length} inscripciones confirmadas. M├¡nimo requerido: 8`
+          `La categor├¡a ${catData.nombre} tiene solo ${catData.inscripciones.length} inscripciones confirmadas. M├¡nimo requerido: ${MINIMO_PAREJAS_SORTEO}`
         );
       }
     }

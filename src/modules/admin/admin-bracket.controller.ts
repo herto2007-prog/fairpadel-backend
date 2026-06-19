@@ -14,6 +14,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BracketService } from '../bracket/bracket.service';
 import { CanchasSorteoService } from '../bracket/canchas-sorteo.service';
+import { MINIMO_PAREJAS_SORTEO } from '../bracket/bracket.constants';
 import { construirOrigenLabels } from '../bracket/bracket-labels';
 import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
 import { AuditoriaAccionesService } from '../../common/services/auditoria-acciones.service';
@@ -96,7 +97,7 @@ export class AdminBracketController {
         fixtureVersionId: cat.fixtureVersionId || cat.fixtureVersion?.id || null,
         inscripcionesCount: countMap.get(cat.categoryId) || 0, // Para compatibilidad con frontend
         parejas: countMap.get(cat.categoryId) || 0, // MVP: Número de parejas inscritas
-        minimoParejas: 8, // MVP: Mínimo para sortear
+        minimoParejas: MINIMO_PAREJAS_SORTEO, // fuente única (bracket.constants)
       })),
     };
   }

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { AmericanoComunService } from './americano-comun.service';
 import { ConfigAmericano } from './americano.service';
+import { MINIMO_JUGADORES_INDIVIDUAL, MINIMO_PAREJAS_GRUPO } from './americano.constants';
 
 @Injectable()
 export class AmericanoRondasService {
@@ -63,13 +64,13 @@ export class AmericanoRondasService {
     const gruposFaltantes: { nombre: string; inscriptos: number; minimo: number }[] = [];
     for (const [grupoId, inscs] of inscripcionesPorGrupo) {
       if (esFormatoIndividual) {
-        if (inscs.length < 4) {
-          gruposFaltantes.push({ nombre: inscs[0].grupo!.nombre, inscriptos: inscs.length, minimo: 4 });
+        if (inscs.length < MINIMO_JUGADORES_INDIVIDUAL) {
+          gruposFaltantes.push({ nombre: inscs[0].grupo!.nombre, inscriptos: inscs.length, minimo: MINIMO_JUGADORES_INDIVIDUAL });
         }
       } else {
         const numParejas = inscs.filter(i => i.jugador2Id).length;
-        if (numParejas < 2) {
-          gruposFaltantes.push({ nombre: inscs[0].grupo!.nombre, inscriptos: numParejas, minimo: 2 });
+        if (numParejas < MINIMO_PAREJAS_GRUPO) {
+          gruposFaltantes.push({ nombre: inscs[0].grupo!.nombre, inscriptos: numParejas, minimo: MINIMO_PAREJAS_GRUPO });
         }
       }
     }

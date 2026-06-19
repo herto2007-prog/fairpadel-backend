@@ -200,6 +200,22 @@ export class PublicInscripcionesController {
   }
 
   /**
+   * GET /inscripciones/public/categorias
+   * Catálogo de categorías personales (STANDARD) para que el jugador elija la suya
+   * al completar su perfil. Fuente única: el front NO hardcodea la lista.
+   */
+  @Get('categorias')
+  @UseGuards(JwtAuthGuard)
+  async listarCategorias() {
+    const categorias = await this.prisma.category.findMany({
+      where: { tipoCategoria: 'STANDARD' },
+      select: { id: true, nombre: true, tipo: true, orden: true },
+      orderBy: { orden: 'asc' },
+    });
+    return { success: true, categorias };
+  }
+
+  /**
    * POST /inscripciones/public/validar-categoria
    * Valida si un jugador puede inscribirse en una categoría específica
    * según las reglas de género y nivel
