@@ -78,3 +78,84 @@ export function validarReglasCategoria(
     advertencia: 'Estás usando tu excepción de bajar una categoría en caballeros. Esta acción solo puede realizarse una vez.',
   };
 }
+
+export interface JugadorRef {
+  genero: Gender;
+  categoriaActualId: string | null;
+}
+
+/**
+ * REGLA ÚNICA Y CANÓNICA de elegibilidad de categoría (STANDARD + MIXTO + SUMAS).
+ *
+ * La usan el endpoint de creación de inscripción (POST /inscripciones/public) Y el
+ * endpoint de consulta del wizard (categorias-permitidas) → una sola fuente de verdad.
+ * El front NO replica esta lógica: consulta el endpoint y pinta `permitido`/`mensaje`.
+ *
+ * - STANDARD: depende solo del jugador (reusa validarReglasCategoria).
+ * - MIXTO/SUMAS: dependen de la pareja + config de la categoría (`reglas`). Si no se
+ *   pasa `pareja` (todavía no elegida / no registrada), se DIFIERE (permitido=true)
+ *   porque no se puede decidir sin esos datos; igual el create valida al confirmar.
+ */
+export function validarCategoriaParaPareja(params: {
+  jugador: JugadorRef;
+  categoriaTarget: any; // category: { id, nombre, tipo, tipoCategoria, orden, reglas }
+  todasCategorias: any[];
+  pareja?: JugadorRef | null;
+}): { permitido: boolean; mensaje: string; advertencia?: string } {
+  const { jugador, categoriaTarget, todasCategorias, pareja } = params;
+  const tipo = categoriaTarget.tipoCategoria;
+
+  if (tipo === 'MIXTO') {
+    if (!pareja) return { permitido: true, mensaje: 'Se valida al elegir la pareja' };
+    const reglas = categoriaTarget.reglas as { damaCategoriaId: string; caballeroCategoriaId: string };
+    if (jugador.genero === pareja.genero) {
+      return { permitido: false, mensaje: 'En categoría mixta, la pareja debe ser de géneros opuestos' };
+    }
+    if (!pareja.categoriaActualId) {
+      return { permitido: false, mensaje: 'Tu pareja debe tener una categoría asignada' };
+    }
+    if (jugador.genero === 'MASCULINO') {
+      if (jugador.categoriaActualId !== reglas.caballeroCategoriaId) return { permitido: false, mensaje: 'Tu categoría no corresponde a esta mixta' };
+      if (pareja.categoriaActualId !== reglas.damaCategoriaId) return { permitido: false, mensaje: 'La categoría de tu pareja no corresponde a esta mixta' };
+    } else {
+      if (jugador.categoriaActualId !== reglas.damaCategoriaId) return { permitido: false, mensaje: 'Tu categoría no corresponde a esta mixta' };
+      if (pareja.categoriaActualId !== reglas.caballeroCategoriaId) return { permitido: false, mensaje: 'La categoría de tu pareja no corresponde a esta mixta' };
+    }
+    return { permitido: true, mensaje: 'Pareja mixta válida' };
+  }
+
+  if (tipo === 'SUMAS') {
+    if (!pareja) return { permitido: true, mensaje: 'Se valida al elegir la pareja' };
+    const reglas = categoriaTarget.reglas as { sumaObjetivo: number };
+    if (jugador.genero !== pareja.genero) {
+      return { permitido: false, mensaje: 'En categoría suma, ambos jugadores deben ser del mismo género' };
+    }
+    if (!pareja.categoriaActualId) {
+      return { permitido: false, mensaje: 'Tu pareja debe tener una categoría asignada' };
+    }
+    const catJ1 = todasCategorias.find((c) => c.id === jugador.categoriaActualId);
+    const catJ2 = todasCategorias.find((c) => c.id === pareja.categoriaActualId);
+    if (!catJ1 || !catJ2) {
+      return { permitido: false, mensaje: 'Categoría no válida para uno de los jugadores' };
+    }
+    if (catJ1.orden + catJ2.orden !== reglas.sumaObjetivo) {
+      return {
+        permitido: false,
+        mensaje: `La suma de las categorías debe ser ${reglas.sumaObjetivo}. ` +
+          `Tu categoría (${catJ1.orden}) + categoría de tu pareja (${catJ2.orden}) = ${catJ1.orden + catJ2.orden}`,
+      };
+    }
+    return { permitido: true, mensaje: 'Suma válida' };
+  }
+
+  // STANDARD (default)
+  if (!jugador.categoriaActualId) {
+    return { permitido: false, mensaje: 'Debes tener una categoría asignada para inscribirte a un torneo.' };
+  }
+  const categoriaJugador = todasCategorias.find((c) => c.id === jugador.categoriaActualId);
+  if (!categoriaJugador) {
+    return { permitido: false, mensaje: 'Tu categoría asignada no es válida. Contacta al administrador.' };
+  }
+  const v = validarReglasCategoria(jugador.genero, categoriaJugador, categoriaTarget, todasCategorias);
+  return { permitido: v.permitido, mensaje: v.mensaje, advertencia: v.advertencia };
+}

@@ -18,7 +18,7 @@ import { ComisionService } from '../../common/services/comision.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User, InscripcionEstado, TournamentStatus, Gender } from '@prisma/client';
-import { validarReglasCategoria } from './inscripciones-validacion';
+import { validarReglasCategoria, validarCategoriaParaPareja } from './inscripciones-validacion';
 import { IsString, IsOptional, IsUUID, IsEmail, IsEnum, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -245,6 +245,62 @@ export class PublicInscripcionesController {
   }
 
   /**
+   * GET /inscripciones/public/torneos/:tournamentId/categorias-permitidas
+   * Devuelve TODAS las categorías del torneo anotadas con permitido/motivo,
+   * calculados en el back con la regla canónica (STANDARD + MIXTO + SUMAS).
+   * El wizard consume esto y solo pinta la respuesta (no replica reglas).
+   * `jugador2Id` opcional: si la pareja es registrada, valida también MIXTO/SUMAS.
+   */
+  @Get('torneos/:tournamentId/categorias-permitidas')
+  @UseGuards(JwtAuthGuard)
+  async categoriasPermitidas(
+    @Param('tournamentId') tournamentId: string,
+    @Query('jugador2Id') jugador2Id: string | undefined,
+    @GetUser() user: User,
+  ) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: { categorias: { include: { category: true } } },
+    });
+    if (!tournament) {
+      throw new NotFoundException('Torneo no encontrado');
+    }
+
+    const todasCategorias = await this.prisma.category.findMany({ orderBy: { orden: 'asc' } });
+
+    let pareja: { genero: Gender; categoriaActualId: string | null } | null = null;
+    if (jugador2Id) {
+      const j2 = await this.prisma.user.findUnique({
+        where: { id: jugador2Id },
+        select: { genero: true, categoriaActualId: true },
+      });
+      if (j2) pareja = { genero: j2.genero, categoriaActualId: j2.categoriaActualId };
+    }
+
+    const jugador = { genero: user.genero, categoriaActualId: user.categoriaActualId };
+
+    const categorias = tournament.categorias
+      .map((tc) => {
+        const v = validarCategoriaParaPareja({ jugador, categoriaTarget: tc.category, todasCategorias, pareja });
+        return {
+          id: tc.category.id,
+          tournamentCategoryId: tc.id,
+          nombre: tc.category.nombre,
+          tipo: tc.category.tipo,
+          tipoCategoria: tc.category.tipoCategoria,
+          orden: tc.category.orden,
+          inscripcionAbierta: tc.inscripcionAbierta,
+          permitido: v.permitido,
+          motivo: v.mensaje,
+          advertencia: v.advertencia,
+        };
+      })
+      .sort((a, b) => a.orden - b.orden);
+
+    return { success: true, categorias };
+  }
+
+  /**
    * POST /inscripciones/public
    * Crear inscripción pública (wizard completo)
    * Casos:
@@ -313,23 +369,16 @@ export class PublicInscripcionesController {
     const categoriaTorneo = tournamentCategory.category;
     const todasCategorias = await this.prisma.category.findMany({ orderBy: { orden: 'asc' } });
 
-    if (categoriaTorneo.tipoCategoria === 'STANDARD') {
-      const categoriaJugador = todasCategorias.find((c) => c.id === user.categoriaActualId);
-
-      if (!categoriaJugador) {
-        throw new BadRequestException('Tu categoría asignada no es válida. Contacta al administrador.');
-      }
-
-      const validacion = validarReglasCategoria(
-        user.genero,
-        categoriaJugador,
-        categoriaTorneo,
-        todasCategorias
-      );
-
-      if (!validacion.permitido) {
-        throw new ForbiddenException(validacion.mensaje);
-      }
+    // Regla canónica única (la misma que consulta el wizard vía categorias-permitidas).
+    // Sin pareja acá: valida STANDARD; MIXTO/SUMAS se difieren al bloque de jugador2.
+    const valInicial = validarCategoriaParaPareja({
+      jugador: { genero: user.genero, categoriaActualId: user.categoriaActualId },
+      categoriaTarget: categoriaTorneo,
+      todasCategorias,
+      pareja: null,
+    });
+    if (!valInicial.permitido) {
+      throw new ForbiddenException(valInicial.mensaje);
     }
 
     // 5. PROCESAR SEGÚN CASO
@@ -359,59 +408,15 @@ export class PublicInscripcionesController {
         throw new BadRequestException('Tu pareja ya está inscrita en este torneo');
       }
 
-      // Validaciones especiales para MIXTO y SUMAS
-      if (categoriaTorneo.tipoCategoria === 'MIXTO') {
-        const reglas = categoriaTorneo.reglas as { damaCategoriaId: string; caballeroCategoriaId: string };
-
-        if (user.genero === jugador2.genero) {
-          throw new BadRequestException('En categoría mixta, la pareja debe ser de géneros opuestos');
-        }
-
-        if (!jugador2.categoriaActualId) {
-          throw new BadRequestException('Tu pareja debe tener una categoría asignada');
-        }
-
-        if (user.genero === 'MASCULINO') {
-          if (user.categoriaActualId !== reglas.caballeroCategoriaId) {
-            throw new BadRequestException('Tu categoría no corresponde a esta mixta');
-          }
-          if (jugador2.categoriaActualId !== reglas.damaCategoriaId) {
-            throw new BadRequestException('La categoría de tu pareja no corresponde a esta mixta');
-          }
-        } else {
-          if (user.categoriaActualId !== reglas.damaCategoriaId) {
-            throw new BadRequestException('Tu categoría no corresponde a esta mixta');
-          }
-          if (jugador2.categoriaActualId !== reglas.caballeroCategoriaId) {
-            throw new BadRequestException('La categoría de tu pareja no corresponde a esta mixta');
-          }
-        }
-      }
-
-      if (categoriaTorneo.tipoCategoria === 'SUMAS') {
-        const reglas = categoriaTorneo.reglas as { sumaObjetivo: number };
-
-        if (user.genero !== jugador2.genero) {
-          throw new BadRequestException('En categoría suma, ambos jugadores deben ser del mismo género');
-        }
-
-        if (!jugador2.categoriaActualId) {
-          throw new BadRequestException('Tu pareja debe tener una categoría asignada');
-        }
-
-        const catJ1 = todasCategorias.find((c) => c.id === user.categoriaActualId);
-        const catJ2 = todasCategorias.find((c) => c.id === jugador2.categoriaActualId);
-
-        if (!catJ1 || !catJ2) {
-          throw new BadRequestException('Categoría no válida para uno de los jugadores');
-        }
-
-        if (catJ1.orden + catJ2.orden !== reglas.sumaObjetivo) {
-          throw new BadRequestException(
-            `La suma de las categorías debe ser ${reglas.sumaObjetivo}. ` +
-            `Tu categoría (${catJ1.orden}) + categoría de tu pareja (${catJ2.orden}) = ${catJ1.orden + catJ2.orden}`
-          );
-        }
+      // Validaciones MIXTO/SUMAS con la pareja registrada — regla canónica única.
+      const valPareja = validarCategoriaParaPareja({
+        jugador: { genero: user.genero, categoriaActualId: user.categoriaActualId },
+        categoriaTarget: categoriaTorneo,
+        todasCategorias,
+        pareja: { genero: jugador2.genero, categoriaActualId: jugador2.categoriaActualId },
+      });
+      if (!valPareja.permitido) {
+        throw new BadRequestException(valPareja.mensaje);
       }
 
       // Crear inscripción confirmada (ambos jugadores registrados)

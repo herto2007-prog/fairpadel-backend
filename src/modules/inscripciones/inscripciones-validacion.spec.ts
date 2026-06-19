@@ -1,4 +1,4 @@
-import { validarReglasCategoria } from './inscripciones-validacion';
+import { validarReglasCategoria, validarCategoriaParaPareja } from './inscripciones-validacion';
 
 /**
  * Spec de CARACTERIZACIÓN (red de seguridad del refactor de
@@ -64,6 +64,85 @@ describe('validarReglasCategoria (caracterización)', () => {
       mensaje: 'Categoría permitida (excepción de una categoría inferior)',
       esCategoriaInferior: true,
       advertencia: 'Estás usando tu excepción de bajar una categoría en caballeros. Esta acción solo puede realizarse una vez.',
+    });
+  });
+});
+
+describe('validarCategoriaParaPareja (regla canónica única)', () => {
+  // Catálogo: orden bajo = categoría alta. ids ficticios.
+  const C = {
+    cab4: { id: 'cab4', nombre: '4ta', tipo: 'MASCULINO', tipoCategoria: 'STANDARD', orden: 4 },
+    cab5: { id: 'cab5', nombre: '5ta', tipo: 'MASCULINO', tipoCategoria: 'STANDARD', orden: 5 },
+    dam4: { id: 'dam4', nombre: '4ta Damas', tipo: 'FEMENINO', tipoCategoria: 'STANDARD', orden: 4 },
+  };
+  const TODAS = Object.values(C);
+
+  it('STANDARD: delega en validarReglasCategoria (hombre baja -> rechazado)', () => {
+    const r = validarCategoriaParaPareja({
+      jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' },
+      categoriaTarget: C.cab5,
+      todasCategorias: TODAS,
+    });
+    expect(r.permitido).toBe(false);
+    expect(r.mensaje).toBe('No puedes inscribirte en 5ta siendo 4ta');
+  });
+
+  it('STANDARD: sin categoría asignada -> rechazado', () => {
+    const r = validarCategoriaParaPareja({
+      jugador: { genero: 'MASCULINO', categoriaActualId: null },
+      categoriaTarget: C.cab4,
+      todasCategorias: TODAS,
+    });
+    expect(r.permitido).toBe(false);
+    expect(r.mensaje).toBe('Debes tener una categoría asignada para inscribirte a un torneo.');
+  });
+
+  describe('MIXTO', () => {
+    const mixta = { id: 'mx', nombre: 'Mixta A', tipo: 'MIXTO', tipoCategoria: 'MIXTO', orden: 1, reglas: { caballeroCategoriaId: 'cab4', damaCategoriaId: 'dam4' } };
+
+    it('sin pareja -> difiere (permitido)', () => {
+      const r = validarCategoriaParaPareja({ jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' }, categoriaTarget: mixta, todasCategorias: TODAS, pareja: null });
+      expect(r).toEqual({ permitido: true, mensaje: 'Se valida al elegir la pareja' });
+    });
+
+    it('mismo género -> rechazado', () => {
+      const r = validarCategoriaParaPareja({ jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' }, categoriaTarget: mixta, todasCategorias: TODAS, pareja: { genero: 'MASCULINO', categoriaActualId: 'cab4' } });
+      expect(r).toEqual({ permitido: false, mensaje: 'En categoría mixta, la pareja debe ser de géneros opuestos' });
+    });
+
+    it('géneros opuestos y categorías correctas -> permitido', () => {
+      const r = validarCategoriaParaPareja({ jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' }, categoriaTarget: mixta, todasCategorias: TODAS, pareja: { genero: 'FEMENINO', categoriaActualId: 'dam4' } });
+      expect(r.permitido).toBe(true);
+    });
+
+    it('categoría de la pareja no corresponde -> rechazado', () => {
+      const r = validarCategoriaParaPareja({ jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' }, categoriaTarget: mixta, todasCategorias: TODAS, pareja: { genero: 'FEMENINO', categoriaActualId: 'cab5' } });
+      expect(r).toEqual({ permitido: false, mensaje: 'La categoría de tu pareja no corresponde a esta mixta' });
+    });
+  });
+
+  describe('SUMAS', () => {
+    const suma = { id: 'sm', nombre: 'Suma 9', tipo: 'MASCULINO', tipoCategoria: 'SUMAS', orden: 1, reglas: { sumaObjetivo: 9 } };
+
+    it('sin pareja -> difiere (permitido)', () => {
+      const r = validarCategoriaParaPareja({ jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' }, categoriaTarget: suma, todasCategorias: TODAS, pareja: null });
+      expect(r).toEqual({ permitido: true, mensaje: 'Se valida al elegir la pareja' });
+    });
+
+    it('distinto género -> rechazado', () => {
+      const r = validarCategoriaParaPareja({ jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' }, categoriaTarget: suma, todasCategorias: TODAS, pareja: { genero: 'FEMENINO', categoriaActualId: 'dam4' } });
+      expect(r).toEqual({ permitido: false, mensaje: 'En categoría suma, ambos jugadores deben ser del mismo género' });
+    });
+
+    it('suma correcta (4+5=9) -> permitido', () => {
+      const r = validarCategoriaParaPareja({ jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' }, categoriaTarget: suma, todasCategorias: TODAS, pareja: { genero: 'MASCULINO', categoriaActualId: 'cab5' } });
+      expect(r.permitido).toBe(true);
+    });
+
+    it('suma incorrecta -> rechazado con detalle', () => {
+      const r = validarCategoriaParaPareja({ jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' }, categoriaTarget: suma, todasCategorias: TODAS, pareja: { genero: 'MASCULINO', categoriaActualId: 'cab4' } });
+      expect(r.permitido).toBe(false);
+      expect(r.mensaje).toContain('La suma de las categorías debe ser 9');
     });
   });
 });
