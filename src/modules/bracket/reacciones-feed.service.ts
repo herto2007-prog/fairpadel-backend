@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 import { parseFeedItemId, esReaccionable } from './reacciones-feed.util';
 
 export interface ResumenReaccion {
@@ -16,7 +17,10 @@ export interface Reaccionador {
 
 @Injectable()
 export class ReaccionesFeedService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pushService: PushService,
+  ) {}
 
   /** Agrega "me gusta" del usuario al ítem (idempotente). */
   async reaccionar(userId: string, feedItemId: string): Promise<ResumenReaccion> {
@@ -57,6 +61,17 @@ export class ReaccionesFeedService {
         contenido: `A ${nombre} le gustó tu publicación.`,
       })),
     });
+
+    // Push (app cerrada). No bloquea ni rompe si falla.
+    await Promise.all(
+      destinatarios.map((uid) =>
+        this.pushService.enviarAUsuario(uid, {
+          title: '¡Le gustó tu jugada! 🎾',
+          body: `A ${nombre} le gustó tu publicación.`,
+          data: { tipo: 'SOCIAL' },
+        }),
+      ),
+    );
   }
 
   /** Quita el "me gusta" del usuario. */

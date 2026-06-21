@@ -14,9 +14,10 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { ProgramacionModule } from '../programacion/programacion.module';
 import { CommonModule } from '../../common/common.module';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
+import { PushModule } from '../push/push.module';
 
 @Module({
-  imports: [PrismaModule, ProgramacionModule, CommonModule, NotificacionesModule],
+  imports: [PrismaModule, ProgramacionModule, CommonModule, NotificacionesModule, PushModule],
   controllers: [ClasificacionController, CanchasSorteoController],
   providers: [BracketService, ClasificacionService, ReaccionesFeedService, CanchasSorteoService, FixtureAuditoriaService, PartidoSlotsService, TorneoCalendarioService, AsignacionSlotsService, TorneoGestionGuard],
   exports: [BracketService, ClasificacionService, ReaccionesFeedService, CanchasSorteoService, FixtureAuditoriaService, PartidoSlotsService, TorneoCalendarioService, AsignacionSlotsService],

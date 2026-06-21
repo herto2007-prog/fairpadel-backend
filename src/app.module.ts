@@ -32,6 +32,7 @@ import { StatsModule } from './modules/stats/stats.module';
 import { AmericanoModule } from './modules/americano/americano.module';
 import { ReportesModule } from './modules/reportes/reportes.module';
 import { AlertasModule } from './modules/alertas/alertas.module';
+import { PushModule } from './modules/push/push.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { AlertasModule } from './modules/alertas/alertas.module';
     AmericanoModule,  // Torneos Americano (formato round-robin rotativo)
     ReportesModule,   // Reportes descargables (Excel) de torneos
     AlertasModule,    // Alertas personalizadas (torneos en mi ciudad)
+    PushModule,       // Notificaciones push (Expo) con la app cerrada
   ],
   controllers: [AppController],
 })

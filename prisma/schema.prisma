@@ -374,6 +374,7 @@ model User {
   seguidores               Seguimiento[] @relation("UsuarioSeguido")
   siguiendo                Seguimiento[] @relation("UsuarioSeguidor")
   reaccionesFeed           ReaccionFeed[] @relation("ReaccionesFeed")
+  pushTokens               PushToken[] @relation("PushTokens")
   mensajesEnviados         MensajePrivado[] @relation("MensajeRemitente")
   mensajesRecibidos        MensajePrivado[] @relation("MensajeDestinatario")
   solicitudesJugarEnviadas SolicitudJugar[] @relation("SolicitudRemitente")
@@ -1344,6 +1345,23 @@ model ReaccionFeed {
   @@unique([feedItemId, userId])
   @@index([feedItemId])
   @@map("reacciones_feed")
+}
+
+/// Token de Expo Push de un dispositivo del usuario (para notificaciones con la
+/// app cerrada). Un usuario puede tener varios (varios dispositivos). El token
+/// es único globalmente (si reaparece en otro user, se reasigna).
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  platform  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation("PushTokens", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
 }
 
 model MensajePrivado {
