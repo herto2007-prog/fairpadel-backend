@@ -7,6 +7,7 @@ import { NotificacionesService } from '../notificaciones/notificaciones.service'
 import { NotificacionesWhatsAppService } from '../notificaciones/notificaciones-whatsapp.service';
 import { ComisionService } from '../../common/services/comision.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
+import { cuadroYaArmado, jugadorPuedeCancelarInscripcion } from './inscripciones-validacion';
 
 @Injectable()
 export class InscripcionesService {
@@ -146,7 +147,39 @@ export class InscripcionesService {
   }
 
   async findMyInscripciones(userId: string) {
-    return this.findAll({ jugadorId: userId });
+    const inscripciones = await this.findAll({ jugadorId: userId });
+    if (inscripciones.length === 0) return inscripciones;
+
+    // El estado del cuadro vive en TournamentCategory (no en Category global).
+    // Lo buscamos en lote (una sola consulta) para no hacer N queries.
+    const tcs = await this.prisma.tournamentCategory.findMany({
+      where: {
+        OR: inscripciones.map((i) => ({
+          tournamentId: i.tournamentId,
+          categoryId: i.categoryId,
+        })),
+      },
+      select: { tournamentId: true, categoryId: true, estado: true },
+    });
+    const estadoPorClave = new Map(
+      tcs.map((t) => [`${t.tournamentId}:${t.categoryId}`, t.estado]),
+    );
+
+    return inscripciones.map((i) => {
+      const categoriaEstado =
+        estadoPorClave.get(`${i.tournamentId}:${i.categoryId}`) ?? null;
+      return {
+        ...i,
+        categoriaEstado,
+        // Solo el jugador 1 puede auto-cancelar, y solo antes del sorteo.
+        puedeCancelar:
+          i.jugador1Id === userId &&
+          jugadorPuedeCancelarInscripcion({
+            inscripcionEstado: i.estado,
+            categoriaEstado,
+          }),
+      };
+    });
   }
 
   async findByTournament(tournamentId: string, organizadorId: string) {
@@ -307,9 +340,27 @@ export class InscripcionesService {
       throw new BadRequestException('La inscripción ya está cancelada');
     }
 
+    // El JUGADOR no puede auto-cancelar una vez sorteado el cuadro: dejaría un
+    // hueco en el bracket. El organizador (puedeGestionar) SÍ puede, porque
+    // maneja la baja vía WO/retiro. El estado del cuadro vive en TournamentCategory.
+    if (isJugador1 && !puedeGestionar) {
+      const tc = await this.prisma.tournamentCategory.findFirst({
+        where: {
+          tournamentId: inscripcion.tournamentId,
+          categoryId: inscripcion.categoryId,
+        },
+        select: { estado: true },
+      });
+      if (cuadroYaArmado(tc?.estado)) {
+        throw new BadRequestException(
+          'El cuadro de tu categoría ya está sorteado. Para bajarte, contactá al organizador.',
+        );
+      }
+    }
+
     return this.prisma.inscripcion.update({
       where: { id },
-      data: { 
+      data: {
         estado: InscripcionEstado.CANCELADA,
         ...(motivo && { notas: motivo })
       },

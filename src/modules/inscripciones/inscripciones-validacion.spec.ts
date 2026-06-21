@@ -1,4 +1,9 @@
-import { validarReglasCategoria, validarCategoriaParaPareja } from './inscripciones-validacion';
+import {
+  validarReglasCategoria,
+  validarCategoriaParaPareja,
+  cuadroYaArmado,
+  jugadorPuedeCancelarInscripcion,
+} from './inscripciones-validacion';
 
 /**
  * Spec de CARACTERIZACIÓN (red de seguridad del refactor de
@@ -177,5 +182,50 @@ describe('validarCategoriaParaPareja (regla canónica única)', () => {
       expect(r.permitido).toBe(false);
       expect(r.mensaje).toContain('La suma de las categorías debe ser 9');
     });
+  });
+});
+
+describe('cuadroYaArmado', () => {
+  it('antes del sorteo (abiertas/cerradas/borrador) -> false', () => {
+    expect(cuadroYaArmado('INSCRIPCIONES_ABIERTAS')).toBe(false);
+    expect(cuadroYaArmado('INSCRIPCIONES_CERRADAS')).toBe(false);
+    expect(cuadroYaArmado('FIXTURE_BORRADOR')).toBe(false);
+  });
+
+  it('desde el sorteo en adelante -> true', () => {
+    expect(cuadroYaArmado('SORTEO_REALIZADO')).toBe(true);
+    expect(cuadroYaArmado('EN_CURSO')).toBe(true);
+    expect(cuadroYaArmado('FINALIZADA')).toBe(true);
+  });
+
+  it('null/undefined (sin categoría de torneo) -> false', () => {
+    expect(cuadroYaArmado(null)).toBe(false);
+    expect(cuadroYaArmado(undefined)).toBe(false);
+  });
+});
+
+describe('jugadorPuedeCancelarInscripcion', () => {
+  it('confirmada y antes del sorteo -> puede', () => {
+    expect(
+      jugadorPuedeCancelarInscripcion({ inscripcionEstado: 'CONFIRMADA', categoriaEstado: 'INSCRIPCIONES_CERRADAS' }),
+    ).toBe(true);
+  });
+
+  it('confirmada pero ya sorteado -> NO puede (lo maneja el organizador)', () => {
+    expect(
+      jugadorPuedeCancelarInscripcion({ inscripcionEstado: 'CONFIRMADA', categoriaEstado: 'SORTEO_REALIZADO' }),
+    ).toBe(false);
+  });
+
+  it('ya cancelada -> NO puede (aunque sea antes del sorteo)', () => {
+    expect(
+      jugadorPuedeCancelarInscripcion({ inscripcionEstado: 'CANCELADA', categoriaEstado: 'INSCRIPCIONES_ABIERTAS' }),
+    ).toBe(false);
+  });
+
+  it('pendiente de pago y antes del sorteo -> puede', () => {
+    expect(
+      jugadorPuedeCancelarInscripcion({ inscripcionEstado: 'PENDIENTE_PAGO', categoriaEstado: null }),
+    ).toBe(true);
   });
 });

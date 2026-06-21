@@ -1,4 +1,37 @@
-import { Gender } from '@prisma/client';
+import { Gender, CategoriaEstado, InscripcionEstado } from '@prisma/client';
+
+/**
+ * Estados de la categoría del torneo (TournamentCategory) en los que el cuadro
+ * YA está sorteado: cancelar una inscripción dejaría un hueco en el bracket.
+ */
+export const ESTADOS_CON_CUADRO_ARMADO: CategoriaEstado[] = [
+  CategoriaEstado.SORTEO_REALIZADO,
+  CategoriaEstado.EN_CURSO,
+  CategoriaEstado.FINALIZADA,
+];
+
+/** ¿La categoría del torneo ya tiene el cuadro sorteado? */
+export function cuadroYaArmado(categoriaEstado: CategoriaEstado | null | undefined): boolean {
+  return categoriaEstado != null && ESTADOS_CON_CUADRO_ARMADO.includes(categoriaEstado);
+}
+
+/**
+ * ¿Puede el JUGADOR (jugador 1) auto-cancelar su inscripción desde app/web?
+ *
+ * Regla: solo ANTES de que se arme el cuadro de la categoría, y mientras no
+ * esté ya cancelada. Una vez sorteado, debe pedirlo al organizador (que sí
+ * puede bajarlo vía WO/retiro sin romper el bracket).
+ *
+ * FUENTE ÚNICA: la usan el backend (guard en cancelar) y el flag `puedeCancelar`
+ * de GET /inscripciones/my. El front NO replica esta lógica: refleja el flag.
+ */
+export function jugadorPuedeCancelarInscripcion(params: {
+  inscripcionEstado: InscripcionEstado;
+  categoriaEstado: CategoriaEstado | null | undefined;
+}): boolean {
+  if (params.inscripcionEstado === InscripcionEstado.CANCELADA) return false;
+  return !cuadroYaArmado(params.categoriaEstado);
+}
 
 /**
  * Reglas puras de validación de inscripción.
