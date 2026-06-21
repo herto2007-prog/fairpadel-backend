@@ -23,13 +23,40 @@ export class ReaccionesFeedService {
     if (!esReaccionable(feedItemId)) {
       throw new BadRequestException('Esta publicación no admite reacciones');
     }
-    await this.prisma.reaccionFeed.upsert({
+    // Detectamos si es una reacción NUEVA para avisar al dueño una sola vez
+    // (si reacciona, quita y vuelve a reaccionar, no spameamos).
+    const existente = await this.prisma.reaccionFeed.findUnique({
       where: { feedItemId_userId: { feedItemId, userId } },
-      create: { feedItemId, userId },
-      update: {},
     });
+    if (!existente) {
+      await this.prisma.reaccionFeed.create({ data: { feedItemId, userId } });
+      // El aviso no debe romper la reacción si algo falla.
+      await this.notificarDuenos(feedItemId, userId).catch(() => undefined);
+    }
     const count = await this.prisma.reaccionFeed.count({ where: { feedItemId } });
     return { count, yaReaccione: true };
+  }
+
+  /** Avisa (notificación in-app) a los dueños de la publicación que recibieron un "me gusta". */
+  private async notificarDuenos(feedItemId: string, reactorId: string): Promise<void> {
+    const duenos = await this.resolverDuenos(feedItemId);
+    const destinatarios = duenos.filter((id) => id !== reactorId); // no avisarse a uno mismo
+    if (destinatarios.length === 0) return;
+
+    const reactor = await this.prisma.user.findUnique({
+      where: { id: reactorId },
+      select: { nombre: true, apellido: true },
+    });
+    const nombre = reactor ? `${reactor.nombre} ${reactor.apellido}`.trim() : 'Alguien';
+
+    await this.prisma.notificacion.createMany({
+      data: destinatarios.map((uid) => ({
+        userId: uid,
+        tipo: 'SOCIAL' as const,
+        titulo: '¡Le gustó tu jugada!',
+        contenido: `A ${nombre} le gustó tu publicación.`,
+      })),
+    });
   }
 
   /** Quita el "me gusta" del usuario. */

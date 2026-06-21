@@ -24,9 +24,11 @@ export class ComunidadController {
     console.log('🔥 ENDPOINT /comunidad/jugadores LLAMADO');
 
     try {
-      // Traer todos los usuarios con datos básicos (sin filtro de estado)
+      // Solo jugadores reales (ACTIVO): excluye cuentas NO_VERIFICADO, que en la
+      // práctica son las cuentas de prueba/QA y tapaban a los jugadores reales.
       const usuarios = await this.prisma.user.findMany({
-        take: 50, // Limitar a 50 para no sobrecargar
+        where: { estado: 'ACTIVO' },
+        take: 100,
         select: {
           id: true,
           nombre: true,
