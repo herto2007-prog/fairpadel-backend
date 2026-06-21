@@ -293,7 +293,16 @@ export class PublicInscripcionesController {
       if (j2) pareja = { genero: j2.genero, categoriaActualId: j2.categoriaActualId };
     }
 
-    const jugador = { genero: user.genero, categoriaActualId: user.categoriaActualId };
+    // El token (@GetUser) NO trae categoriaActualId (solo el objeto categoria).
+    // Leemos genero + categoriaActualId reales desde la BD (igual que la pareja).
+    const yo = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { genero: true, categoriaActualId: true },
+    });
+    const jugador = {
+      genero: yo?.genero ?? user.genero,
+      categoriaActualId: yo?.categoriaActualId ?? null,
+    };
 
     const categorias = tournament.categorias
       .map((tc) => {
@@ -378,7 +387,12 @@ export class PublicInscripcionesController {
     }
 
     // 4. Validar categoría según tipo y reglas
-    if (!user.categoriaActualId) {
+    // El token (@GetUser) NO trae categoriaActualId → lo leemos de la BD.
+    const yo = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { genero: true, categoriaActualId: true },
+    });
+    if (!yo?.categoriaActualId) {
       throw new BadRequestException('Debes tener una categoría asignada para inscribirte a un torneo.');
     }
 
@@ -388,7 +402,7 @@ export class PublicInscripcionesController {
     // Regla canónica única (la misma que consulta el wizard vía categorias-permitidas).
     // Sin pareja acá: valida STANDARD; MIXTO/SUMAS se difieren al bloque de jugador2.
     const valInicial = validarCategoriaParaPareja({
-      jugador: { genero: user.genero, categoriaActualId: user.categoriaActualId },
+      jugador: { genero: yo.genero, categoriaActualId: yo.categoriaActualId },
       categoriaTarget: categoriaTorneo,
       todasCategorias,
       pareja: null,
@@ -426,7 +440,7 @@ export class PublicInscripcionesController {
 
       // Validaciones MIXTO/SUMAS con la pareja registrada — regla canónica única.
       const valPareja = validarCategoriaParaPareja({
-        jugador: { genero: user.genero, categoriaActualId: user.categoriaActualId },
+        jugador: { genero: yo.genero, categoriaActualId: yo.categoriaActualId },
         categoriaTarget: categoriaTorneo,
         todasCategorias,
         pareja: { genero: jugador2.genero, categoriaActualId: jugador2.categoriaActualId },
