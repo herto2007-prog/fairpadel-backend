@@ -1,5 +1,6 @@
-import { Controller, Get, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, UseGuards, Req } from '@nestjs/common';
 import { ClasificacionService } from './clasificacion.service';
+import { ReaccionesFeedService } from './reacciones-feed.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -7,7 +8,10 @@ import { Request } from 'express';
 
 @Controller()
 export class ClasificacionController {
-  constructor(private readonly clasificacionService: ClasificacionService) {}
+  constructor(
+    private readonly clasificacionService: ClasificacionService,
+    private readonly reaccionesService: ReaccionesFeedService,
+  ) {}
 
   /**
    * GET /jugador/mi-clasificacion
@@ -62,6 +66,42 @@ export class ClasificacionController {
     const userId = (req as any).user?.userId;
     const feed = await this.clasificacionService.obtenerFeedJugador(userId);
     return { success: true, data: feed };
+  }
+
+  /**
+   * POST /jugador/feed/:feedItemId/reaccion
+   * "Me gusta" a una publicación del feed (idempotente).
+   */
+  @Post('jugador/feed/:feedItemId/reaccion')
+  @UseGuards(JwtAuthGuard)
+  async reaccionar(@Param('feedItemId') feedItemId: string, @Req() req: Request) {
+    const userId = (req as any).user?.userId;
+    const data = await this.reaccionesService.reaccionar(userId, feedItemId);
+    return { success: true, data };
+  }
+
+  /**
+   * DELETE /jugador/feed/:feedItemId/reaccion
+   * Quita el "me gusta".
+   */
+  @Delete('jugador/feed/:feedItemId/reaccion')
+  @UseGuards(JwtAuthGuard)
+  async quitarReaccion(@Param('feedItemId') feedItemId: string, @Req() req: Request) {
+    const userId = (req as any).user?.userId;
+    const data = await this.reaccionesService.quitarReaccion(userId, feedItemId);
+    return { success: true, data };
+  }
+
+  /**
+   * GET /jugador/feed/:feedItemId/reacciones
+   * Lista quién reaccionó. PRIVADO: solo el dueño de la publicación (si no, 403).
+   */
+  @Get('jugador/feed/:feedItemId/reacciones')
+  @UseGuards(JwtAuthGuard)
+  async listarReaccionadores(@Param('feedItemId') feedItemId: string, @Req() req: Request) {
+    const userId = (req as any).user?.userId;
+    const data = await this.reaccionesService.listarReaccionadores(feedItemId, userId);
+    return { success: true, data };
   }
 
   /**

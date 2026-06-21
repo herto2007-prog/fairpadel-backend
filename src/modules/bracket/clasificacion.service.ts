@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProgramacionService } from '../programacion/programacion.service';
 import { construirOrigenLabels, FASE_LEGIBLE } from './bracket-labels';
+import { ReaccionesFeedService } from './reacciones-feed.service';
+import { esReaccionable } from './reacciones-feed.util';
 
 export type EstadoClasificacion = 
   | 'PENDIENTE' 
@@ -22,6 +24,7 @@ export class ClasificacionService {
   constructor(
     private prisma: PrismaService,
     private programacionService: ProgramacionService,
+    private reaccionesService: ReaccionesFeedService,
   ) {}
 
   /**
@@ -528,7 +531,7 @@ export class ClasificacionService {
       return [j1, j2].filter(Boolean).join(' / ') || 'Una pareja';
     };
 
-    const items: Array<{ id: string; tipo: string; fecha: Date; titulo: string; detalle: string; link: string | null }> = [];
+    const items: Array<{ id: string; tipo: string; fecha: Date; titulo: string; detalle: string; link: string | null; duenos: string[] }> = [];
 
     // 1) Resultados recientes en tu categoría (prueba social / comparación)
     if (user.categoriaActualId) {
@@ -546,6 +549,8 @@ export class ClasificacionService {
           tournament: { select: { nombre: true, slug: true } },
           inscripcionGanadora: {
             select: {
+              jugador1Id: true,
+              jugador2Id: true,
               jugador1: { select: { nombre: true, apellido: true } },
               jugador2: { select: { nombre: true, apellido: true } },
             },
@@ -553,6 +558,7 @@ export class ClasificacionService {
         },
       });
       for (const m of matches) {
+        const g = m.inscripcionGanadora;
         items.push({
           id: `r-${m.id}`,
           tipo: 'resultado',
@@ -560,6 +566,7 @@ export class ClasificacionService {
           titulo: `${nombrePareja(m.inscripcionGanadora)} ganó en ${m.tournament?.nombre ?? 'un torneo'}`,
           detalle: `${m.ronda} · tu categoría`,
           link: m.tournament?.slug ? `/t/${m.tournament.slug}` : null,
+          duenos: [g?.jugador1Id, g?.jugador2Id].filter((x): x is string => !!x),
         });
       }
     }
@@ -580,6 +587,7 @@ export class ClasificacionService {
           titulo: `Nuevo torneo en ${t.ciudad}: ${t.nombre}`,
           detalle: 'Inscripciones abiertas',
           link: `/t/${t.slug}`,
+          duenos: [],
         });
       }
     }
@@ -612,13 +620,30 @@ export class ClasificacionService {
           titulo: `${nombre} se inscribió a ${i.tournament?.nombre ?? 'un torneo'}`,
           detalle: i.category?.nombre ?? '',
           link: i.tournament?.slug ? `/t/${i.tournament.slug}` : null,
+          duenos: [i.jugador1Id, i.jugador2Id].filter((x): x is string => !!x),
         });
       }
     }
 
-    return items
+    const top = items
       .sort((a, b) => b.fecha.getTime() - a.fecha.getTime())
-      .slice(0, 15)
-      .map((it) => ({ ...it, fecha: it.fecha.toISOString() }));
+      .slice(0, 15);
+
+    // Reacciones: contador (público) + si yo ya reaccioné, en lote para los ítems reaccionables.
+    const idsReaccionables = top.filter((it) => esReaccionable(it.id)).map((it) => it.id);
+    const resumen = await this.reaccionesService.resumen(idsReaccionables, userId);
+
+    return top.map((it) => {
+      const { duenos, fecha, ...resto } = it;
+      const r = resumen.get(it.id);
+      return {
+        ...resto,
+        fecha: fecha.toISOString(),
+        reaccionable: esReaccionable(it.id),
+        reaccionesCount: r?.count ?? 0,
+        yaReaccione: r?.yaReaccione ?? false,
+        esDueno: duenos.includes(userId), // puede ver quiénes reaccionaron
+      };
+    });
   }
 }

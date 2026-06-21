@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BracketService } from './bracket.service';
 import { ClasificacionService } from './clasificacion.service';
 import { ClasificacionController } from './clasificacion.controller';
+import { ReaccionesFeedService } from './reacciones-feed.service';
 import { CanchasSorteoService } from './canchas-sorteo.service';
 import { CanchasSorteoController } from './canchas-sorteo.controller';
 import { FixtureAuditoriaService } from './fixture-auditoria.service';
@@ -17,7 +18,7 @@ import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 @Module({
   imports: [PrismaModule, ProgramacionModule, CommonModule, NotificacionesModule],
   controllers: [ClasificacionController, CanchasSorteoController],
-  providers: [BracketService, ClasificacionService, CanchasSorteoService, FixtureAuditoriaService, PartidoSlotsService, TorneoCalendarioService, AsignacionSlotsService, TorneoGestionGuard],
-  exports: [BracketService, ClasificacionService, CanchasSorteoService, FixtureAuditoriaService, PartidoSlotsService, TorneoCalendarioService, AsignacionSlotsService],
+  providers: [BracketService, ClasificacionService, ReaccionesFeedService, CanchasSorteoService, FixtureAuditoriaService, PartidoSlotsService, TorneoCalendarioService, AsignacionSlotsService, TorneoGestionGuard],
+  exports: [BracketService, ClasificacionService, ReaccionesFeedService, CanchasSorteoService, FixtureAuditoriaService, PartidoSlotsService, TorneoCalendarioService, AsignacionSlotsService],
 })
 export class BracketModule {}

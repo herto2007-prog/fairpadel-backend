@@ -373,6 +373,7 @@ model User {
   // Relaciones sociales
   seguidores               Seguimiento[] @relation("UsuarioSeguido")
   siguiendo                Seguimiento[] @relation("UsuarioSeguidor")
+  reaccionesFeed           ReaccionFeed[] @relation("ReaccionesFeed")
   mensajesEnviados         MensajePrivado[] @relation("MensajeRemitente")
   mensajesRecibidos        MensajePrivado[] @relation("MensajeDestinatario")
   solicitudesJugarEnviadas SolicitudJugar[] @relation("SolicitudRemitente")
@@ -1326,6 +1327,23 @@ model Seguimiento {
 
   @@unique([seguidorId, seguidoId])
   @@map("seguimientos")
+}
+
+/// Reacción ("Me gusta") a una publicación del feed. El feed se arma al vuelo,
+/// así que feedItemId es el id estable derivado del origen (r-<matchId>,
+/// i-<inscripcionId>). El contador es público; quién reaccionó lo ve solo el
+/// dueño de la publicación (resuelto desde feedItemId en el servicio).
+model ReaccionFeed {
+  id         String   @id @default(uuid())
+  feedItemId String   @map("feed_item_id")
+  userId     String   @map("user_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation("ReaccionesFeed", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([feedItemId, userId])
+  @@index([feedItemId])
+  @@map("reacciones_feed")
 }
 
 model MensajePrivado {
