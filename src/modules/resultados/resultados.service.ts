@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { ProgramacionService } from '../programacion/programacion.service';
 import { ClasificacionService } from '../bracket/clasificacion.service';
+import { PushService } from '../push/push.service';
 import { FormatoSet3, MatchStatus, Prisma } from '@prisma/client';
 import { RegistrarResultadoDto, RegistrarPuntoDto, IniciarPartidoDto, FinalizarPartidoDto } from './dto/registrar-resultado.dto';
 import { ResultadoEspecialDto, TipoResultadoEspecial } from './dto/resultado-especial.dto';
@@ -28,6 +29,7 @@ export class ResultadosService {
     private dateService: DateService,
     private programacionService: ProgramacionService,
     private clasificacionService: ClasificacionService,
+    private pushService: PushService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -977,6 +979,7 @@ export class ResultadosService {
           inscripcion1: true,
           inscripcion2: true,
           inscripcionGanadora: true,
+          tournament: { select: { nombre: true } },
         },
       });
 
@@ -989,6 +992,26 @@ export class ResultadosService {
 
     if (matchCompleto) {
       await this.ejecutarEfectosPostAvance(matchCompleto);
+    }
+
+    // Avisar al ganador (in-app + push). Best-effort: no rompe la carga del resultado.
+    try {
+      const g = matchActualizado.inscripcionGanadora;
+      const torneoNombre = (matchActualizado as any).tournament?.nombre || 'el torneo';
+      if (g) {
+        for (const uid of [g.jugador1Id, g.jugador2Id]) {
+          if (uid) {
+            await this.pushService.notificar(uid, {
+              tipo: 'PARTIDO',
+              titulo: '¡Ganaste tu partido! 🎾',
+              contenido: `Avanzás en ${torneoNombre}. ¡Seguí así!`,
+              enlace: '/mijuego',
+            });
+          }
+        }
+      }
+    } catch {
+      // ignorar: el aviso no es crítico
     }
 
     return matchActualizado;

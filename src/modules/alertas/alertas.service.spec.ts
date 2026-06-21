@@ -40,8 +40,11 @@ const buildEmail = () =>
 const buildConfig = () =>
   ({ get: jest.fn().mockReturnValue('https://www.fairpadel.com') }) as any;
 
+const buildPush = () =>
+  ({ enviarAUsuario: jest.fn().mockResolvedValue(undefined), notificar: jest.fn().mockResolvedValue(undefined) }) as any;
+
 const buildSvc = (prisma: any, email: any = buildEmail()) =>
-  new AlertasService(prisma, email, buildConfig());
+  new AlertasService(prisma, email, buildConfig(), buildPush());
 
 describe('AlertasService.notificarNuevoTorneo', () => {
   it('avisa al suscrito de la misma ciudad (case-insensitive), crea in-app y envía email', async () => {

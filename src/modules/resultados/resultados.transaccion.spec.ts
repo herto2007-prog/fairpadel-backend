@@ -27,11 +27,16 @@ const buildService = ({ slotUpdateRejects = false } = {}) => {
   const clasificacionService = {
     recalcularEstados: jest.fn().mockResolvedValue(undefined),
   };
+  const pushService = {
+    notificar: jest.fn().mockResolvedValue(undefined),
+    enviarAUsuario: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new ResultadosService(
     prisma as any,
     {} as any, // dateService
     programacionService as any,
     clasificacionService as any,
+    pushService as any,
   ) as any;
   return { service, prisma, txMatch, programacionService, clasificacionService };
 };

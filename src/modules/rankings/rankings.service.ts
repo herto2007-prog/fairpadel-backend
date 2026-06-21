@@ -5,12 +5,14 @@ import { DateService } from '../../common/services/date.service';
 import { QueryRankingsDto } from './dto/query-rankings.dto';
 import { CreateConfigPuntosDto, UpdateConfigPuntosDto } from './dto/create-config-puntos.dto';
 import { CreateReglaAscensoDto, UpdateReglaAscensoDto } from './dto/create-regla-ascenso.dto';
+import { PushService } from '../push/push.service';
 
 @Injectable()
 export class RankingsService {
   constructor(
     private prisma: PrismaService,
     private dateService: DateService,
+    private pushService: PushService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -171,6 +173,16 @@ export class RankingsService {
             },
           });
           puntosCalculados.push(historial);
+
+          // Aviso (in-app + push): sumaste puntos / tu ranking se movió.
+          if (puntosFinales > 0) {
+            await this.pushService.notificar(jugadorId, {
+              tipo: 'RANKING',
+              titulo: 'Sumaste puntos 🎾',
+              contenido: `Ganaste ${puntosFinales} puntos en ${torneo.nombre} (${resultado.posicion}). ¡Tu ranking se movió!`,
+              enlace: '/mijuego',
+            });
+          }
         }
       }
     }

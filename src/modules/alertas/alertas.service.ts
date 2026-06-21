@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../email/email.service';
+import { PushService } from '../push/push.service';
 import { TipoAlertaPersonalizada } from '@prisma/client';
 import { CreateAlertaDto } from './dto/create-alerta.dto';
 
@@ -25,6 +26,7 @@ export class AlertasService {
     private prisma: PrismaService,
     private emailService: EmailService,
     private configService: ConfigService,
+    private pushService: PushService,
   ) {}
 
   /** Normaliza una ciudad para comparar: sin acentos, minúsculas, recortada. */
@@ -141,6 +143,13 @@ export class AlertasService {
             contenido: `Se abrió "${torneo.nombre}" en ${torneo.ciudad}. ¡Mirá los detalles e inscribite!`,
             enlace,
           },
+        });
+
+        // Push (la notif in-app ya quedó creada arriba; acá solo el envío).
+        await this.pushService.enviarAUsuario(alerta.userId, {
+          title: `Nuevo torneo en ${torneo.ciudad} 🎾`,
+          body: `Se abrió "${torneo.nombre}". ¡Mirá los detalles e inscribite!`,
+          data: { tipo: 'TORNEO', enlace },
         });
 
         // Email best-effort: si falla, el aviso in-app ya quedó creado.
