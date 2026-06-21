@@ -97,11 +97,14 @@ export function invitacionJugadorTemplate(
       </div>
       
       <div class="info-box" style="text-align: center;">
-        <p style="color: #ffffff; font-size: 16px; margin-bottom: 12px;">
-          📩 Tu pareja te inscribió en este torneo.
+        <p style="color: #ffffff; font-size: 16px; margin-bottom: 8px;">
+          📩 Tu pareja ya reservó el lugar. ¡Solo falta que confirmes vos!
         </p>
-        <p style="color: #d1d5db; font-size: 14px;">
-          Para confirmar tu inscripción, <strong>registrate en fairpadel.com</strong> usando este email (<code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${to}</code>).
+        <a href="https://fairpadel.com/register?email=${encodeURIComponent(to)}" class="button">
+          Crear mi cuenta y confirmar
+        </a>
+        <p style="color: #d1d5db; font-size: 13px; margin-top: 12px;">
+          Registrate con este email (<code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${to}</code>) y tu inscripción se confirma sola, al instante.
         </p>
       </div>
       
