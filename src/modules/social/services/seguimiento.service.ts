@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UserStatus } from '@prisma/client';
+import { PushService } from '../../push/push.service';
 
 @Injectable()
 export class SeguimientoService {
   private readonly logger = new Logger(SeguimientoService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private pushService: PushService,
+  ) {}
 
   /**
    * Seguir a un usuario
@@ -60,6 +64,19 @@ export class SeguimientoService {
     });
 
     this.logger.log(`Usuario ${seguidorId} ahora sigue a ${seguidoId}`);
+
+    // Avisar al seguido (in-app + push)
+    const seguidor = await this.prisma.user.findUnique({
+      where: { id: seguidorId },
+      select: { nombre: true, apellido: true },
+    });
+    const nombreSeguidor = seguidor ? `${seguidor.nombre} ${seguidor.apellido}`.trim() : 'Alguien';
+    await this.pushService.notificar(seguidoId, {
+      tipo: 'SOCIAL',
+      titulo: 'Tenés un nuevo seguidor 🎾',
+      contenido: `${nombreSeguidor} empezó a seguirte.`,
+      enlace: `/jugador/${seguidorId}`,
+    });
 
     // Obtener conteos actualizados
     const counts = await this.getConteosSeguimiento(seguidoId, seguidorId);

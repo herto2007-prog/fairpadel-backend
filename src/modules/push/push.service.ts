@@ -27,6 +27,35 @@ export class PushService {
     return { ok: true };
   }
 
+  /**
+   * Notifica a un usuario por los DOS canales a la vez: crea la notificación
+   * in-app (campana) y manda el push (app cerrada). Úsese en cualquier evento
+   * interesante. No lanza: cada canal falla en silencio por separado.
+   */
+  async notificar(
+    userId: string,
+    opts: { tipo: string; titulo: string; contenido: string; enlace?: string },
+  ): Promise<void> {
+    try {
+      await this.prisma.notificacion.create({
+        data: {
+          userId,
+          tipo: opts.tipo as any,
+          titulo: opts.titulo,
+          contenido: opts.contenido,
+          enlace: opts.enlace,
+        },
+      });
+    } catch (e: any) {
+      this.logger.error(`Notif in-app a ${userId} falló: ${e?.message}`);
+    }
+    await this.enviarAUsuario(userId, {
+      title: opts.titulo,
+      body: opts.contenido,
+      data: { tipo: opts.tipo, enlace: opts.enlace ?? null },
+    });
+  }
+
   /** Quita un token (al cerrar sesión). */
   async eliminar(userId: string, token: string) {
     await this.prisma.pushToken.deleteMany({ where: { token, userId } });

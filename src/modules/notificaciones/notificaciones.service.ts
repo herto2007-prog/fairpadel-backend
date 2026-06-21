@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { EmailService } from '../../email/email.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 
 @Injectable()
 export class NotificacionesService {
   constructor(
     private emailService: EmailService,
     private prisma: PrismaService,
+    private pushService: PushService,
   ) {}
 
   /**
@@ -91,6 +93,18 @@ export class NotificacionesService {
           fechaSorteo,
         );
       }
+
+      // In-app + push a los jugadores registrados
+      for (const uid of [inscripcion.jugador1Id, inscripcion.jugador2Id]) {
+        if (uid) {
+          await this.pushService.notificar(uid, {
+            tipo: 'INSCRIPCION',
+            titulo: 'Inscripción confirmada ✅',
+            contenido: `Estás dentro de ${inscripcion.tournament.nombre} (${categoriaNombre}).`,
+            enlace: '/inscripciones',
+          });
+        }
+      }
     } catch (error) {
       console.error(`[Notificaciones] Error al enviar confirmación:`, error);
     }
@@ -155,6 +169,17 @@ export class NotificacionesService {
             rival,
           );
         }
+
+        for (const uid of [partido.inscripcion1.jugador1Id, partido.inscripcion1.jugador2Id]) {
+          if (uid) {
+            await this.pushService.notificar(uid, {
+              tipo: 'PARTIDO',
+              titulo: 'Tenés un partido programado 🎾',
+              contenido: `${fecha} ${hora} · ${sede} · vs ${rival}`,
+              enlace: '/mijuego',
+            });
+          }
+        }
       }
 
       // Notificar a pareja 2
@@ -176,6 +201,17 @@ export class NotificacionesService {
             sede,
             rival,
           );
+        }
+
+        for (const uid of [partido.inscripcion2.jugador1Id, partido.inscripcion2.jugador2Id]) {
+          if (uid) {
+            await this.pushService.notificar(uid, {
+              tipo: 'PARTIDO',
+              titulo: 'Tenés un partido programado 🎾',
+              contenido: `${fecha} ${hora} · ${sede} · vs ${rival}`,
+              enlace: '/mijuego',
+            });
+          }
         }
       }
     } catch (error) {
