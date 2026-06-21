@@ -54,9 +54,21 @@ export class PushService {
         priority: 'high',
       }));
 
+      // El proyecto Expo usa "seguridad reforzada" → requiere token de acceso.
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      };
+      const expoToken = process.env.EXPO_ACCESS_TOKEN;
+      if (expoToken) {
+        headers.Authorization = `Bearer ${expoToken}`;
+      } else {
+        this.logger.warn('EXPO_ACCESS_TOKEN no configurado: el push puede ser rechazado (401).');
+      }
+
       const res = await fetch(EXPO_PUSH_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers,
         body: JSON.stringify(mensajes),
       });
       const json: any = await res.json().catch(() => null);
