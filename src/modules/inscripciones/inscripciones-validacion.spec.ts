@@ -97,6 +97,39 @@ describe('validarCategoriaParaPareja (regla canónica única)', () => {
     expect(r.mensaje).toBe('Debes tener una categoría asignada para inscribirte a un torneo.');
   });
 
+  it('STANDARD: jugador OK pero pareja superior bajando a inferior -> rechazado (valida ambos)', () => {
+    // jugador 5ta en torneo 5ta = OK; pareja 4ta (superior) no puede BAJAR a 5ta.
+    const r = validarCategoriaParaPareja({
+      jugador: { genero: 'MASCULINO', categoriaActualId: 'cab5' },
+      categoriaTarget: C.cab5,
+      todasCategorias: TODAS,
+      pareja: { genero: 'MASCULINO', categoriaActualId: 'cab4' },
+    });
+    expect(r.permitido).toBe(false);
+    expect(r.mensaje).toContain('Tu pareja no puede inscribirse');
+  });
+
+  it('STANDARD: ambos elegibles -> permitido', () => {
+    const r = validarCategoriaParaPareja({
+      jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' },
+      categoriaTarget: C.cab4,
+      todasCategorias: TODAS,
+      pareja: { genero: 'MASCULINO', categoriaActualId: 'cab4' },
+    });
+    expect(r.permitido).toBe(true);
+  });
+
+  it('STANDARD: pareja sin categoría -> rechazado', () => {
+    const r = validarCategoriaParaPareja({
+      jugador: { genero: 'MASCULINO', categoriaActualId: 'cab4' },
+      categoriaTarget: C.cab4,
+      todasCategorias: TODAS,
+      pareja: { genero: 'MASCULINO', categoriaActualId: null },
+    });
+    expect(r.permitido).toBe(false);
+    expect(r.mensaje).toBe('Tu pareja debe tener una categoría asignada para inscribirse.');
+  });
+
   describe('MIXTO', () => {
     const mixta = { id: 'mx', nombre: 'Mixta A', tipo: 'MIXTO', tipoCategoria: 'MIXTO', orden: 1, reglas: { caballeroCategoriaId: 'cab4', damaCategoriaId: 'dam4' } };
 

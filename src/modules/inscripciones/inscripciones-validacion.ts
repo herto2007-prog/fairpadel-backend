@@ -157,5 +157,25 @@ export function validarCategoriaParaPareja(params: {
     return { permitido: false, mensaje: 'Tu categoría asignada no es válida. Contacta al administrador.' };
   }
   const v = validarReglasCategoria(jugador.genero, categoriaJugador, categoriaTarget, todasCategorias);
+  if (!v.permitido) {
+    return { permitido: v.permitido, mensaje: v.mensaje, advertencia: v.advertencia };
+  }
+
+  // La pareja (si está elegida y registrada) también debe cumplir la regla.
+  // En STANDARD AMBOS jugadores deben ser elegibles en la categoría destino.
+  if (pareja) {
+    if (!pareja.categoriaActualId) {
+      return { permitido: false, mensaje: 'Tu pareja debe tener una categoría asignada para inscribirse.' };
+    }
+    const categoriaPareja = todasCategorias.find((c) => c.id === pareja.categoriaActualId);
+    if (!categoriaPareja) {
+      return { permitido: false, mensaje: 'La categoría de tu pareja no es válida.' };
+    }
+    const vp = validarReglasCategoria(pareja.genero, categoriaPareja, categoriaTarget, todasCategorias);
+    if (!vp.permitido) {
+      return { permitido: false, mensaje: `Tu pareja no puede inscribirse en esta categoría: ${vp.mensaje}` };
+    }
+  }
+
   return { permitido: v.permitido, mensaje: v.mensaje, advertencia: v.advertencia };
 }
