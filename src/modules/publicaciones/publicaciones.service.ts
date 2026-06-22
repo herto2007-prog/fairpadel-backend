@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UploadsService } from '../../uploads/uploads.service';
 
 export interface CrearPublicacionDto {
   texto?: string;
@@ -9,7 +10,10 @@ export interface CrearPublicacionDto {
 
 @Injectable()
 export class PublicacionesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly uploadsService: UploadsService,
+  ) {}
 
   /** Crea una publicación del jugador (foto y/o texto). Aparece en el feed. */
   async crear(userId: string, dto: CrearPublicacionDto) {
@@ -47,11 +51,11 @@ export class PublicacionesService {
     return { id: pub.id };
   }
 
-  /** Borra una publicación propia (y su foto + reacciones del feed). */
+  /** Borra una publicación propia (y su foto en Cloudinary + reacciones del feed). */
   async eliminar(userId: string, id: string) {
     const pub = await this.prisma.publicacionFeed.findUnique({
       where: { id },
-      select: { userId: true, fotoId: true },
+      select: { userId: true, fotoId: true, foto: { select: { cloudinaryPublicId: true } } },
     });
     if (!pub) throw new NotFoundException('Publicación no encontrada');
     if (pub.userId !== userId) {
@@ -60,6 +64,11 @@ export class PublicacionesService {
 
     await this.prisma.publicacionFeed.delete({ where: { id } });
     if (pub.fotoId) {
+      // Borrar el archivo en Cloudinary (best-effort) antes del registro
+      const publicId = pub.foto?.cloudinaryPublicId;
+      if (publicId) {
+        await this.uploadsService.deleteImage(publicId).catch(() => undefined);
+      }
       await this.prisma.foto.deleteMany({ where: { id: pub.fotoId } });
     }
     // Limpiar reacciones del feed asociadas (no tienen FK, se borran por clave)

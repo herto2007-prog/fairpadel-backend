@@ -40,7 +40,10 @@ export class UploadsService {
   async uploadImage(
     file: Express.Multer.File,
     folder: string = 'fairpadel',
+    opts: { maxWidth?: number; maxHeight?: number } = {},
   ): Promise<{ url: string; publicId: string }> {
+    const maxWidth = opts.maxWidth ?? 800;
+    const maxHeight = opts.maxHeight ?? 800;
     // Verificar configuración de Cloudinary
     if (!this.isCloudinaryConfigured) {
       throw new BadRequestException(
@@ -70,7 +73,7 @@ export class UploadsService {
       const result = await cloudinary.uploader.upload(base64Image, {
         folder: `fairpadel/${folder}`,
         transformation: [
-          { width: 800, height: 800, crop: 'limit' }, // Limitar tamaño máximo
+          { width: maxWidth, height: maxHeight, crop: 'limit' }, // Limita tamaño (no recorta ni agranda)
           { quality: 'auto:good' }, // Optimizar calidad automáticamente
         ],
       });

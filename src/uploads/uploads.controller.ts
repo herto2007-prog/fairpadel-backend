@@ -9,7 +9,9 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { IsString, IsOptional } from 'class-validator';
 import { UploadsService } from './uploads.service';
@@ -68,6 +70,7 @@ export class UploadsController {
   async uploadImage(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadImageDto,
+    @Req() req: Request,
   ) {
     console.log('[Upload] Recibiendo petición de upload');
     console.log('[Upload] DTO recibido:', dto);
@@ -89,7 +92,15 @@ export class UploadsController {
     // Validar que folder solo contenga caracteres permitidos
     const validFolder = /^[a-zA-Z0-9_-]+$/.test(folder) ? folder : 'general';
 
-    const result = await this.uploadsService.uploadImage(file, validFolder);
+    // Carpeta por jugador: fairpadel/<folder>/<userId> → ordenado y fácil de limpiar.
+    const userId = (req as any).user?.userId;
+    const finalFolder = userId ? `${validFolder}/${userId}` : validFolder;
+
+    // Tamaño estilo Instagram (tope 1080×1350, mantiene proporción, no recorta).
+    const result = await this.uploadsService.uploadImage(file, finalFolder, {
+      maxWidth: 1080,
+      maxHeight: 1350,
+    });
 
     return {
       success: true,
