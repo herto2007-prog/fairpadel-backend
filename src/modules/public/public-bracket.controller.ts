@@ -6,6 +6,52 @@ import { construirOrigenLabels } from '../bracket/bracket-labels';
 export class PublicBracketController {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Decide qué versiones de cuadro son VISIBLES públicamente para un torneo:
+   * - Siempre las PUBLICADO explícitamente (respeta el "borrador de revisión"
+   *   antes del sorteo: hasta que el organizador no publica, no se ve).
+   * - Red de seguridad: si el torneo está EN_CURSO o FINALIZADO, se muestra el
+   *   cuadro igual aunque el organizador no lo haya publicado (la última versión
+   *   no archivada de cada categoría). Así un torneo terminado nunca queda
+   *   "invisible" por un paso de publicación olvidado.
+   */
+  private async versionesVisibles(
+    tournamentId: string,
+  ): Promise<Array<{ id: string; categoryId: string }>> {
+    const [torneo, versions] = await Promise.all([
+      this.prisma.tournament.findUnique({ where: { id: tournamentId }, select: { estado: true } }),
+      this.prisma.fixtureVersion.findMany({
+        where: { tournamentId },
+        select: { id: true, categoryId: true, estado: true, version: true },
+      }),
+    ]);
+    const torneoVivo = !!torneo && (torneo.estado === 'EN_CURSO' || torneo.estado === 'FINALIZADO');
+
+    const porCategoria = new Map<string, typeof versions>();
+    for (const v of versions) {
+      const arr = porCategoria.get(v.categoryId) ?? [];
+      arr.push(v);
+      porCategoria.set(v.categoryId, arr);
+    }
+
+    const visibles: Array<{ id: string; categoryId: string }> = [];
+    for (const [categoryId, vs] of porCategoria) {
+      const publicada = vs.find((v) => v.estado === 'PUBLICADO');
+      if (publicada) {
+        visibles.push({ id: publicada.id, categoryId });
+        continue;
+      }
+      if (torneoVivo) {
+        const candidatas = vs.filter((v) => v.estado !== 'ARCHIVADO');
+        const ultima = (candidatas.length ? candidatas : vs).sort(
+          (a, b) => (b.version ?? 0) - (a.version ?? 0),
+        )[0];
+        if (ultima) visibles.push({ id: ultima.id, categoryId });
+      }
+    }
+    return visibles;
+  }
+
   @Get(':id')
   async getTorneoPublico(@Param('id') id: string) {
     const torneo = await this.prisma.tournament.findUnique({
@@ -40,13 +86,10 @@ export class PublicBracketController {
       return { success: false, message: 'Torneo no encontrado' };
     }
 
-    // Publicación POR CATEGORÍA: solo mostramos las que tienen su cuadro
-    // (fixtureVersion) PUBLICADO. Las que están en borrador no aparecen.
-    const publicados = await this.prisma.fixtureVersion.findMany({
-      where: { tournamentId, estado: 'PUBLICADO' },
-      select: { categoryId: true },
-    });
-    const categoryIdsPublicados = [...new Set(publicados.map(f => f.categoryId))];
+    // Categorías con cuadro visible (publicado, o cualquiera si el torneo ya
+    // está en curso/finalizado — ver versionesVisibles).
+    const visibles = await this.versionesVisibles(tournamentId);
+    const categoryIdsPublicados = [...new Set(visibles.map((v) => v.categoryId))];
 
     if (categoryIdsPublicados.length === 0) {
       return { success: true, categorias: [] };
@@ -93,12 +136,8 @@ export class PublicBracketController {
       return { success: false, message: 'Torneo no encontrado' };
     }
 
-    // Publicación POR CATEGORÍA: solo se ven los cuadros cuya fixtureVersion
-    // está PUBLICADO. Si la categoría pedida no está publicada, se oculta.
-    const publicados = await this.prisma.fixtureVersion.findMany({
-      where: { tournamentId, estado: 'PUBLICADO' },
-      select: { id: true, categoryId: true },
-    });
+    // Cuadros visibles (publicados, o todos si el torneo está en curso/finalizado).
+    const publicados = await this.versionesVisibles(tournamentId);
 
     if (publicados.length === 0) {
       return { success: false, message: 'El bracket no está publicado' };
@@ -108,7 +147,7 @@ export class PublicBracketController {
       return { success: false, message: 'Esta categoría no está publicada' };
     }
 
-    // Solo partidos de cuadros publicados (filtrar por categoría si se especifica)
+    // Solo partidos de cuadros visibles (filtrar por categoría si se especifica)
     const whereClause: any = {
       tournamentId,
       fixtureVersionId: { in: publicados.map(f => f.id) },
@@ -196,10 +235,7 @@ export class PublicBracketController {
    */
   @Get(':id/campeones')
   async getCampeonesPublico(@Param('id') tournamentId: string) {
-    const publicados = await this.prisma.fixtureVersion.findMany({
-      where: { tournamentId, estado: 'PUBLICADO' },
-      select: { id: true },
-    });
+    const publicados = await this.versionesVisibles(tournamentId);
     if (publicados.length === 0) {
       return { success: true, campeones: [] };
     }
