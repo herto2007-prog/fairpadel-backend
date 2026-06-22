@@ -597,6 +597,25 @@ model SedeCancha {
   @@map("sede_canchas")
 }
 
+// Solicitud pública de un dueño que quiere sumar su complejo (lead).
+// El admin la trabaja a mano desde el Centro de Sedes.
+model SolicitudSede {
+  id             String   @id @default(uuid())
+  nombreContacto String   @map("nombre_contacto")
+  email          String
+  telefono       String
+  nombreSede     String   @map("nombre_sede")
+  ciudad         String
+  mensaje        String?
+  estado         String   @default("NUEVO") // NUEVO | CONTACTADO | CONVERTIDO | RECHAZADO
+  notaAdmin      String?  @map("nota_admin")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([estado])
+  @@map("solicitudes_sede")
+}
+
 // ═══════════════════════════════════════════════════════
 // MÓDULO TORNEOS (MODIFICADO)
 // ═══════════════════════════════════════════════════════
