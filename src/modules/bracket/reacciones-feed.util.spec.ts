@@ -13,6 +13,10 @@ describe('parseFeedItemId', () => {
     expect(parseFeedItemId('t-99')).toEqual({ origen: 'torneo', refId: '99' });
   });
 
+  it('publicacion: p-<id>', () => {
+    expect(parseFeedItemId('p-abc')).toEqual({ origen: 'publicacion', refId: 'abc' });
+  });
+
   it('refId puede contener guiones (uuid)', () => {
     expect(parseFeedItemId('r-3d03364-aaaa-bbbb')).toEqual({ origen: 'resultado', refId: '3d03364-aaaa-bbbb' });
   });
@@ -29,9 +33,10 @@ describe('parseFeedItemId', () => {
 });
 
 describe('esReaccionable', () => {
-  it('resultado e inscripcion -> true', () => {
+  it('resultado, inscripcion y publicacion -> true', () => {
     expect(esReaccionable('r-1')).toBe(true);
     expect(esReaccionable('i-1')).toBe(true);
+    expect(esReaccionable('p-1')).toBe(true);
   });
 
   it('torneo y desconocido -> false', () => {

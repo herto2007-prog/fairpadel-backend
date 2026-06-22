@@ -531,7 +531,19 @@ export class ClasificacionService {
       return [j1, j2].filter(Boolean).join(' / ') || 'Una pareja';
     };
 
-    const items: Array<{ id: string; tipo: string; fecha: Date; titulo: string; detalle: string; link: string | null; duenos: string[] }> = [];
+    const items: Array<{
+      id: string;
+      tipo: string;
+      fecha: Date;
+      titulo: string;
+      detalle: string;
+      link: string | null;
+      duenos: string[];
+      fotoUrl?: string | null;
+      autorId?: string;
+      autorNombre?: string;
+      autorFotoUrl?: string | null;
+    }> = [];
 
     // 1) Resultados recientes en tu categoría (prueba social / comparación)
     if (user.categoriaActualId) {
@@ -623,6 +635,37 @@ export class ClasificacionService {
           duenos: [i.jugador1Id, i.jugador2Id].filter((x): x is string => !!x),
         });
       }
+    }
+
+    // 4) Publicaciones del jugador y de quienes sigue (posts con foto)
+    const autoresIds = [userId, ...seguidoIds];
+    const publicaciones = await this.prisma.publicacionFeed.findMany({
+      where: { userId: { in: autoresIds }, createdAt: { gte: desde } },
+      orderBy: { createdAt: 'desc' },
+      take: 15,
+      select: {
+        id: true,
+        contenido: true,
+        createdAt: true,
+        userId: true,
+        foto: { select: { urlImagen: true } },
+        user: { select: { nombre: true, apellido: true, fotoUrl: true } },
+      },
+    });
+    for (const p of publicaciones) {
+      items.push({
+        id: `p-${p.id}`,
+        tipo: 'publicacion',
+        fecha: p.createdAt,
+        titulo: `${p.user?.nombre ?? ''} ${p.user?.apellido ?? ''}`.trim() || 'Jugador',
+        detalle: p.contenido ?? '',
+        link: null,
+        duenos: [p.userId],
+        fotoUrl: p.foto?.urlImagen ?? null,
+        autorId: p.userId,
+        autorNombre: `${p.user?.nombre ?? ''} ${p.user?.apellido ?? ''}`.trim(),
+        autorFotoUrl: p.user?.fotoUrl ?? null,
+      });
     }
 
     const top = items

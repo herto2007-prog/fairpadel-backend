@@ -33,6 +33,7 @@ import { AmericanoModule } from './modules/americano/americano.module';
 import { ReportesModule } from './modules/reportes/reportes.module';
 import { AlertasModule } from './modules/alertas/alertas.module';
 import { PushModule } from './modules/push/push.module';
+import { PublicacionesModule } from './modules/publicaciones/publicaciones.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { PushModule } from './modules/push/push.module';
     ReportesModule,   // Reportes descargables (Excel) de torneos
     AlertasModule,    // Alertas personalizadas (torneos en mi ciudad)
     PushModule,       // Notificaciones push (Expo) con la app cerrada
+    PublicacionesModule, // Publicaciones del jugador (posts con foto en el feed)
   ],
   controllers: [AppController],
 })

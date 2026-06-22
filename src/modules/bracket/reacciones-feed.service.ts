@@ -148,6 +148,13 @@ export class ReaccionesFeedService {
       });
       return [insc?.jugador1Id, insc?.jugador2Id].filter((x): x is string => !!x);
     }
+    if (origen === 'publicacion') {
+      const pub = await this.prisma.publicacionFeed.findUnique({
+        where: { id: refId },
+        select: { userId: true },
+      });
+      return pub ? [pub.userId] : [];
+    }
     return [];
   }
 }

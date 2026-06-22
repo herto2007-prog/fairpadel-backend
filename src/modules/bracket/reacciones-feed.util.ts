@@ -9,7 +9,7 @@
  * Solo las publicaciones "de personas" (resultado / inscripción) son reaccionables.
  */
 
-export type OrigenFeed = 'resultado' | 'inscripcion' | 'torneo' | 'desconocido';
+export type OrigenFeed = 'resultado' | 'inscripcion' | 'torneo' | 'publicacion' | 'desconocido';
 
 export interface FeedItemRef {
   origen: OrigenFeed;
@@ -30,6 +30,8 @@ export function parseFeedItemId(feedItemId: string): FeedItemRef {
       return { origen: 'inscripcion', refId };
     case 't':
       return { origen: 'torneo', refId };
+    case 'p':
+      return { origen: 'publicacion', refId };
     default:
       return { origen: 'desconocido', refId: '' };
   }
@@ -38,5 +40,5 @@ export function parseFeedItemId(feedItemId: string): FeedItemRef {
 /** ¿Se puede reaccionar a este ítem? Solo publicaciones de personas. */
 export function esReaccionable(feedItemId: string): boolean {
   const { origen } = parseFeedItemId(feedItemId);
-  return origen === 'resultado' || origen === 'inscripcion';
+  return origen === 'resultado' || origen === 'inscripcion' || origen === 'publicacion';
 }
