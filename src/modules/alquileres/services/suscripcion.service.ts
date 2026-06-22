@@ -28,8 +28,8 @@ export class SuscripcionService {
     private emailService: EmailService,
     private configService: ConfigService,
   ) {
-    this.PRECIO_MENSUAL = parseInt(this.configService.get('SUSCRIPCION_PRECIO_MENSUAL') ?? '', 10) || 1000;
-    this.PRECIO_ANUAL = parseInt(this.configService.get('SUSCRIPCION_PRECIO_ANUAL') ?? '', 10) || 10000;
+    this.PRECIO_MENSUAL = parseInt(this.configService.get('SUSCRIPCION_PRECIO_MENSUAL') ?? '', 10) || 50000;
+    this.PRECIO_ANUAL = parseInt(this.configService.get('SUSCRIPCION_PRECIO_ANUAL') ?? '', 10) || 500000;
   }
 
   /**
