@@ -195,13 +195,26 @@ export class PublicTournamentsController {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    if (torneo.estado !== TournamentStatus.PUBLICADO) {
+    // Visibles públicamente: publicado (próximo), en curso y finalizado.
+    // (Borrador, pendiente de aprobación, rechazado y cancelado NO.)
+    const ESTADOS_PUBLICOS: TournamentStatus[] = [
+      TournamentStatus.PUBLICADO,
+      TournamentStatus.EN_CURSO,
+      TournamentStatus.FINALIZADO,
+    ];
+    if (!ESTADOS_PUBLICOS.includes(torneo.estado)) {
       throw new BadRequestException('Este torneo no está disponible públicamente');
     }
 
-    // Verificar si las inscripciones están abiertas
-    // Las inscripciones están abiertas si al menos una categoría tiene inscripcionAbierta = true
-    const inscripcionesAbiertas = torneo.categorias.some((c) => c.inscripcionAbierta);
+    // Inscripciones abiertas SOLO si: el torneo está PUBLICADO (próximo), la fecha
+    // límite no venció, y al menos una categoría tiene inscripcionAbierta = true.
+    // (Antes solo miraba el flag de categoría → el botón quedaba siempre visible.)
+    const hoyPY = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const limiteOk = !torneo.fechaLimiteInscr || torneo.fechaLimiteInscr >= hoyPY;
+    const inscripcionesAbiertas =
+      torneo.estado === TournamentStatus.PUBLICADO &&
+      limiteOk &&
+      torneo.categorias.some((c) => c.inscripcionAbierta);
 
     return {
       success: true,
@@ -219,6 +232,7 @@ export class PublicTournamentsController {
         flyerUrl: torneo.flyerUrl,
         costoInscripcion: torneo.costoInscripcion,
         minutosPorPartido: torneo.minutosPorPartido,
+        estado: torneo.estado,
         inscripcionesAbiertas,
         organizador: torneo.organizador,
         sedePrincipal: torneo.sedePrincipal,
