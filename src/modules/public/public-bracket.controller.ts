@@ -19,13 +19,21 @@ export class PublicBracketController {
     tournamentId: string,
   ): Promise<Array<{ id: string; categoryId: string }>> {
     const [torneo, versions] = await Promise.all([
-      this.prisma.tournament.findUnique({ where: { id: tournamentId }, select: { estado: true } }),
+      this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { estado: true, fechaInicio: true },
+      }),
       this.prisma.fixtureVersion.findMany({
         where: { tournamentId },
         select: { id: true, categoryId: true, estado: true, version: true },
       }),
     ]);
-    const torneoVivo = !!torneo && (torneo.estado === 'EN_CURSO' || torneo.estado === 'FINALIZADO');
+    // "Vivo" = ya arrancó o terminó. Señal robusta: estado EN_CURSO/FINALIZADO
+    // O la fecha de inicio ya pasó (muchos organizadores no marcan el estado).
+    const hoyPY = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const porEstado = !!torneo && (torneo.estado === 'EN_CURSO' || torneo.estado === 'FINALIZADO');
+    const porFecha = !!torneo?.fechaInicio && torneo.fechaInicio <= hoyPY;
+    const torneoVivo = porEstado || porFecha;
 
     const porCategoria = new Map<string, typeof versions>();
     for (const v of versions) {
