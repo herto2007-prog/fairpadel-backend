@@ -319,21 +319,16 @@ export class AdminSuscripcionesController {
     @Body() body: {
       sedeId: string;
       tipo?: 'MENSUAL' | 'ANUAL';
+      monto?: number;
+      metodo?: 'TRANSFERENCIA' | 'EFECTIVO' | 'REGALO' | 'MANUAL';
       nota?: string;
     },
     @Request() req,
   ) {
-    const { sedeId, tipo = 'MENSUAL', nota = 'Activación manual por admin' } = body;
-    
-    this.logger.log(`Admin ${req.user?.userId} activando suscripción manual para sede ${sedeId}`);
+    const { sedeId, tipo = 'MENSUAL', monto, metodo, nota } = body;
+    const esRegalo = metodo === 'REGALO';
 
-    // Fechas como strings YYYY-MM-DD
-    const hoy = new Date();
-    const hoyStr = hoy.toISOString().split('T')[0]; // YYYY-MM-DD
-    const meses = tipo === 'ANUAL' ? 12 : 1;
-    const fechaVencimiento = new Date(hoy);
-    fechaVencimiento.setMonth(fechaVencimiento.getMonth() + meses);
-    const fechaVencimientoStr = fechaVencimiento.toISOString().split('T')[0]; // YYYY-MM-DD
+    this.logger.log(`Admin ${req.user?.userId} registrando ${esRegalo ? 'regalo' : 'pago'} manual para sede ${sedeId}`);
 
     // Buscar o crear config
     let config = await this.prisma.alquilerConfig.findUnique({
@@ -352,26 +347,43 @@ export class AdminSuscripcionesController {
       });
     }
 
-    // Calcular monto en Guaraníes (precio simbólico para testing)
-    const montoGs = tipo === 'ANUAL' ? 10000 : 1000; // Gs. 10.000 o Gs. 1.000
+    // Fechas como strings YYYY-MM-DD
+    const hoyStr = new Date().toISOString().split('T')[0];
+    const meses = tipo === 'ANUAL' ? 12 : 1;
 
-    // Crear pago COMPLETADO manualmente
+    // Renovación: si ya está vigente, EXTENDER desde el vencimiento actual;
+    // si está vencida (o nueva), arrancar desde hoy.
+    const baseStr =
+      config.suscripcionActiva &&
+      config.suscripcionVenceEn &&
+      config.suscripcionVenceEn >= hoyStr
+        ? config.suscripcionVenceEn
+        : hoyStr;
+    const fechaVencimiento = new Date(baseStr + 'T00:00:00');
+    fechaVencimiento.setMonth(fechaVencimiento.getMonth() + meses);
+    const fechaVencimientoStr = fechaVencimiento.toISOString().split('T')[0];
+
+    // Monto real (si lo manda el admin) o 0 cuando es regalo.
+    const montoFinal = esRegalo ? 0 : (typeof monto === 'number' && monto >= 0 ? monto : 0);
+    const metodoFinal = metodo || 'MANUAL';
+
+    // Crear pago COMPLETADO
     const pago = await this.prisma.alquilerPago.create({
       data: {
         sedeId,
         sedeConfigId: config.id,
-        monto: montoGs,
+        monto: montoFinal,
         moneda: 'PYG',
         estado: 'COMPLETADO',
-        metodo: 'MANUAL',
-        referencia: `MANUAL-${Date.now()}`,
+        metodo: metodoFinal,
+        referencia: `${metodoFinal}-${Date.now()}`,
         fechaPago: hoyStr,
-        periodoDesde: hoyStr,
+        periodoDesde: baseStr,
         periodoHasta: fechaVencimientoStr,
       },
     });
 
-    // Activar suscripción
+    // Activar / extender suscripción
     await this.prisma.alquilerConfig.update({
       where: { id: config.id },
       data: {
@@ -385,20 +397,23 @@ export class AdminSuscripcionesController {
     if (req.user?.userId || req.user?.id) {
       await this.auditoria.registrar(
         req.user.userId ?? req.user.id,
-        'ACTIVAR_SUSCRIPCION_MANUAL',
+        esRegalo ? 'REGALAR_SUSCRIPCION' : 'REGISTRAR_PAGO_SUSCRIPCION',
         'sede',
         sedeId,
-        { tipo, montoGs, venceEn: fechaVencimientoStr, nota },
+        { tipo, monto: montoFinal, metodo: metodoFinal, venceEn: fechaVencimientoStr, nota },
       );
     }
 
     return {
       success: true,
-      message: `Suscripción ${tipo} activada exitosamente`,
+      message: esRegalo
+        ? `Servicio activado (regalo, ${tipo.toLowerCase()})`
+        : `Pago registrado y servicio activado (${tipo.toLowerCase()})`,
       data: {
         sedeId,
         tipo,
-        monto: `Gs. ${montoGs.toLocaleString('es-PY')}`,
+        monto: `Gs. ${montoFinal.toLocaleString('es-PY')}`,
+        metodo: metodoFinal,
         venceEn: fechaVencimientoStr,
         pagoId: pago.id,
         nota,
