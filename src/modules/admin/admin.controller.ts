@@ -6,6 +6,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '@prisma/client';
 import { UpdateUserAdminDto } from './dto/update-user-admin.dto';
+import { detectarPosiblesDuplicados } from './duplicados.util';
 
 @Controller('admin')
 export class AdminController {
@@ -470,5 +471,26 @@ export class AdminController {
     }));
 
     return { success: true, data };
+  }
+
+  /**
+   * GET /admin/posibles-duplicados
+   * Alerta blanda (Capa 1): cuentas que se parecen (mismo teléfono, o mismo
+   * nombre+apellido y fecha de nacimiento). No bloquea nada; es para revisión.
+   */
+  @Get('posibles-duplicados')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getPosiblesDuplicados() {
+    const usuarios = await this.prisma.user.findMany({
+      select: {
+        id: true, nombre: true, apellido: true, email: true,
+        documento: true, telefono: true, fechaNacimiento: true,
+        fotoUrl: true, estado: true,
+      },
+    });
+
+    const grupos = detectarPosiblesDuplicados(usuarios);
+    return { success: true, data: grupos, total: grupos.length };
   }
 }

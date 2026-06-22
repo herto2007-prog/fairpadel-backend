@@ -42,6 +42,11 @@ export class CircuitosController {
     return this.circuitosService.getTorneosDeCircuito(id);
   }
 
+  @Get(':id/categorias-ranking')
+  async getCategoriasRanking(@Param('id') id: string) {
+    return this.circuitosService.getCategoriasDelCircuito(id);
+  }
+
   // ═══════════════════════════════════════════════════════════
   // ADMIN - GESTIÓN DE CIRCUITOS
   // ═══════════════════════════════════════════════════════════

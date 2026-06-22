@@ -443,6 +443,31 @@ export class CircuitosService {
     return { success: true, data: ranking };
   }
 
+  /** Categorías que TIENEN puntos en el circuito (para el selector del ranking). */
+  async getCategoriasDelCircuito(circuitoId: string) {
+    const tcs = await this.prisma.torneoCircuito.findMany({
+      where: { circuitoId, estado: 'APROBADO', puntosValidos: true },
+      select: { torneoId: true },
+    });
+    const torneoIds = tcs.map((t) => t.torneoId);
+    if (torneoIds.length === 0) return { success: true, data: [] };
+
+    const cats = await this.prisma.historialPuntos.findMany({
+      where: { tournamentId: { in: torneoIds } },
+      select: { categoryId: true },
+      distinct: ['categoryId'],
+    });
+    const ids = cats.map((c) => c.categoryId);
+    if (ids.length === 0) return { success: true, data: [] };
+
+    const categorias = await this.prisma.category.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, nombre: true },
+      orderBy: { nombre: 'asc' },
+    });
+    return { success: true, data: categorias };
+  }
+
   // ═══════════════════════════════════════════════════════════
   // CLASIFICADOS A LA FINAL
   // ═══════════════════════════════════════════════════════════
