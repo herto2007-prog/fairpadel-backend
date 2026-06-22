@@ -906,15 +906,13 @@ export class AdminTorneosController {
       throw new NotFoundException('Categoría no encontrada en este torneo');
     }
 
-    // Verificar que el torneo tenga un circuito aprobado
+    // El circuito/ranking es OPCIONAL: si el torneo está en un circuito aprobado
+    // se calculan puntos; si es un torneo independiente, igual se finaliza (sin
+    // ranking). Antes esto bloqueaba a los torneos independientes.
     const torneoCircuito = await this.prisma.torneoCircuito.findFirst({
       where: { torneoId: tournamentId, estado: 'APROBADO' },
       include: { circuito: true },
     });
-
-    if (!torneoCircuito) {
-      throw new BadRequestException('Esta categoría no puede finalizarse automáticamente porque el torneo no está asignado a un circuito aprobado');
-    }
 
     // Actualizar estado de la categoría
     await this.prisma.tournamentCategory.update({
@@ -922,16 +920,22 @@ export class AdminTorneosController {
       data: { estado: 'FINALIZADA' },
     });
 
-    // Calcular puntos
-    const resultado = await this.rankingsService.calcularPuntosTorneo(tournamentId, categoryId);
+    // Calcular puntos SOLO si hay circuito (ranking). Si no, se omite.
+    let puntos: any = null;
+    if (torneoCircuito) {
+      const resultado = await this.rankingsService.calcularPuntosTorneo(tournamentId, categoryId);
+      puntos = resultado.data;
+    }
 
     return {
       success: true,
-      message: `Categoría finalizada y puntos calculados para ${torneo.nombre}`,
+      message: torneoCircuito
+        ? `Categoría finalizada y puntos calculados para ${torneo.nombre}`
+        : `Categoría finalizada (torneo independiente, sin ranking) para ${torneo.nombre}`,
       data: {
         categoriaId: categoryId,
-        circuito: torneoCircuito.circuito.nombre,
-        puntos: resultado.data,
+        circuito: torneoCircuito?.circuito.nombre ?? null,
+        puntos,
       },
     };
   }
