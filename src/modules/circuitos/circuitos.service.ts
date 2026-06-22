@@ -364,6 +364,9 @@ export class CircuitosService {
             ciudad: true,
             estado: true,
             flyerUrl: true,
+            organizador: {
+              select: { id: true, nombre: true, apellido: true },
+            },
           },
         },
       },
