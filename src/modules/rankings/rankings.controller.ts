@@ -112,6 +112,13 @@ export class RankingsController {
     return { success: true, message: `Ranking de circuito recalculado para ${temp}` };
   }
 
+  @Post('admin/recalcular-circuito-completo/:circuitoId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async recalcularCircuitoCompleto(@Param('circuitoId') circuitoId: string) {
+    return this.rankingsService.recalcularCircuito(circuitoId);
+  }
+
   @Post('admin/recalcular-categoria/:categoryId')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

@@ -10,6 +10,11 @@ import {
   detectarCandidatosAscenso,
   ResultadoTorneo,
 } from './ascenso-utils';
+import {
+  calcularPuestosDelCuadro,
+  encontrarConfigParaPosicion,
+  PartidoCuadro,
+} from './puntos-cuadro';
 
 @Injectable()
 export class RankingsService {
@@ -91,24 +96,26 @@ export class RankingsService {
   // CÁLCULO DE PUNTOS (Cuando finaliza un torneo)
   // ═══════════════════════════════════════════════════════════
 
-  async calcularPuntosTorneo(tournamentId: string, categoryId: string) {
-    // Obtener torneo con multiplicador
+  async calcularPuntosTorneo(
+    tournamentId: string,
+    categoryId: string,
+    opts: { notificar?: boolean } = {},
+  ) {
+    const notificar = opts.notificar ?? true;
+
+    // Obtener torneo
     const torneo = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
-      select: { multiplicadorPuntos: true, nombre: true, fechaInicio: true },
+      select: { nombre: true, fechaInicio: true },
     });
 
     if (!torneo) {
       throw new NotFoundException('Torneo no encontrado');
     }
 
-    // Protección contra duplicados
-    const existentes = await this.prisma.historialPuntos.count({
-      where: { tournamentId, categoryId },
-    });
-    if (existentes > 0) {
-      throw new Error(`Ya existen ${existentes} registros de historial_puntos para este torneo/categoría. Si deseas recalcular, elimínalos primero.`);
-    }
+    // IDEMPOTENTE: borrar puntos previos de este torneo/categoría y recalcular
+    // desde cero (antes tiraba error si existían → no se podía recalcular).
+    await this.prisma.historialPuntos.deleteMany({ where: { tournamentId, categoryId } });
 
     // Buscar circuito aprobado del torneo
     const torneoCircuito = await this.prisma.torneoCircuito.findFirst({
@@ -116,11 +123,9 @@ export class RankingsService {
       include: { circuito: true },
     });
 
-    // Calcular multiplicador final
-    let multiplicadorFinal = torneo.multiplicadorPuntos;
-    if (torneoCircuito?.circuito) {
-      multiplicadorFinal *= (torneoCircuito.multiplicador || 1) * (torneoCircuito.circuito.multiplicadorGlobal || 1);
-    }
+    // UN SOLO peso por torneo dentro del circuito (antes había 3 multiplicadores
+    // encadenados que no coincidían entre el cálculo inicial y el recálculo).
+    const multiplicadorFinal = torneoCircuito?.multiplicador ?? 1;
 
     // Obtener partidos finalizados de esta categoría
     const partidos = await this.prisma.match.findMany({
@@ -131,36 +136,36 @@ export class RankingsService {
         inscripcionGanadoraId: { not: null },
       },
       include: {
-        inscripcionGanadora: {
-          include: {
-            jugador1: true,
-            jugador2: true,
-          },
-        },
-        inscripcionPerdedora: {
-          include: {
-            jugador1: true,
-            jugador2: true,
-          },
-        },
+        inscripcionGanadora: { select: { jugador1Id: true, jugador2Id: true } },
+        inscripcionPerdedora: { select: { jugador1Id: true, jugador2Id: true } },
       },
     });
 
-    // Determinar posiciones según la fase del bracket
-    const resultados = await this.determinarPosiciones(partidos, tournamentId, categoryId);
+    // Determinar puestos del cuadro (pieza pura, exhaustiva)
+    const partidosCuadro: PartidoCuadro[] = partidos.map((p) => ({
+      ronda: p.ronda,
+      ganadora: p.inscripcionGanadora
+        ? { jugador1Id: p.inscripcionGanadora.jugador1Id, jugador2Id: p.inscripcionGanadora.jugador2Id }
+        : null,
+      perdedora: p.inscripcionPerdedora
+        ? { jugador1Id: p.inscripcionPerdedora.jugador1Id, jugador2Id: p.inscripcionPerdedora.jugador2Id }
+        : null,
+    }));
+    const resultados = calcularPuestosDelCuadro(partidosCuadro);
 
     // Aplicar puntos según configuración
     const configs = await this.prisma.configuracionPuntos.findMany({
       where: { activo: true },
     });
 
+    const fechaTorneo = (torneo.fechaInicio ?? '').slice(0, 10);
     const puntosCalculados = [];
 
     for (const resultado of resultados) {
-      const config = this.encontrarConfigParaPosicion(configs, resultado.posicion);
+      const config = encontrarConfigParaPosicion(configs, resultado.posicion);
       if (config) {
         const puntosFinales = Math.round(config.puntosBase * multiplicadorFinal);
-        
+
         // Guardar en historial
         for (const jugadorId of resultado.jugadoresIds) {
           const historial = await this.prisma.historialPuntos.create({
@@ -172,14 +177,14 @@ export class RankingsService {
               puntosGanados: puntosFinales,
               puntosBase: config.puntosBase,
               multiplicadorAplicado: multiplicadorFinal,
-              // FIX: fechaTorneo es String YYYY-MM-DD
-              fechaTorneo: new Date().toISOString().split('T')[0],
+              fechaTorneo,
             },
           });
           puntosCalculados.push(historial);
 
-          // Aviso (in-app + push): sumaste puntos / tu ranking se movió.
-          if (puntosFinales > 0) {
+          // Aviso (in-app + push): solo en el cálculo inicial, NO al recalcular
+          // (recalcular no debe re-spamear "sumaste puntos").
+          if (notificar && puntosFinales > 0) {
             await this.pushService.notificar(jugadorId, {
               tipo: 'RANKING',
               titulo: 'Sumaste puntos 🎾',
@@ -192,7 +197,7 @@ export class RankingsService {
     }
 
     // Actualizar rankings
-    const temporada = torneo.fechaInicio.substring(0, 4);
+    const temporada = (torneo.fechaInicio ?? '').substring(0, 4);
     await this.actualizarRankingsCategoria(categoryId, temporada);
     if (torneoCircuito?.circuito) {
       await this.actualizarRankingsCircuito(torneoCircuito.circuito.id, categoryId, temporada);
@@ -208,96 +213,6 @@ export class RankingsService {
         puntosAsignados: puntosCalculados.length,
       },
     };
-  }
-
-  private async determinarPosiciones(partidos: any[], tournamentId: string, categoryId: string) {
-    // Obtener fixture para entender la estructura
-    const fixtureVersion = await this.prisma.fixtureVersion.findFirst({
-      where: {
-        tournamentId,
-        categoryId,
-        estado: 'PUBLICADO',
-      },
-    });
-
-    const resultados = [];
-
-    // Encontrar final
-    const final = partidos.find(p => p.ronda === 'FINAL');
-    if (final) {
-      // Campeón
-      resultados.push({
-        posicion: '1ro',
-        jugadoresIds: [
-          final.inscripcionGanadora.jugador1Id,
-          final.inscripcionGanadora.jugador2Id,
-        ].filter(Boolean),
-      });
-      // Subcampeón
-      resultados.push({
-        posicion: '2do',
-        jugadoresIds: [
-          final.inscripcionPerdedora.jugador1Id,
-          final.inscripcionPerdedora.jugador2Id,
-        ].filter(Boolean),
-      });
-    }
-
-    // Semifinalistas (3ro-4to)
-    const semis = partidos.filter(p => p.ronda === 'SEMIS');
-    for (const semi of semis) {
-      resultados.push({
-        posicion: '3ro-4to',
-        jugadoresIds: [
-          semi.inscripcionPerdedora.jugador1Id,
-          semi.inscripcionPerdedora.jugador2Id,
-        ].filter(Boolean),
-      });
-    }
-
-    // Cuartos (5to-8vo)
-    const cuartos = partidos.filter(p => p.ronda === 'CUARTOS');
-    for (const cuarto of cuartos) {
-      resultados.push({
-        posicion: '5to-8vo',
-        jugadoresIds: [
-          cuarto.inscripcionPerdedora.jugador1Id,
-          cuarto.inscripcionPerdedora.jugador2Id,
-        ].filter(Boolean),
-      });
-    }
-
-    // Octavos (9no-16to)
-    const octavos = partidos.filter(p => p.ronda === 'OCTAVOS');
-    for (const octavo of octavos) {
-      resultados.push({
-        posicion: '9no-16to',
-        jugadoresIds: [
-          octavo.inscripcionPerdedora.jugador1Id,
-          octavo.inscripcionPerdedora.jugador2Id,
-        ].filter(Boolean),
-      });
-    }
-
-    return resultados;
-  }
-
-  private encontrarConfigParaPosicion(configs: any[], posicion: string) {
-    // Buscar coincidencia exacta primero
-    let config = configs.find(c => c.posicion === posicion);
-    
-    // Si no hay, buscar rangos
-    if (!config) {
-      if (posicion.startsWith('3ro') || posicion.startsWith('4to')) {
-        config = configs.find(c => c.posicion === '3ro-4to');
-      } else if (['5to', '6to', '7mo', '8vo'].some(p => posicion.startsWith(p))) {
-        config = configs.find(c => c.posicion === '5to-8vo');
-      } else if (['9no', '10mo', '11vo', '12do', '13ro', '14to', '15to', '16to'].some(p => posicion.startsWith(p))) {
-        config = configs.find(c => c.posicion === '9no-16to');
-      }
-    }
-
-    return config;
   }
 
   async actualizarRankingsCategoria(categoryId: string, temporada: string): Promise<void> {
@@ -338,7 +253,7 @@ export class RankingsService {
   async actualizarRankingsCircuito(circuitoId: string, categoryId: string, temporada: string): Promise<void> {
     const torneosCircuito = await this.prisma.torneoCircuito.findMany({
       where: { circuitoId, estado: 'APROBADO', puntosValidos: true },
-      include: { torneo: { select: { id: true, multiplicadorPuntos: true } } },
+      select: { torneoId: true, multiplicador: true },
     });
     const torneoIds = torneosCircuito.map(t => t.torneoId);
     if (torneoIds.length === 0) return;
@@ -356,14 +271,12 @@ export class RankingsService {
       },
     });
 
-    // Recalcular puntos de circuito SIN aplicar circuito.multiplicadorGlobal
+    // Mismo criterio que el cálculo inicial: UN solo peso por torneo (tc.multiplicador).
     const puntosPorJugador = new Map<string, { puntos: number; torneos: number }>();
     for (const h of historiales) {
       const tc = torneosCircuito.find(t => t.torneoId === h.tournamentId);
       if (!tc) continue;
-      const puntosCircuito = Math.round(
-        h.puntosBase * (tc.torneo.multiplicadorPuntos || 1) * (tc.multiplicador || 1),
-      );
+      const puntosCircuito = Math.round(h.puntosBase * (tc.multiplicador || 1));
       const actual = puntosPorJugador.get(h.jugadorId) || { puntos: 0, torneos: 0 };
       actual.puntos += puntosCircuito;
       actual.torneos += 1;
@@ -379,6 +292,45 @@ export class RankingsService {
     );
 
     await this.upsertRankings(historialesRecalculados, 'LIGA', circuitoId, temporada);
+  }
+
+  /**
+   * Recalcula TODO el ranking de un circuito desde cero: recomputa los puntos de
+   * cada torneo aprobado (idempotente, sin re-notificar) y reconstruye su tabla
+   * por categoría. Llamar tras agregar/sacar torneos o cambiar la configuración.
+   */
+  async recalcularCircuito(circuitoId: string) {
+    const tcs = await this.prisma.torneoCircuito.findMany({
+      where: { circuitoId, estado: 'APROBADO', puntosValidos: true },
+      select: { torneo: { select: { id: true, fechaInicio: true } } },
+    });
+
+    const categoriasTemporada = new Map<string, string>(); // categoryId -> temporada
+    let categorias = 0;
+    for (const { torneo } of tcs) {
+      const cats = await this.prisma.tournamentCategory.findMany({
+        where: { tournamentId: torneo.id, estado: 'FINALIZADA' },
+        select: { categoryId: true },
+      });
+      const temporada = (torneo.fechaInicio ?? '').substring(0, 4);
+      for (const c of cats) {
+        await this.calcularPuntosTorneo(torneo.id, c.categoryId, { notificar: false });
+        categoriasTemporada.set(c.categoryId, temporada);
+        categorias++;
+      }
+    }
+
+    // Reconstruir explícitamente la tabla de ESTE circuito por categoría
+    // (robusto incluso si un torneo perteneciera a más de un circuito).
+    for (const [categoryId, temporada] of categoriasTemporada) {
+      await this.actualizarRankingsCircuito(circuitoId, categoryId, temporada);
+    }
+
+    return {
+      success: true,
+      message: 'Ranking del circuito recalculado',
+      data: { circuitoId, torneosRecalculados: tcs.length, categoriasRecalculadas: categorias },
+    };
   }
 
   private async obtenerTorneosEnCircuitosAprobados(): Promise<string[]> {
