@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Body, Param, NotFoundException, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Put, Body, Param, Query, NotFoundException, UseGuards, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -413,6 +413,58 @@ export class AdminController {
 
     const data = historial.map(h => ({
       ...h,
+      categoriaAnterior: h.categoriaAnteriorId ? { id: h.categoriaAnteriorId, nombre: catMap.get(h.categoriaAnteriorId) || 'Desconocida' } : null,
+      categoriaNueva: h.categoriaNuevaId ? { id: h.categoriaNuevaId, nombre: catMap.get(h.categoriaNuevaId) || 'Desconocida' } : null,
+    }));
+
+    return { success: true, data };
+  }
+
+  /**
+   * GET /admin/historial-categorias
+   * Movimientos de categoría recientes de TODA la plataforma (para el panel
+   * Federación). Mismo enriquecido que el per-jugador, más datos del jugador.
+   */
+  @Get('historial-categorias')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getHistorialCategoriasRecientes(@Query('limit') limit?: string) {
+    const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+    const historial = await this.prisma.historialCategoria.findMany({
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
+
+    const catIds = new Set<string>();
+    const userIds = new Set<string>();
+    for (const h of historial) {
+      if (h.categoriaAnteriorId) catIds.add(h.categoriaAnteriorId);
+      if (h.categoriaNuevaId) catIds.add(h.categoriaNuevaId);
+      userIds.add(h.userId);
+    }
+
+    const [categorias, usuarios] = await Promise.all([
+      catIds.size > 0
+        ? this.prisma.category.findMany({
+            where: { id: { in: Array.from(catIds) } },
+            select: { id: true, nombre: true },
+          })
+        : [],
+      userIds.size > 0
+        ? this.prisma.user.findMany({
+            where: { id: { in: Array.from(userIds) } },
+            select: { id: true, nombre: true, apellido: true, fotoUrl: true },
+          })
+        : [],
+    ]);
+
+    const catMap = new Map(categorias.map((c) => [c.id, c.nombre] as [string, string]));
+    const userMap = new Map(usuarios.map((u) => [u.id, u] as [string, typeof u]));
+
+    const data = historial.map(h => ({
+      ...h,
+      jugador: userMap.get(h.userId) || null,
       categoriaAnterior: h.categoriaAnteriorId ? { id: h.categoriaAnteriorId, nombre: catMap.get(h.categoriaAnteriorId) || 'Desconocida' } : null,
       categoriaNueva: h.categoriaNuevaId ? { id: h.categoriaNuevaId, nombre: catMap.get(h.categoriaNuevaId) || 'Desconocida' } : null,
     }));
