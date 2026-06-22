@@ -43,6 +43,31 @@ export class CircuitosController {
   }
 
   // ═══════════════════════════════════════════════════════════
+  // CAPA 2: LIGAS DE ORGANIZADOR (Admin habilita el ranking propio)
+  // ═══════════════════════════════════════════════════════════
+
+  @Get('admin/ligas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async listarLigas() {
+    return this.circuitosService.listarLigasOrganizadores();
+  }
+
+  @Post('admin/ligas/:organizadorId/habilitar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async habilitarLiga(@Param('organizadorId') organizadorId: string, @Request() req: any) {
+    return this.circuitosService.habilitarLiga(organizadorId, req.user.userId);
+  }
+
+  @Post('admin/ligas/:organizadorId/deshabilitar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async deshabilitarLiga(@Param('organizadorId') organizadorId: string) {
+    return this.circuitosService.deshabilitarLiga(organizadorId);
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // SOLICITUDES DE INCLUSIÓN (Organizadores)
   // ═══════════════════════════════════════════════════════════
 
