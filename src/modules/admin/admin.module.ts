@@ -12,6 +12,7 @@ import { FairpadelAdminController } from './fairpadel-admin.controller';
 import { AdminBracketController } from './admin-bracket.controller';
 import { AdminAuditoriaController } from './admin-auditoria.controller';
 import { AdminSedesController } from './admin-sedes.controller';
+import { AdminCentroSedesController } from './admin-centro-sedes.controller';
 import { AdminSuscripcionesController } from './admin-suscripciones.controller';
 import { WhatsAppAdminController } from './whatsapp-admin.controller';
 import { SedesAdminService } from '../sedes/sedes-admin.service';
@@ -32,6 +33,7 @@ import { EmailModule } from '../../email/email.module';
     // Orden importante: rutas más específicas primero
     WhatsAppAdminController,
     AdminSuscripcionesController,
+    AdminCentroSedesController,
     AdminSedesController,
     AdminCategoriasController,
     AdminModalidadesController,
