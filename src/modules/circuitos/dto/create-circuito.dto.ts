@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsBoolean, Min } from 'class-validator';
 
 export class CreateCircuitoDto {
   @IsString({ message: 'El nombre es requerido' })
@@ -55,10 +55,6 @@ export class CreateCircuitoDto {
   @IsOptional()
   @IsBoolean({ message: 'Destacado debe ser booleano' })
   destacado?: boolean;
-
-  @IsOptional()
-  @IsNumber({}, { message: 'El multiplicador global debe ser un número' })
-  multiplicadorGlobal?: number;
 }
 
 export class UpdateCircuitoDto {
@@ -102,22 +98,9 @@ export class UpdateCircuitoDto {
   @IsBoolean({ message: 'Destacado debe ser booleano' })
   destacado?: boolean;
 
-  // Configuración de ranking
-  @IsOptional()
-  @IsString({ message: 'Tipo de acumulación debe ser texto' })
-  tipoAcumulacion?: string;
-
-  @IsOptional()
-  @IsInt({ message: 'Torneos mínimos debe ser un número' })
-  torneosMinimosContar?: number;
-
   @IsOptional()
   @IsInt({ message: 'Torneos para clasificar debe ser un número' })
   torneosParaClasificar?: number;
-
-  @IsOptional()
-  @IsNumber({}, { message: 'El multiplicador debe ser un número' })
-  multiplicadorGlobal?: number;
 
   @IsOptional()
   @IsBoolean({ message: 'Tiene final debe ser booleano' })
