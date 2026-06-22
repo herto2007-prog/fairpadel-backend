@@ -191,6 +191,53 @@ export class PublicBracketController {
   }
 
   /**
+   * GET /public/torneos/:id/campeones
+   * Campeón de cada categoría publicada (ganador del partido FINAL). Público.
+   */
+  @Get(':id/campeones')
+  async getCampeonesPublico(@Param('id') tournamentId: string) {
+    const publicados = await this.prisma.fixtureVersion.findMany({
+      where: { tournamentId, estado: 'PUBLICADO' },
+      select: { id: true },
+    });
+    if (publicados.length === 0) {
+      return { success: true, campeones: [] };
+    }
+
+    const finales = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        fixtureVersionId: { in: publicados.map((f) => f.id) },
+        ronda: 'FINAL',
+        inscripcionGanadoraId: { not: null },
+      },
+      include: {
+        category: { select: { id: true, nombre: true, tipo: true, orden: true } },
+        inscripcionGanadora: {
+          include: {
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+          },
+        },
+      },
+    });
+
+    const campeones = finales
+      .sort((a, b) => (a.category?.orden ?? 0) - (b.category?.orden ?? 0))
+      .map((m) => ({
+        categoriaId: m.category?.id,
+        categoriaNombre: m.category?.nombre,
+        campeon: {
+          id: m.inscripcionGanadora?.id,
+          jugador1: m.inscripcionGanadora?.jugador1,
+          jugador2: m.inscripcionGanadora?.jugador2,
+        },
+      }));
+
+    return { success: true, campeones };
+  }
+
+  /**
    * GET /public/torneos/:id/inscritos
    * Lista todos los inscritos confirmados de un torneo (público)
    * Agrupados por categoría
