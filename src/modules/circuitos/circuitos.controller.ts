@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { CircuitosService } from './circuitos.service';
 import { CreateCircuitoDto, UpdateCircuitoDto } from './dto/create-circuito.dto';
-import { AsignarTorneoDirectoDto, SolicitarInclusionDto, ProcesarSolicitudDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
+import { AsignarTorneoDirectoDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -40,29 +40,6 @@ export class CircuitosController {
   @Get(':id/torneos')
   async getTorneos(@Param('id') id: string) {
     return this.circuitosService.getTorneosDeCircuito(id);
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // SOLICITUDES DE INCLUSIÓN (Organizadores)
-  // ═══════════════════════════════════════════════════════════
-
-  @Get('torneo/:torneoId/estado-circuito')
-  @UseGuards(JwtAuthGuard)
-  async getEstadoCircuito(
-    @Param('torneoId') torneoId: string,
-    @Request() req: any,
-  ) {
-    return this.circuitosService.getEstadoCircuitoPorTorneo(torneoId, req.user.userId);
-  }
-
-  @Post('torneo/:torneoId/solicitar')
-  @UseGuards(JwtAuthGuard)
-  async solicitarInclusion(
-    @Param('torneoId') torneoId: string,
-    @Request() req: any,
-    @Body() dto: SolicitarInclusionDto,
-  ) {
-    return this.circuitosService.solicitarInclusion(torneoId, req.user.userId, dto);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -119,28 +96,6 @@ export class CircuitosController {
     @Param('torneoId') torneoId: string,
   ) {
     return this.circuitosService.eliminarTorneoDeCircuito(circuitoId, torneoId);
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // ADMIN - GESTIÓN DE SOLICITUDES (DEPRECATED - mantener por compatibilidad)
-  // ═══════════════════════════════════════════════════════════
-
-  @Get('admin/solicitudes-pendientes')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
-  async getSolicitudesPendientes() {
-    return this.circuitosService.getSolicitudesPendientes();
-  }
-
-  @Post('admin/solicitud/:id/procesar')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
-  async procesarSolicitud(
-    @Param('id') id: string,
-    @Request() req: any,
-    @Body() dto: ProcesarSolicitudDto,
-  ) {
-    return this.circuitosService.procesarSolicitud(id, req.user.userId, dto);
   }
 
   @Post('admin/torneo-circuito/:id/configurar')
