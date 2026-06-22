@@ -909,34 +909,10 @@ export class AdminTorneosController {
     // El circuito/ranking es OPCIONAL: si el torneo está en un circuito aprobado
     // se calculan puntos; si es un torneo independiente, igual se finaliza (sin
     // ranking). Antes esto bloqueaba a los torneos independientes.
-    let torneoCircuito = await this.prisma.torneoCircuito.findFirst({
+    const torneoCircuito = await this.prisma.torneoCircuito.findFirst({
       where: { torneoId: tournamentId, estado: 'APROBADO' },
       include: { circuito: true },
     });
-
-    // CAPA 2 ("interruptor"): si el torneo no está en ningún circuito pero su
-    // organizador tiene una LIGA propia activa, se vincula solo (sin aprobación
-    // manual, porque es su propia liga) para que cuente en su ranking.
-    if (!torneoCircuito) {
-      const liga = await this.prisma.circuito.findFirst({
-        where: { organizadorId: torneo.organizadorId, estado: 'ACTIVO' },
-      });
-      if (liga) {
-        torneoCircuito = await this.prisma.torneoCircuito.upsert({
-          where: { circuitoId_torneoId: { circuitoId: liga.id, torneoId: tournamentId } },
-          update: { estado: 'APROBADO' },
-          create: {
-            circuitoId: liga.id,
-            torneoId: tournamentId,
-            estado: 'APROBADO',
-            solicitadoPorId: torneo.organizadorId,
-            aprobadoPorId: user.userId,
-            puntosValidos: true,
-          },
-          include: { circuito: true },
-        });
-      }
-    }
 
     // Actualizar estado de la categoría
     await this.prisma.tournamentCategory.update({

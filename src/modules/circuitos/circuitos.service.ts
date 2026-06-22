@@ -2,7 +2,6 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
-import { RankingsService } from '../rankings/rankings.service';
 import { CreateCircuitoDto, UpdateCircuitoDto } from './dto/create-circuito.dto';
 import { AsignarTorneoDirectoDto, SolicitarInclusionDto, ProcesarSolicitudDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,7 +12,6 @@ export class CircuitosService {
     private prisma: PrismaService,
     private dateService: DateService,
     private tournamentsService: TournamentsService,
-    private rankingsService: RankingsService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -741,129 +739,6 @@ export class CircuitosService {
   // ═══════════════════════════════════════════════════════════
   // UTILIDADES
   // ═══════════════════════════════════════════════════════════
-
-  // ═══════════════════════════════════════════════════════════
-  // CAPA 2: LIGAS DE ORGANIZADOR (el admin habilita el ranking propio)
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Lista los organizadores y su liga (si la tienen). El admin usa esto para
-   * habilitar/deshabilitar el ranking propio de cada organizador.
-   */
-  async listarLigasOrganizadores() {
-    const organizadores = await this.prisma.user.findMany({
-      where: { roles: { some: { role: { nombre: 'organizador' } } } },
-      select: { id: true, nombre: true, apellido: true, email: true, ciudad: true },
-      orderBy: [{ nombre: 'asc' }, { apellido: 'asc' }],
-    });
-
-    const ligas = await this.prisma.circuito.findMany({
-      where: { organizadorId: { not: null } },
-      select: {
-        id: true, nombre: true, slug: true, estado: true, organizadorId: true, temporada: true,
-        _count: { select: { torneos: { where: { estado: 'APROBADO' } } } },
-      },
-    });
-    const ligaPorOrg = new Map(ligas.map((l) => [l.organizadorId as string, l]));
-
-    return {
-      success: true,
-      data: organizadores.map((o) => ({
-        organizador: { id: o.id, nombre: o.nombre, apellido: o.apellido, email: o.email },
-        liga: ligaPorOrg.get(o.id) ?? null,
-      })),
-    };
-  }
-
-  /**
-   * Habilita (o reactiva) la liga privada de un organizador: crea su circuito
-   * propio si no existe, vincula sus torneos YA finalizados como APROBADO y
-   * calcula los puntos que falten para que su ranking aparezca de inmediato.
-   */
-  async habilitarLiga(organizadorId: string, adminId: string) {
-    const organizador = await this.prisma.user.findUnique({
-      where: { id: organizadorId },
-      select: { id: true, nombre: true, apellido: true, ciudad: true },
-    });
-    if (!organizador) throw new NotFoundException('Organizador no encontrado');
-
-    const temporada = new Date().getFullYear().toString();
-
-    let liga = await this.prisma.circuito.findFirst({ where: { organizadorId } });
-    if (liga) {
-      if (liga.estado === 'INACTIVO') {
-        liga = await this.prisma.circuito.update({ where: { id: liga.id }, data: { estado: 'ACTIVO' } });
-      }
-    } else {
-      const nombre = `Liga ${organizador.nombre} ${organizador.apellido}`.trim();
-      liga = await this.prisma.circuito.create({
-        data: {
-          nombre,
-          slug: this.generarSlug(nombre),
-          ciudad: organizador.ciudad || 'Paraguay',
-          temporada,
-          estado: 'ACTIVO',
-          organizadorId,
-        },
-      });
-    }
-
-    // Backfill: torneos del organizador con categorías ya finalizadas.
-    const finalizadas = await this.prisma.tournamentCategory.findMany({
-      where: { estado: 'FINALIZADA', tournament: { organizadorId } },
-      select: { tournamentId: true, categoryId: true },
-    });
-
-    const torneosTocados = new Set<string>();
-    let categoriasCalculadas = 0;
-    for (const fc of finalizadas) {
-      await this.prisma.torneoCircuito.upsert({
-        where: { circuitoId_torneoId: { circuitoId: liga.id, torneoId: fc.tournamentId } },
-        update: { estado: 'APROBADO' },
-        create: {
-          circuitoId: liga.id,
-          torneoId: fc.tournamentId,
-          estado: 'APROBADO',
-          solicitadoPorId: organizadorId,
-          aprobadoPorId: adminId,
-          puntosValidos: true,
-        },
-      });
-      torneosTocados.add(fc.tournamentId);
-
-      const yaTienePuntos = await this.prisma.historialPuntos.count({
-        where: { tournamentId: fc.tournamentId, categoryId: fc.categoryId },
-      });
-      if (yaTienePuntos === 0) {
-        try {
-          await this.rankingsService.calcularPuntosTorneo(fc.tournamentId, fc.categoryId);
-          categoriasCalculadas++;
-        } catch {
-          // mejor esfuerzo: torneos viejos sin fixture publicado pueden fallar
-        }
-      } else {
-        // ya tenía puntos: recomputar el ranking de la liga para incluirlo
-        await this.rankingsService.actualizarRankingsCircuito(liga.id, fc.categoryId, temporada);
-      }
-    }
-
-    return {
-      success: true,
-      data: {
-        liga,
-        torneosVinculados: torneosTocados.size,
-        categoriasCalculadas,
-      },
-    };
-  }
-
-  /** Desactiva la liga del organizador (soft: estado INACTIVO, no borra datos). */
-  async deshabilitarLiga(organizadorId: string) {
-    const liga = await this.prisma.circuito.findFirst({ where: { organizadorId } });
-    if (!liga) throw new NotFoundException('Ese organizador no tiene liga');
-    await this.prisma.circuito.update({ where: { id: liga.id }, data: { estado: 'INACTIVO' } });
-    return { success: true, data: { id: liga.id, estado: 'INACTIVO' } };
-  }
 
   private generarSlug(nombre: string): string {
     return nombre

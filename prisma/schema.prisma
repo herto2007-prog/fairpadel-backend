@@ -365,7 +365,6 @@ model User {
   solicitudesTorneoCircuito  TorneoCircuito[] @relation("SolicitudTorneoCircuito")
   aprobacionesTorneoCircuito TorneoCircuito[] @relation("AprobacionTorneoCircuito")
   clasificadosCircuito       ClasificadoCircuito[]
-  circuitosComoOrganizador   Circuito[]       @relation("CircuitosOrganizador")
   
   // NUEVO: Inscripciones directas (reemplaza Pareja)
   inscripcionesJugador1    Inscripcion[] @relation("InscripcionJugador1")
@@ -752,11 +751,6 @@ model Circuito {
   orden                   Int             @default(0)
   destacado               Boolean         @default(false)
 
-  // CAPA 2: dueño del circuito. Si está seteado, es la LIGA PRIVADA de ese
-  // organizador (aislada). Si es null, es un circuito curado por el admin
-  // (modelo viejo). El admin habilita la liga de un organizador.
-  organizadorId           String?         @map("organizador_id")
-
   createdAt               DateTime        @default(now()) @map("created_at")
   updatedAt               DateTime        @updatedAt @map("updated_at")
 
@@ -764,9 +758,7 @@ model Circuito {
   torneos                 TorneoCircuito[]
   torneoFinal             Tournament?     @relation("CircuitoFinal", fields: [torneoFinalId], references: [id])
   clasificados            ClasificadoCircuito[]
-  organizador             User?           @relation("CircuitosOrganizador", fields: [organizadorId], references: [id], onDelete: SetNull)
 
-  @@index([organizadorId])
   @@map("circuitos")
 }
 
