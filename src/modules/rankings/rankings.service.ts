@@ -6,6 +6,10 @@ import { QueryRankingsDto } from './dto/query-rankings.dto';
 import { CreateConfigPuntosDto, UpdateConfigPuntosDto } from './dto/create-config-puntos.dto';
 import { CreateReglaAscensoDto, UpdateReglaAscensoDto } from './dto/create-regla-ascenso.dto';
 import { PushService } from '../push/push.service';
+import {
+  detectarCandidatosAscenso,
+  ResultadoTorneo,
+} from './ascenso-utils';
 
 @Injectable()
 export class RankingsService {
@@ -531,42 +535,80 @@ export class RankingsService {
       },
     });
 
+    if (reglas.length === 0) {
+      return { success: true, message: '0 ascensos detectados', data: [] };
+    }
+
+    // CAPA 1 (FairPadel regulador): la detección lee los RESULTADOS REALES de
+    // TODOS los torneos finalizados (campeón = ganador de la FINAL; finalista =
+    // perdedor de la FINAL), desacoplada por completo de los circuitos. Antes
+    // leía historial_puntos, que solo existe para torneos en circuito aprobado,
+    // dejando afuera a los campeones de torneos independientes.
+    const resultados = await this.obtenerResultadosTorneos();
+
+    const hoy = this.dateService.getDateOnly();
+    const candidatos = detectarCandidatosAscenso(
+      reglas.map((r) => ({
+        id: r.id,
+        categoriaOrigenId: r.categoriaOrigenId,
+        categoriaDestinoId: r.categoriaDestinoId,
+        campeonatosRequeridos: r.campeonatosRequeridos,
+        mesesVentana: r.mesesVentana,
+        finalistaCalifica: r.finalistaCalifica,
+      })),
+      resultados,
+      hoy,
+    );
+
+    // Solo proponer ascenso si el jugador HOY sigue en la categoría origen
+    // (evita proponer ascensos obsoletos de una categoría que ya dejó).
+    const jugadorIds = [...new Set(candidatos.map((c) => c.jugadorId))];
+    const jugadores = await this.prisma.user.findMany({
+      where: { id: { in: jugadorIds } },
+      select: { id: true, categoriaActualId: true },
+    });
+    const categoriaActualPorJugador = new Map(
+      jugadores.map((j) => [j.id, j.categoriaActualId]),
+    );
+
     const ascensosDetectados = [];
 
-    for (const regla of reglas) {
-      // Buscar jugadores que cumplen la regla
-      const jugadoresCandidatos = await this.buscarCandidatosAscenso(regla);
-      
-      for (const candidato of jugadoresCandidatos) {
-        // Verificar si ya existe un ascenso pendiente
-        const existente = await this.prisma.ascensoPendiente.findFirst({
-          where: {
+    for (const candidato of candidatos) {
+      if (
+        categoriaActualPorJugador.get(candidato.jugadorId) !==
+        candidato.categoriaOrigenId
+      ) {
+        continue;
+      }
+
+      // Verificar si ya existe un ascenso pendiente/confirmado para este salto
+      const existente = await this.prisma.ascensoPendiente.findFirst({
+        where: {
+          userId: candidato.jugadorId,
+          categoriaActualId: candidato.categoriaOrigenId,
+          categoriaNuevaId: candidato.categoriaDestinoId,
+          estado: { in: ['PENDIENTE', 'CONFIRMADO'] },
+        },
+      });
+
+      if (!existente) {
+        const ascenso = await this.prisma.ascensoPendiente.create({
+          data: {
             userId: candidato.jugadorId,
-            categoriaActualId: regla.categoriaOrigenId,
-            categoriaNuevaId: regla.categoriaDestinoId,
-            estado: { in: ['PENDIENTE', 'CONFIRMADO'] },
+            categoriaActualId: candidato.categoriaOrigenId,
+            categoriaNuevaId: candidato.categoriaDestinoId,
+            torneosGanadosIds: candidato.torneosGanados,
+            // FIX: fechaCalculo es String YYYY-MM-DD
+            fechaCalculo: hoy,
+            estado: 'PENDIENTE',
+          },
+          include: {
+            user: { select: { nombre: true, apellido: true } },
+            categoriaActual: true,
+            categoriaNueva: true,
           },
         });
-
-        if (!existente) {
-          const ascenso = await this.prisma.ascensoPendiente.create({
-            data: {
-              userId: candidato.jugadorId,
-              categoriaActualId: regla.categoriaOrigenId,
-              categoriaNuevaId: regla.categoriaDestinoId,
-              torneosGanadosIds: candidato.torneosGanados,
-              // FIX: fechaCalculo es String YYYY-MM-DD
-              fechaCalculo: new Date().toISOString().split('T')[0],
-              estado: 'PENDIENTE',
-            },
-            include: {
-              user: { select: { nombre: true, apellido: true } },
-              categoriaActual: true,
-              categoriaNueva: true,
-            },
-          });
-          ascensosDetectados.push(ascenso);
-        }
+        ascensosDetectados.push(ascenso);
       }
     }
 
@@ -577,47 +619,64 @@ export class RankingsService {
     };
   }
 
-  private async buscarCandidatosAscenso(regla: any) {
-    // FIX: fechaTorneo es String YYYY-MM-DD
-    const fechaDesdeDate = new Date();
-    fechaDesdeDate.setMonth(fechaDesdeDate.getMonth() - regla.mesesVentana);
-    const fechaDesde = fechaDesdeDate.toISOString().split('T')[0];
-
-    // Buscar jugadores que ganaron campeonatos en la categoría origen
-    const campeones = await this.prisma.historialPuntos.groupBy({
-      by: ['jugadorId'],
+  /**
+   * Junta los resultados reales (campeón / finalista) de TODOS los torneos
+   * finalizados, sin importar si pertenecen a un circuito. El campeón es el
+   * ganador del partido FINAL; el finalista, el perdedor de la FINAL.
+   */
+  private async obtenerResultadosTorneos(): Promise<ResultadoTorneo[]> {
+    const finales = await this.prisma.match.findMany({
       where: {
-        categoryId: regla.categoriaOrigenId,
-        posicionFinal: '1ro',
-        fechaTorneo: { gte: fechaDesde },
+        ronda: 'FINAL',
+        estado: 'FINALIZADO',
+        inscripcionGanadoraId: { not: null },
       },
-      _count: { id: true },
+      select: {
+        categoryId: true,
+        tournamentId: true,
+        inscripcionGanadora: { select: { jugador1Id: true, jugador2Id: true } },
+        inscripcionPerdedora: { select: { jugador1Id: true, jugador2Id: true } },
+        tournament: { select: { fechaInicio: true } },
+      },
     });
 
-    const candidatos = [];
+    const resultados: ResultadoTorneo[] = [];
+    for (const f of finales) {
+      const fecha = (f.tournament?.fechaInicio ?? '').slice(0, 10);
+      if (!fecha) continue;
 
-    for (const campeon of campeones) {
-      if (campeon._count.id >= regla.campeonatosRequeridos) {
-        // Obtener IDs de torneos ganados
-        const torneos = await this.prisma.historialPuntos.findMany({
-          where: {
-            jugadorId: campeon.jugadorId,
-            categoryId: regla.categoriaOrigenId,
-            posicionFinal: '1ro',
-            fechaTorneo: { gte: fechaDesde },
-          },
-          select: { tournamentId: true },
-          take: regla.campeonatosRequeridos,
-        });
+      for (const jid of [
+        f.inscripcionGanadora?.jugador1Id,
+        f.inscripcionGanadora?.jugador2Id,
+      ]) {
+        if (jid) {
+          resultados.push({
+            jugadorId: jid,
+            categoryId: f.categoryId,
+            tournamentId: f.tournamentId,
+            fecha,
+            posicion: 'CAMPEON',
+          });
+        }
+      }
 
-        candidatos.push({
-          jugadorId: campeon.jugadorId,
-          torneosGanados: torneos.map(t => t.tournamentId),
-        });
+      for (const jid of [
+        f.inscripcionPerdedora?.jugador1Id,
+        f.inscripcionPerdedora?.jugador2Id,
+      ]) {
+        if (jid) {
+          resultados.push({
+            jugadorId: jid,
+            categoryId: f.categoryId,
+            tournamentId: f.tournamentId,
+            fecha,
+            posicion: 'FINALISTA',
+          });
+        }
       }
     }
 
-    return candidatos;
+    return resultados;
   }
 
   async getAscensosPendientes() {
