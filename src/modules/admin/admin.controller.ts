@@ -431,6 +431,47 @@ export class AdminController {
   }
 
   /**
+   * Ficha 360° de un jugador (solo admin): TODAS las inscripciones (no solo en
+   * curso), ranking + estadísticas, e historial de puntos por torneo.
+   */
+  @Get('users/:id/ficha')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getUserFicha(@Param('id') userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const [inscripciones, rankings, historialPuntos] = await Promise.all([
+      this.prisma.inscripcion.findMany({
+        where: { OR: [{ jugador1Id: userId }, { jugador2Id: userId }] },
+        include: {
+          tournament: { select: { id: true, nombre: true, estado: true, fechaInicio: true } },
+          category: { select: { id: true, nombre: true } },
+          jugador1: { select: { id: true, nombre: true, apellido: true } },
+          jugador2: { select: { id: true, nombre: true, apellido: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.ranking.findMany({
+        where: { jugadorId: userId },
+        orderBy: { ultimaActualizacion: 'desc' },
+      }),
+      this.prisma.historialPuntos.findMany({
+        where: { jugadorId: userId },
+        include: {
+          tournament: { select: { nombre: true } },
+          category: { select: { nombre: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return { success: true, data: { inscripciones, rankings, historialPuntos } };
+  }
+
+  /**
    * Obtener historial de categorías de un usuario (solo admin)
    */
   @Get('users/:id/historial-categorias')
