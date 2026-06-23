@@ -1,7 +1,23 @@
-import { IsString, IsOptional, IsEnum, Matches } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsEmail, Matches } from 'class-validator';
 import { Gender, UserStatus } from '@prisma/client';
 
 export class UpdateUserAdminDto {
+  @IsOptional()
+  @IsString()
+  nombre?: string;
+
+  @IsOptional()
+  @IsString()
+  apellido?: string;
+
+  @IsOptional()
+  @IsEmail({}, { message: 'El email no tiene un formato válido' })
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  documento?: string;
+
   @IsOptional()
   @IsString()
   categoriaActualId?: string;

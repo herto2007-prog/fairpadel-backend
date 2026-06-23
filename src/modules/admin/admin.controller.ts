@@ -7,6 +7,7 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '@prisma/client';
 import { UpdateUserAdminDto } from './dto/update-user-admin.dto';
 import { detectarPosiblesDuplicados } from './duplicados.util';
+import * as bcrypt from 'bcrypt';
 
 @Controller('admin')
 export class AdminController {
@@ -221,6 +222,33 @@ export class AdminController {
       ascensosPendientes: [],
     };
 
+    // Identidad (validar unicidad de email y documento)
+    if (dto.nombre && dto.nombre.trim()) updateData.nombre = dto.nombre.trim();
+    if (dto.apellido && dto.apellido.trim()) updateData.apellido = dto.apellido.trim();
+    if (dto.email !== undefined && dto.email !== user.email) {
+      const emailEnUso = await this.prisma.user.findFirst({
+        where: { email: dto.email, id: { not: userId } },
+        select: { id: true },
+      });
+      if (emailEnUso) {
+        throw new BadRequestException('Ya existe otro usuario con ese email');
+      }
+      updateData.email = dto.email;
+    }
+    if (dto.documento !== undefined) {
+      const doc = dto.documento.trim() || null;
+      if (doc) {
+        const docEnUso = await this.prisma.user.findFirst({
+          where: { documento: doc, id: { not: userId } },
+          select: { id: true },
+        });
+        if (docEnUso) {
+          throw new BadRequestException('Ya existe otro usuario con ese documento');
+        }
+      }
+      updateData.documento = doc;
+    }
+
     // Campos básicos editables
     if (dto.telefono !== undefined) updateData.telefono = dto.telefono || null;
     if (dto.ciudad !== undefined) updateData.ciudad = dto.ciudad || null;
@@ -340,6 +368,29 @@ export class AdminController {
         ? advertencias
         : undefined,
     };
+  }
+
+  /**
+   * Setear la contraseña de un usuario manualmente (solo admin).
+   * Para soporte: cuando el jugador no tiene acceso a su email para el reset.
+   */
+  @Post('users/:id/set-password')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async setUserPassword(
+    @Param('id') userId: string,
+    @Body('password') password: string,
+  ) {
+    if (!password || password.length < 6) {
+      throw new BadRequestException('La contraseña debe tener al menos 6 caracteres');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    const passwordHash = await bcrypt.hash(password, 10);
+    await this.prisma.user.update({ where: { id: userId }, data: { password: passwordHash } });
+    return { success: true, message: 'Contraseña actualizada correctamente' };
   }
 
   /**
