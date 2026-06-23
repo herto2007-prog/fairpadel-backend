@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Body, Param, Query, NotFoundException, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, Param, Query, NotFoundException, UseGuards, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -428,6 +428,51 @@ export class AdminController {
     });
 
     return { success: true, data: inscripciones };
+  }
+
+  /**
+   * Eliminar (hard-delete) una cuenta SOLO si está vacía (sin historial).
+   * Para limpiar duplicados/spam. Las cuentas con historial NO se borran: se
+   * desactivan (soft) con estado INACTIVO vía updateUser, preservando todo.
+   */
+  @Delete('users/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async deleteUser(@Param('id') userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        _count: {
+          select: {
+            inscripcionesJugador1: true,
+            inscripcionesJugador2: true,
+            historialPuntos: true,
+            rankings: true,
+            historialCategorias: true,
+            torneosOrganizados: true,
+            sedesComoDueno: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const c = user._count;
+    const datos =
+      c.inscripcionesJugador1 + c.inscripcionesJugador2 + c.historialPuntos +
+      c.rankings + c.historialCategorias + c.torneosOrganizados + c.sedesComoDueno;
+
+    if (datos > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar: la cuenta tiene historial (inscripciones, puntos, ranking u organización). Desactivala en su lugar para preservar su historial.',
+      );
+    }
+
+    await this.prisma.user.delete({ where: { id: userId } });
+    return { success: true, message: 'Cuenta vacía eliminada correctamente' };
   }
 
   /**

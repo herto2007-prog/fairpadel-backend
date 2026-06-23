@@ -116,6 +116,17 @@ export class PerfilController {
   }
 
   /**
+   * POST /users/profile/desactivar
+   * El jugador desactiva su propia cuenta (soft-delete). Historial preservado;
+   * el login queda bloqueado. Reversible por un admin.
+   */
+  @Post('profile/desactivar')
+  @UseGuards(JwtAuthGuard)
+  async desactivarCuenta(@Request() req: any) {
+    return this.perfilService.desactivarCuenta(req.user.userId);
+  }
+
+  /**
    * POST /users/profile/whatsapp/solicitar-consentimiento
    * Solicita consentimiento de WhatsApp para usuarios existentes
    */

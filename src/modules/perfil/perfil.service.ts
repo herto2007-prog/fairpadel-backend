@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { NotificacionPreferencia } from '@prisma/client';
+import { NotificacionPreferencia, UserStatus } from '@prisma/client';
 import { WhatsAppService } from '../whatsapp/services/whatsapp.service';
 import { CompletarDatosCompetidorDto } from './dto/update-perfil.dto';
 
@@ -670,6 +670,36 @@ export class PerfilService {
     return {
       success: true,
       message: 'Contraseña actualizada correctamente',
+    };
+  }
+
+  /**
+   * Desactiva (soft-delete) la cuenta del propio usuario. NO borra nada: pone
+   * estado INACTIVO (el login queda bloqueado) y su historial se conserva para
+   * siempre. Reversible por un admin (reactivar). También elimina los tokens
+   * push para que deje de recibir notificaciones.
+   */
+  async desactivarCuenta(userId: string) {
+    const usuario = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { estado: UserStatus.INACTIVO },
+    });
+
+    // Dejar de recibir push (best-effort)
+    await this.prisma.pushToken.deleteMany({ where: { userId } });
+
+    return {
+      success: true,
+      message: 'Tu cuenta fue desactivada. Tu historial se conserva. Para reactivarla, escribinos.',
     };
   }
 
