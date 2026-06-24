@@ -4,13 +4,14 @@ import { JugadoresController } from './controllers/jugadores.controller';
 import { ComunidadController } from './controllers/comunidad.controller';
 import { JugadoresService } from './services/jugadores.service';
 import { SeguimientoController } from './controllers/seguimiento.controller';
+import { SeguimientoParejaController } from './controllers/seguimiento-pareja.controller';
 import { SeguimientoService } from './services/seguimiento.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PushModule } from '../push/push.module';
 
 @Module({
   imports: [PrismaModule, PushModule],
-  controllers: [JugadoresController, ComunidadController, SeguimientoController],
+  controllers: [JugadoresController, ComunidadController, SeguimientoController, SeguimientoParejaController],
   providers: [
     JugadoresService,
     SeguimientoService,

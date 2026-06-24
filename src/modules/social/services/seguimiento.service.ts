@@ -323,4 +323,45 @@ export class SeguimientoService {
       },
     };
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // "Seguir una pareja" en un torneo (para alentarla / ver su camino en el
+  // cuadro). Es OTRA cosa que la conexión social: usa la tabla SeguimientoPareja,
+  // NO toca Seguimiento. La unidad es la inscripción (la pareja).
+  // ─────────────────────────────────────────────────────────────
+
+  async seguirPareja(userId: string, inscripcionId: string) {
+    await this.prisma.seguimientoPareja.upsert({
+      where: { userId_inscripcionId: { userId, inscripcionId } },
+      create: { userId, inscripcionId },
+      update: {},
+    });
+    return { success: true, siguiendo: true };
+  }
+
+  async dejarDeSeguirPareja(userId: string, inscripcionId: string) {
+    await this.prisma.seguimientoPareja.deleteMany({ where: { userId, inscripcionId } });
+    return { success: true, siguiendo: false };
+  }
+
+  /**
+   * Parejas que el usuario sigue dentro de un torneo. Devuelve la inscripción y
+   * los ids de sus jugadores (la app resalta el cuadro por jugador).
+   */
+  async parejasSeguidasEnTorneo(userId: string, tournamentId: string) {
+    const seguidas = await this.prisma.seguimientoPareja.findMany({
+      where: { userId },
+      select: { inscripcionId: true },
+    });
+    if (seguidas.length === 0) return [];
+    const ids = seguidas.map((s) => s.inscripcionId);
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: { id: { in: ids }, tournamentId },
+      select: { id: true, jugador1Id: true, jugador2Id: true },
+    });
+    return inscripciones.map((i) => ({
+      inscripcionId: i.id,
+      jugadorIds: [i.jugador1Id, i.jugador2Id].filter((x): x is string => !!x),
+    }));
+  }
 }

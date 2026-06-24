@@ -1366,6 +1366,20 @@ model ReaccionFeed {
   @@map("reacciones_feed")
 }
 
+/// "Seguir una pareja" en un torneo: para alentarla / ver su camino en el cuadro.
+/// NO es la conexión social (ver Seguimiento). La unidad es la inscripción (la
+/// pareja). Sin FK (como ReaccionFeed): filas huérfanas son inofensivas.
+model SeguimientoPareja {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  inscripcionId String   @map("inscripcion_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, inscripcionId])
+  @@index([inscripcionId])
+  @@map("seguimiento_parejas")
+}
+
 /// Token de Expo Push de un dispositivo del usuario (para notificaciones con la
 /// app cerrada). Un usuario puede tener varios (varios dispositivos). El token
 /// es único globalmente (si reaparece en otro user, se reasigna).

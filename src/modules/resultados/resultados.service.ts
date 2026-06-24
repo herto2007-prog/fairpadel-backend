@@ -1009,14 +1009,16 @@ export class ResultadosService {
           });
         }
 
-        // Avisar a los SEGUIDORES de la pareja ganadora ("Seguí a una pareja" 1b).
-        if (ganadoresIds.length) {
+        // Avisar a quienes SIGUEN ESTA PAREJA en el cuadro ("Seguí a una pareja").
+        // Usa SeguimientoPareja (por inscripción), NO la conexión social.
+        const inscripcionGanadoraId = matchActualizado.inscripcionGanadoraId;
+        if (ganadoresIds.length && inscripcionGanadoraId) {
           const [jugadores, seguimientos] = await Promise.all([
             this.prisma.user.findMany({ where: { id: { in: ganadoresIds } }, select: { nombre: true, apellido: true } }),
-            this.prisma.seguimiento.findMany({ where: { seguidoId: { in: ganadoresIds } }, select: { seguidorId: true } }),
+            this.prisma.seguimientoPareja.findMany({ where: { inscripcionId: inscripcionGanadoraId }, select: { userId: true } }),
           ]);
           const apellidos = jugadores.map((j) => j.apellido || j.nombre).join(' / ') || 'Una pareja que seguís';
-          const seguidores = [...new Set(seguimientos.map((s) => s.seguidorId))].filter((id) => !ganadoresIds.includes(id));
+          const seguidores = [...new Set(seguimientos.map((s) => s.userId))].filter((id) => !ganadoresIds.includes(id));
           for (const uid of seguidores) {
             await this.pushService.notificar(uid, {
               tipo: 'SOCIAL',
