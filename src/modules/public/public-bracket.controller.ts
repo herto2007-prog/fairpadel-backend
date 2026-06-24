@@ -170,20 +170,20 @@ export class PublicBracketController {
       include: {
         inscripcion1: {
           include: {
-            jugador1: { select: { nombre: true, apellido: true, fotoUrl: true } },
-            jugador2: { select: { nombre: true, apellido: true, fotoUrl: true } },
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
           },
         },
         inscripcion2: {
           include: {
-            jugador1: { select: { nombre: true, apellido: true, fotoUrl: true } },
-            jugador2: { select: { nombre: true, apellido: true, fotoUrl: true } },
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
           },
         },
         inscripcionGanadora: {
           include: {
-            jugador1: { select: { nombre: true, apellido: true, fotoUrl: true } },
-            jugador2: { select: { nombre: true, apellido: true, fotoUrl: true } },
+            jugador1: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+            jugador2: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
           },
         },
         category: {
