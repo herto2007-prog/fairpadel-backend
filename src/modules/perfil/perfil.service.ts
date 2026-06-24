@@ -166,6 +166,11 @@ export class PerfilService {
       where: { id: userId },
       select: {
         telefono: true,
+        documento: true,
+        genero: true,
+        fechaNacimiento: true,
+        instagram: true,
+        facebook: true,
         consentCheckboxWhatsapp: true,
         consentWhatsappStatus: true,
         consentWhatsappDate: true,
@@ -193,6 +198,11 @@ export class PerfilService {
       data: {
         ...perfil.data,
         telefono: usuario?.telefono,
+        documento: usuario?.documento ?? null,
+        genero: usuario?.genero ?? null,
+        fechaNacimiento: usuario?.fechaNacimiento ?? null,
+        instagram: usuario?.instagram ?? null,
+        facebook: usuario?.facebook ?? null,
         whatsapp: {
           consentCheckbox: usuario?.consentCheckboxWhatsapp || false,
           consentStatus: usuario?.consentWhatsappStatus || null,
