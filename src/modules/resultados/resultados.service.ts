@@ -999,13 +999,30 @@ export class ResultadosService {
       const g = matchActualizado.inscripcionGanadora;
       const torneoNombre = (matchActualizado as any).tournament?.nombre || 'el torneo';
       if (g) {
-        for (const uid of [g.jugador1Id, g.jugador2Id]) {
-          if (uid) {
+        const ganadoresIds = [g.jugador1Id, g.jugador2Id].filter(Boolean) as string[];
+        for (const uid of ganadoresIds) {
+          await this.pushService.notificar(uid, {
+            tipo: 'PARTIDO',
+            titulo: '¡Ganaste tu partido! 🎾',
+            contenido: `Avanzás en ${torneoNombre}. ¡Seguí así!`,
+            enlace: '/mijuego',
+          });
+        }
+
+        // Avisar a los SEGUIDORES de la pareja ganadora ("Seguí a una pareja" 1b).
+        if (ganadoresIds.length) {
+          const [jugadores, seguimientos] = await Promise.all([
+            this.prisma.user.findMany({ where: { id: { in: ganadoresIds } }, select: { nombre: true, apellido: true } }),
+            this.prisma.seguimiento.findMany({ where: { seguidoId: { in: ganadoresIds } }, select: { seguidorId: true } }),
+          ]);
+          const apellidos = jugadores.map((j) => j.apellido || j.nombre).join(' / ') || 'Una pareja que seguís';
+          const seguidores = [...new Set(seguimientos.map((s) => s.seguidorId))].filter((id) => !ganadoresIds.includes(id));
+          for (const uid of seguidores) {
             await this.pushService.notificar(uid, {
-              tipo: 'PARTIDO',
-              titulo: '¡Ganaste tu partido! 🎾',
-              contenido: `Avanzás en ${torneoNombre}. ¡Seguí así!`,
-              enlace: '/mijuego',
+              tipo: 'SOCIAL',
+              titulo: `${apellidos} ganaron 🎾`,
+              contenido: `Avanzan en ${torneoNombre}.`,
+              enlace: '/torneos',
             });
           }
         }
