@@ -142,6 +142,51 @@ export class SeguimientoService {
   }
 
   /**
+   * Eliminar a un seguidor propio ("quitar de mis seguidores").
+   * Distinto a dejar de seguir: acá borro el seguimiento donde OTRO me sigue a MÍ.
+   * @param miId - ID del usuario autenticado (el seguido)
+   * @param seguidorId - ID del seguidor a eliminar
+   */
+  async eliminarSeguidor(miId: string, seguidorId: string) {
+    const seguimiento = await this.prisma.seguimiento.findUnique({
+      where: {
+        seguidorId_seguidoId: {
+          seguidorId,
+          seguidoId: miId,
+        },
+      },
+    });
+
+    if (!seguimiento) {
+      return {
+        success: false,
+        message: 'Este usuario no te sigue',
+      };
+    }
+
+    await this.prisma.seguimiento.delete({
+      where: {
+        seguidorId_seguidoId: {
+          seguidorId,
+          seguidoId: miId,
+        },
+      },
+    });
+
+    this.logger.log(`Usuario ${miId} eliminó al seguidor ${seguidorId}`);
+
+    const seguidoresCount = await this.prisma.seguimiento.count({
+      where: { seguidoId: miId },
+    });
+
+    return {
+      success: true,
+      message: 'Seguidor eliminado',
+      data: { seguidoresCount },
+    };
+  }
+
+  /**
    * Verificar si el usuario autenticado sigue a otro usuario
    * @param seguidorId - ID del posible seguidor (puede ser null si no está autenticado)
    * @param seguidoId - ID del usuario a verificar

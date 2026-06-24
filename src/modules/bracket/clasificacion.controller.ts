@@ -69,6 +69,30 @@ export class ClasificacionController {
   }
 
   /**
+   * GET /jugador/inicio
+   * "Tu actividad": avisos de la plataforma hacia el jugador (lo tuyo).
+   */
+  @Get('jugador/inicio')
+  @UseGuards(JwtAuthGuard)
+  async getInicio(@Req() req: Request) {
+    const userId = (req as any).user?.userId;
+    const items = await this.clasificacionService.obtenerInicioJugador(userId);
+    return { success: true, data: items };
+  }
+
+  /**
+   * GET /comunidad/feed
+   * Feed social: posts + inscripciones de seguidos + resultados de tu categoría.
+   */
+  @Get('comunidad/feed')
+  @UseGuards(JwtAuthGuard)
+  async getFeedComunidad(@Req() req: Request) {
+    const userId = (req as any).user?.userId;
+    const feed = await this.clasificacionService.obtenerFeedComunidad(userId);
+    return { success: true, data: feed };
+  }
+
+  /**
    * POST /jugador/feed/:feedItemId/reaccion
    * "Me gusta" a una publicación del feed (idempotente).
    */

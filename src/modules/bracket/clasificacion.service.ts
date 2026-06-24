@@ -4,6 +4,7 @@ import { ProgramacionService } from '../programacion/programacion.service';
 import { construirOrigenLabels, FASE_LEGIBLE } from './bracket-labels';
 import { ReaccionesFeedService } from './reacciones-feed.service';
 import { esReaccionable } from './reacciones-feed.util';
+import { mapNotificacionAInicio } from './inicio-feed.util';
 
 export type EstadoClasificacion = 
   | 'PENDIENTE' 
@@ -509,7 +510,41 @@ export class ClasificacionService {
    * Fuentes: resultados recientes en su categoría + torneos nuevos en su ciudad +
    * inscripciones recientes de jugadores que sigue.
    */
+  /**
+   * INICIO — "Tu actividad": avisos de la plataforma hacia el jugador.
+   * Lee de la tabla Notificacion (ya poblada por "notificar todo"), descartando
+   * lo social (te siguen / me gusta), que vive solo en la campana / Comunidad.
+   */
+  async obtenerInicioJugador(userId: string) {
+    const notifs = await this.prisma.notificacion.findMany({
+      where: { userId, tipo: { not: 'SOCIAL' } },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true, tipo: true, titulo: true, contenido: true,
+        enlace: true, leida: true, createdAt: true,
+      },
+    });
+    return notifs.map(mapNotificacionAInicio);
+  }
+
+  /**
+   * COMUNIDAD — feed social: posts + inscripciones de seguidos + resultados de
+   * tu categoría. NO incluye "torneos nuevos en tu ciudad" (eso es del Inicio).
+   */
+  async obtenerFeedComunidad(userId: string) {
+    return this.construirFeed(userId, false);
+  }
+
+  /**
+   * GET /jugador/feed (compat): feed mixto histórico. Se mantiene mientras la app
+   * migra a /jugador/inicio + /comunidad/feed; luego se puede retirar.
+   */
   async obtenerFeedJugador(userId: string) {
+    return this.construirFeed(userId, true);
+  }
+
+  private async construirFeed(userId: string, incluirTorneosNuevos: boolean) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { categoriaActualId: true, ciudad: true },
@@ -583,8 +618,9 @@ export class ClasificacionService {
       }
     }
 
-    // 2) Torneos nuevos en tu ciudad (descubrir / FOMO)
-    if (user.ciudad) {
+    // 2) Torneos nuevos en tu ciudad (descubrir / FOMO) — solo en el feed mixto (compat).
+    //    En la separación Inicio/Comunidad esto vive en el Inicio (vía Notificacion).
+    if (incluirTorneosNuevos && user.ciudad) {
       const torneos = await this.prisma.tournament.findMany({
         where: { estado: 'PUBLICADO', ciudad: user.ciudad, createdAt: { gte: desde } },
         orderBy: { createdAt: 'desc' },

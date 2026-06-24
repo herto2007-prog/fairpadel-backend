@@ -39,6 +39,16 @@ export class SeguimientoController {
   }
 
   /**
+   * DELETE /users/:id/seguidor
+   * Eliminar al usuario :id de mis seguidores (requiere autenticación).
+   */
+  @Delete(':id/seguidor')
+  @UseGuards(JwtAuthGuard)
+  async eliminarSeguidor(@Param('id') seguidorId: string, @Request() req: any) {
+    return this.seguimientoService.eliminarSeguidor(req.user.userId, seguidorId);
+  }
+
+  /**
    * GET /users/:id/siguiendo
    * Verificar si el usuario autenticado sigue al usuario :id
    * Público pero devuelve false si no está autenticado
