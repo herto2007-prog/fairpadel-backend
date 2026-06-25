@@ -5,6 +5,7 @@ import { construirOrigenLabels, FASE_LEGIBLE } from './bracket-labels';
 import { ReaccionesFeedService } from './reacciones-feed.service';
 import { esReaccionable } from './reacciones-feed.util';
 import { mapNotificacionAInicio } from './inicio-feed.util';
+import { topCompanero, topRival, MatchNorm, JugadorRef } from './perfil-social.util';
 
 export type EstadoClasificacion = 
   | 'PENDIENTE' 
@@ -526,6 +527,59 @@ export class ClasificacionService {
       },
     });
     return notifs.map(mapNotificacionAInicio);
+  }
+
+  /**
+   * Ficha del jugador: su compañero más frecuente y su rival más duro.
+   */
+  async companerosRivales(jugadorId: string) {
+    const sel = { id: true, nombre: true, apellido: true, fotoUrl: true };
+
+    const inscripciones = await this.prisma.inscripcion.findMany({
+      where: { OR: [{ jugador1Id: jugadorId }, { jugador2Id: jugadorId }], estado: { not: 'CANCELADA' } },
+      select: { id: true, jugador1Id: true, jugador2Id: true },
+    });
+    const misInscIds = inscripciones.map((i) => i.id);
+
+    // Compañero
+    let companero: { jugador: JugadorRef; veces: number } | null = null;
+    const compTop = topCompanero(inscripciones, jugadorId);
+    if (compTop) {
+      const u = await this.prisma.user.findUnique({ where: { id: compTop.partnerId }, select: sel });
+      if (u) companero = { jugador: u, veces: compTop.veces };
+    }
+
+    // Rival
+    let rival: { jugador: JugadorRef; jugadas: number; perdidas: number } | null = null;
+    if (misInscIds.length > 0) {
+      const matches = await this.prisma.match.findMany({
+        where: {
+          estado: { in: ['FINALIZADO', 'WO', 'RETIRADO', 'DESCALIFICADO'] },
+          OR: [{ inscripcion1Id: { in: misInscIds } }, { inscripcion2Id: { in: misInscIds } }],
+        },
+        select: {
+          inscripcion1Id: true,
+          inscripcion2Id: true,
+          inscripcionGanadoraId: true,
+          inscripcion1: { select: { jugador1: { select: sel }, jugador2: { select: sel } } },
+          inscripcion2: { select: { jugador1: { select: sel }, jugador2: { select: sel } } },
+        },
+      });
+      const miSet = new Set(misInscIds);
+      const norm: MatchNorm[] = [];
+      for (const m of matches) {
+        const yoEn1 = !!m.inscripcion1Id && miSet.has(m.inscripcion1Id);
+        const rivalInscId = yoEn1 ? m.inscripcion2Id : m.inscripcion1Id;
+        const rivalInsc = yoEn1 ? m.inscripcion2 : m.inscripcion1;
+        if (!rivalInscId || !rivalInsc) continue;
+        const rivales = [rivalInsc.jugador1, rivalInsc.jugador2].filter((x) => !!x) as JugadorRef[];
+        norm.push({ rivales, perdi: m.inscripcionGanadoraId === rivalInscId });
+      }
+      const rTop = topRival(norm);
+      if (rTop) rival = { jugador: rTop.rival, jugadas: rTop.jugadas, perdidas: rTop.perdidas };
+    }
+
+    return { companero, rival };
   }
 
   /**

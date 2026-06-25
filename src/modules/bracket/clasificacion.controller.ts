@@ -81,6 +81,17 @@ export class ClasificacionController {
   }
 
   /**
+   * GET /jugador/:id/companeros-rivales
+   * Compañero más frecuente y rival más duro de un jugador (para su ficha).
+   */
+  @Get('jugador/:id/companeros-rivales')
+  @UseGuards(JwtAuthGuard)
+  async getCompanerosRivales(@Param('id') id: string) {
+    const data = await this.clasificacionService.companerosRivales(id);
+    return { success: true, data };
+  }
+
+  /**
    * GET /comunidad/feed
    * Feed social: posts + inscripciones de seguidos + resultados de tu categoría.
    */

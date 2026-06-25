@@ -61,6 +61,26 @@ export class SeguimientoController {
   }
 
   /**
+   * GET /users/:id/relacion
+   * ¿Yo sigo a :id? ¿:id me sigue? (chip "Te sigue" en la ficha)
+   */
+  @Get(':id/relacion')
+  @UseGuards(JwtAuthGuard)
+  async relacion(@Param('id') usuarioId: string, @Request() req: any) {
+    return this.seguimientoService.relacion(req.user.userId, usuarioId);
+  }
+
+  /**
+   * GET /users/:id/seguidores-en-comun
+   * Jugadores que yo sigo y que además siguen a :id.
+   */
+  @Get(':id/seguidores-en-comun')
+  @UseGuards(JwtAuthGuard)
+  async seguidoresEnComun(@Param('id') usuarioId: string, @Request() req: any) {
+    return this.seguimientoService.seguidoresEnComun(req.user.userId, usuarioId);
+  }
+
+  /**
    * GET /users/:id/seguidores
    * Obtener lista de seguidores de un usuario
    */

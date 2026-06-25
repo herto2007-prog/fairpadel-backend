@@ -324,6 +324,49 @@ export class SeguimientoService {
     };
   }
 
+  /**
+   * Relación entre el usuario autenticado y otro: si yo lo sigo y si él me sigue
+   * (para el chip "Te sigue" / "Se siguen" en la ficha).
+   */
+  async relacion(miId: string, otroId: string) {
+    if (!miId || miId === otroId) return { siguiendo: false, teSigue: false };
+    const [yo, el] = await Promise.all([
+      this.prisma.seguimiento.findUnique({
+        where: { seguidorId_seguidoId: { seguidorId: miId, seguidoId: otroId } },
+      }),
+      this.prisma.seguimiento.findUnique({
+        where: { seguidorId_seguidoId: { seguidorId: otroId, seguidoId: miId } },
+      }),
+    ]);
+    return { siguiendo: !!yo, teSigue: !!el };
+  }
+
+  /**
+   * "Seguido por X, Y…": jugadores que YO sigo y que además siguen a :otroId.
+   * Prueba social en la ficha. Devuelve una muestra + total.
+   */
+  async seguidoresEnComun(miId: string, otroId: string) {
+    if (!miId || miId === otroId) return { total: 0, muestra: [] };
+    const yoSigo = await this.prisma.seguimiento.findMany({
+      where: { seguidorId: miId },
+      select: { seguidoId: true },
+    });
+    const yoSigoIds = yoSigo.map((s) => s.seguidoId).filter((x) => x !== otroId);
+    if (yoSigoIds.length === 0) return { total: 0, muestra: [] };
+
+    const comunes = await this.prisma.seguimiento.findMany({
+      where: { seguidoId: otroId, seguidorId: { in: yoSigoIds } },
+      select: {
+        seguidor: { select: { id: true, nombre: true, apellido: true, fotoUrl: true } },
+      },
+      take: 50,
+    });
+    return {
+      total: comunes.length,
+      muestra: comunes.slice(0, 3).map((c) => c.seguidor),
+    };
+  }
+
   // ─────────────────────────────────────────────────────────────
   // "Seguir una pareja" en un torneo (para alentarla / ver su camino en el
   // cuadro). Es OTRA cosa que la conexión social: usa la tabla SeguimientoPareja,
