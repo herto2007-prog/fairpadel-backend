@@ -360,8 +360,14 @@ export class PublicInscripcionesController {
       throw new BadRequestException('El torneo no está abierto para inscripciones');
     }
 
-    // Nota: Ya no validamos fecha límite. Las inscripciones se cierran manualmente
-    // cuando el organizador cierra las categorías o realiza el sorteo.
+    // Fecha límite: coherente con lo que muestra el detalle público (/t/:slug).
+    // Si venció, se rechaza (igual que el botón se oculta). El cierre manual del
+    // organizador (cerrar categoría / sorteo) sigue funcionando para cerrar antes.
+    // El alta MANUAL del organizador usa otro endpoint y no pasa por acá.
+    const hoyPY = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    if (tournament.fechaLimiteInscr && tournament.fechaLimiteInscr < hoyPY) {
+      throw new BadRequestException('Las inscripciones para este torneo están cerradas (venció la fecha límite)');
+    }
 
     // 2. Validar categoría está en el torneo
     if (tournament.categorias.length === 0) {

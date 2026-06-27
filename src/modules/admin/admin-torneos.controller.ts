@@ -26,6 +26,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TorneoGestionGuard } from '../../common/guards/torneo-gestion.guard';
+import { ESTADOS_TERMINALES } from '../bracket/match-estados';
 
 // Validador custom para fechas futuras
 @ValidatorConstraint({ name: 'isFutureDate', async: false })
@@ -356,6 +357,7 @@ export class AdminTorneosController {
         costoInscripcion: true,
         flyerUrl: true,
         organizador: { select: { nombre: true, apellido: true } },
+        _count: { select: { categorias: true } },
       },
     });
     if (!torneo) {
@@ -373,6 +375,7 @@ export class AdminTorneosController {
     if (!torneo.sedeId) faltan.push('sede');
     if (!torneo.costoInscripcion || Number(torneo.costoInscripcion) <= 0) faltan.push('costo de inscripción');
     if (!torneo.flyerUrl) faltan.push('flyer');
+    if (!torneo._count.categorias) faltan.push('al menos una categoría');
     if (faltan.length > 0) {
       throw new BadRequestException(
         `Antes de enviar a aprobación, completá: ${faltan.join(', ')}.`,
@@ -904,6 +907,25 @@ export class AdminTorneosController {
 
     if (!tournamentCategory) {
       throw new NotFoundException('Categoría no encontrada en este torneo');
+    }
+
+    // No finalizar con partidos sin resultado: finalizar calcula puntos de ranking,
+    // así que un partido pendiente ensuciaría el cálculo. Solo cuentan los partidos
+    // jugables (con ambas parejas asignadas) que aún no tienen un estado terminal.
+    if (tournamentCategory.fixtureVersionId) {
+      const pendientes = await this.prisma.match.count({
+        where: {
+          fixtureVersionId: tournamentCategory.fixtureVersionId,
+          estado: { notIn: ESTADOS_TERMINALES as unknown as any },
+          inscripcion1Id: { not: null },
+          inscripcion2Id: { not: null },
+        },
+      });
+      if (pendientes > 0) {
+        throw new BadRequestException(
+          `No se puede finalizar: hay ${pendientes} partido(s) sin resultado. Cargá los resultados (o WO/retiro) antes de finalizar la categoría.`,
+        );
+      }
     }
 
     // El circuito/ranking es OPCIONAL: si el torneo está en un circuito aprobado
