@@ -963,6 +963,50 @@ export class AdminTorneosController {
   }
 
   /**
+   * GET /admin/torneos/:id/pre-finalizacion
+   * Chequeo informativo ANTES de "Marcar terminado": cuántos partidos quedan
+   * sin jugar, cuántas categorías sin finalizar, y la comisión que se fijaría.
+   * No cambia nada; el front lo usa para una advertencia honesta (prevenir
+   * que el organizador cierre el torneo de más).
+   */
+  @UseGuards(TorneoGestionGuard)
+  @Get(':id/pre-finalizacion')
+  async preFinalizacion(@Param('id') tournamentId: string) {
+    const cats = await this.prisma.tournamentCategory.findMany({
+      where: { tournamentId },
+      select: { fixtureVersionId: true, estado: true },
+    });
+    const categoriasTotal = cats.length;
+    const categoriasSinFinalizar = cats.filter((c) => c.estado !== 'FINALIZADA').length;
+    const fixtureIds = cats.map((c) => c.fixtureVersionId).filter((x): x is string => !!x);
+
+    let partidosPendientes = 0;
+    if (fixtureIds.length > 0) {
+      partidosPendientes = await this.prisma.match.count({
+        where: {
+          fixtureVersionId: { in: fixtureIds },
+          estado: { notIn: ESTADOS_TERMINALES as unknown as any },
+          inscripcion1Id: { not: null },
+          inscripcion2Id: { not: null },
+        },
+      });
+    }
+
+    const comision = await this.comisionService.calcularComisionReal(tournamentId);
+
+    return {
+      success: true,
+      data: {
+        categoriasTotal,
+        categoriasSinFinalizar,
+        partidosPendientes,
+        comisionEstimada: comision.monto,
+        jugadores: comision.jugaronCount,
+      },
+    };
+  }
+
+  /**
    * POST /admin/torneos/:id/finalizar
    * Marca el torneo como TERMINADO. Fija la comisión a cobrar según los
    * jugadores que REALMENTE jugaron (calcularComisionReal) y avisa al
