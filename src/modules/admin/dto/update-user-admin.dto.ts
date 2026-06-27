@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsEmail, Matches } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsEmail, IsBoolean, Matches } from 'class-validator';
 import { Gender, UserStatus } from '@prisma/client';
 
 export class UpdateUserAdminDto {
@@ -48,4 +48,9 @@ export class UpdateUserAdminDto {
   @IsOptional()
   @IsString()
   motivoCambioCategoria?: string;
+
+  // Organizador de confianza: publica torneos sin pasar por aprobación.
+  @IsOptional()
+  @IsBoolean()
+  autoPublica?: boolean;
 }

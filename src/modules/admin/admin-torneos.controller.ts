@@ -275,6 +275,13 @@ export class AdminTorneosController {
       },
     });
 
+    // Al aprobar, el organizador queda de confianza: sus próximos torneos
+    // (con datos completos) se publican solos, sin pasar por revisión.
+    await this.prisma.user.update({
+      where: { id: torneo.organizadorId },
+      data: { autoPublica: true },
+    });
+
     // Avisar a los suscritos a "torneos en mi ciudad" (best-effort)
     await this.alertasService.notificarNuevoTorneo(torneo.id);
 
@@ -356,7 +363,8 @@ export class AdminTorneosController {
         sedeId: true,
         costoInscripcion: true,
         flyerUrl: true,
-        organizador: { select: { nombre: true, apellido: true } },
+        organizadorId: true,
+        organizador: { select: { nombre: true, apellido: true, autoPublica: true } },
         _count: { select: { categorias: true } },
       },
     });
@@ -381,15 +389,66 @@ export class AdminTorneosController {
         `Antes de enviar a aprobación, completá: ${faltan.join(', ')}.`,
       );
     }
+
+    const orgNombre =
+      [torneo.organizador?.nombre, torneo.organizador?.apellido].filter(Boolean).join(' ') ||
+      'Un organizador';
+
+    // ── Organizador de confianza: publica directo, sin esperar al admin ──
+    if (torneo.organizador?.autoPublica) {
+      const publicado = await this.prisma.tournament.update({
+        where: { id },
+        data: { estado: 'PUBLICADO' },
+      });
+
+      // Avisar al organizador que ya está público.
+      await this.prisma.notificacion.create({
+        data: {
+          userId: torneo.organizadorId,
+          tipo: 'TORNEO',
+          titulo: '¡Tu torneo ya está público!',
+          contenido: `"${torneo.nombre}" ya es visible y recibe inscriptos.`,
+          enlace: `/mis-torneos/${id}/gestionar`,
+        },
+      });
+
+      // Avisar a los suscritos a "torneos en mi ciudad" (best-effort).
+      await this.alertasService.notificarNuevoTorneo(id);
+
+      // Oversight: avisar a los admins que se auto-publicó (pueden bajarlo si algo está mal).
+      const admins = await this.prisma.user.findMany({
+        where: { roles: { some: { role: { nombre: 'admin' } } } },
+        select: { id: true },
+      });
+      await Promise.all(
+        admins.map((admin) =>
+          this.prisma.notificacion.create({
+            data: {
+              userId: admin.id,
+              tipo: 'TORNEO',
+              titulo: 'Torneo publicado (organizador de confianza)',
+              contenido: `${orgNombre} publicó "${torneo.nombre}" (${torneo.ciudad}). Se publicó solo; revisalo si querés.`,
+              enlace: '/admin',
+            },
+          }),
+        ),
+      );
+
+      return {
+        success: true,
+        message: 'Tu torneo ya está público',
+        publicado: true,
+        torneo: publicado,
+      };
+    }
+
+    // ── Resto: a revisión del admin (como hasta ahora) ──
     const actualizado = await this.prisma.tournament.update({
       where: { id },
       data: { estado: 'PENDIENTE_APROBACION' },
     });
 
     // Avisar a los admins (in-app + email) para que aprueben sin demora.
-    const orgNombre =
-      [torneo.organizador?.nombre, torneo.organizador?.apellido].filter(Boolean).join(' ') ||
-      'Un organizador';
     const admins = await this.prisma.user.findMany({
       where: { roles: { some: { role: { nombre: 'admin' } } } },
       select: { id: true, email: true, nombre: true },
@@ -420,6 +479,7 @@ export class AdminTorneosController {
     return {
       success: true,
       message: 'Torneo enviado a aprobación de FairPadel',
+      publicado: false,
       torneo: actualizado,
     };
   }

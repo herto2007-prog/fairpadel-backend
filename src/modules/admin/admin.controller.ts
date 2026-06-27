@@ -255,6 +255,7 @@ export class AdminController {
     if (dto.fechaNacimiento !== undefined) updateData.fechaNacimiento = dto.fechaNacimiento || null;
     if (dto.genero !== undefined) updateData.genero = dto.genero;
     if (dto.estado !== undefined) updateData.estado = dto.estado;
+    if (dto.autoPublica !== undefined) updateData.autoPublica = dto.autoPublica;
 
     // Cambio de categoría
     if (dto.categoriaActualId !== undefined) {

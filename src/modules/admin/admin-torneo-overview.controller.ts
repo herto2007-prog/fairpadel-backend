@@ -197,7 +197,7 @@ export class AdminTorneoOverviewController {
           categorias: { include: { category: true } },
           modalidades: { include: { modalidadConfig: true } },
           organizador: {
-            select: { id: true, nombre: true, apellido: true, email: true },
+            select: { id: true, nombre: true, apellido: true, email: true, autoPublica: true },
           },
         },
       }),
@@ -406,6 +406,8 @@ export class AdminTorneoOverviewController {
           flyerUrl: torneo.flyerUrl,
           // @ts-ignore
           sede: torneo.sedePrincipal,
+          // Organizador de confianza: al "enviar a aprobación" publica directo.
+          publicaDirecto: !!torneo.organizador?.autoPublica,
           diasHastaInicio,
           diasHastaCierre,
         },

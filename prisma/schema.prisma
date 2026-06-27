@@ -335,6 +335,10 @@ model User {
   categoriaActualId       String?      @map("categoria_actual_id")
   esPremium               Boolean      @default(false) @map("es_premium")
   fechaFinPremium         String?      @map("fecha_fin_premium") // YYYY-MM-DD - Timestamp de sistema, se mantiene similar
+  // Organizador de confianza: sus torneos (con datos completos) se publican
+  // solos, sin pasar por aprobación del admin. Se prende al aprobar su 1er
+  // torneo, o a mano desde el panel. NO afecta la comisión.
+  autoPublica             Boolean      @default(false) @map("auto_publica")
   stripeCustomerId        String?      @map("stripe_customer_id")
   stripeSubscriptionId    String?      @map("stripe_subscription_id")
   notificacionesEmail     Boolean      @default(true) @map("notificaciones_email")
