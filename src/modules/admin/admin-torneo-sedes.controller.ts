@@ -153,6 +153,20 @@ export class AdminTorneoSedesController {
         }
       }
 
+      // Coherencia: la PRIMERA sede asignada queda como sede principal del torneo
+      // (Tournament.sedeId es lo que mira el candado para publicar). Antes esta
+      // mitad no se seteaba por este camino → el torneo no podía salir público.
+      const torneoActual = await this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { sedeId: true },
+      });
+      if (!torneoActual?.sedeId) {
+        await this.prisma.tournament.update({
+          where: { id: tournamentId },
+          data: { sedeId: dto.sedeId },
+        });
+      }
+
       return {
         success: true,
         message: `Sede agregada con ${canchasCreadas.length} canchas`,
@@ -206,6 +220,19 @@ export class AdminTorneoSedesController {
         await this.prisma.torneoSede.update({
           where: { id: sedesRestantes[i].id },
           data: { orden: i },
+        });
+      }
+
+      // Coherencia: si la sede quitada era la principal, pasa a serlo la que
+      // queda primera (o queda sin principal si no hay ninguna).
+      const torneoActual = await this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { sedeId: true },
+      });
+      if (torneoActual?.sedeId === sedeId) {
+        await this.prisma.tournament.update({
+          where: { id: tournamentId },
+          data: { sedeId: sedesRestantes[0]?.sedeId ?? null },
         });
       }
 
@@ -308,6 +335,19 @@ export class AdminTorneoSedesController {
           orden: ordenActual,
         },
       });
+
+      // Coherencia: si la sede que se cambió era la principal, la principal
+      // pasa a ser la nueva.
+      const torneoActual = await this.prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { sedeId: true },
+      });
+      if (torneoActual?.sedeId === sedeIdActual) {
+        await this.prisma.tournament.update({
+          where: { id: tournamentId },
+          data: { sedeId: dto.nuevaSedeId },
+        });
+      }
 
       // 7. Agregar canchas de la nueva sede
       const canchasAgregadas = [];
