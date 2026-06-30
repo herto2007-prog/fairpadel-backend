@@ -3,9 +3,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { BracketService } from './bracket.service';
 import { horaAMinutos } from '../../common/utils/time-helpers';
 import { obtenerFasesParaDia } from './fases-dia.util';
+import { planDiasPorFormato } from './presets-agenda';
 import {
   ConfigurarFinalesDto,
   ConfigurarDiaJuegoDto,
+  AplicarPresetDto,
   CalculoSlotsResponse,
 } from './dto/canchas-sorteo.dto';
 
@@ -176,6 +178,58 @@ export class TorneoCalendarioService {
         slotsGenerados,
         canchas: dto.canchasIds.length,
       },
+    };
+  }
+
+  /**
+   * PASO 1.b (preset): aplica un "paquete predeterminado" de agenda por formato.
+   * Autogenera los días (ventana + fasesPermitidas) según el formato y reemplaza
+   * los días existentes. Reusa configurarDiaJuego (que genera los slots).
+   */
+  async aplicarPreset(dto: AplicarPresetDto) {
+    const torneo = await this.prisma.tournament.findUnique({ where: { id: dto.tournamentId } });
+    if (!torneo) throw new NotFoundException('Torneo no encontrado');
+
+    const canchas = await this.prisma.torneoCancha.findMany({
+      where: { tournamentId: dto.tournamentId, activa: true },
+      select: { id: true },
+    });
+    if (canchas.length === 0) {
+      throw new BadRequestException('Primero asigná al menos una cancha al torneo');
+    }
+    const canchasIds = canchas.map((c) => c.id);
+
+    const minutosSlot = dto.minutosSlot ?? 90;
+    const plan = planDiasPorFormato(dto.formato, dto.fechas, minutosSlot);
+    if (plan.length === 0) throw new BadRequestException('No hay fechas válidas');
+
+    // Reemplazar los días existentes (eliminarDia bloquea si ya hay partidos programados).
+    const diasExistentes = await this.prisma.torneoDisponibilidadDia.findMany({
+      where: { tournamentId: dto.tournamentId },
+      select: { id: true },
+    });
+    for (const d of diasExistentes) await this.eliminarDia(d.id);
+
+    let totalSlots = 0;
+    const dias: { fecha: string; horaInicio: string; horaFin: string; fasesPermitidas: string[] }[] = [];
+    for (const p of plan) {
+      const r = await this.configurarDiaJuego({
+        tournamentId: dto.tournamentId,
+        fecha: p.fecha,
+        horaInicio: p.horaInicio,
+        horaFin: p.horaFin,
+        minutosSlot: p.minutosSlot,
+        canchasIds,
+        fasesPermitidas: p.fasesPermitidas,
+      } as ConfigurarDiaJuegoDto);
+      totalSlots += (r.data?.slotsGenerados as number) || 0;
+      dias.push({ fecha: p.fecha, horaInicio: p.horaInicio, horaFin: p.horaFin, fasesPermitidas: p.fasesPermitidas });
+    }
+
+    return {
+      success: true,
+      message: `Agenda '${dto.formato}' aplicada: ${dias.length} día(s), ${totalSlots} slots`,
+      data: { formato: dto.formato, dias, totalSlots, canchas: canchasIds.length },
     };
   }
 

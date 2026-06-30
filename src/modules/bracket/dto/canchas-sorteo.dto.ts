@@ -1,5 +1,6 @@
-import { IsString, IsNumber, IsOptional, IsArray, IsBoolean, Min, Max, ArrayMinSize, Matches } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, IsBoolean, IsIn, Min, Max, ArrayMinSize, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { FormatoTorneo } from '../presets-agenda';
 
 /**
  * DTO para configurar horarios de semifinales y finales (Paso 1.a)
@@ -163,4 +164,29 @@ export interface SorteoMasivoResponse {
     mensaje: string;
     solucion: string;
   };
+}
+
+/**
+ * Aplicar un PRESET de agenda por formato: autogenera los días de juego (con su
+ * ventana horaria y fasesPermitidas) según el formato elegido. Reemplaza los días
+ * existentes (si no tienen partidos programados). Las canchas se toman del torneo.
+ */
+export class AplicarPresetDto {
+  @IsString()
+  tournamentId: string;
+
+  @IsIn(['FINDE', 'EXPRESS', 'LIGA', 'NOCTURNO'])
+  formato: FormatoTorneo;
+
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMinSize(1)
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { each: true, message: 'Cada fecha debe ser YYYY-MM-DD' })
+  fechas: string[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(30)
+  @Max(240)
+  minutosSlot?: number;
 }

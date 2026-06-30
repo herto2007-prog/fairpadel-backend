@@ -10,6 +10,7 @@ import { PartidoSlotsService } from './partido-slots.service';
 import {
   ConfigurarFinalesDto,
   ConfigurarDiaJuegoDto,
+  AplicarPresetDto,
   CerrarInscripcionesSortearDto,
 } from './dto/canchas-sorteo.dto';
 
@@ -40,6 +41,15 @@ export class CanchasSorteoController {
   @Post('dias')
   async configurarDiaJuego(@Body() dto: ConfigurarDiaJuegoDto) {
     return this.torneoCalendarioService.configurarDiaJuego(dto);
+  }
+
+  /**
+   * PASO 1.b (preset): aplica un paquete de agenda por formato (autogenera los días).
+   * POST /admin/canchas-sorteo/dias/aplicar-preset
+   */
+  @Post('dias/aplicar-preset')
+  async aplicarPreset(@Body() dto: AplicarPresetDto) {
+    return this.torneoCalendarioService.aplicarPreset(dto);
   }
 
   /**
