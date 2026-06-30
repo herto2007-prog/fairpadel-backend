@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { horaAMinutos } from '../../common/utils/time-helpers';
+import { DESCANSO_MIN } from './agenda-config';
 
 /**
  * Gestión de slots (horarios/canchas) de partidos: consultar disponibles,
@@ -62,17 +63,20 @@ export class PartidoSlotsService {
       for (const origenId of [partido.partidoOrigen1Id, partido.partidoOrigen2Id].filter(Boolean)) {
         const origen = await this.prisma.match.findUnique({
           where: { id: origenId! },
-          select: { fechaProgramada: true, horaProgramada: true },
+          select: { fechaProgramada: true, horaProgramada: true, horaFinEstimada: true },
         });
 
         if (origen?.fechaProgramada === diaFecha && origen.horaProgramada) {
-          const horaFinOrigen = horaAMinutos(origen.horaProgramada) + 70;
+          // Misma regla que el asignador/auditor: fin REAL del origen + DESCANSO_MIN.
+          const horaFinOrigen = origen.horaFinEstimada
+            ? horaAMinutos(origen.horaFinEstimada)
+            : horaAMinutos(origen.horaProgramada) + DESCANSO_MIN;
           const horaInicioSlot = horaAMinutos(slot.horaInicio);
           const descansoMin = horaInicioSlot - horaFinOrigen;
 
-          if (descansoMin < 120) {
+          if (descansoMin < DESCANSO_MIN) {
             esValido = false;
-            restriccion = `Descanso insuficiente: ${descansoMin}min (mínimo 120min)`;
+            restriccion = `Descanso insuficiente: ${descansoMin}min (mínimo ${DESCANSO_MIN}min)`;
             break;
           }
         }
