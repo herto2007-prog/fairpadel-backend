@@ -11,6 +11,7 @@ import {
   ConfigurarFinalesDto,
   ConfigurarDiaJuegoDto,
   AplicarPresetDto,
+  AtrasarAgendaDto,
   CerrarInscripcionesSortearDto,
 } from './dto/canchas-sorteo.dto';
 
@@ -174,5 +175,17 @@ export class CanchasSorteoController {
   @Post(':tournamentId/reprogramar-general')
   async reprogramarGeneral(@Param('tournamentId') tournamentId: string) {
     return this.canchasSorteoService.reprogramarGeneral(tournamentId);
+  }
+
+  /**
+   * Atrasar la agenda de un día (lluvia/demora): corre los partidos no jugados.
+   * POST /admin/canchas-sorteo/:tournamentId/atrasar-agenda
+   */
+  @Post(':tournamentId/atrasar-agenda')
+  async atrasarAgenda(
+    @Param('tournamentId') tournamentId: string,
+    @Body() dto: AtrasarAgendaDto,
+  ) {
+    return this.canchasSorteoService.atrasarAgenda(tournamentId, dto.fecha, dto.minutos);
   }
 }

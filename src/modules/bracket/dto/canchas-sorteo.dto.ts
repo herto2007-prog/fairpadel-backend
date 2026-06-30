@@ -190,3 +190,18 @@ export class AplicarPresetDto {
   @Max(240)
   minutosSlot?: number;
 }
+
+/**
+ * Atrasar la agenda de un día (lluvia/demora): corre los partidos no jugados
+ * `minutos` más tarde, conservando cancha y orden.
+ */
+export class AtrasarAgendaDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe ser YYYY-MM-DD' })
+  fecha: string;
+
+  @IsNumber()
+  @Min(1)
+  @Max(600)
+  minutos: number;
+}

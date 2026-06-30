@@ -10,6 +10,7 @@ import {
 import { Prisma, CategoriaEstado, FixtureVersionEstado, MatchStatus } from '@prisma/client';
 import { ESTADOS_TERMINALES, esTerminal } from './match-estados';
 import { MINIMO_PAREJAS_SORTEO } from './bracket.constants';
+import { horaAMinutos } from '../../common/utils/time-helpers';
 
 @Injectable()
 export class CanchasSorteoService {
@@ -590,6 +591,103 @@ export class CanchasSorteoService {
       asignados: resultado.totalPartidosAsignados,
       sinFranja: resultado.partidosSinSlot,
       distribucionPorDia: resultado.distribucionPorDia,
+    };
+  }
+
+  /**
+   * ATRASAR la agenda de un día (lluvia / demora): corre los partidos NO jugados
+   * de `fecha` `minutos` más tarde, conservando cancha y orden. A diferencia de
+   * reprogramar-general (que rearma de cero), esto solo desliza el horario: cada
+   * partido va al PRIMER slot libre de su cancha a partir de su hora + `minutos`.
+   * Los ya jugados son anclas (no se mueven). El que no entra antes del cierre
+   * del día queda SIN horario (no se inventa) para reubicarlo a mano.
+   */
+  async atrasarAgenda(tournamentId: string, fecha: string, minutos: number) {
+    if (!minutos || minutos <= 0) {
+      throw new BadRequestException('Indicá cuántos minutos se atrasó (mayor a 0)');
+    }
+    const dia = await this.prisma.torneoDisponibilidadDia.findFirst({
+      where: { tournamentId, fecha },
+    });
+    if (!dia) throw new BadRequestException('No hay un día configurado para esa fecha');
+
+    // Partidos pendientes (no jugados) de ese día, con horario y cancha.
+    const pendientes = await this.prisma.match.findMany({
+      where: {
+        tournamentId,
+        fechaProgramada: fecha,
+        estado: { notIn: [...ESTADOS_TERMINALES] },
+        torneoCanchaId: { not: null },
+        horaProgramada: { not: null },
+      },
+      select: { id: true, torneoCanchaId: true, horaProgramada: true, ronda: true },
+    });
+    if (pendientes.length === 0) {
+      return { success: true, movidos: 0, sinHorario: 0, message: 'No hay partidos pendientes ese día' };
+    }
+
+    // Liberar sus franjas y limpiar su horario (conservan la cancha).
+    for (const m of pendientes) {
+      await this.prisma.torneoSlot.updateMany({
+        where: { torneoCanchaId: m.torneoCanchaId!, horaInicio: m.horaProgramada!, disponibilidad: { fecha } },
+        data: { estado: 'LIBRE', matchId: null },
+      });
+    }
+    await this.prisma.match.updateMany({
+      where: { id: { in: pendientes.map((p) => p.id) } },
+      data: { horaProgramada: null, horaFinEstimada: null },
+    });
+
+    // Franjas libres del día (ya con las liberadas), por cancha.
+    const slots = await this.prisma.torneoSlot.findMany({
+      where: { disponibilidadId: dia.id, estado: 'LIBRE' },
+      select: { id: true, torneoCanchaId: true, horaInicio: true, horaFin: true },
+    });
+    const usados = new Set<string>();
+
+    // Procesar por cancha, en el ORDEN horario original.
+    const porCancha = new Map<string, typeof pendientes>();
+    for (const m of pendientes) {
+      const arr = porCancha.get(m.torneoCanchaId!) || [];
+      arr.push(m);
+      porCancha.set(m.torneoCanchaId!, arr);
+    }
+
+    let movidos = 0;
+    const sinHorario: string[] = [];
+    for (const [canchaId, ms] of porCancha) {
+      ms.sort((a, b) => horaAMinutos(a.horaProgramada!) - horaAMinutos(b.horaProgramada!));
+      let cursorMin = -1; // el siguiente debe ir después del anterior ya colocado
+      for (const m of ms) {
+        const objetivo = Math.max(horaAMinutos(m.horaProgramada!) + minutos, cursorMin);
+        const cand = slots
+          .filter((s) => s.torneoCanchaId === canchaId && !usados.has(s.id) && horaAMinutos(s.horaInicio) >= objetivo)
+          .sort((a, b) => horaAMinutos(a.horaInicio) - horaAMinutos(b.horaInicio))[0];
+        if (!cand) {
+          sinHorario.push(m.id);
+          continue;
+        }
+        usados.add(cand.id);
+        await this.prisma.torneoSlot.update({
+          where: { id: cand.id },
+          data: { estado: 'OCUPADO', matchId: m.id },
+        });
+        await this.prisma.match.update({
+          where: { id: m.id },
+          data: { horaProgramada: cand.horaInicio, horaFinEstimada: cand.horaFin },
+        });
+        cursorMin = horaAMinutos(cand.horaInicio) + 1;
+        movidos++;
+      }
+    }
+
+    return {
+      success: true,
+      movidos,
+      sinHorario: sinHorario.length,
+      message:
+        `Se corrieron ${movidos} partido(s) del ${fecha}` +
+        (sinHorario.length ? `; ${sinHorario.length} no entraron antes del cierre y quedaron sin horario para reubicar.` : '.'),
     };
   }
 
