@@ -117,6 +117,26 @@ export class AsignacionSlotsService {
 
     const idsNoBye = new Set(partidos.map((p) => p.id));
 
+    // Inscripción → PERSONAS (jugador1/jugador2). El descanso y el tope/día se
+    // cuentan por PERSONA, no por pareja, para que un mismo jugador en 2 categorías
+    // tenga descanso entre sus partidos de ambas. (Si no hay mapeo, cae a la propia
+    // inscripción como clave → comportamiento idéntico al anterior.)
+    const personasDeInscripcion = new Map<string, string[]>();
+    for (const c of categoriasData) {
+      for (const ins of c.inscripciones || []) {
+        const personas = [ins.jugador1Id, ins.jugador2Id].filter((x: any): x is string => !!x);
+        personasDeInscripcion.set(ins.id, personas.length ? personas : [ins.id]);
+      }
+    }
+    const personasDe = (insIds: (string | null)[]): string[] => {
+      const out = new Set<string>();
+      for (const insId of insIds) {
+        if (!insId) continue;
+        for (const persona of personasDeInscripcion.get(insId) || [insId]) out.add(persona);
+      }
+      return [...out];
+    };
+
     // FIJOS = partidos ya jugados: son anclas, no se mueven. Su franja sigue OCUPADA
     // y su hora real alimenta las dependencias/descanso de los que vienen después.
     // (Para el sorteo inicial no hay jugados → fijos vacío → comportamiento idéntico.)
@@ -161,7 +181,7 @@ export class AsignacionSlotsService {
       for (const f of fijos) {
         const finMin = finPorMatch.get(f.id) ?? horaAMinutos(f.horaProgramada!) + DESCANSO_MIN;
         finPorPartido.set(f.id, { fecha: f.fechaProgramada!, finMin });
-        const jugadores = [f.inscripcion1Id, f.inscripcion2Id].filter((x): x is string => !!x);
+        const jugadores = personasDe([f.inscripcion1Id, f.inscripcion2Id]);
         for (const j of jugadores) {
           const lst = porJugador.get(j) || [];
           lst.push({ fecha: f.fechaProgramada!, ini: horaAMinutos(f.horaProgramada!), fin: finMin });
@@ -172,7 +192,7 @@ export class AsignacionSlotsService {
 
     for (const p of aProgramar) {
       const esFinal = FASES_FINALES.includes(p.ronda);
-      const jugadores = [p.inscripcion1Id, p.inscripcion2Id].filter((x): x is string => !!x);
+      const jugadores = personasDe([p.inscripcion1Id, p.inscripcion2Id]);
 
       // 4a. Dependencias: ambos orígenes (reales) deben estar agendados.
       let okDeps = true;
