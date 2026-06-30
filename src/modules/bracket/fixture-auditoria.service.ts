@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { horaAMinutos } from '../../common/utils/time-helpers';
+import { DESCANSO_MIN } from './agenda-config';
 
 /**
  * Auditoría de integridad del fixture.
@@ -145,18 +146,21 @@ export class FixtureAuditoriaService {
           });
 
           if (origen?.fechaProgramada === partido.fechaProgramada && origen.horaProgramada && partido.horaProgramada) {
-            const horaOrigenFin = horaAMinutos(origen.horaProgramada) + 70;
+            // Misma regla que el asignador: fin REAL del origen (horaFinEstimada) + DESCANSO_MIN.
+            const horaOrigenFin = origen.horaFinEstimada
+              ? horaAMinutos(origen.horaFinEstimada)
+              : horaAMinutos(origen.horaProgramada) + DESCANSO_MIN;
             const horaPartidoInicio = horaAMinutos(partido.horaProgramada);
             const diferenciaMin = horaPartidoInicio - horaOrigenFin;
 
-            if (diferenciaMin < 120) {
+            if (diferenciaMin < DESCANSO_MIN) {
               problemas.push({
                 id: `descanso-${partido.id}-${origen.id}`,
                 tipo: 'CRITICO',
                 categoria: categoriaNombre,
                 categoriaId,
                 mensaje: `Violación de descanso en ${partido.ronda}`,
-                detalle: `Origen termina ${origen.horaProgramada}, partido empieza ${partido.horaProgramada} (descanso: ${diferenciaMin}min, mínimo: 120min)`,
+                detalle: `Origen termina ${origen.horaFinEstimada || origen.horaProgramada}, partido empieza ${partido.horaProgramada} (descanso: ${diferenciaMin}min, mínimo: ${DESCANSO_MIN}min)`,
                 accionRecomendada: 'Mover partido a slot posterior o día siguiente',
                 partidoId: partido.id,
                 datos: { horaOrigen: origen.horaProgramada, horaPartido: partido.horaProgramada, diferenciaMin },

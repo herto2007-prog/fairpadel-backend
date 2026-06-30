@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { horaAMinutos } from '../../common/utils/time-helpers';
 import { esTerminal } from './match-estados';
+import { DESCANSO_MIN, MAX_POR_DIA } from './agenda-config';
 
 /**
  * MOTOR DE AGENDA (reescrito 2026-06-15 — "agenda predictiva honesta")
@@ -32,8 +33,7 @@ const ORDEN_FASES: string[] = [
 // Fases que van obligatoriamente al día de finales.
 const FASES_FINALES: string[] = ['SEMIS', 'FINAL'];
 
-const DESCANSO_MIN = 90; // 1h30 entre partidos de un mismo jugador
-const MAX_POR_DIA = 3;   // máximo de partidos por día por jugador
+// DESCANSO_MIN y MAX_POR_DIA viven en agenda-config (fuente única compartida con el auditor).
 
 interface SlotGrid {
   id: string;
@@ -41,6 +41,7 @@ interface SlotGrid {
   horaInicio: string;
   horaFin: string;
   torneoCanchaId: string;
+  fasesPermitidas: string[] | null; // fases que ese día admite (null = todas)
 }
 
 interface PartidoSorteo {
@@ -81,13 +82,18 @@ export class AsignacionSlotsService {
       where: { disponibilidadId: { in: diasConfig.map((d) => d.id) }, estado: 'LIBRE' },
     });
     const slots: SlotGrid[] = slotsRaw
-      .map((s) => ({
-        id: s.id,
-        fecha: diaPorId.get(s.disponibilidadId)?.fecha as string,
-        horaInicio: s.horaInicio,
-        horaFin: s.horaFin,
-        torneoCanchaId: s.torneoCanchaId,
-      }))
+      .map((s) => {
+        const dia = diaPorId.get(s.disponibilidadId);
+        const fp = (dia?.fasesPermitidas as string | null | undefined) || null;
+        return {
+          id: s.id,
+          fecha: dia?.fecha as string,
+          horaInicio: s.horaInicio,
+          horaFin: s.horaFin,
+          torneoCanchaId: s.torneoCanchaId,
+          fasesPermitidas: fp ? fp.split(',').map((x) => x.trim()).filter(Boolean) : null,
+        };
+      })
       .filter((s) => !!s.fecha)
       .sort((a, b) =>
         a.fecha !== b.fecha ? a.fecha.localeCompare(b.fecha) : a.horaInicio.localeCompare(b.horaInicio),
@@ -189,6 +195,8 @@ export class AsignacionSlotsService {
       let elegido: SlotGrid | null = null;
       for (const s of slots) {
         if (slotUsado.has(s.id)) continue;
+        // El día admite esta fase (si el organizador la restringió; null = todas).
+        if (s.fasesPermitidas && !s.fasesPermitidas.includes(p.ronda)) continue;
         if (esFinal && s.fecha !== ultimaFecha) continue;          // finales solo el último día
         if (depFechaMin && s.fecha < depFechaMin) continue;        // no antes del día del origen
         const ini = horaAMinutos(s.horaInicio);
