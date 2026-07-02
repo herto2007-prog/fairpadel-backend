@@ -197,13 +197,14 @@ export class RankingsService {
       }
     }
 
-    // Actualizar rankings (la tabla de CADA circuito donde suma el torneo)
+    // Actualizar rankings: SOLO la tabla de cada circuito donde suma el torneo.
+    // Las tablas cross-plataforma (GLOBAL/CATEGORIA) se APAGARON (decisión
+    // Héctor 2026-07-02): mezclaban puntos de rankings independientes que no
+    // son comparables; el nivel general lo gobierna la Federación (categorías).
     const temporada = (torneo.fechaInicio ?? '').substring(0, 4);
-    await this.actualizarRankingsCategoria(categoryId, temporada);
     for (const tc of torneosCircuitos) {
       await this.actualizarRankingsCircuito(tc.circuitoId, categoryId, temporada);
     }
-    await this.actualizarRankingsGlobal(temporada);
 
     return {
       success: true,
@@ -216,40 +217,10 @@ export class RankingsService {
     };
   }
 
-  async actualizarRankingsCategoria(categoryId: string, temporada: string): Promise<void> {
-    const torneoIds = await this.obtenerTorneosEnCircuitosAprobados();
-    if (torneoIds.length === 0) return;
-
-    const historiales = await this.prisma.historialPuntos.groupBy({
-      by: ['jugadorId'],
-      where: {
-        categoryId,
-        tournamentId: { in: torneoIds },
-        fechaTorneo: { startsWith: temporada },
-      },
-      _sum: { puntosGanados: true },
-      _count: { id: true },
-    });
-
-    await this.upsertRankings(historiales, 'CATEGORIA', categoryId, temporada);
-  }
-
-  async actualizarRankingsGlobal(temporada: string): Promise<void> {
-    const torneoIds = await this.obtenerTorneosEnCircuitosAprobados();
-    if (torneoIds.length === 0) return;
-
-    const historiales = await this.prisma.historialPuntos.groupBy({
-      by: ['jugadorId'],
-      where: {
-        tournamentId: { in: torneoIds },
-        fechaTorneo: { startsWith: temporada },
-      },
-      _sum: { puntosGanados: true },
-      _count: { id: true },
-    });
-
-    await this.upsertRankings(historiales, 'GLOBAL', '', temporada);
-  }
+  // actualizarRankingsCategoria / actualizarRankingsGlobal ELIMINADOS
+  // (2026-07-02): las tablas cross-plataforma mezclaban puntos de rankings
+  // independientes (no comparables). El nivel general lo gobierna la
+  // Federación (categorías); los puntos viven por circuito (LIGA).
 
   async actualizarRankingsCircuito(circuitoId: string, categoryId: string, temporada: string): Promise<void> {
     const torneosCircuito = await this.prisma.torneoCircuito.findMany({
@@ -332,14 +303,6 @@ export class RankingsService {
       message: 'Ranking del circuito recalculado',
       data: { circuitoId, torneosRecalculados: tcs.length, categoriasRecalculadas: categorias },
     };
-  }
-
-  private async obtenerTorneosEnCircuitosAprobados(): Promise<string[]> {
-    const torneos = await this.prisma.torneoCircuito.findMany({
-      where: { estado: 'APROBADO' },
-      select: { torneoId: true },
-    });
-    return [...new Set(torneos.map(t => t.torneoId))];
   }
 
   private async upsertRankings(

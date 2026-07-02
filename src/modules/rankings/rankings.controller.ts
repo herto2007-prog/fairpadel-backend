@@ -90,14 +90,9 @@ export class RankingsController {
     return this.rankingsService.calcularPuntosTorneo(tournamentId, categoryId);
   }
 
-  @Post('admin/recalcular-global')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
-  async recalcularGlobal(@Body('temporada') temporada?: string) {
-    const temp = temporada || new Date().getFullYear().toString();
-    await this.rankingsService.actualizarRankingsGlobal(temp);
-    return { success: true, message: `Ranking global recalculado para ${temp}` };
-  }
+  // Los recalculadores GLOBAL/CATEGORIA se eliminaron (2026-07-02): esas
+  // tablas cross-plataforma están apagadas — los puntos viven por circuito
+  // y el nivel general lo gobierna la Federación (categorías).
 
   @Post('admin/recalcular-circuito/:circuitoId')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -117,18 +112,6 @@ export class RankingsController {
   @Roles('admin')
   async recalcularCircuitoCompleto(@Param('circuitoId') circuitoId: string) {
     return this.rankingsService.recalcularCircuito(circuitoId);
-  }
-
-  @Post('admin/recalcular-categoria/:categoryId')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
-  async recalcularCategoria(
-    @Param('categoryId') categoryId: string,
-    @Body('temporada') temporada?: string,
-  ) {
-    const temp = temporada || new Date().getFullYear().toString();
-    await this.rankingsService.actualizarRankingsCategoria(categoryId, temp);
-    return { success: true, message: `Ranking de categoría recalculado para ${temp}` };
   }
 
   // ═══════════════════════════════════════════════════════════

@@ -119,7 +119,14 @@ export class PerfilService {
         ranking: rankings.map(r => ({
           tipo: r.tipoRanking,
           alcance: r.alcance,
-          alcanceNombre: r.tipoRanking === 'CATEGORIA' ? categoryMap.get(r.alcance) || r.alcance : r.alcance,
+          // LIGA = ranking de un circuito → mostrar su NOMBRE (antes salía el uuid)
+          alcanceNombre:
+            r.tipoRanking === 'CATEGORIA'
+              ? categoryMap.get(r.alcance) || r.alcance
+              : r.tipoRanking === 'LIGA'
+                ? circuitoMap.get(r.alcance)?.nombre || r.alcance
+                : r.alcance,
+          circuitoSlug: r.tipoRanking === 'LIGA' ? circuitoMap.get(r.alcance)?.slug : undefined,
           posicion: r.posicion,
           puntosTotales: r.puntosTotales,
           torneosJugados: r.torneosJugados,
