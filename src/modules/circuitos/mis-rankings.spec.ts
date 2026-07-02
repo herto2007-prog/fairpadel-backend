@@ -119,6 +119,12 @@ describe('MisRankingsService', () => {
       await expect(service.sumarTorneo(YO, 'circ-1', 't-1')).rejects.toThrow(BadRequestException);
     });
 
+    it('no quita torneos de un ranking cerrado (tabla congelada)', async () => {
+      const { service, prisma } = build();
+      prisma.circuito.findUnique.mockResolvedValue({ ...CIRCUITO, estado: 'FINALIZADO' });
+      await expect(service.quitarTorneo(YO, 'circ-1', 't-1')).rejects.toThrow(BadRequestException);
+    });
+
     it('quitar un torneo recalcula la tabla del circuito', async () => {
       const { service, prisma, rankingsService } = build();
       prisma.circuito.findUnique.mockResolvedValue(CIRCUITO);

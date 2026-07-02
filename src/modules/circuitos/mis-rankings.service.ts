@@ -236,6 +236,11 @@ export class MisRankingsService {
   /** Quita un torneo del ranking y recalcula la tabla. Los otros rankings no se tocan. */
   async quitarTorneo(userId: string, circuitoId: string, torneoId: string) {
     const circuito = await this.circuitoPropio(circuitoId, userId);
+    if (circuito.estado !== 'ACTIVO') {
+      throw new BadRequestException(
+        'La temporada está cerrada (tabla congelada). Reactivá el ranking para modificar sus torneos.',
+      );
+    }
 
     const vinculo = await this.prisma.torneoCircuito.findUnique({
       where: { circuitoId_torneoId: { circuitoId, torneoId } },

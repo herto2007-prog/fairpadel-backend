@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { TipoRanking } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DateService } from '../../common/services/date.service';
@@ -201,8 +201,12 @@ export class RankingsService {
     // Las tablas cross-plataforma (GLOBAL/CATEGORIA) se APAGARON (decisión
     // Héctor 2026-07-02): mezclaban puntos de rankings independientes que no
     // son comparables; el nivel general lo gobierna la Federación (categorías).
+    // Un circuito FINALIZADO tiene la tabla CONGELADA: "cerrar temporada"
+    // significa que el podio anunciado no cambia aunque un torneo vinculado
+    // termine después. Solo se actualizan los circuitos ACTIVOS.
     const temporada = (torneo.fechaInicio ?? '').substring(0, 4);
     for (const tc of torneosCircuitos) {
+      if (tc.circuito?.estado !== 'ACTIVO') continue;
       await this.actualizarRankingsCircuito(tc.circuitoId, categoryId, temporada);
     }
 
@@ -272,6 +276,17 @@ export class RankingsService {
    * por categoría. Llamar tras agregar/sacar torneos o cambiar la configuración.
    */
   async recalcularCircuito(circuitoId: string) {
+    // Tabla congelada al cerrar temporada: para recalcular hay que reactivar.
+    const circuito = await this.prisma.circuito.findUnique({
+      where: { id: circuitoId },
+      select: { estado: true },
+    });
+    if (circuito && circuito.estado !== 'ACTIVO') {
+      throw new BadRequestException(
+        'La temporada de este ranking está cerrada (tabla congelada). Reactivalo para recalcular.',
+      );
+    }
+
     const tcs = await this.prisma.torneoCircuito.findMany({
       where: { circuitoId, estado: 'APROBADO', puntosValidos: true },
       select: { torneo: { select: { id: true, fechaInicio: true } } },
