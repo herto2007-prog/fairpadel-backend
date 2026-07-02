@@ -211,17 +211,23 @@ export class PartidoSlotsService {
       throw new BadRequestException('Ambos partidos deben tener slots asignados para intercambiar');
     }
 
-    // Transacción
+    // Transacción. OJO: TorneoSlot.matchId es @unique → hay que LIBERAR un
+    // slot antes de reasignar, o el swap viola la unicidad y explota (bug
+    // histórico: este endpoint devolvía 500 SIEMPRE por el orden de updates).
     await this.prisma.$transaction(async (tx) => {
-      // Intercambiar matchId en slots
       await tx.torneoSlot.update({
         where: { id: slot1.id },
-        data: { matchId: matchId2 },
+        data: { matchId: null },
       });
 
       await tx.torneoSlot.update({
         where: { id: slot2.id },
         data: { matchId: matchId1 },
+      });
+
+      await tx.torneoSlot.update({
+        where: { id: slot1.id },
+        data: { matchId: matchId2 },
       });
 
       // Actualizar fechas en partidos
