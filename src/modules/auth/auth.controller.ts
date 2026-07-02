@@ -41,6 +41,18 @@ export class AuthController {
   }
 
   /**
+   * Autoservicio: el usuario logueado activa su modo organizador.
+   * La calidad se controla al publicar (aprobación del 1er torneo), no acá.
+   * POST /api/auth/quiero-organizar
+   */
+  @Post('quiero-organizar')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(JwtAuthGuard)
+  async quieroOrganizar(@GetUser() user: any) {
+    return this.authService.activarRolOrganizador(user.userId);
+  }
+
+  /**
    * Verifica el email con el token
    * GET /api/auth/verify-email?token=xxx
    */

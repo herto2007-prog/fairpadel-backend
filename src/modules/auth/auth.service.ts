@@ -574,4 +574,62 @@ export class AuthService {
       expiresIn: this.configService.get('JWT_EXPIRATION'),
     });
   }
+
+  /**
+   * "Quiero organizar": cualquier usuario logueado se activa como organizador.
+   * La puerta es abierta a propósito — el control de calidad NO está acá sino
+   * en la publicación (candado de datos mínimos + aprobación del admin del
+   * primer torneo; ver enviar-aprobacion). Idempotente: si ya tiene el rol,
+   * no duplica ni vuelve a avisar.
+   */
+  async activarRolOrganizador(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: { include: { role: true } } },
+    });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const roles = user.roles.map((ur) => ur.role.nombre);
+    if (roles.includes('organizador')) {
+      return { success: true, yaEra: true, roles };
+    }
+
+    const rol = await this.prisma.role.findUnique({ where: { nombre: 'organizador' } });
+    if (!rol) throw new NotFoundException('El rol organizador no existe');
+
+    // skipDuplicates: dos clics rápidos no chocan contra el unique(userId, roleId)
+    await this.prisma.userRole.createMany({
+      data: [{ userId, roleId: rol.id }],
+      skipDuplicates: true,
+    });
+
+    // Aviso a los admins (best-effort: si falla, la activación igual vale)
+    const nombre = [user.nombre, user.apellido].filter(Boolean).join(' ') || user.email;
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: { roles: { some: { role: { nombre: 'admin' } } } },
+        select: { id: true },
+      });
+      await Promise.all(
+        admins.map((admin) =>
+          this.prisma.notificacion.create({
+            data: {
+              userId: admin.id,
+              tipo: 'SISTEMA',
+              titulo: 'Nuevo organizador',
+              contenido: `${nombre} activó el modo organizador. Su primer torneo va a pasar por tu aprobación antes de publicarse.`,
+              enlace: '/admin',
+            },
+          }),
+        ),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo avisar a los admins del nuevo organizador ${userId}: ${error.message}`,
+      );
+    }
+
+    this.logger.log(`Usuario ${userId} activó el rol organizador (autoservicio)`);
+    return { success: true, yaEra: false, roles: [...roles, 'organizador'] };
+  }
 }
