@@ -117,15 +117,16 @@ export class RankingsService {
     // desde cero (antes tiraba error si existían → no se podía recalcular).
     await this.prisma.historialPuntos.deleteMany({ where: { tournamentId, categoryId } });
 
-    // Buscar circuito aprobado del torneo
-    const torneoCircuito = await this.prisma.torneoCircuito.findFirst({
+    // Buscar TODOS los circuitos/rankings aprobados del torneo (un torneo puede
+    // sumar en varios rankings del organizador — antes findFirst solo veía uno).
+    const torneosCircuitos = await this.prisma.torneoCircuito.findMany({
       where: { torneoId: tournamentId, estado: 'APROBADO' },
       include: { circuito: true },
     });
 
-    // UN SOLO peso por torneo dentro del circuito (antes había 3 multiplicadores
-    // encadenados que no coincidían entre el cálculo inicial y el recálculo).
-    const multiplicadorFinal = torneoCircuito?.multiplicador ?? 1;
+    // UN SOLO peso por torneo (el historial es único por torneo/categoría):
+    // se toma el multiplicador del primer vínculo; autoservicio siempre usa 1.
+    const multiplicadorFinal = torneosCircuitos[0]?.multiplicador ?? 1;
 
     // Obtener partidos finalizados de esta categoría
     const partidos = await this.prisma.match.findMany({
@@ -196,11 +197,11 @@ export class RankingsService {
       }
     }
 
-    // Actualizar rankings
+    // Actualizar rankings (la tabla de CADA circuito donde suma el torneo)
     const temporada = (torneo.fechaInicio ?? '').substring(0, 4);
     await this.actualizarRankingsCategoria(categoryId, temporada);
-    if (torneoCircuito?.circuito) {
-      await this.actualizarRankingsCircuito(torneoCircuito.circuito.id, categoryId, temporada);
+    for (const tc of torneosCircuitos) {
+      await this.actualizarRankingsCircuito(tc.circuitoId, categoryId, temporada);
     }
     await this.actualizarRankingsGlobal(temporada);
 

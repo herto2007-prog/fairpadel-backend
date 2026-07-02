@@ -1,14 +1,81 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { CircuitosService } from './circuitos.service';
+import { MisRankingsService } from './mis-rankings.service';
 import { CreateCircuitoDto, UpdateCircuitoDto } from './dto/create-circuito.dto';
+import { CrearMiRankingDto, EditarMiRankingDto, SumarTorneoDto } from './dto/mis-rankings.dto';
 import { AsignarTorneoDirectoDto, ConfigurarTorneoCircuitoDto } from './dto/torneo-circuito.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { GetUser } from '../auth/decorators/get-user.decorator';
 
 @Controller('circuitos')
 export class CircuitosController {
-  constructor(private readonly circuitosService: CircuitosService) {}
+  constructor(
+    private readonly circuitosService: CircuitosService,
+    private readonly misRankingsService: MisRankingsService,
+  ) {}
+
+  // ═══════════════════════════════════════════════════════════
+  // MIS RANKINGS (organizador, autoservicio) — DECLARAR ANTES de
+  // las rutas :id para que Nest no las capture como id.
+  // ═══════════════════════════════════════════════════════════
+
+  @Get('validar-nombre')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async validarNombre(@Query('nombre') nombre: string) {
+    return this.misRankingsService.validarNombre(nombre);
+  }
+
+  @Get('mis')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async misRankings(@GetUser() user: any) {
+    return this.misRankingsService.listar(user.userId);
+  }
+
+  @Post('mis')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async crearMiRanking(@GetUser() user: any, @Body() dto: CrearMiRankingDto) {
+    return this.misRankingsService.crear(user.userId, dto);
+  }
+
+  @Put('mis/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async editarMiRanking(@GetUser() user: any, @Param('id') id: string, @Body() dto: EditarMiRankingDto) {
+    return this.misRankingsService.editar(user.userId, id, dto);
+  }
+
+  @Delete('mis/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async borrarMiRanking(@GetUser() user: any, @Param('id') id: string) {
+    return this.misRankingsService.borrar(user.userId, id);
+  }
+
+  @Get('mis/:id/torneos-disponibles')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async torneosDisponibles(@GetUser() user: any, @Param('id') id: string) {
+    return this.misRankingsService.torneosDisponibles(user.userId, id);
+  }
+
+  @Post('mis/:id/torneos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async sumarTorneo(@GetUser() user: any, @Param('id') id: string, @Body() dto: SumarTorneoDto) {
+    return this.misRankingsService.sumarTorneo(user.userId, id, dto.torneoId);
+  }
+
+  @Delete('mis/:id/torneos/:torneoId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('organizador', 'admin')
+  async quitarTorneo(@GetUser() user: any, @Param('id') id: string, @Param('torneoId') torneoId: string) {
+    return this.misRankingsService.quitarTorneo(user.userId, id, torneoId);
+  }
 
   // ═══════════════════════════════════════════════════════════
   // RUTAS PÚBLICAS
