@@ -966,16 +966,59 @@ export class AdminAuditoriaController {
       }
     }
 
-    await this.prisma.match.update({
-      where: { id: partidoId },
-      data: {
-        ...(dto.fecha !== undefined && { fechaProgramada: dto.fecha || null }),
-        ...(dto.hora !== undefined && { horaProgramada: dto.hora || null }),
-        ...(dto.torneoCanchaId !== undefined && { torneoCanchaId: dto.torneoCanchaId || null }),
-      },
+    // Coherencia con la GRILLA (TorneoSlot): el calendario y el asignador leen
+    // las franjas, no solo el partido. Si esto solo tocara el Match, la franja
+    // vieja quedaría "ocupada" fantasma y el calendario mostraría al partido
+    // en el lugar viejo. Regla: liberar la franja actual SIEMPRE; si el nuevo
+    // destino coincide exacto con una franja LIBRE, ocuparla. Si no coincide
+    // (hora a medida, privilegio del god-panel), el partido queda sin franja
+    // — el calendario lo muestra aparte como "fuera de la grilla".
+    let enGrilla = false;
+    await this.prisma.$transaction(async (tx) => {
+      const slotActual = await tx.torneoSlot.findFirst({ where: { matchId: partidoId } });
+      if (slotActual) {
+        await tx.torneoSlot.update({
+          where: { id: slotActual.id },
+          data: { estado: 'LIBRE', matchId: null },
+        });
+      }
+
+      const actualizado = await tx.match.update({
+        where: { id: partidoId },
+        data: {
+          ...(dto.fecha !== undefined && { fechaProgramada: dto.fecha || null }),
+          ...(dto.hora !== undefined && { horaProgramada: dto.hora || null }),
+          ...(dto.torneoCanchaId !== undefined && { torneoCanchaId: dto.torneoCanchaId || null }),
+        },
+        select: { fechaProgramada: true, horaProgramada: true, torneoCanchaId: true },
+      });
+
+      if (actualizado.fechaProgramada && actualizado.horaProgramada && actualizado.torneoCanchaId) {
+        const slotDestino = await tx.torneoSlot.findFirst({
+          where: {
+            torneoCanchaId: actualizado.torneoCanchaId,
+            horaInicio: actualizado.horaProgramada,
+            estado: 'LIBRE',
+            disponibilidad: { fecha: actualizado.fechaProgramada },
+          },
+        });
+        if (slotDestino) {
+          await tx.torneoSlot.update({
+            where: { id: slotDestino.id },
+            data: { estado: 'OCUPADO', matchId: partidoId },
+          });
+          enGrilla = true;
+        }
+      }
     });
 
-    return { success: true, message: 'Partido reprogramado' };
+    return {
+      success: true,
+      message: enGrilla
+        ? 'Partido reprogramado (ocupa su franja en la grilla)'
+        : 'Partido reprogramado con horario propio (fuera de la grilla de franjas)',
+      enGrilla,
+    };
   }
 
   /**
